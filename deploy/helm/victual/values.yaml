@@ -1,0 +1,169 @@
+# The chart's defaults. They render deploy/k3s/, the base `kubectl apply -k` deploys, and
+# they will not connect to anything: the database host and every password are placeholders.
+#
+# To deploy, start from values.example.yaml beside this file instead. It marks every value
+# you must supply with CHANGE-ME, and values.schema.json refuses an install that still
+# holds one, naming the field.
+
+# --- Which version -----------------------------------------------------------------------
+image:
+  # Where the six images are published (ADR-0030). kind points this at `localhost` to run
+  # the working tree's build.
+  registry: ghcr.io/datagen24
+  # Empty means the chart's appVersion, which is the release this chart was published with.
+  tag: ""
+
+# --- How people reach it -----------------------------------------------------------------
+# The URL Victual is served at, scheme included: links in mail and in Home Assistant are
+# built from it. Empty is allowed only with the Ingress enabled, which then derives it from
+# ingress.host and ingress.tls.enabled.
+baseUrl: https://victual.example.internal
+
+ingress:
+  # Off by default: the ingress is the operator's (ADR-0010), and the base renders none.
+  enabled: false
+  # The IngressClass your cluster's ingress controller answers to.
+  className: traefik
+  # The hostname Victual is served at. Its DNS must point at the ingress controller.
+  host: ""
+  tls:
+    # true serves https://<host>. Then either name an existing TLS Secret in the namespace,
+    # or leave secretName empty and let an annotation below (cert-manager, say) create it.
+    enabled: false
+    secretName: ""
+  # Extra annotations for the Ingress, e.g. cert-manager.io/cluster-issuer: letsencrypt.
+  annotations: {}
+
+# --- The database: your PostgreSQL server ------------------------------------------------
+# Not in this chart (ADR-0010): where PostgreSQL lives is the operator's decision. Create
+# the two roles with deploy/postgres/roles.sql before the first install (ADR-0038
+# decision 10).
+database:
+  host: replace-me-postgres.example.internal
+  port: 5432
+  name: victual
+  # libpq sslmode: disable, allow, prefer, require, verify-ca or verify-full. Empty uses
+  # libpq's default (prefer).
+  sslmode: ""
+
+# --- Home Assistant over MQTT (optional) ---------------------------------------------------
+# docs/manual/operator/home-assistant-mqtt.md says what is published.
+mqtt:
+  enabled: false
+  host: ""
+  # 8883 is usual with tls: true.
+  port: 1883
+  tls: false
+  # Empty for an anonymous broker. The password comes from `secrets`.
+  username: ""
+  topicPrefix: victual
+  discoveryPrefix: homeassistant
+  # device (Home Assistant 2024.11+) or entity.
+  discoveryMode: device
+  deviceName: Victual
+
+# --- Price and stock-value events to InfluxDB v2 (optional) --------------------------------
+influxdb:
+  enabled: false
+  url: ""
+  org: victual
+  bucket: victual
+  # The token comes from `secrets`.
+
+# --- The read-only MCP server for AI assistants (optional) ---------------------------------
+mcp:
+  # Two replicas, reachable only inside the cluster (service victual-mcp, port 3000).
+  enabled: true
+
+# --- The label renderer and worker (optional) ----------------------------------------------
+labelWorkers:
+  # Two CronJobs that drain the label queue every minute. Each authenticates with a typed
+  # API key an administrator issues (secrets below); neither holds a database credential.
+  enabled: true
+
+# --- Any other setting -------------------------------------------------------------------
+# Every setting in docs/manual/configuration.md, by its name there (no VICTUAL_ prefix).
+# The database, URL, MQTT and InfluxDB settings come from the sections above and are
+# refused here, as are MODE, DB_DRIVER and FILE_STORAGE, which this chart fixes.
+settings: {}
+
+# --- Passwords and tokens ------------------------------------------------------------------
+secrets:
+  # placeholder:  Secrets holding values that will not connect. Only for rendering a base
+  #               that an overlay replaces, as deploy/kind and deploy/talos do.
+  # inline:       written in your values file, and rendered as Kubernetes Secrets. Helm keeps
+  #               every release's rendered manifests in a Secret in the namespace, so past
+  #               passwords stay there too (ADR-0038, Consequences).
+  # onepassword:  OnePasswordItem resources the cluster's 1Password Connect operator turns
+  #               into Secrets. Nothing secret is in your values file.
+  # existing:     no Secret is rendered: they already exist, written by any other means
+  #               (a secrets operator, or `kubectl create secret`), under the names below.
+  source: placeholder
+
+  # The Secrets the pods read, by name. Every mode uses these names.
+  names:
+    migrate: victual-db-migrate
+    app: victual-db-app
+    bootstrapAdmin: victual-bootstrap-admin
+    mqtt: victual-mqtt
+    influxdb: victual-influxdb
+    labelCredentials: victual-label-credentials
+
+  onepassword:
+    # A vault your Connect server can read.
+    vault: ""
+    # One item per credential. The operator makes a Secret from each, one key per field, so
+    # the field labels must be exactly these, and an item holds nothing else:
+    #
+    #   migrate item:          VICTUAL_DB_USER (victual_migrate), VICTUAL_DB_PASSWORD
+    #   app item:              VICTUAL_DB_USER (victual_app), VICTUAL_DB_PASSWORD
+    #   bootstrap item:        VICTUAL_BOOTSTRAP_ADMIN_PASSWORD (the first admin login)
+    #   MQTT item:             VICTUAL_MQTT_PASSWORD; read only with mqtt.enabled and a username
+    #   InfluxDB item:         VICTUAL_INFLUXDB_TOKEN; read only with influxdb.enabled
+    #   label credentials:     renderer-key, worker-key; read only with labelWorkers.enabled
+    #
+    # The database items hold the database credential alone so that rotating it can rewrite
+    # the item whole without losing another field (docs/plans/36-database-credential-rotation.md).
+    # deploy/talos/seed-1password.sh shows one way to create the items.
+    items:
+      migrate: victual-db-migrate
+      app: victual-db-app
+      bootstrapAdmin: victual-bootstrap-admin
+      mqtt: victual-mqtt
+      influxdb: victual-influxdb
+      labelCredentials: victual-label-credentials
+
+  inline:
+    migratePassword: ""
+    appPassword: ""
+    # The first admin login's password, used once, when the first install creates the
+    # schema.
+    bootstrapAdminPassword: ""
+    # Only read when mqtt / influxdb / labelWorkers are enabled.
+    mqttPassword: ""
+    influxdbToken: ""
+    labelRendererKey: ""
+    labelWorkerKey: ""
+
+# --- What each container may use ---------------------------------------------------------
+# ADR-0010 property 4 requires a memory limit on every container, and the lint job's check
+# refuses a rendering without one.
+resources:
+  migrate:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 256Mi}
+  app:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 512Mi}
+  web:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {memory: 128Mi}
+  mcp:
+    requests: {cpu: 10m, memory: 48Mi}
+    limits: {memory: 128Mi}
+  labelRenderer:
+    requests: {cpu: 50m, memory: 32Mi}
+    limits: {cpu: "1", memory: 128Mi}
+  labelWorker:
+    requests: {cpu: 50m, memory: 32Mi}
+    limits: {cpu: "1", memory: 128Mi}

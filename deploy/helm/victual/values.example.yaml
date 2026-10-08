@@ -1,18 +1,20 @@
 # Victual deployment values: everything a deployment needs, in one file.
 #
-#   cp deploy/production/values.example.yaml deploy/production/values.yaml
-#   $EDITOR deploy/production/values.yaml       # fill in every CHANGE-ME
-#   deploy/production/deploy.sh render           # check it: writes deploy/production/build/
-#   deploy/production/deploy.sh apply            # apply it and wait until it serves
+#   cp deploy/helm/victual/values.example.yaml values.yaml
+#   $EDITOR values.yaml                                 # fill in every CHANGE-ME
+#   helm template victual deploy/helm/victual -f values.yaml          # check it
+#   helm upgrade --install victual deploy/helm/victual -f values.yaml \
+#        --namespace victual --create-namespace --wait --timeout 10m
 #
-# values.yaml and build/ are gitignored, because they name your hosts (and, with
-# `secrets.source: inline`, hold your passwords). This example is the only one committed.
+# Keep values.yaml out of version control: it names your hosts and, with
+# `secrets.source: inline`, holds your passwords.
 #
-# You never edit Kubernetes manifests: render.py turns this file into an overlay on
-# deploy/k3s, the same manifests every other deployment of Victual uses. Any value left as
-# CHANGE-ME stops the render with the name of the field.
+# The namespace and the cluster are Helm's flags (`--namespace`, `--kube-context`), not
+# values. Any value left as CHANGE-ME stops the install with the field's path, from
+# values.schema.json; so does a field this chart does not know.
 #
-# Before the first apply, once:
+# Before the first install, once (ADR-0038 decision 10: the chart holds no superuser
+# credential, so this step is yours):
 #
 #   1. Create the database and the two roles on your PostgreSQL server, as a superuser:
 #
@@ -23,24 +25,24 @@
 #      roles.sql reads both passwords from psql's environment and refuses `-v` arguments,
 #      which any user of the machine can read with `ps`. Its header shows how to set them.
 #
-#      Run it again after the first apply has migrated the schema; roles.sql's header says
+#      Run it again after the first install has migrated the schema; roles.sql's header says
 #      why. The two passwords are the ones `secrets` below supplies.
 #   2. Put those passwords where `secrets` says they are (1Password, or below).
 
-# --- Where it runs ---------------------------------------------------------------------
-cluster:
-  # The kubectl context to deploy to. Empty uses your current context.
-  context: ""
-  # Created if missing. Everything below lives in it.
-  namespace: victual
-
 # --- Which version ---------------------------------------------------------------------
 image:
-  # A published release tag (amd64 and arm64 images on GHCR).
-  tag: 0.3.0
+  registry: ghcr.io/datagen24
+  # Empty is the chart's own version, which is what a release tag publishes for amd64 and
+  # arm64. Name a tag only to run images other than the ones this chart was released with.
+  tag: ""
 
 # --- How people reach it -----------------------------------------------------------------
+# Empty derives it from the Ingress below: https://<host> with TLS, http://<host> without.
+# Set it when something other than this chart's Ingress publishes Victual.
+baseUrl: ""
+
 ingress:
+  enabled: true
   # The IngressClass your cluster's ingress controller answers to.
   className: traefik
   # The hostname Victual is served at. Its DNS must point at the ingress controller.
@@ -65,10 +67,11 @@ database:
 # --- Home Assistant over MQTT (optional) ---------------------------------------------------
 # docs/manual/operator/home-assistant-mqtt.md says what is published. Victual publishes after
 # every write; running bin/victual-publish-state after a deploy, which the manual also asks
-# for, is not automated by this template yet.
+# for, is not automated by this chart yet.
 mqtt:
   enabled: false
-  host: CHANGE-ME-mqtt.example.internal
+  # Required with enabled: true.
+  host: ""
   # 8883 is usual with tls: true.
   port: 1883
   tls: false
@@ -83,7 +86,8 @@ mqtt:
 # --- Price and stock-value events to InfluxDB v2 (optional) --------------------------------
 influxdb:
   enabled: false
-  url: http://CHANGE-ME-influxdb.example.internal:8086
+  # Required with enabled: true, e.g. http://influxdb.example.internal:8086.
+  url: ""
   org: victual
   bucket: victual
   # The token comes from `secrets`.
@@ -93,10 +97,16 @@ mcp:
   # Two replicas, reachable only inside the cluster (service victual-mcp, port 3000).
   enabled: true
 
+# --- The label renderer and worker (optional) ----------------------------------------------
+# Two CronJobs that drain the label queue every minute, with API keys an administrator issues
+# from Victual (docs/plans/25-label-infrastructure.md). Off until you have a printer.
+labelWorkers:
+  enabled: false
+
 # --- Any other setting -------------------------------------------------------------------
 # Every setting in docs/manual/configuration.md, by its name there (no VICTUAL_ prefix).
 # The database, URL, MQTT and InfluxDB settings come from the sections above and are
-# refused here, as are MODE, DB_DRIVER and FILE_STORAGE, which this deployment fixes.
+# refused here, as are MODE, DB_DRIVER and FILE_STORAGE, which this chart fixes.
 settings:
   CURRENCY: USD
   DEFAULT_LOCALE: en
@@ -107,8 +117,20 @@ settings:
 secrets:
   # onepassword: read from 1Password through the cluster's Connect operator. Nothing secret
   #              is in this file.
-  # inline:      written below, in this gitignored file, and applied as Kubernetes Secrets.
+  # inline:      written below, in this file, and applied as Kubernetes Secrets. Helm keeps
+  #              each release's rendered manifests in a Secret in the namespace, so every
+  #              past password stays there too.
+  # existing:    the Secrets already exist under the names below, written by any other
+  #              means; the chart renders none.
   source: onepassword
+
+  names:
+    migrate: victual-db-migrate
+    app: victual-db-app
+    bootstrapAdmin: victual-bootstrap-admin
+    mqtt: victual-mqtt
+    influxdb: victual-influxdb
+    labelCredentials: victual-label-credentials
 
   onepassword:
     # A vault your Connect server can read.
@@ -121,23 +143,29 @@ secrets:
     #   bootstrap item:      VICTUAL_BOOTSTRAP_ADMIN_PASSWORD (the first admin login)
     #   MQTT item:           VICTUAL_MQTT_PASSWORD; read only with mqtt.enabled and a username
     #   InfluxDB item:       VICTUAL_INFLUXDB_TOKEN; read only with influxdb.enabled
+    #   label credentials:   renderer-key, worker-key; read only with labelWorkers.enabled
     #
     # The database items hold the database credential alone so that rotating it can rewrite
     # the item whole without losing another field. Items from before that split kept the
     # other values in the database items; deploy/README.md, "One Secret per credential",
     # moves them without changing one. deploy/talos/seed-1password.sh shows one way to
     # create the items.
-    migrateItem: victual-db-migrate
-    appItem: victual-db-app
-    bootstrapAdminItem: victual-bootstrap-admin
-    mqttItem: victual-mqtt
-    influxdbItem: victual-influxdb
+    items:
+      migrate: victual-db-migrate
+      app: victual-db-app
+      bootstrapAdmin: victual-bootstrap-admin
+      mqtt: victual-mqtt
+      influxdb: victual-influxdb
+      labelCredentials: victual-label-credentials
 
+  # With source: inline only. The first three are then required; the others only when their
+  # feature is enabled.
   inline:
-    migratePassword: CHANGE-ME
-    appPassword: CHANGE-ME
-    # The first admin login's password. Used once, when the first apply creates the schema.
-    bootstrapAdminPassword: CHANGE-ME
-    # Only read when mqtt / influxdb are enabled.
+    migratePassword: ""
+    appPassword: ""
+    # The first admin login's password. Used once, when the first install creates the schema.
+    bootstrapAdminPassword: ""
     mqttPassword: ""
     influxdbToken: ""
+    labelRendererKey: ""
+    labelWorkerKey: ""

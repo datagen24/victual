@@ -1,7 +1,3 @@
-# GENERATED from deploy/helm/victual/templates/victual-mcp.yaml by .devtools/ci/render_k3s.py
-# with ci/k3s-values.yaml. Edit the template and run the script; the lint job fails
-# when this file and the chart disagree (ADR-0038 decision 2).
-#
 # The read-only MCP sidecar (issue #86, docs/mcp-interface-spec.md): its own Deployment
 # and Service beside Victual's, not a container in Victual's pod.
 #
@@ -21,6 +17,7 @@
 #
 # Clients authenticate with `Authorization: Bearer <Victual API key>`; the sidecar forwards
 # the key to Victual on every call and stores nothing (§2, §4).
+{{- if .Values.mcp.enabled }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -85,7 +82,7 @@ spec:
             sizeLimit: 16Mi
       containers:
         - name: mcp
-          image: ghcr.io/datagen24/victual-mcp:0.3.0
+          image: {{ include "victual.image" (dict "root" . "name" "victual-mcp") }}
           ports:
             - name: http
               containerPort: 3000
@@ -116,9 +113,8 @@ spec:
               path: /healthz
               port: http
             periodSeconds: 10
+          {{- with .Values.resources.mcp }}
           resources:
-            limits:
-              memory: 128Mi
-            requests:
-              cpu: 10m
-              memory: 48Mi
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

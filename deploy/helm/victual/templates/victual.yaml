@@ -1,7 +1,3 @@
-# GENERATED from deploy/helm/victual/templates/victual.yaml by .devtools/ci/render_k3s.py
-# with ci/k3s-values.yaml. Edit the template and run the script; the lint job fails
-# when this file and the chart disagree (ADR-0038 decision 2).
-#
 # Victual on Kubernetes, written for k3s: a Deployment, a Service, and the ConfigMap and
 # Secrets the pod reads.
 #
@@ -44,46 +40,6 @@
 #      run a local build instead, point `image:` at what `nix run .#load` produces, or use
 #      a kustomize `images:` override as deploy/kind/kustomization.yaml does.
 ---
-# The role that owns the schema: held by the migrate initContainer and by nothing else.
-apiVersion: v1
-kind: Secret
-metadata:
-  name: victual-db-migrate
-  labels:
-    app.kubernetes.io/name: victual
-type: Opaque
-stringData:
-  VICTUAL_DB_PASSWORD: "replace-me-with-the-migrate-role-password"
-  VICTUAL_DB_USER: "victual_migrate"
----
-# The role that reads and writes rows and cannot change structure: held by php-fpm.
-apiVersion: v1
-kind: Secret
-metadata:
-  name: victual-db-app
-  labels:
-    app.kubernetes.io/name: victual
-type: Opaque
-stringData:
-  VICTUAL_DB_PASSWORD: "replace-me-with-the-app-role-password"
-  VICTUAL_DB_USER: "victual_app"
----
-# The first administrator's password, read once by the migrate initContainer when it creates
-# the database. Blank means unset: the first migration generates a password, prints it once
-# to the migrate container's log and forces a change at first login. Not a placeholder
-# password, because a known value here would be every forgetful deployment's admin password.
-# Its own Secret, not a key in victual-db-migrate: a database Secret holds the database
-# credential and nothing else, so rotating it rewrites nothing unrelated (plan 36).
-apiVersion: v1
-kind: Secret
-metadata:
-  name: victual-bootstrap-admin
-  labels:
-    app.kubernetes.io/name: victual
-type: Opaque
-stringData:
-  VICTUAL_BOOTSTRAP_ADMIN_PASSWORD: ""
----
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -95,17 +51,78 @@ data:
   VICTUAL_DB_DRIVER: "pgsql"
   # The operator's database. Not `victual-db` or anything else this file could invent: where
   # PostgreSQL lives is not this manifest's decision.
-  VICTUAL_DB_HOST: "replace-me-postgres.example.internal"
-  VICTUAL_DB_PORT: "5432"
-  VICTUAL_DB_NAME: "victual"
+  VICTUAL_DB_HOST: {{ .Values.database.host | quote }}
+  VICTUAL_DB_PORT: {{ .Values.database.port | toString | quote }}
+  VICTUAL_DB_NAME: {{ .Values.database.name | quote }}
+  {{- with .Values.database.sslmode }}
+  VICTUAL_DB_SSLMODE: {{ . | quote }}
+  {{- end }}
   # There is nothing writable mounted, so the default `filesystem` backend has nowhere to
   # write; see deploy/README.md.
   VICTUAL_FILE_STORAGE: "database"
   # What the ingress publishes.
-  VICTUAL_BASE_URL: "https://victual.example.internal"
+  VICTUAL_BASE_URL: {{ include "victual.baseUrl" . | quote }}
+  {{- with .Values.mqtt }}
+  {{- if .enabled }}
+  VICTUAL_MQTT_ENABLED: "true"
+  VICTUAL_MQTT_HOST: {{ .host | quote }}
+  VICTUAL_MQTT_PORT: {{ .port | toString | quote }}
+  VICTUAL_MQTT_TLS: {{ ternary "true" "false" .tls | quote }}
+  VICTUAL_MQTT_USERNAME: {{ .username | quote }}
+  VICTUAL_MQTT_TOPIC_PREFIX: {{ .topicPrefix | quote }}
+  VICTUAL_MQTT_DISCOVERY_PREFIX: {{ .discoveryPrefix | quote }}
+  VICTUAL_MQTT_DISCOVERY_MODE: {{ .discoveryMode | quote }}
+  VICTUAL_MQTT_DEVICE_NAME: {{ .deviceName | quote }}
+  {{- end }}
+  {{- end }}
+  {{- with .Values.influxdb }}
+  {{- if .enabled }}
+  VICTUAL_INFLUXDB_ENABLED: "true"
+  VICTUAL_INFLUXDB_URL: {{ .url | quote }}
+  VICTUAL_INFLUXDB_ORG: {{ .org | quote }}
+  VICTUAL_INFLUXDB_BUCKET: {{ .bucket | quote }}
+  {{- end }}
+  {{- end }}
+  {{- range $name, $value := .Values.settings }}
+  {{ printf "VICTUAL_%s" $name }}: {{ include "victual.setting" $value | quote }}
+  {{- end }}
   # VICTUAL_DB_USER is deliberately not here. It arrives with the password, from a Secret
   # per workload, so that which role a container holds is a property of which Secret it
   # names and cannot be overridden by list order.
+{{- $inline := eq .Values.secrets.source "inline" }}
+{{- if include "victual.secretRendered" (dict "root" . "placeholder" true) }}
+---
+# The role that owns the schema: held by the migrate initContainer and by nothing else.
+{{ include "victual.secretBody" (dict "root" . "key" "migrate" "labels" true "data" (dict
+    "VICTUAL_DB_USER" "victual_migrate"
+    "VICTUAL_DB_PASSWORD" (ternary (.Values.secrets.inline.migratePassword | default "") "replace-me-with-the-migrate-role-password" $inline))) }}
+---
+# The role that reads and writes rows and cannot change structure: held by php-fpm.
+{{ include "victual.secretBody" (dict "root" . "key" "app" "labels" true "data" (dict
+    "VICTUAL_DB_USER" "victual_app"
+    "VICTUAL_DB_PASSWORD" (ternary (.Values.secrets.inline.appPassword | default "") "replace-me-with-the-app-role-password" $inline))) }}
+---
+# The first administrator's password, read once by the migrate initContainer when it creates
+# the database. Blank means unset: the first migration generates a password, prints it once
+# to the migrate container's log and forces a change at first login. Not a placeholder
+# password, because a known value here would be every forgetful deployment's admin password.
+# Its own Secret, not a key in victual-db-migrate: a database Secret holds the database
+# credential and nothing else, so rotating it rewrites nothing unrelated (plan 36).
+{{ include "victual.secretBody" (dict "root" . "key" "bootstrapAdmin" "labels" true "data" (dict
+    "VICTUAL_BOOTSTRAP_ADMIN_PASSWORD" (ternary (.Values.secrets.inline.bootstrapAdminPassword | default "") "" $inline))) }}
+{{- end }}
+{{- if and (include "victual.wantsMqttSecret" .) (include "victual.secretRendered" (dict "root" . "placeholder" false)) }}
+---
+# The MQTT broker's password, for a broker that has a username.
+{{ include "victual.secretBody" (dict "root" . "key" "mqtt" "labels" true "data" (dict
+    "VICTUAL_MQTT_PASSWORD" (.Values.secrets.inline.mqttPassword | default ""))) }}
+{{- end }}
+{{- if and (include "victual.wantsInfluxdbSecret" .) (include "victual.secretRendered" (dict "root" . "placeholder" false)) }}
+---
+# The InfluxDB v2 token.
+{{ include "victual.secretBody" (dict "root" . "key" "influxdb" "labels" true "data" (dict
+    "VICTUAL_INFLUXDB_TOKEN" (.Values.secrets.inline.influxdbToken | default ""))) }}
+{{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -178,16 +195,16 @@ spec:
         # See deploy/podman/victual.yaml for why migration is a startup step and why this
         # is the only container holding a role that can run DDL.
         - name: migrate
-          image: ghcr.io/datagen24/victual-migrate:0.3.0
+          image: {{ include "victual.image" (dict "root" . "name" "victual-migrate") }}
           envFrom:
             - configMapRef:
                 name: victual-config
             - secretRef:
-                name: victual-db-migrate
+                name: {{ .Values.secrets.names.migrate }}
             # Required, so a pod cannot start before the Secret exists and seed a generated
             # password in place of the operator's.
             - secretRef:
-                name: victual-bootstrap-admin
+                name: {{ .Values.secrets.names.bootstrapAdmin }}
           volumeMounts:
             - name: tmp-app
               mountPath: /tmp
@@ -196,16 +213,14 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+          {{- with .Values.resources.migrate }}
           resources:
-            limits:
-              memory: 256Mi
-            requests:
-              cpu: 50m
-              memory: 128Mi
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
 
       containers:
         - name: app
-          image: ghcr.io/datagen24/victual-app:0.3.0
+          image: {{ include "victual.image" (dict "root" . "name" "victual-app") }}
           ports:
             - name: fastcgi
               containerPort: 9000
@@ -213,15 +228,15 @@ spec:
             - configMapRef:
                 name: victual-config
             - secretRef:
-                name: victual-db-app
+                name: {{ .Values.secrets.names.app }}
             # VICTUAL_MQTT_PASSWORD and VICTUAL_INFLUXDB_TOKEN, each in a Secret of its own and
             # optional: a deployment without MQTT or InfluxDB creates neither.
             - secretRef:
-                name: victual-mqtt
-                optional: true
+                name: {{ .Values.secrets.names.mqtt }}
+                optional: {{ not (include "victual.wantsMqttSecret" .) }}
             - secretRef:
-                name: victual-influxdb
-                optional: true
+                name: {{ .Values.secrets.names.influxdb }}
+                optional: {{ not (include "victual.wantsInfluxdbSecret" .) }}
           volumeMounts:
             - name: tmp-app
               mountPath: /tmp
@@ -242,12 +257,10 @@ spec:
               command: ["/opt/victual/healthcheck"]
             periodSeconds: 10
             timeoutSeconds: 5
+          {{- with .Values.resources.app }}
           resources:
-            limits:
-              memory: 512Mi
-            requests:
-              cpu: 100m
-              memory: 256Mi
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           # php-fpm's graceful stop. This field is alpha (feature gate ContainerStopSignals,
           # Kubernetes 1.33) and, on a cluster without the gate, is dropped by the API
           # server: the container then gets SIGTERM, which php-fpm and nginx treat as "stop
@@ -256,7 +269,7 @@ spec:
             stopSignal: SIGQUIT
 
         - name: web
-          image: ghcr.io/datagen24/victual-web:0.3.0
+          image: {{ include "victual.image" (dict "root" . "name" "victual-web") }}
           ports:
             - name: http
               containerPort: 8080
@@ -286,11 +299,9 @@ spec:
               command: ["/opt/victual/webcheck", "/login"]
             periodSeconds: 5
             failureThreshold: 6
+          {{- with .Values.resources.web }}
           resources:
-            limits:
-              memory: 128Mi
-            requests:
-              cpu: 50m
-              memory: 64Mi
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           lifecycle:
             stopSignal: SIGQUIT

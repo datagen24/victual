@@ -1,7 +1,3 @@
-# GENERATED from deploy/helm/victual/templates/label-workers.yaml by .devtools/ci/render_k3s.py
-# with ci/k3s-values.yaml. Edit the template and run the script; the lint job fails
-# when this file and the chart disagree (ADR-0038 decision 2).
-#
 # The two label workloads for Kubernetes: the renderer that produces artifacts and the
 # worker that prints them.
 #
@@ -55,6 +51,8 @@
 # old pod and each new job would claim from one printer's queue at once. Nothing in this
 # repository has ever applied it, per the note above, so this is guidance for a tree that
 # went further than this one rather than a migration anybody here has to run.
+{{- if .Values.labelWorkers.enabled }}
+{{- if include "victual.secretRendered" (dict "root" . "placeholder" true) }}
 ---
 # Issued by an administrator through POST /api/labels/workers/{id}/credentials and
 # POST /api/labels/workers/{id}/renderer-credentials, and typed: a renderer key is refused
@@ -65,14 +63,11 @@
 # own mechanism, the operator rotates it, and a host that can read this environment is
 # already a cluster compromise. The paired mode with its two clocks is for the USB case and
 # is not what this manifest deploys.
-apiVersion: v1
-kind: Secret
-metadata:
-  name: victual-label-credentials
-type: Opaque
-stringData:
-  renderer-key: "replace-me-with-a-label-renderer-key"
-  worker-key: "replace-me-with-a-label-worker-key"
+{{ include "victual.secretBody" (dict "root" . "key" "labelCredentials" "labels" false "data" (ternary
+    (dict "renderer-key" (.Values.secrets.inline.labelRendererKey | default "") "worker-key" (.Values.secrets.inline.labelWorkerKey | default ""))
+    (dict "renderer-key" "replace-me-with-a-label-renderer-key" "worker-key" "replace-me-with-a-label-worker-key")
+    (eq .Values.secrets.source "inline"))) }}
+{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -116,10 +111,10 @@ spec:
                 sizeLimit: 16Mi
             - name: credentials
               secret:
-                secretName: victual-label-credentials
+                secretName: {{ .Values.secrets.names.labelCredentials }}
           containers:
             - name: renderer
-              image: ghcr.io/datagen24/victual-label-renderer:0.3.0
+              image: {{ include "victual.image" (dict "root" . "name" "victual-label-renderer") }}
               args:
                 - "--api"
                 - "$(VICTUAL_API_BASE)"
@@ -141,13 +136,10 @@ spec:
                 - name: credentials
                   mountPath: /run/secrets
                   readOnly: true
+              {{- with .Values.resources.labelRenderer }}
               resources:
-                limits:
-                  cpu: "1"
-                  memory: 128Mi
-                requests:
-                  cpu: 50m
-                  memory: 32Mi
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
               securityContext:
                 readOnlyRootFilesystem: true
                 allowPrivilegeEscalation: false
@@ -210,10 +202,10 @@ spec:
                 sizeLimit: 16Mi
             - name: credentials
               secret:
-                secretName: victual-label-credentials
+                secretName: {{ .Values.secrets.names.labelCredentials }}
           containers:
             - name: worker
-              image: ghcr.io/datagen24/victual-label-worker:0.3.0
+              image: {{ include "victual.image" (dict "root" . "name" "victual-label-worker") }}
               args:
                 - "--api"
                 - "$(VICTUAL_API_BASE)"
@@ -243,16 +235,14 @@ spec:
                 - name: credentials
                   mountPath: /run/secrets
                   readOnly: true
+              {{- with .Values.resources.labelWorker }}
               resources:
-                limits:
-                  cpu: "1"
-                  memory: 128Mi
-                requests:
-                  cpu: 50m
-                  memory: 32Mi
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
               securityContext:
                 readOnlyRootFilesystem: true
                 allowPrivilegeEscalation: false
                 capabilities:
                   drop:
                     - ALL
+{{- end }}

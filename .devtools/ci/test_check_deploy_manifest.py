@@ -1,9 +1,10 @@
 from pathlib import Path
+import tempfile
 import unittest
 
 import yaml
 
-from check_deploy_manifest import validate
+from check_deploy_manifest import select_manifests, validate
 
 GOOD_CONTAINER = {
     "name": "app",
@@ -159,6 +160,33 @@ class DeployManifestTests(unittest.TestCase):
     def test_an_unknown_kind_carrying_no_containers_is_still_skipped(self):
         self.assertEqual(validate({"kind": "ConfigMap", "data": {"containers": "text"}}), [])
         self.assertEqual(validate({"kind": "Service", "spec": {"ports": [{"port": 80}]}}), [])
+
+
+class SelectManifestsTest(unittest.TestCase):
+    """ADR-0038 decision 3: a chart's templates are not YAML until rendered, so the glob leaves
+    them out and test_helm_chart.py checks the chart's renderings instead."""
+
+    def test_chart_templates_are_left_out_and_everything_else_stays(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in (
+                "deploy/k3s/victual.yaml",
+                "deploy/helm/victual/values.yaml",
+                "deploy/helm/victual/ci/k3s-values.yaml",
+                "deploy/helm/victual/templates/victual.yaml",
+                "deploy/helm/victual/templates/nested/job.yaml",
+                # Only a chart's templates: a directory called templates elsewhere is checked.
+                "deploy/kind/templates/thing.yaml",
+            ):
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
+                (root / name).write_text("{}\n")
+            selected = {p.relative_to(root).as_posix() for p in select_manifests(root)}
+        self.assertEqual(selected, {
+            "deploy/k3s/victual.yaml",
+            "deploy/helm/victual/values.yaml",
+            "deploy/helm/victual/ci/k3s-values.yaml",
+            "deploy/kind/templates/thing.yaml",
+        })
 
 
 if __name__ == "__main__":

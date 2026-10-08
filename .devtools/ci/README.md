@@ -74,6 +74,29 @@ To check it locally:
 python3 .devtools/ci/check_deploy_manifest.py
 ```
 
+The Helm chart's templates under `deploy/helm/*/templates/` are not YAML until Helm
+renders them, so the glob leaves them out
+([ADR-0038](../../docs/adr/0038-kubernetes-deployments-ship-as-a-helm-chart.md) decision 3).
+`test_helm_chart.py` checks the renderings instead: one per values file in
+`deploy/helm/victual/ci/`, each of which must pass, and one per file in `ci/negative/`,
+each of which must fail. It also checks that the unedited `values.example.yaml` is refused
+at install and that the schema refuses what `deploy/production/render.py` used to.
+
+## The k3s base is the chart's rendering
+
+`deploy/k3s/*.yaml` is generated: `render_k3s.py` runs `helm template` with
+`deploy/helm/victual/ci/k3s-values.yaml` and `--no-hooks`, and writes one file per
+template. `kustomization.yaml` there is hand-written. The `lint` job runs it with
+`--check`, which fails with the diff when the committed files and the chart disagree, and
+`test_helm_chart.py` fails on the same drift. Both need Helm; the job installs v4.3.0,
+checksum-pinned, because the comparison is byte for byte. Without Helm,
+`test_helm_chart.py` skips locally and fails under CI.
+
+```sh
+python3 .devtools/ci/render_k3s.py           # after editing the chart
+python3 .devtools/ci/render_k3s.py --check
+```
+
 ## Vendor paths in tests
 
 The `lint` job runs `check_vendor_paths.py` over every `.php` file under `tests/` and
