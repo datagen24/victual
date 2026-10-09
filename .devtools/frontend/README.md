@@ -241,8 +241,7 @@ and checks each outcome on the page and through the API or the stock ledger:
 - a unit label sent by the source (seeded with the S29 payload) shown as text and never as an
   element, approve_unit, candidate locations shown by name, and a bulk dismiss of 55 events that
   takes two requests and ends with none remaining
-- the medication filter, with the list response stubbed to add `medication_ref`, which the API
-  does not return yet
+- the medication filter, which groups rows by the `medication_ref` the API returns
 
 CI boots the instance on 8093 in `frontend-security`, runs the probe after the consumption
 recipe checks and tears the instance down.

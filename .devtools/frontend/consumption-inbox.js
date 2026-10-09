@@ -28,8 +28,7 @@
 //      (S29, AGENTS.md); the ambiguous-location candidates are shown as location names; approve_unit
 //      books. A bulk dismiss of 55 events loops until the server reports none remaining.
 //
-// Section f stubs the list response to add medication_ref, which the API does not return today (see
-// the DEFECT recorded in the pull request), and checks the page groups and filters by it when it arrives.
+//   f. The medication filter groups rows by the medication_ref the API returns.
 const { chromium, request: playwrightRequest } = require('playwright');
 const assert = require('node:assert/strict');
 
@@ -375,23 +374,15 @@ const takenEvent = (ref, extra = {}) => ({ status: 'taken', medication_ref: ref,
 		assert.equal((await api(page, 'consumption/events?state=dismissed&limit=500')).filter(e => e.source_event_id.startsWith('bulk-' + token)).length, 55);
 		step('e. unit label shown as text, approve_unit books, candidate locations by name, bulk dismiss of 55 loops to none remaining');
 
-		// --- f. medication_ref grouping, with the list response stubbed -------------------------
+		// --- f. medication_ref grouping -----------------------------------------------------------
 		await client.put('group-a-' + token, takenEvent('group-one-' + token));
 		await client.put('group-b-' + token, takenEvent('group-two-' + token));
-		await page.route('**/api/consumption/events?*state=needs_review*', async route =>
-		{
-			const response = await route.fetch();
-			const rows = await response.json();
-			rows.forEach(row => { if (row.source_event_id === 'group-a-' + token) row.medication_ref = 'group-one-' + token; if (row.source_event_id === 'group-b-' + token) row.medication_ref = 'group-two-' + token; });
-			await route.fulfill({ response, json: rows });
-		});
 		await page.goto(BASE + '/consumptioninbox');
 		await page.locator('#inbox-medication-label:not(.d-none)').waitFor();
 		await page.locator('#inbox-medication').selectOption('group-two-' + token);
 		assert.equal(await page.locator('#inbox-rows tr[data-event-key="' + SYSTEM + '/group-a-' + token + '"]').count(), 0);
 		assert.equal(await page.locator('#inbox-rows tr[data-event-key="' + SYSTEM + '/group-b-' + token + '"]').count(), 1);
-		await page.unroute('**/api/consumption/events?*state=needs_review*');
-		step('f. medication filter groups rows once medication_ref is in the response (stubbed)');
+		step('f. medication filter groups rows by the medication_ref the API returns');
 
 		assert.deepEqual(errors, [], 'no page error');
 		assert.equal(await page.evaluate(() => window.__xss), undefined);

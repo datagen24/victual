@@ -203,3 +203,19 @@ answers `409 invalid_transition` without stopping the rest. With a filter the re
 the matching events beyond those handled. A client repeats the call until `remaining` is
 `0` for `void`, `keep`, `dismiss`, `rebook` and `approve_unit`, which move an event out of the
 filter. `retry` can leave an event in the filter, so a client sends the list form.
+
+A filter matches the state a person sees, so events whose bookings were undone in the stock
+journal match `state: undone` even though they are stored as booked until something touches
+them.
+
+!!! note "Order matters for a bulk void"
+    The filter takes the oldest `occurred_at` first. The stock journal refuses to undo a booking
+    while a later booking draws on the same purchase. A client that booked several doses from one
+    purchase in the order they happened therefore gets `undo_refused` for every dose except the
+    last-booked one, and those events leave the filter. They stay `needs_review` with the stock
+    deducted, and `void` no longer applies to them.
+
+    Undoing the most recent booking first avoids this, so a person who needs to restore a run of doses undoes them newest first in the stock
+    journal. [ADR-0041](../../adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md)
+    fixes the filter order, and a different order is a decision for that record.
+

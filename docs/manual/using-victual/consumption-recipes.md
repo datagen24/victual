@@ -87,6 +87,11 @@ share with every right, which the new owner can remove. Only the owner deletes a
 Deleting it removes its lines and shares; the recorded consumptions stay in the stock history.
 Deleting a user's account deletes the recipes that user owns.
 
+## Events from other apps
+
+An app can report consumption on your behalf. Events that could not book wait in the
+[consumption inbox](consumption-events.md).
+
 ## The API
 
 The routes are under `/api/consumption/recipes`; see [The REST API](../operator/rest-api.md)
