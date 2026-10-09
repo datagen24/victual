@@ -53,6 +53,30 @@ object read from that domain requires it: `STOCK_VIEW`, `SHOPPINGLIST_VIEW`, `CH
 events from domains the caller can read. An installation upgraded from before this model
 existed keeps all six for its existing users; only a newly created user starts without them.
 
+## Consumption recipes
+
+A [consumption recipe](../using-victual/consumption-recipes.md) is visible only to its owner
+and the users it is shared with. A share names a user and the rights they hold on that one
+recipe (view, record consumption, edit, undo, share). It confers no permission and changes
+no one's effective permissions, so it needs no entry in the permission tree and the rules for
+granting permissions do not apply to it. A right works only together with the permission the
+same act needs elsewhere:
+
+| Act on a recipe | Share right | Also needs |
+|---|---|---|
+| List or open | Any share, or ownership | `STOCK_VIEW` |
+| Create | None | `STOCK_VIEW` and `STOCK_CONSUME` |
+| Record consumption | Record consumption | `STOCK_VIEW` and `STOCK_CONSUME` |
+| Edit | Edit | `STOCK_VIEW` |
+| Undo through the recipe | Undo | `STOCK_VIEW` and `STOCK_EDIT` |
+| Share, or change a share | Share | `STOCK_VIEW` |
+| Delete, or transfer ownership | Ownership | `STOCK_VIEW` |
+
+`ADMIN` and the `USERS_*` permissions give no access to a recipe. An account administrator who
+can change a user's password can sign in as that user
+([ADR-0014](../../adr/0014-administering-a-user-is-a-subset-question.md)), which this model
+accepts for a household instance.
+
 ## Permission reference
 
 `ADMIN` implies every other permission. The rest, by domain:

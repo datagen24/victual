@@ -23,6 +23,7 @@ use Victual\Controllers\Api\TasksApiController;
 use Victual\Controllers\Api\UsersApiController;
 use Victual\Controllers\BatteriesController;
 use Victual\Controllers\CalendarController;
+use Victual\Controllers\ConsumptionRecipesController;
 use Victual\Controllers\ChoresController;
 use Victual\Controllers\EquipmentController;
 use Victual\Controllers\GenericEntityController;
@@ -119,6 +120,9 @@ $app->group('', function (RouteCollectorProxy $group)
 	$group->get('/recipe/{recipeId}', [RecipesController::class, 'RecipeEditForm']);
 	$group->get('/recipe/{recipeId}/pos/{recipePosId}', [RecipesController::class, 'RecipePosEditForm']);
 	$group->get('/recipessettings', [RecipesController::class, 'RecipesSettings']);
+
+	// Private consumption recipes (ADR-0040): a shell page; the data comes from /api/consumption
+	$group->get('/consumptionrecipes', [ConsumptionRecipesController::class, 'Overview']);
 
 	// Meal plan routes
 	$group->get('/mealplan', [RecipesController::class, 'MealPlan']);

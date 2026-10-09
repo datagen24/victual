@@ -114,7 +114,10 @@ Victual.Api.DefaultErrorHandler = function (xhr)
 				// printable when a renderer has produced bytes Victual verified - and a
 				// wrapper that knew only 200 and 204 reported every accepted request as a
 				// failure, with the status text where the error message belongs.
-				if (xhr.status === 200 || xhr.status === 202 || xhr.status === 204)
+				// 201 likewise: the consumption routes answer it for a newly recorded consumption
+				// (ADR-0041) and 200 for a repeat of the same request, and only the first is
+				// distinguishable by status.
+				if (xhr.status === 200 || xhr.status === 201 || xhr.status === 202 || xhr.status === 204)
 				{
 					if (xhr.status === 204)
 					{
@@ -207,7 +210,7 @@ Victual.Api.DefaultErrorHandler = function (xhr)
 	 * @param {Object} jsonData Request body, sent as JSON
 	 * @param {Function} [success] Called with the parsed JSON response ({} on HTTP 204) and
 	 *                             the XMLHttpRequest, for a response header
-	 * @param {Function} [error] Called with the XMLHttpRequest on any non 200/204 status
+	 * @param {Function} [error] Called with the XMLHttpRequest on any non 200/201/202/204 status
 	 * @param {Object} [headers] Extra request headers, e.g. an Idempotency-Key
 	 */
 	Victual.Api.Post = function (apiFunction, jsonData, success, error, headers)

@@ -42,6 +42,20 @@ by deleting your MCP keys, without touching the keys your other clients use.
   making the request, its key type, whether it is read-only, and the permissions its user
   holds.
 
+## Consumption recipes
+
+The routes under `/api/consumption/recipes` serve private consumption recipes
+([Consumption recipes](../using-victual/consumption-recipes.md)). They are not exposed
+entities: `/api/objects/consumption_recipes` and its sibling tables answer `400`. A recipe the
+key's user holds no share on is absent from lists and answers `404` on a direct request,
+the same as a recipe that does not exist; a user who can see a recipe but lacks the right
+for a write gets `403`. Errors carry `error_message` and a stable `error` token, for example
+`not_found`, `right_missing`, `permission_missing`, `stock_refused` and `no_conversion`.
+
+A consume request with a `request_id` is idempotent: a repeat answers `200` with `replayed`
+true and books nothing. Send `occurred_at` with the client's own offset; the booked date is the
+date written in that offset, and a time sent as `Z` books the UTC date.
+
 ## What a key can do
 
 An API key inherits exactly its owning user's permissions; it is not a separate,
