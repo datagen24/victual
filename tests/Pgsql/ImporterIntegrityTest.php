@@ -626,7 +626,7 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 	/**
 	 * ADR-0040 and ADR-0041 (migration 0305): the private consumption tables are derived state no
 	 * supported source can carry. A non-forced import refuses a target that holds any of them, as it
-	 * does for every other derived table; a forced one clears all five.
+	 * does for every other derived table; a forced one clears all six.
 	 */
 	public function testImportRefusesThenClearsPrivateConsumptionData(): void
 	{
@@ -639,6 +639,8 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 		$event = (int)$db->query("INSERT INTO consumption_events (user_id, source_system, source_event_id, recipe_id, state, transaction_id, occurred_at)
 			VALUES ($user, 'manual', 'import-private', $recipe, 'booked', 'import-private-tx', now()) RETURNING id")->fetchColumn();
 		$db->exec("INSERT INTO consumption_event_lines (event_id, product_id, amount) VALUES ($event, $product, 1)");
+		$db->exec("INSERT INTO consumption_mappings (user_id, source_system, medication_ref, target_type, product_id, location_mode, effective_from)
+			VALUES ($user, 'healthkit', 'import-private-ref', 'product', $product, 'single', now())");
 
 		$source = $this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MAX);
 		try
@@ -658,7 +660,7 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 		{
 		})->Import(true);
 
-		foreach (['consumption_recipes', 'consumption_recipe_lines', 'consumption_recipe_shares', 'consumption_events', 'consumption_event_lines'] as $table)
+		foreach (['consumption_recipes', 'consumption_recipe_lines', 'consumption_recipe_shares', 'consumption_events', 'consumption_event_lines', 'consumption_mappings'] as $table)
 		{
 			self::assertSame(0, (int)$db->query("SELECT count(*) FROM $table")->fetchColumn(), "$table is empty after a forced import");
 		}

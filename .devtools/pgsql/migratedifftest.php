@@ -84,7 +84,7 @@ const ENGINE_EXCLUSIVE_TABLES = ['files', 'roles', 'role_permissions', 'user_rol
  // ADR-0040 and ADR-0041, migration 0305. Same freeze: private consumption recipes, their shares
  // and consumption events are PostgreSQL-only application data checked by pgTAP 031 and PHPUnit.
  'consumption_recipes', 'consumption_recipe_lines', 'consumption_recipe_shares', 'consumption_events',
- 'consumption_event_lines'];
+ 'consumption_event_lines', 'consumption_mappings'];
 
 $sqlitePath = getenv('MIGRATEDIFF_SQLITE_PATH');
 $pgsqlDsn = getenv('MIGRATEDIFF_PGSQL_DSN');
