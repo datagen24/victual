@@ -1,0 +1,385 @@
+{
+    "probe": "history",
+    "environment": {
+        "php": "8.5.10",
+        "php_timezone": "UTC",
+        "php_ini_date_timezone": "UTC",
+        "php_tzdata": "2026.3",
+        "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+        "postgres_server_timezone_default": "Etc/UTC"
+    },
+    "steps": 13,
+    "steps_failing_the_hand_written_expectation": 1,
+    "failing_steps": [
+        {
+            "step": "1.3 B voided: A is current again; section 2/5 say a superseded explicit date stays ended",
+            "diff": {
+                "source": {
+                    "expected": "fallback",
+                    "got": "explicit"
+                },
+                "reorder_date": {
+                    "expected": "2026-03-18",
+                    "got": "2026-03-01"
+                }
+            }
+        }
+    ],
+    "results": [
+        {
+            "step": "1.1 explicit date bound to fill A (current)",
+            "pass": true,
+            "diff": [],
+            "state": {
+                "current_fill_id": 1,
+                "current_filled_on": "2026-01-01",
+                "reorder_date": "2026-03-01",
+                "source": "explicit",
+                "reason": null,
+                "explicit_applies": true,
+                "history_rows_kept": [
+                    {
+                        "id": 1,
+                        "filled_on": "2026-01-01",
+                        "supplied_days": 90,
+                        "voided": false
+                    }
+                ]
+            }
+        },
+        {
+            "step": "1.2 newer fill B recorded: explicit bound to A stops applying, fallback on B",
+            "pass": true,
+            "diff": [],
+            "state": {
+                "current_fill_id": 2,
+                "current_filled_on": "2026-03-25",
+                "reorder_date": "2026-06-09",
+                "source": "fallback",
+                "reason": null,
+                "explicit_applies": false,
+                "history_rows_kept": [
+                    {
+                        "id": 1,
+                        "filled_on": "2026-01-01",
+                        "supplied_days": 90,
+                        "voided": false
+                    },
+                    {
+                        "id": 2,
+                        "filled_on": "2026-03-25",
+                        "supplied_days": 90,
+                        "voided": false
+                    }
+                ]
+            }
+        },
+        {
+            "step": "1.3 B voided: A is current again; section 2/5 say a superseded explicit date stays ended",
+            "pass": false,
+            "diff": {
+                "source": {
+                    "expected": "fallback",
+                    "got": "explicit"
+                },
+                "reorder_date": {
+                    "expected": "2026-03-18",
+                    "got": "2026-03-01"
+                }
+            },
+            "state": {
+                "current_fill_id": 1,
+                "current_filled_on": "2026-01-01",
+                "reorder_date": "2026-03-01",
+                "source": "explicit",
+                "reason": null,
+                "explicit_applies": true,
+                "history_rows_kept": [
+                    {
+                        "id": 1,
+                        "filled_on": "2026-01-01",
+                        "supplied_days": 90,
+                        "voided": false
+                    },
+                    {
+                        "id": 2,
+                        "filled_on": "2026-03-25",
+                        "supplied_days": 90,
+                        "voided": true
+                    }
+                ]
+            }
+        },
+        {
+            "step": "2.1 explicit date bound to current fill B",
+            "pass": true,
+            "diff": [],
+            "state": {
+                "current_fill_id": 4,
+                "current_filled_on": "2026-04-01",
+                "reorder_date": "2026-04-20",
+                "source": "explicit",
+                "reason": null,
+                "explicit_applies": true,
+                "history_rows_kept": [
+                    {
+                        "id": 3,
+                        "filled_on": "2026-01-01",
+                        "supplied_days": 90,
+                        "voided": false
+                    },
+                    {
+                        "id": 4,
+                        "filled_on": "2026-04-01",
+                        "supplied_days": 30,
+                        "voided": false
+                    }
+                ]
+            }
+        },
+        {
+            "step": "2.2 B voided: A is current, explicit date bound to voided B ceases to apply, both fills kept",
+            "pass": true,
+            "diff": [],
+            "state": {
+                "current_fill_id": 3,
+                "current_filled_on": "2026-01-01",
+                "reorder_date": "2026-03-18",
+                "source": "fallback",
+                "reason": null,
+                "explicit_applies": false,
+                "history_rows_kept": [
+                    {
+                        "id": 3,
+                        "filled_on": "2026-01-01",
+                        "supplied_days": 90,
+                        "voided": false
+                    },
+                    {
+                        "id": 4,
+                        "filled_on": "2026-04-01",
+                        "supplied_days": 30,
+                        "voided": true
+                    }
+                ]
+            }
+        },
+        {
+            "step": "2.3 history keeps both rows",
+            "pass": true
+        },
+        {
+            "step": "3.1 same filled_on: greatest id is current",
+            "pass": true,
+            "diff": [],
+            "state": {
+                "current_fill_id": 6,
+                "current_filled_on": "2026-02-15",
+                "reorder_date": "2026-03-03",
+                "source": "fallback",
+                "reason": null,
+                "explicit_applies": false,
+                "history_rows_kept": [
+                    {
+                        "id": 5,
+                        "filled_on": "2026-02-15",
+                        "supplied_days": 30,
+                        "voided": false
+                    },
+                    {
+                        "id": 6,
+                        "filled_on": "2026-02-15",
+                        "supplied_days": 30,
+                        "voided": false
+                    }
+                ]
+            }
+        },
+        {
+            "step": "3.2 a backdated fill recorded last is in history but not current",
+            "pass": true,
+            "diff": [],
+            "state": {
+                "current_fill_id": 6,
+                "current_filled_on": "2026-02-15",
+                "reorder_date": "2026-03-03",
+                "source": "fallback",
+                "reason": null,
+                "explicit_applies": false,
+                "history_rows_kept": [
+                    {
+                        "id": 5,
+                        "filled_on": "2026-02-15",
+                        "supplied_days": 30,
+                        "voided": false
+                    },
+                    {
+                        "id": 6,
+                        "filled_on": "2026-02-15",
+                        "supplied_days": 30,
+                        "voided": false
+                    },
+                    {
+                        "id": 7,
+                        "filled_on": "2025-12-01",
+                        "supplied_days": 30,
+                        "voided": false
+                    }
+                ]
+            }
+        },
+        {
+            "step": "3.3 tie member voided: the other member is current",
+            "pass": true,
+            "diff": [],
+            "state": {
+                "current_fill_id": 5,
+                "current_filled_on": "2026-02-15",
+                "reorder_date": "2026-03-03",
+                "source": "fallback",
+                "reason": null,
+                "explicit_applies": false,
+                "history_rows_kept": [
+                    {
+                        "id": 5,
+                        "filled_on": "2026-02-15",
+                        "supplied_days": 30,
+                        "voided": false
+                    },
+                    {
+                        "id": 6,
+                        "filled_on": "2026-02-15",
+                        "supplied_days": 30,
+                        "voided": true
+                    },
+                    {
+                        "id": 7,
+                        "filled_on": "2025-12-01",
+                        "supplied_days": 30,
+                        "voided": false
+                    }
+                ]
+            }
+        },
+        {
+            "step": "3.4 only the backdated fill is left unvoided: it is current",
+            "pass": true,
+            "diff": [],
+            "state": {
+                "current_fill_id": 7,
+                "current_filled_on": "2025-12-01",
+                "reorder_date": "2025-12-17",
+                "source": "fallback",
+                "reason": null,
+                "explicit_applies": false,
+                "history_rows_kept": [
+                    {
+                        "id": 5,
+                        "filled_on": "2026-02-15",
+                        "supplied_days": 30,
+                        "voided": true
+                    },
+                    {
+                        "id": 6,
+                        "filled_on": "2026-02-15",
+                        "supplied_days": 30,
+                        "voided": true
+                    },
+                    {
+                        "id": 7,
+                        "filled_on": "2025-12-01",
+                        "supplied_days": 30,
+                        "voided": false
+                    }
+                ]
+            }
+        },
+        {
+            "step": "3.5 every fill voided: unknown, no_fill",
+            "pass": true,
+            "diff": [],
+            "state": {
+                "current_fill_id": null,
+                "current_filled_on": null,
+                "reorder_date": null,
+                "source": null,
+                "reason": "no_fill",
+                "explicit_applies": false,
+                "history_rows_kept": [
+                    {
+                        "id": 5,
+                        "filled_on": "2026-02-15",
+                        "supplied_days": 30,
+                        "voided": true
+                    },
+                    {
+                        "id": 6,
+                        "filled_on": "2026-02-15",
+                        "supplied_days": 30,
+                        "voided": true
+                    },
+                    {
+                        "id": 7,
+                        "filled_on": "2025-12-01",
+                        "supplied_days": 30,
+                        "voided": true
+                    }
+                ]
+            }
+        },
+        {
+            "step": "4.1 backdated fill: explicit date on the still-current fill keeps applying",
+            "pass": true,
+            "diff": [],
+            "state": {
+                "current_fill_id": 8,
+                "current_filled_on": "2026-02-01",
+                "reorder_date": "2026-04-10",
+                "source": "explicit",
+                "reason": null,
+                "explicit_applies": true,
+                "history_rows_kept": [
+                    {
+                        "id": 8,
+                        "filled_on": "2026-02-01",
+                        "supplied_days": 90,
+                        "voided": false
+                    },
+                    {
+                        "id": 9,
+                        "filled_on": "2025-11-01",
+                        "supplied_days": 90,
+                        "voided": false
+                    }
+                ]
+            }
+        },
+        {
+            "step": "5.1 void and re-record identical fill: explicit date does not carry over",
+            "pass": true,
+            "diff": [],
+            "state": {
+                "current_fill_id": 11,
+                "current_filled_on": "2026-01-01",
+                "reorder_date": "2026-03-18",
+                "source": "fallback",
+                "reason": null,
+                "explicit_applies": false,
+                "history_rows_kept": [
+                    {
+                        "id": 10,
+                        "filled_on": "2026-01-01",
+                        "supplied_days": 90,
+                        "voided": true
+                    },
+                    {
+                        "id": 11,
+                        "filled_on": "2026-01-01",
+                        "supplied_days": 90,
+                        "voided": false
+                    }
+                ]
+            }
+        }
+    ]
+}

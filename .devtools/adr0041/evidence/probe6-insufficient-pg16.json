@@ -1,0 +1,145 @@
+{
+    "probe": "typed-insufficient-stock",
+    "environment": {
+        "php": "8.5.10",
+        "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+        "deadlock_timeout": "100ms",
+        "max_connections": "250"
+    },
+    "run_seed": 460001,
+    "tolerance": 1.0e-9,
+    "A_thrown_today": {
+        "by_cause": {
+            "amount is zero": {
+                "outcome": "refused",
+                "class": "InvalidArgumentException",
+                "code": 0,
+                "message": "Amount must be greater than 1.0E-9"
+            },
+            "amount is negative": {
+                "outcome": "refused",
+                "class": "InvalidArgumentException",
+                "code": 0,
+                "message": "Stock amount must be finite and non-negative"
+            },
+            "amount is NaN": {
+                "outcome": "refused",
+                "class": "InvalidArgumentException",
+                "code": 0,
+                "message": "Stock amount must be finite and non-negative"
+            },
+            "product does not exist": {
+                "outcome": "refused",
+                "class": "Exception",
+                "code": 0,
+                "message": "Product does not exist or is inactive"
+            },
+            "product is inactive": {
+                "outcome": "refused",
+                "class": "Exception",
+                "code": 0,
+                "message": "Product does not exist or is inactive"
+            },
+            "location does not exist": {
+                "outcome": "refused",
+                "class": "Exception",
+                "code": 0,
+                "message": "Location does not exist"
+            },
+            "insufficient: product-wide": {
+                "outcome": "refused",
+                "class": "Exception",
+                "code": 0,
+                "message": "Amount to be consumed cannot be > current stock amount (if supplied, at the desired location)"
+            },
+            "insufficient: location scope, another location holds enough": {
+                "outcome": "refused",
+                "class": "Exception",
+                "code": 0,
+                "message": "Amount to be consumed cannot be > current stock amount (if supplied, at the desired location)"
+            },
+            "insufficient: location holds none": {
+                "outcome": "refused",
+                "class": "Exception",
+                "code": 0,
+                "message": "Amount to be consumed cannot be > current stock amount (if supplied, at the desired location)"
+            },
+            "insufficient: named stock entry too small": {
+                "outcome": "refused",
+                "class": "Exception",
+                "code": 0,
+                "message": "Amount to be consumed cannot be > current stock amount (if supplied, at the desired location)"
+            },
+            "transaction type not valid": {
+                "outcome": "refused",
+                "class": "Exception",
+                "code": 0,
+                "message": "Transaction type purchase is not valid (StockService.ConsumeProduct)"
+            },
+            "fraction of a measured container": {
+                "outcome": "refused",
+                "class": "Exception",
+                "code": 0,
+                "message": "Cannot consume a fraction of a measured container: weigh it instead (the working container flow), or consume the whole container"
+            },
+            "negative stock row": {
+                "outcome": "not_constructible",
+                "sqlstate": "23514",
+                "message": "SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock\" violates check constraint \"stock_amount_non_negative_check\"\nDETAIL:"
+            }
+        },
+        "causes_sharing_one_class_and_code": {
+            "InvalidArgumentException / code 0": [
+                "amount is zero",
+                "amount is negative",
+                "amount is NaN"
+            ],
+            "Exception / code 0": [
+                "product does not exist",
+                "product is inactive",
+                "location does not exist",
+                "insufficient: product-wide",
+                "insufficient: location scope, another location holds enough",
+                "insufficient: location holds none",
+                "insufficient: named stock entry too small",
+                "transaction type not valid",
+                "fraction of a measured container"
+            ]
+        },
+        "typed_exception_classes_in_services": "see grep in RESULTS.md"
+    },
+    "B_precheck_vs_consume": {
+        "cases": 300,
+        "seed_rule": "run_seed + case number",
+        "matrix": {
+            "precheck=sufficient actual=accepted": 123,
+            "precheck=insufficient actual=refused_insufficient": 177
+        },
+        "scope_aware_precheck_disagreements": 0,
+        "disagreement_samples": [],
+        "product_wide_precheck_ignoring_scope": {
+            "agrees": 146,
+            "disagrees": 154
+        }
+    },
+    "C_named_cases": {
+        "another location holds stock: need 7 at A (holds 3), product total 23": {
+            "scope_aware": "insufficient",
+            "product_wide": "sufficient",
+            "consume": "refused_insufficient"
+        },
+        "child location holds the stock, scope is the parent": {
+            "scope_aware": "insufficient",
+            "consume": "refused_insufficient"
+        },
+        "only stock is a measured container, need 0.5": {
+            "scope_aware": "sufficient",
+            "consume": "refused_other:Cannot consume a fraction of a measured container: weigh it instead (t"
+        },
+        "only stock is a measured container, need 1 (the whole container)": {
+            "scope_aware": "sufficient",
+            "consume": "accepted"
+        }
+    },
+    "lineage_violations_after_all": 1
+}

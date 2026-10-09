@@ -1,0 +1,8 @@
+{"label":"before","phase":"stockcoverage","exit":0,"seconds":100}
+{"label":"before","phase":"stockconcurrency","exit":0,"seconds":8}
+{"label":"before","phase":"recipeoperations","exit":0,"seconds":6}
+{"label":"before","phase":"stockmaintenance","exit":0,"seconds":11}
+{"label":"after","phase":"stockcoverage","exit":0,"seconds":118}
+{"label":"after","phase":"stockconcurrency","exit":0,"seconds":10}
+{"label":"after","phase":"recipeoperations","exit":0,"seconds":6}
+{"label":"after","phase":"stockmaintenance","exit":0,"seconds":10}

@@ -1,0 +1,421 @@
+{
+    "probe": "lock-order",
+    "environment": {
+        "php": "8.5.10",
+        "postgres": "15.19 (Debian 15.19-1.pgdg13+2)",
+        "deadlock_timeout": "100ms",
+        "max_connections": "250"
+    },
+    "run_seed": 430001,
+    "trials_per_scenario": 300,
+    "workers": 4,
+    "scenarios": {
+        "A_event_vs_direct": {
+            "trials": 300,
+            "first_seed": 530002,
+            "last_seed": 530301,
+            "outcomes": {
+                "_all:ok": 755,
+                "direct_multi_ascending:ok": 218,
+                "direct_single:ok": 237,
+                "event:ok": 300
+            },
+            "refusal_messages": {},
+            "deadlocks_40P01": 0,
+            "trials_with_a_deadlock_sample_seeds": [],
+            "invariant_violations": [],
+            "latency_ms": {
+                "p50": 90.1,
+                "p95": 238.9,
+                "max": 384.4
+            }
+        },
+        "B_event_vs_undo": {
+            "trials": 300,
+            "first_seed": 630002,
+            "last_seed": 630301,
+            "outcomes": {
+                "_all:ok": 805,
+                "_all:refused_already_undone": 41,
+                "_all:refused_dependent_booking": 64,
+                "direct_single:ok": 164,
+                "event:ok": 300,
+                "undo_booking:ok": 111,
+                "undo_booking:refused_already_undone": 22,
+                "undo_booking:refused_dependent_booking": 12,
+                "undo_tx_1:ok": 84,
+                "undo_tx_1:refused_already_undone": 19,
+                "undo_tx_1:refused_dependent_booking": 44,
+                "undo_tx_2:ok": 146,
+                "undo_tx_2:refused_dependent_booking": 8
+            },
+            "refusal_messages": {
+                "undo_booking: Booking does not exist or was already undone": 22,
+                "undo_tx_2: Booking has subsequent dependent bookings, undo not possible": 8,
+                "undo_tx_1: Booking does not exist or was already undone": 19,
+                "undo_tx_1: Booking has subsequent dependent bookings, undo not possible": 44,
+                "undo_booking: Booking has subsequent dependent bookings, undo not possible": 12
+            },
+            "deadlocks_40P01": 0,
+            "trials_with_a_deadlock_sample_seeds": [],
+            "invariant_violations": [],
+            "latency_ms": {
+                "p50": 76.4,
+                "p95": 269.6,
+                "max": 389.6
+            }
+        },
+        "B2_undo_transaction_vs_undo_one_booking": {
+            "trials": 300,
+            "first_seed": 730002,
+            "last_seed": 730301,
+            "outcomes": {
+                "_all:ok": 300,
+                "_all:refused_already_undone": 446,
+                "undo_booking:ok": 157,
+                "undo_booking:refused_already_undone": 143,
+                "undo_tx:ok": 112,
+                "undo_tx:refused_already_undone": 188,
+                "undo_tx_second:ok": 31,
+                "undo_tx_second:refused_already_undone": 115
+            },
+            "refusal_messages": {
+                "undo_booking: Booking does not exist or was already undone": 143,
+                "undo_tx: Booking does not exist or was already undone": 188,
+                "undo_tx_second: Booking does not exist or was already undone": 115
+            },
+            "deadlocks_40P01": 0,
+            "trials_with_a_deadlock_sample_seeds": [],
+            "invariant_violations": [],
+            "latency_ms": {
+                "p50": 51,
+                "p95": 77.9,
+                "max": 93.7
+            }
+        },
+        "C1_corrections_prelocked_union_different_recipes": {
+            "trials": 300,
+            "first_seed": 830002,
+            "last_seed": 830301,
+            "outcomes": {
+                "_all:ok": 541,
+                "_all:refused_already_undone": 64,
+                "_all:refused_dependent_booking": 229,
+                "correction:ok": 368,
+                "correction:refused_already_undone": 24,
+                "correction:refused_dependent_booking": 208,
+                "direct_single:ok": 73,
+                "event:ok": 76,
+                "undo_tx:ok": 24,
+                "undo_tx:refused_already_undone": 40,
+                "undo_tx:refused_dependent_booking": 21
+            },
+            "refusal_messages": {
+                "correction: This transaction was not found or already undone": 24,
+                "correction: Booking has subsequent dependent bookings, undo not possible": 208,
+                "undo_tx: Booking does not exist or was already undone": 40,
+                "undo_tx: Booking has subsequent dependent bookings, undo not possible": 21
+            },
+            "deadlocks_40P01": 0,
+            "trials_with_a_deadlock_sample_seeds": [],
+            "invariant_violations": [],
+            "latency_ms": {
+                "p50": 347.5,
+                "p95": 733.6,
+                "max": 1172.4
+            }
+        },
+        "C2_corrections_no_prelock_different_recipes": {
+            "trials": 300,
+            "first_seed": 930002,
+            "last_seed": 930301,
+            "outcomes": {
+                "_all:deadlock_40P01": 162,
+                "_all:ok": 574,
+                "_all:refused_already_undone": 56,
+                "_all:refused_dependent_booking": 31,
+                "correction:deadlock_40P01": 130,
+                "correction:ok": 430,
+                "correction:refused_already_undone": 14,
+                "correction:refused_dependent_booking": 26,
+                "direct_single:deadlock_40P01": 1,
+                "direct_single:ok": 71,
+                "event:deadlock_40P01": 26,
+                "event:ok": 57,
+                "undo_tx:deadlock_40P01": 5,
+                "undo_tx:ok": 16,
+                "undo_tx:refused_already_undone": 42,
+                "undo_tx:refused_dependent_booking": 5
+            },
+            "refusal_messages": {
+                "undo_tx: Booking does not exist or was already undone": 42,
+                "correction: SQLSTATE[40P01]: Deadlock detected: 7 ERROR:  deadlock detected\nDETAIL:  Process 67 waits for ExclusiveLock on": 92,
+                "correction: SQLSTATE[40P01]: Deadlock detected: 7 ERROR:  deadlock detected\nDETAIL:  Process 66 waits for ExclusiveLock on": 38,
+                "event: SQLSTATE[40P01]: Deadlock detected: 7 ERROR:  deadlock detected\nDETAIL:  Process 68 waits for ExclusiveLock on": 26,
+                "correction: Booking has subsequent dependent bookings, undo not possible": 26,
+                "undo_tx: SQLSTATE[40P01]: Deadlock detected: 7 ERROR:  deadlock detected\nDETAIL:  Process 68 waits for ExclusiveLock on": 5,
+                "direct_single: SQLSTATE[40P01]: Deadlock detected: 7 ERROR:  deadlock detected\nDETAIL:  Process 68 waits for ExclusiveLock on": 1,
+                "correction: Booking does not exist or was already undone": 14,
+                "undo_tx: Booking has subsequent dependent bookings, undo not possible": 5
+            },
+            "deadlocks_40P01": 162,
+            "trials_with_a_deadlock_sample_seeds": [
+                930003,
+                930006,
+                930009,
+                930010,
+                930011,
+                930013,
+                930018,
+                930020,
+                930021,
+                930022
+            ],
+            "invariant_violations": [],
+            "latency_ms": {
+                "p50": 485.1,
+                "p95": 1065.1,
+                "max": 1471.2
+            }
+        },
+        "C3_corrections_prelocked_union_same_recipe_share": {
+            "trials": 300,
+            "first_seed": 1030002,
+            "last_seed": 1030301,
+            "outcomes": {
+                "_all:ok": 532,
+                "_all:refused_already_undone": 49,
+                "_all:refused_dependent_booking": 246,
+                "correction:ok": 362,
+                "correction:refused_already_undone": 14,
+                "correction:refused_dependent_booking": 224,
+                "direct_single:ok": 78,
+                "event:ok": 78,
+                "undo_tx:ok": 14,
+                "undo_tx:refused_already_undone": 35,
+                "undo_tx:refused_dependent_booking": 22
+            },
+            "refusal_messages": {
+                "correction: Booking has subsequent dependent bookings, undo not possible": 224,
+                "undo_tx: Booking does not exist or was already undone": 35,
+                "undo_tx: Booking has subsequent dependent bookings, undo not possible": 22,
+                "correction: This transaction was not found or already undone": 14
+            },
+            "deadlocks_40P01": 0,
+            "trials_with_a_deadlock_sample_seeds": [],
+            "invariant_violations": [],
+            "latency_ms": {
+                "p50": 571.4,
+                "p95": 1165.4,
+                "max": 1789.6
+            }
+        },
+        "C4_corrections_no_prelock_same_recipe_share": {
+            "trials": 300,
+            "first_seed": 1130002,
+            "last_seed": 1130301,
+            "outcomes": {
+                "_all:deadlock_40P01": 126,
+                "_all:ok": 590,
+                "_all:refused_already_undone": 64,
+                "_all:refused_dependent_booking": 47,
+                "correction:deadlock_40P01": 119,
+                "correction:ok": 422,
+                "correction:refused_already_undone": 14,
+                "correction:refused_dependent_booking": 45,
+                "direct_single:ok": 78,
+                "event:deadlock_40P01": 7,
+                "event:ok": 69,
+                "undo_tx:ok": 21,
+                "undo_tx:refused_already_undone": 50,
+                "undo_tx:refused_dependent_booking": 2
+            },
+            "refusal_messages": {
+                "correction: Booking has subsequent dependent bookings, undo not possible": 45,
+                "correction: SQLSTATE[40P01]: Deadlock detected: 7 ERROR:  deadlock detected\nDETAIL:  Process 67 waits for ExclusiveLock on": 76,
+                "undo_tx: Booking does not exist or was already undone": 50,
+                "correction: SQLSTATE[40P01]: Deadlock detected: 7 ERROR:  deadlock detected\nDETAIL:  Process 66 waits for ExclusiveLock on": 43,
+                "correction: Booking does not exist or was already undone": 14,
+                "event: SQLSTATE[40P01]: Deadlock detected: 7 ERROR:  deadlock detected\nDETAIL:  Process 68 waits for ExclusiveLock on": 7,
+                "undo_tx: Booking has subsequent dependent bookings, undo not possible": 2
+            },
+            "deadlocks_40P01": 126,
+            "trials_with_a_deadlock_sample_seeds": [
+                1130003,
+                1130006,
+                1130007,
+                1130008,
+                1130009,
+                1130013,
+                1130014,
+                1130015,
+                1130017,
+                1130019
+            ],
+            "invariant_violations": [],
+            "latency_ms": {
+                "p50": 692.4,
+                "p95": 1439.3,
+                "max": 2182.9
+            }
+        },
+        "C5_corrections_no_prelock_same_recipe_for_update": {
+            "trials": 300,
+            "first_seed": 1230002,
+            "last_seed": 1230301,
+            "outcomes": {
+                "_all:deadlock_40P01": 13,
+                "_all:ok": 510,
+                "_all:refused_already_undone": 80,
+                "_all:refused_dependent_booking": 227,
+                "correction:deadlock_40P01": 1,
+                "correction:ok": 330,
+                "correction:refused_already_undone": 42,
+                "correction:refused_dependent_booking": 227,
+                "direct_single:ok": 70,
+                "event:deadlock_40P01": 12,
+                "event:ok": 68,
+                "undo_tx:ok": 42,
+                "undo_tx:refused_already_undone": 38
+            },
+            "refusal_messages": {
+                "correction: Booking does not exist or was already undone": 10,
+                "correction: Booking has subsequent dependent bookings, undo not possible": 227,
+                "correction: This transaction was not found or already undone": 32,
+                "undo_tx: Booking does not exist or was already undone": 38,
+                "event: SQLSTATE[40P01]: Deadlock detected: 7 ERROR:  deadlock detected\nDETAIL:  Process 68 waits for ExclusiveLock on": 12,
+                "correction: SQLSTATE[40P01]: Deadlock detected: 7 ERROR:  deadlock detected\nDETAIL:  Process 66 waits for ExclusiveLock on": 1
+            },
+            "deadlocks_40P01": 13,
+            "trials_with_a_deadlock_sample_seeds": [
+                1230027,
+                1230029,
+                1230043,
+                1230065,
+                1230091,
+                1230125,
+                1230127,
+                1230140,
+                1230194,
+                1230237
+            ],
+            "invariant_violations": [],
+            "latency_ms": {
+                "p50": 714.3,
+                "p95": 1379,
+                "max": 2060.9
+            }
+        },
+        "D_control_opposite_order_no_prelock": {
+            "trials": 300,
+            "first_seed": 1330002,
+            "last_seed": 1330301,
+            "outcomes": {
+                "_all:deadlock_40P01": 300,
+                "_all:ok": 300,
+                "multi_ascending:deadlock_40P01": 81,
+                "multi_ascending:ok": 219,
+                "multi_descending:deadlock_40P01": 219,
+                "multi_descending:ok": 81
+            },
+            "refusal_messages": {
+                "multi_descending: SQLSTATE[40P01]: Deadlock detected: 7 ERROR:  deadlock detected\nDETAIL:  Process 66 waits for ExclusiveLock on": 219,
+                "multi_ascending: SQLSTATE[40P01]: Deadlock detected: 7 ERROR:  deadlock detected\nDETAIL:  Process 67 waits for ExclusiveLock on": 81
+            },
+            "deadlocks_40P01": 300,
+            "trials_with_a_deadlock_sample_seeds": [
+                1330002,
+                1330003,
+                1330004,
+                1330005,
+                1330006,
+                1330007,
+                1330008,
+                1330009,
+                1330010,
+                1330011
+            ],
+            "invariant_violations": [],
+            "latency_ms": {
+                "p50": 815.1,
+                "p95": 1576.4,
+                "max": 1797.1
+            }
+        }
+    },
+    "lineage_violations_after_all": 0,
+    "summary": {
+        "A_event_vs_direct": {
+            "trials": 300,
+            "deadlocks_40P01": 0,
+            "invariant_violations": 0,
+            "refused_already_undone": 0,
+            "refused_dependent_booking": 0,
+            "app_error": 0
+        },
+        "B_event_vs_undo": {
+            "trials": 300,
+            "deadlocks_40P01": 0,
+            "invariant_violations": 0,
+            "refused_already_undone": 41,
+            "refused_dependent_booking": 64,
+            "app_error": 0
+        },
+        "B2_undo_transaction_vs_undo_one_booking": {
+            "trials": 300,
+            "deadlocks_40P01": 0,
+            "invariant_violations": 0,
+            "refused_already_undone": 446,
+            "refused_dependent_booking": 0,
+            "app_error": 0
+        },
+        "C1_corrections_prelocked_union_different_recipes": {
+            "trials": 300,
+            "deadlocks_40P01": 0,
+            "invariant_violations": 0,
+            "refused_already_undone": 64,
+            "refused_dependent_booking": 229,
+            "app_error": 0
+        },
+        "C2_corrections_no_prelock_different_recipes": {
+            "trials": 300,
+            "deadlocks_40P01": 162,
+            "invariant_violations": 0,
+            "refused_already_undone": 56,
+            "refused_dependent_booking": 31,
+            "app_error": 0
+        },
+        "C3_corrections_prelocked_union_same_recipe_share": {
+            "trials": 300,
+            "deadlocks_40P01": 0,
+            "invariant_violations": 0,
+            "refused_already_undone": 49,
+            "refused_dependent_booking": 246,
+            "app_error": 0
+        },
+        "C4_corrections_no_prelock_same_recipe_share": {
+            "trials": 300,
+            "deadlocks_40P01": 126,
+            "invariant_violations": 0,
+            "refused_already_undone": 64,
+            "refused_dependent_booking": 47,
+            "app_error": 0
+        },
+        "C5_corrections_no_prelock_same_recipe_for_update": {
+            "trials": 300,
+            "deadlocks_40P01": 13,
+            "invariant_violations": 0,
+            "refused_already_undone": 80,
+            "refused_dependent_booking": 227,
+            "app_error": 0
+        },
+        "D_control_opposite_order_no_prelock": {
+            "trials": 300,
+            "deadlocks_40P01": 300,
+            "invariant_violations": 0,
+            "refused_already_undone": 0,
+            "refused_dependent_booking": 0,
+            "app_error": 0
+        }
+    }
+}

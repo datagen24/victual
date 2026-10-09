@@ -1,0 +1,127 @@
+{
+    "probe": "failure-persistence",
+    "environment": {
+        "php": "8.5.10",
+        "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+        "deadlock_timeout": "100ms",
+        "max_connections": "250"
+    },
+    "A_three_transaction_layout": {
+        "line1": "4 of 10 (satisfiable)",
+        "line2": "5 of 3 (insufficient)",
+        "before": {
+            "stock": [
+                10,
+                3
+            ],
+            "stock_log_rows": 2,
+            "consume_rows": 0,
+            "ledger_hash": "ede5c373f2b862fe"
+        },
+        "after": {
+            "stock": [
+                10,
+                3
+            ],
+            "stock_log_rows": 2,
+            "consume_rows": 0,
+            "ledger_hash": "ede5c373f2b862fe"
+        },
+        "ledger_unchanged": true,
+        "event": {
+            "state": "needs_review",
+            "reason": "insufficient_stock",
+            "transaction_id": null
+        },
+        "submit_result": {
+            "booked_now": false,
+            "state": "needs_review",
+            "error": {
+                "class": "Exception",
+                "code": 0,
+                "sqlstate": "APP",
+                "message": "Amount to be consumed cannot be > current stock amount (if supplied, at the desired location)"
+            },
+            "inserted": true,
+            "ms": 32.5
+        },
+        "lineage_violations": 0
+    },
+    "B_catch_app_exception_and_continue": {
+        "caught": {
+            "class": "Exception",
+            "code": 0,
+            "sqlstate": "APP",
+            "message": "Amount to be consumed cannot be > current stock amount (if supplied, at the desired location)"
+        },
+        "after": {
+            "stock": [
+                6,
+                3
+            ],
+            "stock_log_rows": 3,
+            "consume_rows": 1,
+            "ledger_hash": "e1db77447747e923"
+        },
+        "event": {
+            "state": "needs_review",
+            "reason": "insufficient_stock",
+            "transaction_id": null
+        },
+        "expected_if_atomic": [
+            10,
+            3
+        ],
+        "partial_deduction_committed": true
+    },
+    "C_catch_sql_error_and_continue": {
+        "first_error": {
+            "class": "PDOException",
+            "code": "23503",
+            "sqlstate": "23503",
+            "message": "SQLSTATE[23503]: Foreign key violation: 7 ERROR:  insert or update on table \"b41_event_lines\" violates foreign key constraint \"b41_event_lines_event_id_fkey\"\nDE"
+        },
+        "next_statement_error": {
+            "class": "PDOException",
+            "code": "25P02",
+            "sqlstate": "25P02",
+            "message": "SQLSTATE[25P02]: In failed sql transaction: 7 ERROR:  current transaction is aborted, commands ignored until end of transaction block"
+        },
+        "outer_exception": "25P02",
+        "after": {
+            "stock": [
+                10,
+                3
+            ],
+            "stock_log_rows": 2,
+            "consume_rows": 0,
+            "ledger_hash": "edc427d0cd4f8db6"
+        },
+        "event": {
+            "state": "received",
+            "reason": null,
+            "transaction_id": null
+        },
+        "ledger_unchanged": true
+    },
+    "D_swallow_sql_error_then_commit": {
+        "outer_exception": null,
+        "outer_returned": "6ac8f351ce6aa",
+        "after": {
+            "stock": [
+                10,
+                3
+            ],
+            "stock_log_rows": 2,
+            "consume_rows": 0,
+            "ledger_hash": "a2db632a6e158910"
+        },
+        "ledger_unchanged_although_outer_call_returned": true
+    },
+    "lineage_violations_after_all": 0,
+    "conclusions": {
+        "insufficient_stock_is_an_application_exception": "B shows no PostgreSQL error is raised, so the transaction is not aborted; line 1 stays pending and commits with the outer call.",
+        "sql_errors_abort_the_transaction": "C shows SQLSTATE 25P02 on the next statement after a swallowed SQL error.",
+        "swallowed_sql_error_then_commit": "D shows commit() reports success while PostgreSQL rolled the transaction back."
+    }
+}

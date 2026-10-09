@@ -1,6 +1,6 @@
 # ADR-0040: Consumption recipes are private rows shared through scoped rights that confer no permission
 
-- **Status:** **Proposed.** Written to be argued with.
+- **Status:** **Accepted 2026-10-09.** Shares narrow rows and confer no permission, so ADR-0014 and ADR-0018 are not amended. Prerequisites are stated in the accepting pull request.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-09, against `master` at `216af2b2`. Design work only: it changes no
@@ -21,8 +21,9 @@ products and quantities that a person consumes together. A prescription is one s
 Its owner can let specifically named members read or use it. Belonging to the household
 grants no access.
 
-No row in the current schema has an owner who is allowed to hide it from other holders of
-the same permission. Measured on `master` at `216af2b2` (source inspection, 2026-10-09):
+No entity that `EntityReadPolicy` covers has an owner who may hide a row from other holders of
+the same permission (read from the policy map; the rest of the schema was not audited).
+Measured on `master` at `216af2b2` (source inspection, 2026-10-09):
 
 - **Reads are gated by a domain leaf and nothing finer.** `EntityReadPolicy::PERMISSIONS`
   (`controllers/Users/EntityReadPolicy.php`) maps each exposed entity to one view
@@ -43,9 +44,9 @@ the same permission. Measured on `master` at `216af2b2` (source inspection, 2026
 - **ADR-0014 compares permission names.** `User::MayAdminister()` and
   `User::CheckMayGrant()` read `user_permissions_resolved` and `permission_tree`. A row in a
   sharing table is not a permission, so neither function sees it. The plan 22 draft of
-  2026-09-04 named this failure: a table saying "user X may see recipe Y" is "a permission
-  wearing a different shape", and an account could hand out access its own administrator
-  cannot see it holding.
+  2026-09-04 (before commit `4ce3c662` rewrote the plan) named this failure: a table saying
+  "user X may see recipe Y" is a permission in a different shape, and an account could hand
+  out access its own administrator cannot see it holding.
 
 The decision therefore has to answer two separate questions: how a share is stored and
 evaluated, and what an account administrator can and cannot do with it.
@@ -178,22 +179,29 @@ existence oracle through a database error.
 
 ### 8. Concurrency
 
-Grant, change, revoke, transfer and delete take `SELECT ... FOR UPDATE` on the recipe row.
-Every operation that relies on a share (read-then-write, consume, undo, edit) takes
-`FOR SHARE` on the same recipe row for the length of its transaction and evaluates the share
-and the global permission after the lock is held. The lock order is: recipe row first,
-then the ascending product lock set `DatabaseService::LockProductsStock()` already
-uses. A single global order prevents a consumption and a revocation from deadlocking.
+Two lock classes apply to the recipe row, in this order before any product lock.
 
-Outcomes:
+- **`FOR UPDATE`:** grant, change or revoke a share, transfer, delete, and `edit`. An edit
+  writes the recipe row or its lines, so it belongs here.
+- **`FOR SHARE`:** consume, undo, and reads that do not write the recipe row. These
+  evaluate the share and the global permission after the lock is held.
+
+The lock order is the recipe row first, then the ascending product lock set that
+`DatabaseService::LockProductsStock()` builds. One global order prevents a consumption and a
+revocation from deadlocking. It does not make two `FOR SHARE` holders safe if both then write
+the recipe row: the evidence below shows that pattern deadlocking, which is why `edit` takes
+`FOR UPDATE`.
+
+Outcomes follow from who takes the recipe lock first, not from who started first:
 
 | Interleaving | Result |
 |---|---|
-| Consume begins before revoke commits | Consume completes under the old share; the revoke waits, then applies. |
-| Revoke commits before consume takes its lock | Consume finds no share and answers 404. |
-| Two grants to the same user | The second sees the first's row and updates it; the unique constraint makes a double insert impossible. |
+| Revoke takes the lock first | The consume waits, finds no share and answers 404. |
+| Consume takes the lock first | The consume completes under the old share; the revoke waits, then applies. |
+| Two grants to the same user | The second waits for the first and updates its row. The unique constraint alone is not enough: without the recipe lock, 256 of 400 second grants failed with `23505`. |
+| Two edits | They serialize on `FOR UPDATE`. |
 | Grantor loses a right while granting | The grantor's own share row is re-read under the recipe lock; the grant is refused. |
-| Ownership transfer during a consume | The consume completes; ownership changes afterwards. |
+| Ownership transfer and a consume | The consume succeeds either way. It completes before the transfer, or runs after it under the new owner's share table. |
 
 A removal of a global permission is read where the application reads permissions today. The
 design does not add a lock on the permission tables; a consume that started before the
@@ -231,8 +239,8 @@ behaves as if the recipe did not exist.
 |---|---|
 | `GET /objects/{entity}` and `/{id}` | The new tables are not in `ExposedEntity` or `EntityReadPolicy`: 400, as for any unexposed entity. |
 | `query[]`, counts, ordering | Not reachable through generic routes. Dedicated list routes filter before querying (rule 7). |
-| `GET/PUT /userfields/{entity}/{id}` | The new entities are not exposed, so `SetValues()` refuses a write and the `GET` route's coverage check refuses a read. A test pins both. |
-| `userobjects` and `userentity-*` | Not applicable; no user-defined entity may reference a consumption recipe. |
+| `GET/PUT /userfields/{entity}/{id}` | The new entities are not exposed, so `SetValues()` refuses a write and the `GET` route's coverage check refuses a read. A test pins both. `DeleteObject` answers 400 "Invalid entity" where the read paths say "not exposed"; both are 400. |
+| `userobjects` and `userentity-*` | `EntityReadPolicy::Covers()` returns true for any `userentity-` name, so nothing in the tree stops a user-defined entity referencing a consumption recipe id. [Issue 698](https://github.com/datagen24/victual/issues/698) must refuse it. |
 | Food-recipe routes, `/recipes/fulfillment`, meal plan | Unaffected; consumption recipes are not rows in those tables and cannot be placed in the meal plan. |
 | Calendar and iCal feed | Never include a consumption recipe or refill date derived from one. |
 | Labels, captures, scan resolver | No `recipe`-style label kind is added for consumption recipes. `ResolveTarget` has no branch for them. The stock-entry and location labels in plan 22 already exist and carry no recipe data. |
@@ -282,6 +290,25 @@ open question 1 offers a narrower variant.
 **D. Household-wide "all members" principal.** Rejected for this release. A principal
 that means everyone is a permission-shaped grant, and the plan decision is that household
 membership alone grants no access. Sharing with every member is N shares.
+
+## Evidence
+
+[Pull request 720](https://github.com/datagen24/victual/pull/720) holds the probes and
+`RESULTS.md` (2026-10-09, PostgreSQL 16.15 and 15.19, 400 iterations per scenario):
+
+- 18 of 18 permission checkpoints were byte-identical after 350 share-row writes. A real
+  `USERS_EDIT` grant changed 8 of 15 sections, so the check detects a change.
+- Consume, grant, revoke, transfer and delete under rule 8: 0 deadlocks, 0 lost revocations,
+  0 consumes committed after a revoke. A consume that decided from the share without the
+  recipe lock committed after the revoke in 336 of 400 iterations.
+- Edits under `FOR SHARE` deadlocked (`40P01`) in 194 of 400 iterations on 16.15 and 196 of 400
+  on 15.19; edits rewriting lines in 83 and 88. `FOR UPDATE` had 0.
+- 72 of 72 generic-surface calls were refused for an administrator and for a `STOCK_VIEW`
+  holder. The stock-journal residual reproduces: two products under one `transaction_id`
+  with `recipe_id` null.
+
+The evidence does not cover starvation of a waiting `FOR UPDATE`, three or more actors,
+removal of a global permission during a consume, or substitution products.
 
 ## Consequences
 
@@ -334,3 +361,8 @@ membership alone grants no access. Sharing with every member is N shares.
 4. **Is a household-wide principal wanted later?** Deferred by Option D. Its answer would
    need to say how it appears in permission checks.
    *Decider's answer, 2026-10-09: not for v0.5.0; share with each member separately.*
+5. **Should `edit` hold `FOR UPDATE` on the recipe row?** The evidence shows two `FOR SHARE`
+   editors deadlocking in about half of iterations. *Lean: yes.* *Decider's answer,
+   2026-10-09: yes, as rule 8 now says. Whether an edit writes the recipe row or only its
+   lines is for [issue 698](https://github.com/datagen24/victual/issues/698); the lock class
+   does not depend on it.*

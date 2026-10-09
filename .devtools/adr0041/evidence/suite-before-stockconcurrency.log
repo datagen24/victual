@@ -1,0 +1,20 @@
+checking migration numbering
+Checked 49 migration number(s) above the baseline (255), 51 claimed in migrations/RESERVATIONS.md.
+MIGRATION NUMBERING OK
+
+building the pristine SQLite database
+Victual: FILE_STORAGE_MAX_SIZE_MB is 64 MB, but PHP's upload_max_filesize (2M) is smaller, so uploads are limited to 2 MB. Raise upload_max_filesize in php.ini to use the configured value.
+NOTICE:  database "victual_stockconcurrency" does not exist, skipping
+
+PHPUnit 11.5.56 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.5.10
+Configuration: /app/phpunit.xml
+
+.......................                                           23 / 23 (100%)
+
+Time: 00:07.982, Memory: 20.00 MB
+
+OK (23 tests, 126 assertions)
+
+SUITE PASSED

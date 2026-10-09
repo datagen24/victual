@@ -1,12 +1,13 @@
 # ADR-0015: Victual records medication; it never advises
 
-- **Status: Proposed.** Written to be argued with.
+- **Status: Accepted 2026-10-09.** Prerequisite 1 (UI wording review) is not met because no UI
+  exists; it binds the pull requests that add the UI and API strings. Prerequisite 2 has recorded
+  evidence (MCP spec section 10.1 and a test).
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-04, alongside [plan 22](../plans/22-medication-tracking.md). The
   decision was made when the plan was drafted; this record is not a backfill. **Revised
-  2026-10-09** for the inventory scope the maintainer set that day (see Context). The status
-  stays Proposed.
+  2026-10-09** for the inventory scope the maintainer set that day (see Context).
 - **Relationship:** constrains [22](../plans/22-medication-tracking.md) throughout, and
   [23](../plans/landed/23-storage-classes.md) Q6 defers to it. Written with
   [ADR-0016](0016-schedule-expansion-in-the-application.md), whose subject has no consumer
