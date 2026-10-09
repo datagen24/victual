@@ -804,6 +804,12 @@ jobs:
         working-directory: .devtools/frontend
         run: node consumption-recipes.js http://127.0.0.1:8085
 
+      # Plan 22 (issue #699). The weekly organizer trip through /transfer, /consume and the
+      # consumption recipe dialog, with the stock read back through the API after each step.
+      - name: Run organizer checks
+        working-directory: .devtools/frontend
+        run: node organizers.js http://127.0.0.1:8085
+
       # Plan 30. Against the demo instance on 8085 for the same reason the nested location
       # checks are: the parent picker, the path shown in a group dropdown, and the delete
       # refusal reaching the page are all things the PostgreSQL phase structurally cannot see -
