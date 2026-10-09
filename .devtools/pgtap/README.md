@@ -156,6 +156,8 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `stock_lineage_families` | function | 0304 | `030-stock-lineage.sql` |
 | `stock_lineage_backfill` | function | 0304 | `030-stock-lineage.sql` |
 | `stock_lineage_violations` | function | 0304 | `030-stock-lineage.sql` |
+| `trg_consumption_share_not_owner` (trigger `consumption_share_not_owner`) | function + trigger | 0305 | `031-consumption-recipes.sql` |
+| `trg_consumption_owner_not_sharee` (trigger `consumption_owner_not_sharee`) | function + trigger | 0305 | `031-consumption-recipes.sql` |
 
 ## Completeness
 
