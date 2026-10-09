@@ -45,7 +45,7 @@ Recorded because it is younger than the last corpus update, not as a substitute 
   merged, closing [issue #129](https://github.com/datagen24/victual/issues/129). 1, 2, 3, 5,
   6, 7 via a disposable spike, merged into master (not left unmerged like ADR-0023's spike
   branch) as [PR #152](https://github.com/datagen24/victual/pull/152) at `64ec8f1` — its
-  files live on under `.spike-adr22/`, permanent evidence rather than a citation to a branch
+  files live on under `.devtools/adr0022/`, permanent evidence rather than a citation to a branch
   that could be deleted, closing the gap [PR #145](https://github.com/datagen24/victual/pull/145)
   had to close for ADR-0021. 4 reworded then met by a real check against `victual.openapi.json`
   (no collision with the four new field names; legacy tare fields still present at zero); 8

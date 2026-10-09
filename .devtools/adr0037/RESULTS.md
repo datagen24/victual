@@ -23,9 +23,9 @@ changed. The reference model is not a candidate implementation.
 ## Commands
 
 ```sh
-.spike-adr37/run.sh baseline > .spike-adr37/evidence/baseline.json
-.spike-adr37/run.sh model    > .spike-adr37/evidence/model.json
-PG_IMAGE=docker.io/library/postgres:15 ADR37_N=20000 .spike-adr37/run.sh model   # summarized in model-postgres15-summary.json
+.devtools/adr0037/run.sh baseline > .devtools/adr0037/evidence/baseline.json
+.devtools/adr0037/run.sh model    > .devtools/adr0037/evidence/model.json
+PG_IMAGE=docker.io/library/postgres:15 ADR37_N=20000 .devtools/adr0037/run.sh model   # summarized in model-postgres15-summary.json
 ```
 
 | File | Role |

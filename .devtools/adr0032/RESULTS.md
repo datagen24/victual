@@ -171,11 +171,11 @@ provides them. Supply available image tags with `PHP_IMAGE` and `PG_IMAGE` if th
 local tags do not exist. Record any version difference when comparing results.
 
 ```sh
-.spike-adr32/run.sh baseline > /tmp/adr32-baseline.json
-.spike-adr32/run.sh absolute > /tmp/adr32-absolute.json
-.spike-adr32/run.sh relative > /tmp/adr32-relative.json
-PHP_PRECISION=17 .spike-adr32/run.sh absolute > /tmp/adr32-absolute-17.json
-PHP_PRECISION=17 .spike-adr32/run.sh relative > /tmp/adr32-relative-17.json
+.devtools/adr0032/run.sh baseline > /tmp/adr32-baseline.json
+.devtools/adr0032/run.sh absolute > /tmp/adr32-absolute.json
+.devtools/adr0032/run.sh relative > /tmp/adr32-relative.json
+PHP_PRECISION=17 .devtools/adr0032/run.sh absolute > /tmp/adr32-absolute-17.json
+PHP_PRECISION=17 .devtools/adr0032/run.sh relative > /tmp/adr32-relative-17.json
 ```
 
 Set `ADR32_FAST=1` to omit the three 1,000-booking observations. `ENGINE=podman` selects

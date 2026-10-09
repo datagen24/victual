@@ -2,7 +2,7 @@
 -- bag holding 1.2 kg becomes a state `stock` can hold. See
 -- docs/plans/landed/28-open-container-measurement.md and docs/adr/0022-open-containers-carry-a-measured-remainder.md
 -- (Accepted 2026-09-14, all eight prerequisites met against real PostgreSQL 16.13 in
--- .spike-adr22/, PR #152). This file mirrors that spike's 01-stock-measurement.pgsql.sql,
+-- .devtools/adr0022/, PR #152). This file mirrors that spike's 01-stock-measurement.pgsql.sql,
 -- widened to cover the full column set the affected views actually project and the two
 -- rewritten views verification asks for, rather than the spike's cut-down copies.
 --
@@ -32,7 +32,7 @@
 -- labels can be one row with `open = 1, amount = 3`. The spike's prerequisite 5 run
 -- demonstrated the constraint refusing exactly that shape and a split leaving a
 -- `1`-unit entry a measurement can attach to
--- (.spike-adr22/RESULTS.md#prerequisite-5-container-identity). `opened_tare` is
+-- (.devtools/adr0022/RESULTS.md#prerequisite-5-container-identity). `opened_tare` is
 -- deliberately outside this CHECK — a net measurement carries no tare and is still a
 -- complete, legal measurement.
 --
@@ -115,7 +115,7 @@
 -- because the spike's negative control demonstrated exactly the defect Context describes
 -- against real rows: three sealed 5 lb bags plus a canister weighed at a gross 1.4 lb made
 -- the existing formula compute 18.8 lb "consumed" against the 3.8 lb the canister actually
--- gave up (.spike-adr22/RESULTS.md#prerequisite-1). `OpenProduct()`'s tare-enabled refusal
+-- gave up (.devtools/adr0022/RESULTS.md#prerequisite-1). `OpenProduct()`'s tare-enabled refusal
 -- is removed for the same reason plan 28 owns it: decision 8 needs `OpenProduct()` able to
 -- open (and now measure) a tare-configured product's containers directly, since the
 -- per-entry mechanism below supersedes what per-product tare was standing in for.

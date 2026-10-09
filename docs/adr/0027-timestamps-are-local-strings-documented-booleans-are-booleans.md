@@ -538,4 +538,4 @@ This record changes a wire contract, so accepting it requires:
    0.3.0 release, and the client is regenerated afterwards, so this prerequisite does not
    block issue 650 or the release. [ADR-0024](0024-the-fork-writes-its-own-clients.md)
    decision 1 still requires a Victual-owned client to follow a breaking wire change, and
-   `.spike-adr27/CLIENT-HANDOFF.md` lists what that work needs.
+   `.devtools/adr0027/CLIENT-HANDOFF.md` lists what that work needs.

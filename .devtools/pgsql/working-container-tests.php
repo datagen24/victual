@@ -310,7 +310,7 @@ check((float)$pdo->query('SELECT COALESCE(SUM(amount), 0) FROM stock WHERE produ
 //     consumption of 10.0 lb against the 0 lb that actually changed at any location other
 //     than the bin - dry stores was not touched. Reproduced here as arithmetic, not by
 //     calling the retired mechanism, since ADR-0022 decision 7 removes it from this codebase
-//     entirely; the spike in .spike-adr22/RESULTS.md is where it was last measured against
+//     entirely; the spike in .devtools/adr0022/RESULTS.md is where it was last measured against
 //     real rows.
 $totalNow = (float)$pdo->query('SELECT COALESCE(SUM(amount), 0) FROM stock WHERE product_id = ' . $weighFlour)->fetchColumn();
 $productScopedTareWeight = 1.0; // what the old mechanism would have had to borrow from products.tare_weight

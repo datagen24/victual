@@ -16,7 +16,7 @@ VERSION = '3.22.0'
 BASELINE = ROOT / '.devtools/vale/baseline.json'
 # These are source records or machine/agent inputs, not maintained documentation pages.
 EXCLUDED_PREFIXES = ('changelog/', 'memory/', '.agents/', '.claude/', '.work/',
-                     '.spike-', 'docs/plans/.versions/', '.github/ISSUE_TEMPLATE/',
+                     '.devtools/adr00', 'docs/plans/.versions/', '.github/ISSUE_TEMPLATE/',
                      '.devtools/vale/audits/', '.devtools/vale/fixtures/')
 EXCLUDED_FILES = {'LICENSE.md', 'AGENTS.md', 'CLAUDE.md', '.github/PULL_REQUEST_TEMPLATE.md'}
 

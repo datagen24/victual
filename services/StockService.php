@@ -343,7 +343,7 @@ class StockService extends BaseService
 		// removed here under ADR-0022 decisions 4 and 7 (2026-09-14): weighing one container
 		// subtracted the stock amount of every entry of the product, sealed ones included.
 		// See docs/plans/landed/28-open-container-measurement.md and the spike's negative control
-		// (.spike-adr22/RESULTS.md#prerequisite-1-coexistence-with-a-negative-control) for the
+		// (.devtools/adr0022/RESULTS.md#prerequisite-1-coexistence-with-a-negative-control) for the
 		// demonstrated defect. The fields stay on the wire at their current values per decision
 		// 7; only the arithmetic goes. Per-entry measurement (OpenProduct(), MeasureStockEntry())
 		// is the replacement mechanism.
@@ -2423,7 +2423,7 @@ class StockService extends BaseService
 				// so this call has to name that one entry and open exactly one unit of it. The
 				// entry also has to already hold >= 1 unit, or opening it fully would leave an
 				// amount other than 1 - see 0275.pgsql.sql's coherence CHECK, and the spike's
-				// prerequisite 5 (.spike-adr22/RESULTS.md#prerequisite-5-container-identity).
+				// prerequisite 5 (.devtools/adr0022/RESULTS.md#prerequisite-5-container-identity).
 				if ($specificStockEntryId === 'default')
 				{
 					throw new \Exception('A measurement requires opening a specific stock entry');
@@ -3620,7 +3620,7 @@ class StockService extends BaseService
 				// mirrored from $logRow (ADR-0022 decision 9) so a fully-consumed measured
 				// entry - deleted from `stock` entirely - comes back with its remainder,
 				// unit, tare and timestamp intact rather than reconstructed bare; see
-				// .spike-adr22/RESULTS.md#prerequisite-6-undo.
+				// .devtools/adr0022/RESULTS.md#prerequisite-6-undo.
 				$rebuiltStockRow = [
 					'product_id' => $logRow->product_id,
 					'amount' => $logRow->amount * -1,
@@ -4093,7 +4093,7 @@ class StockService extends BaseService
 				// 9, sharpened by the spike): an unopened container has no remainder, and
 				// leaving a measurement in place while clearing `open` would violate the
 				// coherence CHECK outright and abort this very undo -
-				// see .spike-adr22/RESULTS.md#prerequisite-6-undo.
+				// see .devtools/adr0022/RESULTS.md#prerequisite-6-undo.
 				//
 				// Audited for the same gap CodeRabbit found in the CONSUME/STOCK_EDIT_OLD/
 				// TRANSFER_FROM branches (finding 4128248701, PR #618): this branch never
@@ -5259,7 +5259,7 @@ class StockService extends BaseService
 	 * because it cannot be a database CHECK: it depends on a value the recursive conversions
 	 * view computes, not on the row being written. This is deliberately a different property
 	 * than the coherence CHECK on `stock` (one container, one unit) - see
-	 * .spike-adr22/RESULTS.md#prerequisite-7-conversion-failure, which is where this
+	 * .devtools/adr0022/RESULTS.md#prerequisite-7-conversion-failure, which is where this
 	 * distinction was first demonstrated.
 	 *
 	 * @param int $productId

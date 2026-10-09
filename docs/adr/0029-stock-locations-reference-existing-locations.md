@@ -113,7 +113,7 @@ Adding `NOT VALID` and validating in the same transaction retains the addition's
 until commit. It does not provide the staged approach's concurrency benefit. PostgreSQL
 explains the lock distinction in its
 [ALTER TABLE documentation](https://www.postgresql.org/docs/16/sql-altertable.html#SQL-ALTERTABLE-NOTES).
-The [isolated experiment](../../.spike-adr29/RESULTS.md) demonstrates that retained lock.
+The [isolated experiment](../../.devtools/adr0029/RESULTS.md) demonstrates that retained lock.
 
 ## Consequences and client impact
 
@@ -136,7 +136,7 @@ an operator repairs them. No production inventory has been inspected for this pr
 1. Demonstrate restriction of invalid writes and referenced deletion, acceptance of nulls,
    unconstrained history, and both booking/deletion orderings against PostgreSQL.
    Met by the isolated pgTAP and concurrent-session experiments in the
-   [evidence record](../../.spike-adr29/RESULTS.md).
+   [evidence record](../../.devtools/adr0029/RESULTS.md).
 2. Establish migration transaction boundaries, refusal without repair, lock timeout,
    and the same-transaction validation lock behavior. Met by source inspection and
    the migration experiments in that record. The proposed timeouts are policy values;

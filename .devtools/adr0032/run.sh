@@ -26,8 +26,8 @@ trap cleanup EXIT
     -e VICTUAL_BOOTSTRAP_ADMIN_PASSWORD=adr32-fixture-only -e ADR32_MODE="$mode" \
     -e ADR32_FAST="${ADR32_FAST:-}" "${PHP_IMAGE:-localhost/victual:dev-coord}" sleep infinity >/dev/null
 git archive "$tree" | tar -x -C "$work"
-if [[ "$mode" != baseline ]]; then python3 .spike-adr32/prepare.py "$work" "$mode"; fi
-cp .spike-adr32/probe.php "$work/adr32-probe.php"
+if [[ "$mode" != baseline ]]; then python3 .devtools/adr0032/prepare.py "$work" "$mode"; fi
+cp .devtools/adr0032/probe.php "$work/adr32-probe.php"
 python3 - "$work" <<'PYTAR'
 import pathlib, sys, tarfile
 root = pathlib.Path(sys.argv[1])

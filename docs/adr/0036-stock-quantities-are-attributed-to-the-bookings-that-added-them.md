@@ -10,7 +10,7 @@
   design request, split out of [issue 488](https://github.com/datagen24/victual/issues/488)
   at the maintainer's direction on 2026-09-28); answers the gap named in
   [ADR-0033](0033-stock-rows-merge-only-in-maintenance-for-non-expiring-rows.md)
-  Consequences; evidence in [`.spike-adr36/RESULTS.md`](../../.spike-adr36/RESULTS.md).
+  Consequences; evidence in [`.devtools/adr0036/RESULTS.md`](../../.devtools/adr0036/RESULTS.md).
 
 This record is design work. It changes no code, reserves no migration number, and does not
 accept ADR-0033. A Proposed record constrains nothing.
@@ -26,7 +26,7 @@ accept ADR-0033. A Proposed record constrains nothing.
 | Record status | ADR-0033 is **Proposed**. This change corrects its stale statements that PR 531 was open and that nothing was built. | [ADR-0033](0033-stock-rows-merge-only-in-maintenance-for-non-expiring-rows.md) |
 | Implemented | [PR 531](https://github.com/datagen24/victual/pull/531) merged 2026-09-27 (`d48e5b30`): atomic undo refusal. [PR 580](https://github.com/datagen24/victual/pull/580) merged 2026-09-28 (`0e3e61c1`): inline compaction removed, `bin/victual-compact-stock`, `migrations/0290.pgsql.sql`, `WeighLocation()` totals. | `git log`, GitHub |
 | Not implemented | A deployed schedule for the maintenance command: `deploy/`, `nix/` and `.devtools/ci/` contain no reference to it (ADR-0033 prerequisite 3). | `grep`, 2026-10-03 |
-| Verified here | The behavior in the next section, by running the real `StockService` in a disposable schema. Test suites were listed, not run. | [`.spike-adr36/evidence/baseline.json`](../../.spike-adr36/evidence/baseline.json) |
+| Verified here | The behavior in the next section, by running the real `StockService` in a disposable schema. Test suites were listed, not run. | [`.devtools/adr0036/evidence/baseline.json`](../../.devtools/adr0036/evidence/baseline.json) |
 
 The merge in question is `StockService::CompactStockEntries()`. Since PR 580 it runs only
 from the maintenance command, and only over the rows `stock_splits` (`0290`) selects:
@@ -51,7 +51,7 @@ shopping location and note.
 ### Observed failure of attribution
 
 Runtime reproduction, PostgreSQL 16.15, PHP 8.5.10, `master` at `a7bf78a3`
-([evidence](../../.spike-adr36/evidence/baseline.json)):
+([evidence](../../.devtools/adr0036/evidence/baseline.json)):
 
 - Purchases of 3 (booking 1, tag `a`) and 2 (booking 2, tag `b`) merged into **row 2**
   (the row of the purchase of 2) with tag `a` (the tag of the purchase of 3). Both bookings
@@ -141,7 +141,7 @@ CREATE INDEX ix_stock_booking_lots_lot ON stock_booking_lots (lot_id, booking_id
 ```
 
 The statements above are the schema exercised in the spike
-([`proposed.sql`](../../.spike-adr36/proposed.sql)); the final column names and constraint
+([`proposed.sql`](../../.devtools/adr0036/proposed.sql)); the final column names and constraint
 names are an implementation detail.
 
 - **Basis** records how the row was established. `recorded` means a lineage-aware writer
@@ -445,9 +445,9 @@ in future merges: the pool is a contribution like any other and stays a pool.
 ## Worked examples
 
 All quantities below were produced by running the rules in the spike's reference model
-([`ref-model.php`](../../.spike-adr36/ref-model.php)) against the real schema, with I1 to I4
+([`ref-model.php`](../../.devtools/adr0036/ref-model.php)) against the real schema, with I1 to I4
 checked after every step; the full output is in
-[`evidence/model.json`](../../.spike-adr36/evidence/model.json). "Baseline" results come from
+[`evidence/model.json`](../../.devtools/adr0036/evidence/model.json). "Baseline" results come from
 the real `StockService` at `a7bf78a3`. A purchase is written `A`, `B`, `C` in booking order;
 `A:3` means lot A, amount 3. Row ids and tags are illustrative, since the runs share one
 schema.
@@ -537,7 +537,7 @@ merged 0 and changed nothing.
   skipped merge. That raises row consolidation, which this research could not show is needed.
 - **Storage grows by about one allocation per booking and one contribution per row.** Measured
   on a synthetic ledger of 100,114 bookings and 40,047 rows
-  ([evidence](../../.spike-adr36/evidence/model.json)): the two tables took 20.0 MB
+  ([evidence](../../.devtools/adr0036/evidence/model.json)): the two tables took 20.0 MB
   (5.6 MB contributions, 14.4 MB allocations) against 26.7 MB for `stock_log` with its
   indexes, about 144 bytes per booking for allocations alone. That is an upper bound for the
   synthetic shape: each of its bookings has exactly one allocation. A household recording
