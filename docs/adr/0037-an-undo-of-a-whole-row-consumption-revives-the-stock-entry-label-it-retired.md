@@ -1,6 +1,6 @@
 # ADR-0037: An undo of a whole-row consumption revives the stock-entry label it retired
 
-- **Status:** Proposed.
+- **Status:** Accepted 2026-10-09. All fifteen acceptance prerequisites have recorded evidence.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-04, against `master` at `7e311cd35c26c7422855d02887f46b5e2e7b4d22`
