@@ -1,4 +1,12 @@
 {
+    "DELETE /api/consumption/recipes/{recipeId}": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "DELETE /api/consumption/recipes/{recipeId}/shares/{userId}": {
+        "status": 204,
+        "shape": "empty"
+    },
     "DELETE /api/files/{group}/{fileName}": {
         "status": 204,
         "shape": "empty"
@@ -109,6 +117,91 @@
             "next_execution_assigned_user": "null",
             "tracked_count": "integer"
         }
+    },
+    "GET /api/consumption/recipes": {
+        "status": 200,
+        "shape": [
+            {
+                "id": "integer",
+                "is_owner": "boolean",
+                "line_count": "integer",
+                "name": "string",
+                "note": "null|string",
+                "owner_user_id": "integer",
+                "rights": {
+                    "consume": "boolean",
+                    "edit": "boolean",
+                    "read": "boolean",
+                    "share": "boolean",
+                    "undo": "boolean"
+                },
+                "row_created_timestamp": "string(date-time)",
+                "row_updated_timestamp": "string(date-time)"
+            }
+        ]
+    },
+    "GET /api/consumption/recipes/{recipeId}": {
+        "status": 200,
+        "shape": {
+            "id": "integer",
+            "is_owner": "boolean",
+            "lines": [
+                {
+                    "amount": "integer",
+                    "position": "integer",
+                    "product_id": "integer",
+                    "product_name": "string",
+                    "qu_id": "integer"
+                }
+            ],
+            "name": "string",
+            "note": "string",
+            "owner_user_id": "integer",
+            "rights": {
+                "consume": "boolean",
+                "edit": "boolean",
+                "read": "boolean",
+                "share": "boolean",
+                "undo": "boolean"
+            },
+            "row_created_timestamp": "string(date-time)",
+            "row_updated_timestamp": "string(date-time)"
+        }
+    },
+    "GET /api/consumption/recipes/{recipeId}/events": {
+        "status": 200,
+        "shape": [
+            {
+                "id": "integer",
+                "lines": "object",
+                "occurred_at": "string(date-time)",
+                "reason": "null",
+                "recipe_id": "integer",
+                "revision": "integer",
+                "source_event_id": "string",
+                "source_system": "string",
+                "state": "string",
+                "transaction_id": "string"
+            }
+        ]
+    },
+    "GET /api/consumption/recipes/{recipeId}/shares": {
+        "status": 200,
+        "shape": [
+            {
+                "granted_at": "string(date-time)",
+                "granted_by_user_id": "integer",
+                "rights": {
+                    "consume": "boolean",
+                    "edit": "boolean",
+                    "read": "boolean",
+                    "share": "boolean",
+                    "undo": "boolean"
+                },
+                "user_id": "integer",
+                "username": "string"
+            }
+        ]
     },
     "GET /api/files/{group}/{fileName}": {
         "status": 200,
@@ -437,7 +530,7 @@
                 "best_before_date": "string(date)",
                 "id": "integer",
                 "location_id": "integer",
-                "price": "number",
+                "price": "integer|number",
                 "product_id": "integer",
                 "purchased_date": "string(date)",
                 "shopping_location_id": "null"
@@ -617,7 +710,7 @@
                 "opened_measured_at": "null",
                 "opened_qu_id": "null",
                 "opened_tare": "null",
-                "price": "number",
+                "price": "null|number",
                 "product_id": "integer",
                 "purchased_date": "string(date)",
                 "row_created_timestamp": "string(date-time)",
@@ -2204,6 +2297,75 @@
             "undone_timestamp": "null"
         }
     },
+    "POST /api/consumption/recipes": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "integer"
+        }
+    },
+    "POST /api/consumption/recipes (second)": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "integer"
+        }
+    },
+    "POST /api/consumption/recipes/{recipeId}/consume": {
+        "status": 201,
+        "shape": {
+            "id": "integer",
+            "lines": [
+                {
+                    "amount": "integer",
+                    "location_id": "integer",
+                    "product_id": "integer",
+                    "stock_log_id": "integer"
+                }
+            ],
+            "occurred_at": "string(date-time)",
+            "reason": "null",
+            "recipe_id": "integer",
+            "replayed": "boolean",
+            "revision": "integer",
+            "source_event_id": "string",
+            "source_system": "string",
+            "state": "string",
+            "transaction_id": "string"
+        }
+    },
+    "POST /api/consumption/recipes/{recipeId}/events/{eventId}/undo": {
+        "status": 200,
+        "shape": {
+            "id": "integer",
+            "lines": [
+                {
+                    "amount": "integer",
+                    "location_id": "integer",
+                    "product_id": "integer",
+                    "stock_log_id": "integer"
+                }
+            ],
+            "occurred_at": "string(date-time)",
+            "reason": "null",
+            "recipe_id": "integer",
+            "revision": "integer",
+            "source_event_id": "string",
+            "source_system": "string",
+            "state": "string",
+            "transaction_id": "string"
+        }
+    },
+    "POST /api/consumption/recipes/{recipeId}/shares": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "POST /api/consumption/recipes/{recipeId}/shares (by username)": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "POST /api/consumption/recipes/{recipeId}/transfer": {
+        "status": 204,
+        "shape": "empty"
+    },
     "POST /api/objects/{entity} (batteries)": {
         "status": 200,
         "shape": {
@@ -2757,6 +2919,14 @@
         "shape": "empty"
     },
     "POST /api/users/{userId}/permissions": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "PUT /api/consumption/recipes/{recipeId}": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "PUT /api/consumption/recipes/{recipeId}/shares/{userId}": {
         "status": 204,
         "shape": "empty"
     },
