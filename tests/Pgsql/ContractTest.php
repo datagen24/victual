@@ -12,6 +12,7 @@ use Victual\Controllers\Api\CalendarApiController;
 use Victual\Controllers\Api\ChoresApiController;
 use Victual\Controllers\Api\FilesApiController;
 use Victual\Controllers\Api\GenericEntityApiController;
+use Victual\Controllers\Api\McpConfigApiController;
 use Victual\Controllers\Api\PrintApiController;
 use Victual\Controllers\Api\RecipesApiController;
 use Victual\Controllers\Api\RolesApiController;
@@ -615,6 +616,9 @@ class ContractTest extends PgsqlSchemaTestCase
 
 		self::invokeAdmin('GET /api/user', fn() => $users->CurrentUser(self::request(), new Response(), []));
 		self::invokeAdmin('GET /api/user/capabilities', fn() => $users->CurrentUserCapabilities(self::request(), new Response(), []));
+		$mcpConfig = self::controller(McpConfigApiController::class);
+		self::invokeAdmin('GET /api/mcp/config', fn() => $mcpConfig->GetConfig(self::request(), new Response(), []));
+		self::invokeAdmin('PUT /api/mcp/config', fn() => $mcpConfig->SetConfig(self::request('PUT', ['tools' => ['consume_product' => true]]), new Response(), []));
 		self::invokeAdmin('PUT /api/user/settings/{settingKey}', fn() => $users->SetUserSetting(self::request('PUT', ['value' => 'dark']), new Response(), ['settingKey' => 'contract_test_setting']));
 		self::invokeAdmin('GET /api/user/settings', fn() => $users->GetUserSettings(self::request(), new Response(), []));
 		self::invokeAdmin('DELETE /api/user/settings/{settingKey}', fn() => $users->DeleteUserSetting(self::request('DELETE'), new Response(), ['settingKey' => 'contract_test_setting']));
@@ -838,6 +842,7 @@ class ContractTest extends PgsqlSchemaTestCase
 			$key === 'GET /api/users/{userId}/roles' => fn() => $roles->ListUserRoles(self::request(), new Response(), ['userId' => self::$ids['user']]),
 			$key === 'GET /api/user' => fn() => $users->CurrentUser(self::request(), new Response(), []),
 			$key === 'GET /api/user/capabilities' => fn() => $users->CurrentUserCapabilities(self::request(), new Response(), []),
+			$key === 'GET /api/mcp/config' => fn() => self::controller(McpConfigApiController::class)->GetConfig(self::request(), new Response(), []),
 			$key === 'GET /api/user/settings' => fn() => $users->GetUserSettings(self::request(), new Response(), []),
 			$key === 'GET /api/user/settings/{settingKey}' => fn() => $users->GetUserSetting(self::request(), new Response(), ['settingKey' => 'contract_test_setting_persist']),
 			$key === 'GET /api/files/{group}/{fileName}' => null, // deleted by the Admin sweep; nothing left to serve

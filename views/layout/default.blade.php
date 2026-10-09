@@ -686,6 +686,10 @@
 						<a class="dropdown-item discrete-link"
 							href="{{ $U('/manageapikeys') }}"><i class="fa-solid fa-fw fa-handshake"></i>&nbsp;{{ $__t('Manage API keys') }}</a>
 						@endif
+						@if(\Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_ADMIN))
+						<a class="dropdown-item discrete-link permission-ADMIN"
+							href="{{ $U('/mcpsettings') }}"><i class="fa-solid fa-fw fa-plug"></i>&nbsp;{{ $__t('MCP settings') }}</a>
+						@endif
 						<a class="dropdown-item discrete-link"
 							target="_blank"
 							href="{{ $U('/api') }}"><i class="fa-solid fa-fw fa-book"></i>&nbsp;{{ $__t('REST API browser') }}</a>

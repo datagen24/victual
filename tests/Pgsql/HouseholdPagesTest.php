@@ -17,6 +17,7 @@ use Victual\Controllers\GenericEntityController;
 use Victual\Controllers\LabelPrintJobsController;
 use Victual\Controllers\LabelTemplatesController;
 use Victual\Controllers\LoginController;
+use Victual\Controllers\McpSettingsController;
 use Victual\Controllers\SystemController;
 use Victual\Controllers\TasksController;
 use Victual\Controllers\UsersController;
@@ -73,6 +74,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 	private static UsersController $users;
 	private static LabelTemplatesController $labelTemplates;
 	private static LabelPrintJobsController $labelPrintJobs;
+	private static McpSettingsController $mcpSettings;
 	private static EquipmentController $equipment;
 	private static LoginController $login;
 	private static CalendarController $calendar;
@@ -108,6 +110,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::$users = new UsersController(self::$container);
 		self::$labelTemplates = new LabelTemplatesController(self::$container);
 		self::$labelPrintJobs = new LabelPrintJobsController(self::$container);
+		self::$mcpSettings = new McpSettingsController(self::$container);
 		self::$equipment = new EquipmentController(self::$container);
 		self::$login = new LoginController(self::$container);
 		self::$calendar = new CalendarController(self::$container);
@@ -1205,6 +1208,28 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		$before = self::stateSnapshot();
 		$this->expectStatus(fn () => self::$labelPrintJobs->Index(self::request(), self::response(), []), 403, 'GET /labelprintjobs without ADMIN');
 		$this->expectStatus(fn () => self::$labelPrintJobs->Printers(self::request(), self::response(), []), 403, 'GET /labelprinters without ADMIN');
+		self::assertSame($before, self::stateSnapshot());
+	}
+
+	public function testMcpSettingsPageListsNineToolsWithTheirSwitchesAndIsAdministrationOnly(): void
+	{
+		self::$db->exec('DELETE FROM mcp_tool_settings');
+		self::$db->exec("INSERT INTO mcp_tool_settings (tool_name, enabled) VALUES ('consume_product', true), ('expiring_soon', false)");
+
+		$html = self::render(fn () => self::$mcpSettings->Settings(self::request(), self::response(), []), 'GET /mcpsettings');
+
+		self::assertSame(9, preg_match_all('/class="custom-control-input mcp-tool-switch"/', $html), 'one switch per tool');
+		self::assertSame(3, substr_count($html, 'Writes data'), 'the three write tools are labelled');
+		self::assertSame(6, substr_count($html, 'Read only</span>'), 'and the six read tools are not');
+		self::assertStringContainsString('/manageapikeys"', $html, 'the page links to the API key page');
+		self::assertMatchesRegularExpression('/id="mcp-tool-consume_product"[^>]*checked/s', $html, 'a stored on switch renders checked');
+		self::assertDoesNotMatchRegularExpression('/id="mcp-tool-expiring_soon"[^>]*checked/s', $html, 'a stored off switch renders unchecked');
+		self::assertDoesNotMatchRegularExpression('/id="mcp-tool-purchase_product"[^>]*checked/s', $html, 'a write tool with no row is off');
+		self::assertMatchesRegularExpression('/id="mcp-tool-stock_overview"[^>]*checked/s', $html, 'a read tool with no row is on');
+
+		self::grant(['USERS_READ']);
+		$before = self::stateSnapshot();
+		$this->expectStatus(fn () => self::$mcpSettings->Settings(self::request(), self::response(), []), 403, 'GET /mcpsettings without ADMIN');
 		self::assertSame($before, self::stateSnapshot());
 	}
 

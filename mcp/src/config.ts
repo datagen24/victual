@@ -37,7 +37,13 @@ const envSchema = z.object({
 });
 
 export type Config = Omit<z.infer<typeof envSchema>, "MCP_ENABLED_TOOLS"> & {
+  /**
+   * The environment's allowlist. Since ADR-0039 it is only the fallback for a Victual that
+   * answers 404 to GET /api/mcp/config; a Victual that serves the endpoint decides.
+   */
   MCP_ENABLED_TOOLS: ToolName[];
+  /** Whether MCP_ENABLED_TOOLS was set at all, so the sidecar can say once that it is being ignored. */
+  mcpEnabledToolsWasSet?: boolean;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -59,5 +65,5 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     process.exit(1);
   }
 
-  return config as Config;
+  return { ...config, mcpEnabledToolsWasSet: env.MCP_ENABLED_TOOLS !== undefined } as Config;
 }

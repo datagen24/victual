@@ -5,6 +5,7 @@ use Victual\Controllers\Api\CalendarApiController;
 use Victual\Controllers\Api\ChoresApiController;
 use Victual\Controllers\Api\FilesApiController;
 use Victual\Controllers\Api\GenericEntityApiController;
+use Victual\Controllers\Api\McpConfigApiController;
 use Victual\Controllers\Api\OpenApiController;
 use Victual\Controllers\Api\PrintApiController;
 use Victual\Controllers\Api\RecipesApiController;
@@ -26,6 +27,7 @@ use Victual\Controllers\ChoresController;
 use Victual\Controllers\EquipmentController;
 use Victual\Controllers\GenericEntityController;
 use Victual\Controllers\LoginController;
+use Victual\Controllers\McpSettingsController;
 use Victual\Controllers\RecipesController;
 use Victual\Controllers\StockController;
 use Victual\Controllers\StockReportsController;
@@ -156,6 +158,7 @@ $app->group('', function (RouteCollectorProxy $group)
 
 	// OpenAPI routes
 	$group->get('/api', [OpenApiController::class, 'DocumentationUi']);
+	$group->get('/mcpsettings', [McpSettingsController::class, 'Settings']);
 	$group->get('/manageapikeys', [OpenApiController::class, 'ApiKeysList']);
 	// POST rather than GET, and for a much better reason than tidiness: as a GET this
 	// creates an API key with an attacker-chosen description on any page load. Sweep
@@ -271,6 +274,10 @@ $app->group('/api', function (RouteCollectorProxy $group)
 	$group->put('/roles/{roleId}/permissions', [RolesApiController::class, 'SetPermissions']);
 	$group->get('/users/{userId}/roles', [RolesApiController::class, 'ListUserRoles']);
 	$group->put('/users/{userId}/roles', [RolesApiController::class, 'SetUserRoles']);
+
+	// MCP sidecar configuration (ADR-0039)
+	$group->get('/mcp/config', [McpConfigApiController::class, 'GetConfig']);
+	$group->put('/mcp/config', [McpConfigApiController::class, 'SetConfig']);
 
 	// User
 	$group->get('/user', [UsersApiController::class, 'CurrentUser']);

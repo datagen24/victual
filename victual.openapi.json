@@ -1958,6 +1958,96 @@
 				}
 			}
 		},
+		"/mcp/config": {
+			"get": {
+				"summary": "Returns the MCP tools an administrator has enabled",
+				"description": "The names of the enabled MCP sidecar tools, in the sidecar's tools/list order. A tool nobody has set takes its default: the six read tools on, the three write tools off. Needs no permission beyond a valid credential, a read-only MCP key included: the sidecar asks with the credential each request forwards, on every tools/list and tools/call. Hiding a tool is not a security boundary; the per-key read-only flag and the user's permissions are, and Victual enforces both on the forwarded call.",
+				"tags": [
+					"System"
+				],
+				"responses": {
+					"200": {
+						"description": "The enabled tools",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/McpConfig"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "The request carried no valid API key or session",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"put": {
+				"summary": "Switches MCP tools on or off",
+				"description": "Requires ADMIN. Sets the named tools and leaves the others as they are. An unknown tool name, a value that is not a boolean (true, false, or the integers 0 and 1), or a body of another shape is refused with 400 and changes nothing. A read-only API key is refused with 403 before this route runs. Answers the new enabled list, in the shape GET answers.",
+				"tags": [
+					"System"
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/McpConfigUpdate"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "The enabled tools after the change",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/McpConfig"
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "The operation was not successful",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Error400"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "The request carried no valid API key or session",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "The caller lacks ADMIN, or the API key is read-only",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
 		"/user/capabilities": {
 			"get": {
 				"summary": "Returns what the credential making this request may do",
@@ -10652,6 +10742,37 @@
 							"type": "string"
 						},
 						"description": "The acting user's resolved permission names, sorted"
+					}
+				}
+			},
+			"McpConfig": {
+				"type": "object",
+				"required": [
+					"enabled_tools"
+				],
+				"properties": {
+					"enabled_tools": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"description": "The enabled MCP tool names, in the sidecar's tools/list order"
+					}
+				}
+			},
+			"McpConfigUpdate": {
+				"type": "object",
+				"required": [
+					"tools"
+				],
+				"properties": {
+					"tools": {
+						"type": "object",
+						"description": "Tool name to true or false. The known names are stock_overview, expiring_soon, missing_products, find_product, shopping_list, recipes_i_can_cook, add_to_shopping_list, consume_product and purchase_product.",
+						"additionalProperties": {
+							"type": "boolean"
+						},
+						"minProperties": 1
 					}
 				}
 			},

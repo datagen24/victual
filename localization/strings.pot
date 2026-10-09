@@ -2912,3 +2912,63 @@ msgid "%s stock entry label stays retired; print a new label"
 msgid_plural "%s stock entry labels stay retired; print new labels"
 msgstr[0] ""
 msgstr[1] ""
+
+msgid "MCP settings"
+msgstr ""
+
+msgid "Choose which tools an assistant connected through the MCP server can use. A change applies to the next request, with no restart."
+msgstr ""
+
+msgid "Turning a tool on only lists it. An API key marked read-only can never run a tool that writes, and every call is checked against the permissions of the key's user."
+msgstr ""
+
+msgid "Tool"
+msgstr ""
+
+msgid "What it does"
+msgstr ""
+
+msgid "Enabled"
+msgstr ""
+
+msgid "Writes data"
+msgstr ""
+
+msgid "Read only"
+msgstr ""
+
+msgid "Lists what is in stock now, soonest due first."
+msgstr ""
+
+msgid "Lists products that are due, overdue or expired."
+msgstr ""
+
+msgid "Lists products below their minimum stock."
+msgstr ""
+
+msgid "Finds a product by name."
+msgstr ""
+
+msgid "Reads a shopping list."
+msgstr ""
+
+msgid "Lists the recipes the stock can fulfil."
+msgstr ""
+
+msgid "Adds a product to a shopping list."
+msgstr ""
+
+msgid "Books a consumption from stock."
+msgstr ""
+
+msgid "Books a purchase into stock."
+msgstr ""
+
+msgid "%s is on."
+msgstr ""
+
+msgid "%s is off."
+msgstr ""
+
+msgid "Could not save the MCP settings."
+msgstr ""

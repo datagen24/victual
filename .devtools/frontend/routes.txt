@@ -72,3 +72,4 @@
 /calendar
 /api
 /manageapikeys
+/mcpsettings

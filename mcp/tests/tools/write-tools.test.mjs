@@ -91,6 +91,9 @@ const seen = [];
 before(async () => {
   victual = createServer((req, res) => {
     const path = new URL(req.url, "http://x").pathname;
+    // This file tests the environment allowlist, so Victual here predates /api/mcp/config
+    // (ADR-0039 decision 6). tools/config.test.mjs covers a Victual that serves it.
+    if (path === "/api/mcp/config") { res.writeHead(404); return res.end("{}"); }
     if (path === "/api/user/capabilities") {
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify(capabilities));
