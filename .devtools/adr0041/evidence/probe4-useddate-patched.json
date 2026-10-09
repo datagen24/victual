@@ -1,0 +1,103 @@
+{
+    "probe": "used-date",
+    "environment": {
+        "php": "8.5.10",
+        "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+        "deadlock_timeout": "100ms",
+        "max_connections": "250"
+    },
+    "signature": {
+        "parameters": [
+            "productId",
+            "amount",
+            "spoiled",
+            "transactionType",
+            "specificStockEntryId",
+            "recipeId",
+            "locationId",
+            "transactionId",
+            "allowSubproductSubstitution",
+            "consumeExactAmount",
+            "usedDate"
+        ],
+        "count": 11,
+        "required": 4
+    },
+    "service_file_sha256": "98f778642ae4fac29186f300979406d52653d85312432fc4c6fea832c967f9b9",
+    "patched": true,
+    "cases": {
+        "dated_two_days_back": {
+            "requested": "2026-10-07",
+            "bookings": [
+                {
+                    "id": 3,
+                    "product_id": 1,
+                    "amount": -2,
+                    "used_date": "2026-10-07",
+                    "undone": 0
+                },
+                {
+                    "id": 4,
+                    "product_id": 1,
+                    "amount": -1.5,
+                    "used_date": "2026-10-07",
+                    "undone": 0
+                }
+            ]
+        },
+        "default_is_today": {
+            "server_today": "2026-10-09",
+            "bookings": [
+                {
+                    "id": 5,
+                    "product_id": 1,
+                    "amount": -1,
+                    "used_date": "2026-10-09",
+                    "undone": 0
+                }
+            ]
+        },
+        "invalid '2026-02-30'": "InvalidArgumentException: used date must be a valid Y-m-d date",
+        "invalid '09/10/2026'": "InvalidArgumentException: used date must be a valid Y-m-d date",
+        "invalid '2026-10-9'": "InvalidArgumentException: used date must be a valid Y-m-d date",
+        "invalid ''": "InvalidArgumentException: used date must be a valid Y-m-d date"
+    },
+    "undo_of_dated_transaction": {
+        "bookings_after": [
+            {
+                "id": 3,
+                "product_id": 1,
+                "amount": -2,
+                "used_date": "2026-10-07",
+                "undone": 1
+            },
+            {
+                "id": 4,
+                "product_id": 1,
+                "amount": -1.5,
+                "used_date": "2026-10-07",
+                "undone": 1
+            }
+        ],
+        "stock_after": 7,
+        "expected_stock": 7,
+        "lineage_violations_before": 0,
+        "lineage_violations_after": 0
+    },
+    "two_line_transaction_one_date": [
+        {
+            "id": 8,
+            "product_id": 2,
+            "amount": -1,
+            "used_date": "2026-10-07",
+            "undone": 0
+        },
+        {
+            "id": 9,
+            "product_id": 3,
+            "amount": -1,
+            "used_date": "2026-10-07",
+            "undone": 0
+        }
+    ]
+}
