@@ -492,6 +492,16 @@ It does not exercise HealthKit, HTTP, the outbox, or victual-kit.
    the same medication and scheduled date, only for scheduled doses and never for as-needed
    ones. It does not need the server to verify the pairing and will not rely on it.*
 
+6. **When a correction's undo is refused because a later booking depends on the same lot, what
+   happens?** *Lean: the whole correction rolls back and the original booking stays, with
+   `needs_review` / `undo_refused`.* *Decider's answer, 2026-10-09: take the lean.*
+7. **Is a concurrent "already undone" refusal retryable?** *Lean: yes, once, after re-reading
+   the bookings.* *Decider's answer, 2026-10-09: take the lean.*
+8. **Does a `fixed` location include child locations?** *Lean: no, exact match, and say so.*
+   *Decider's answer, 2026-10-09: take the lean.*
+9. **How is a measured-container refusal handled?** *Lean: map it to `needs_review` /
+   `stock_error`.* *Decider's answer, 2026-10-09: take the lean.*
+
 ## Appendix: contract
 
 ### Routes
@@ -619,12 +629,3 @@ device. The two kinds of evidence are different and both are reported:
 | 15 | Mapping `single` with stock in two locations | `ambiguous_location`, nothing deducted |
 | 16 | Recipe share revoked before the event is processed | `needs_review` / `recipe_unavailable` |
 | 17 | Another user sends the same `source_event_id` | Separate event; neither can read the other's |
-6. **When a correction's undo is refused because a later booking depends on the same lot, what
-   happens?** *Lean: the whole correction rolls back and the original booking stays, with
-   `needs_review` / `undo_refused`.* *Decider's answer, 2026-10-09: take the lean.*
-7. **Is a concurrent "already undone" refusal retryable?** *Lean: yes, once, after re-reading
-   the bookings.* *Decider's answer, 2026-10-09: take the lean.*
-8. **Does a `fixed` location include child locations?** *Lean: no, exact match, and say so.*
-   *Decider's answer, 2026-10-09: take the lean.*
-9. **How is a measured-container refusal handled?** *Lean: map it to `needs_review` /
-   `stock_error`.* *Decider's answer, 2026-10-09: take the lean.*
