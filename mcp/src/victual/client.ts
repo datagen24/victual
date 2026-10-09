@@ -47,16 +47,30 @@ export class VictualClient {
   ): Promise<T> {
     const url = new URL(path, this.config.VICTUAL_BASE_URL);
     if (searchParams) url.search = searchParams.toString();
+    return this.send<T>(url, path, { method: "GET", headers: { ...credential.headers, accept: "application/json" } });
+  }
 
+  /**
+   * POST a JSON body. Victual answers some write routes with 204 and no body
+   * (`shoppinglist/add-product`), so an empty response resolves to `undefined` rather than
+   * a JSON parse error.
+   */
+  async post<T = undefined>(path: string, credential: ResolvedCredential, body: Record<string, unknown>): Promise<T> {
+    const url = new URL(path, this.config.VICTUAL_BASE_URL);
+    return this.send<T>(url, path, {
+      method: "POST",
+      headers: { ...credential.headers, accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  private async send<T>(url: URL, path: string, init: RequestInit): Promise<T> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.MCP_REQUEST_TIMEOUT_MS);
 
     let response: Response;
     try {
-      response = await fetch(url, {
-        headers: { ...credential.headers, accept: "application/json" },
-        signal: controller.signal,
-      });
+      response = await fetch(url, { ...init, signal: controller.signal });
     } catch (cause) {
       throw new VictualApiError("victual_unavailable", `could not reach Victual: ${String(cause)}`);
     } finally {
@@ -71,6 +85,7 @@ export class VictualClient {
       );
     }
 
-    return (await response.json()) as T;
+    const text = await response.text();
+    return (text === "" ? undefined : JSON.parse(text)) as T;
   }
 }

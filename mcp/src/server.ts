@@ -65,12 +65,14 @@ function toolErrorResult(error: unknown) {
 }
 
 function registerTool(server: McpServer, tool: AnyTool, context: ToolContext, log: Logger) {
-  // One registration shape for all six; the cast is the price of a heterogeneous array
+  // One registration shape for all nine; the cast is the price of a heterogeneous array
   // of tools whose input types differ.
   const definition = tool as unknown as {
     name: string;
     title: string;
     description: string;
+    write?: boolean;
+    destructive?: boolean;
     inputSchema: AnyTool["inputSchema"];
     outputSchema: AnyTool["outputSchema"];
     handler: (input: unknown, ctx: ToolContext) => Promise<{ data: Record<string, unknown>; text: string }>;
@@ -83,7 +85,11 @@ function registerTool(server: McpServer, tool: AnyTool, context: ToolContext, lo
       description: definition.description,
       inputSchema: definition.inputSchema,
       outputSchema: definition.outputSchema,
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: !definition.write,
+        ...(definition.write ? { destructiveHint: definition.destructive === true } : {}),
+        openWorldHint: false,
+      },
     },
     async (input: unknown) => {
       try {
@@ -221,7 +227,13 @@ export function buildServer(config: Config) {
       return enabledTools;
     }
     const held = new Set(capabilities.permissions);
-    return enabledTools.filter((tool) => held.has(tool.permission));
+    // §6: a read-only key never sees a write tool; the rest need every permission the
+    // tool's REST calls check. Hiding is UX - Victual enforces on the forwarded call.
+    return enabledTools.filter((tool) => {
+      const t = tool as { write?: boolean; alsoRequires?: readonly string[] };
+      if (t.write && capabilities.read_only) return false;
+      return held.has(tool.permission) && (t.alsoRequires ?? []).every((p) => held.has(p));
+    });
   }
 
   return {

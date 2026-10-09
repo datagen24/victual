@@ -1,6 +1,6 @@
 # victual-mcp
 
-Read-only MCP sidecar for Victual, built from
+MCP sidecar for Victual (six read tools, three opt-in write tools), built from
 [docs/mcp-interface-spec.md](../docs/mcp-interface-spec.md). It lives in this repository
 rather than a separate one — see the spec's Open Question 1 amendment (2026-09-19) and
 [ADR-0013](../docs/adr/0013-nix-built-container-images.md).
@@ -23,8 +23,28 @@ redeployed sidecar; it records what Victual now offers.
   recorded *shapes*, but not the frozen fixtures themselves.
 - **The actual client (§11.4).** The two motivating questions have not yet been asked
   through Claude in real use.
-- **The three write tools — issue #209.** Not started; they gate on this read-only v1
-  being deployed and used, not merely built.
+- **Household use of the read tools.** Issue #86 is still open.
+
+## Write tools (issue #209, 2026-10-08)
+
+`add_to_shopping_list`, `consume_product` and `purchase_product` are built per spec §6.
+The earlier condition that they wait for #86 to be in household use was added by an
+agent, not decided by the maintainer, and is withdrawn (plan 02 Q2). They are **off by default**: `all-read` does
+not include them, so an operator enables each by name, for example
+`MCP_ENABLED_TOOLS=all-read,add_to_shopping_list,consume_product,purchase_product`.The `all-read` keyword expands inside a comma list.
+
+- Listed only to a key that is not `read_only` and whose user holds the tool's permission
+  (`SHOPPINGLIST_ITEMS_ADD`, `STOCK_CONSUME`, `STOCK_PURCHASE`). `consume_product` and
+  `purchase_product` also need `STOCK_VIEW`, because Victual answers their POST with the
+  booked `stock_log` rows. Hiding is UX; Victual enforces on every forwarded call.
+- The tool fields differ from the REST fields: `amount` -> `product_amount` and
+  `shopping_list_id` -> `list_id` on the shopping-list route, `due_date` ->
+  `best_before_date` on purchase. `shopping_location_id` keeps its name.
+- `consume_product` and `purchase_product` return `transaction_id` in `structuredContent`.
+  A booking answered without a transaction row is reported as `victual_error`.
+- No tool creates a product; an unknown `product_id` is refused by Victual.
+- Not done: the real-client household check ("add milk to the list", "I used the last of the
+  coffee") and contract tests against plan 14's fixtures for the three POST routes.
 
 ## Layout
 

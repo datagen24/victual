@@ -198,6 +198,11 @@ to `/objects/api_keys` consumers, of which there are none outside this fork.
    transport and auth get proven before an assistant is allowed to consume stock.
 
    > **Response:** Read-only, strongly.
+   >
+   > **Amendment, 2026-10-08:** the "deployed and in use" condition on the write tools
+   > ([issue 209](https://github.com/datagen24/victual/issues/209)) was added by an agent
+   > and the maintainer never decided it. It is withdrawn. The tools are off by default and
+   > `read_only` keys never see them.
 3. **Should writes need a separate permission**, beyond the user's existing ones? A user
    who may consume via the UI may not want an assistant doing it unprompted. A
    `MCP_WRITE` permission is cheap and makes the boundary explicit.
