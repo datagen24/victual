@@ -5,7 +5,7 @@
 -- function or trigger. Processing, locking and resolution are PHP and are covered by tests/Pgsql
 -- (ConsumptionEvent*Test.php).
 
-SELECT plan(43);
+SELECT plan(44);
 
 INSERT INTO users (username, password) VALUES ('c32 a', 'fixture'), ('c32 b', 'fixture');
 INSERT INTO locations (name) VALUES ('C32 location');
@@ -21,6 +21,7 @@ CREATE FUNCTION pg_temp.loc() RETURNS INTEGER LANGUAGE sql AS $$ SELECT id FROM 
 SELECT has_table('consumption_mappings');
 SELECT has_column('consumption_events', 'source_updated_at');
 SELECT has_column('consumption_events', 'linked_transaction_id');
+SELECT has_column('consumption_events', 'occurred_date');
 SELECT has_column('consumption_event_lines', 'used_date');
 
 -- Mappings ---------------------------------------------------------------------------------------
