@@ -371,8 +371,9 @@ migration header says.
 Delivered as a stack of three pull requests, each based on the one before it:
 [pull request 739](https://github.com/datagen24/victual/pull/739) (migration 0306),
 [pull request 741](https://github.com/datagen24/victual/pull/741) (service, routes, OpenAPI,
-fixtures, race tests) and the pull request that carries this section (reconciliation inbox,
-browser probe, manual and operator pages). Issue 700 stays open until all three merge and the
+fixtures, race tests) and
+[pull request 743](https://github.com/datagen24/victual/pull/743) (reconciliation inbox,
+browser probe, manual and operator pages), which carries this section. Issue 700 stays open until all three merge and the
 CI jobs listed under *Not run here* are green.
 
 **Migration claims.** `migrations/RESERVATIONS.md` gave 0306 to issue 700, the lowest free slot,
