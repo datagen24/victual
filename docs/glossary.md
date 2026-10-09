@@ -123,6 +123,13 @@ Proposed in [ADR-0040](adr/0040-consumption-recipes-are-private-rows-with-scoped
 A row granting one user a set of rights (`read`, `consume`, `edit`, `undo`, `share`) on one
 consumption recipe. A share narrows which recipes a user sees and confers no permission.
 
+### Refill estimate
+
+Proposed in [ADR-0042](adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md) (Proposed, not implemented).
+The calendar date on which a prescription's reorder is estimated to be due, derived from the
+last recorded fill and a rule. It is approximate, carries the rule that produced it, and is
+separate from stock on hand. It does not state that an insurer will approve a refill.
+
 ### Shopping location
 
 A store or other source of purchases, represented by `shopping_locations`. Purchase
