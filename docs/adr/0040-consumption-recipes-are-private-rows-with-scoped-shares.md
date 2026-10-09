@@ -306,7 +306,8 @@ membership alone grants no access. Sharing with every member is N shares.
 
 ## Acceptance prerequisites
 
-1. The maintainer answers open questions 1 and 2, or accepts the stated leans.
+1. The maintainer answers open questions 1 and 2, or accepts the stated leans. Answered
+   2026-10-09; see the open questions.
 2. The maintainer confirms that Option A needs no amendment to ADR-0014. The reading rests
    on this record leaving `MayAdminister()` and `CheckMayGrant()` unmodified and on no share
    write raising anyone's resolved permissions.
@@ -319,11 +320,17 @@ membership alone grants no access. Sharing with every member is N shares.
    rights would block that, and would also block recovery of any such account until the
    owner revokes shares or the account is deleted. *Lean: keep ADR-0014's behavior and state
    it in the manual; a household instance's administrator can read the database regardless.*
+   *Decider's answer, 2026-10-09: keep ADR-0014's behavior.*
 2. **What happens to recipes when their owner's account is deleted?** Options: delete them
    (rule 5), or transfer to the lowest-id `share` holder. *Lean: delete, with a count in the
    confirmation, because an unexpected new owner receives data the former owner chose not to
    give them.*
+   *Decider's answer, 2026-10-09: medication and vitamin recipes are deleted with the owner. Meal, drink and food recipes
+   stay in the existing shared `recipes` table, are global, and have no owner to delete. The
+   private type is chosen by the person creating a consumption recipe; Victual infers
+   privacy from no product name or classification.*
 3. **May an administrator delete a recipe they cannot read, to clear a stuck record?** *Lean:
    no dedicated route; the administrator deletes the owner account (question 2).*
 4. **Is a household-wide principal wanted later?** Deferred by Option D. Its answer would
    need to say how it appears in permission checks.
+   *Decider's answer, 2026-10-09: not for v0.5.0; share with each member separately.*

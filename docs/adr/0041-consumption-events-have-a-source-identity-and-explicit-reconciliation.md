@@ -409,14 +409,16 @@ ADR-0036 lineage and the audit trail. Rejected.
 
 ## Acceptance prerequisites
 
-1. The maintainer answers open questions 1 to 3, or accepts the stated leans.
+1. The maintainer answers open questions 1 to 3, or accepts the stated leans. Questions 1
+   and 2 answered 2026-10-09; question 3 (the `possible_duplicates` window) takes the lean.
 2. [ADR-0040](0040-consumption-recipes-are-private-rows-with-scoped-shares.md) is accepted, or
    the maintainer accepts this record's reliance on its private-table and lock-order rules.
 3. The maintainer confirms that the optional `$usedDate` parameter is acceptable for
-   `ConsumeProduct()`, which this record treats as an internal API.
+   `ConsumeProduct()`, which this record treats as an internal API. Confirmed by the
+   maintainer 2026-10-09; the evidence that existing suites still pass is separate.
 4. The maintainer confirms that a client-reported dose event is outside
    [ADR-0012](0012-observations-are-proposals.md) and may book through the stock write paths
-   once the person has approved a mapping.
+   once the person has approved a mapping. Confirmed by the maintainer 2026-10-09.
 
 ## Open questions
 
@@ -424,8 +426,10 @@ ADR-0036 lineage and the audit trail. Rejected.
    person links; holding leaves stock overstated until they act. *Lean: book and surface
    `possible_duplicates`, because an unlinked pair costs one visible correction and a held
    event can be forgotten.* A per-mapping `on_possible_duplicate` setting could expose both.
+   *Decider's answer, 2026-10-09: book and surface `possible_duplicates`; no per-mapping setting in v0.5.0.*
 2. **How long are `voided` and `dismissed` tombstones kept?** They guard against replaying a
    deleted event. *Lean: keep them while the mapping exists, then delete with it.*
+   *Decider's answer, 2026-10-09: keep them while the mapping exists.*
 3. **What is the `possible_duplicates` default window?** *Lean: 30 minutes, an instance setting.*
 4. **Is 7 days the right automatic-void window?** *Input from the `victual-kit` maintainer,
    2026-10-09: keep it. A same-evening undo is the common case, and the larger risk is a stale

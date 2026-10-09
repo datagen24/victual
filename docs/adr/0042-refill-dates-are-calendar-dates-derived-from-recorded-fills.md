@@ -277,7 +277,8 @@ indistinguishable from a new fill. Rejected.
 
 ## Acceptance prerequisites
 
-1. The maintainer answers open questions 1 to 3, or accepts the stated leans.
+1. The maintainer answers open questions 1 to 3, or accepts the stated leans. Questions 1, 3
+   and 4 answered 2026-10-09; question 2 (order expiry) takes the lean.
 2. [ADR-0040](0040-consumption-recipes-are-private-rows-with-scoped-shares.md) is accepted, or
    the maintainer accepts this record's reliance on its access rules.
 
@@ -285,10 +286,13 @@ indistinguishable from a new fill. Rejected.
 
 1. **Is seven days the right default warning lead, and is a per-user setting plus per-recipe
    override the right shape?** Seven days is the recommendation only. *Lean: yes.*
+   *Decider's answer, 2026-10-09: 7 days, as a per-user setting with a per-recipe override.*
 2. **Should an open order expire into a reminder?** An order never received could leave a
    prescription silently `ordered`. *Lean: no automation in this release; the order list
    shows age.*
 3. **Is `fraction_elapsed` wanted, or are `days_before_end` and `fixed_interval` enough?**
    Some plans allow a refill after a share of the supply elapses. *Lean: keep it; it is
    one line of arithmetic and one check constraint.*
+   *Decider's answer, 2026-10-09: keep all three rules.*
 4. **Should a short supply with the fallback be `unknown` or clamped?** *Lean: `unknown`.*
+   *Decider's answer, 2026-10-09: `unknown`; the person sets a date or rule.*

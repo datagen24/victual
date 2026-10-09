@@ -344,4 +344,8 @@ answers from the maintainer's inventory scope decision on 2026-10-09.
     > **Design, 2026-10-09:** [ADR-0042](../adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md)
     > (Proposed) recommends a seven-day lead as a per-user setting with a per-prescription
     > override, calendar dates in the server zone with a client `as_of`, no server push, and
-    > acknowledged notice keys. These are recommendations until the maintainer decides.
+    > acknowledged notice keys.
+    >
+    > **Response, maintainer, 2026-10-09:** seven days as a per-user setting with a
+    > per-prescription override; all three rule kinds kept; a short supply gives an unknown
+    > estimate. Server push stays out of this release.
