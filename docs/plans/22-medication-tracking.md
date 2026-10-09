@@ -1,646 +1,332 @@
-# 22. Vitamin and medication tracking
-
-**Goal:** Medications, vitamins and supplements are tracked as what they are — a per-person
-regimen drawing on a shared physical supply — rather than as groceries that happen never to
-appear in a recipe. Scheduling, adherence, days-of-supply, lot traceability and cold chain,
-built on the stock subsystem rather than beside it.
-
-**Depends on:** [23](landed/23-storage-classes.md) (the storage vocabulary, extracted from this plan
-per Q1) and [14](landed/14-contract-and-regression-scaffolding.md) piece 2 (this surface is invisible
-to the parity suite and contract tests are its only guard). Builds on
-[12](landed/12-frontend-shared-core.md), landed. **Not** blocked on [19](19-rbac.md) — Q5 decided
-this ships its own narrow visibility enforcement and becomes a client of 19 later.
-
-**Governed by:** [ADR-0015](../adr/0015-medication-records-never-advises.md) (scope boundary)
-and [ADR-0016](../adr/0016-schedule-expansion-in-the-application.md) (where expansion lives),
-both **Proposed** and written alongside this plan.
-
-**Consumes:** [ADR-0011](../adr/0011-label-namespace.md), **accepted 2026-09-04**, for labels
-— this plan proposes no code format of its own — and answers its still-open Q3 for the
-medication case. Constrained by [ADR-0012](../adr/0012-observations-are-proposals.md), also
-accepted 2026-09-04, wherever an inference about stock would otherwise be written as fact.
-
-**Affects:** [02](02-mcp-endpoint.md) — the interface spec is still a draft and should decide
-medication exposure now rather than retrofit it.
-
-**Status:** draft for review.
-
-## Today
-
-There is no medication concept. A vitamin is a product, a bottle is a stock entry, and taking
-one is a consume booking. That works, and about a third of what this plan needs is already in
-the tree — which is the reason to build on stock rather than alongside it.
-
-**What already fits.**
-
-- `products.due_type = 2` is hard expiry.
-- `default_best_before_days_after_open` is a beyond-use date and `OpenProduct` already applies
-  it, capped so it can never exceed the original due date (`StockService.php:1466`) — the 28-day
-  inhaler and the 30-day pierced vial are this field, not new machinery.
-- `move_on_open` plus `default_consume_location_id` moves a vial from the fridge to the in-use
-  tray on opening.
-- `hide_on_stock_overview` keeps medications out of the general stock view.
-- `not_check_stock_fulfillment_for_recipes` keeps them out of recipe fulfilment.
-- `quantity_unit_conversions` is per-product, so "1 bottle = 90 tablets" and "1 mL = 100 mg" are
-  expressible today.
-- Consumption is FEFO by default, which is the correct order for drugs.
-- `stock_log` carries `transaction_id`, `correlation_id` and an `undone`/`undone_timestamp`
-  pair, so the audit trail and its reversal already exist.
-
-**What does not.** No person dimension — `users` requires `password NOT NULL`, so a child or a
-pet cannot be represented without minting a credentialed account. No lot number: `stock` has
-`note`, untyped and unindexed, and recalls are issued by lot. No storage vocabulary beyond a
-freezer boolean, which is [23](landed/23-storage-classes.md)'s subject. No schedule that survives
-contact with real dosing, and no adherence record.
-
-**Chores are the near miss.** `chores` already has `period_type`, `period_interval`,
-`period_config`, `rollover`, `start_date`, `consume_product_on_execution` with `product_id`
-and `product_amount`, and `chores_log` has `skipped` and `scheduled_execution_time`. It is the
-right *shape* and the wrong *model*: one dose amount per chore, no end date, no occurrence
-materialisation (only "next execution from last"), assignment rotates a household chore among
-users rather than saying whose medication this is, and PRN is the inverse of a recurrence.
-This plan reads chores as a design source and does not extend it.
-
-## Proposed change
-
-Seven pieces, each shippable alone. Pieces 1–2 are useful with no scheduler at all: together
-with [23](landed/23-storage-classes.md) they give cold-chain-aware inventory with recall
-traceability, which is most of the value for the smallest fraction of the work.
-
-### Piece 1 — Medication master data
-
-New `medication_products`, keyed on `product_id`. Presence in this table *is* the
-classification — there is no `is_medication` column on `products`, so `products` is untouched
-and nothing in the wire contract moves.
-
-Columns: form (tablet / capsule / inhaler / vial / pen / drops / patch / suspension),
-`strength_amount` + `strength_qu_id` (50 mg per tablet), route, `splittable`,
-`min_dose_increment`, `required_storage_class_id` (FK into [23](landed/23-storage-classes.md)),
-`requires_reconstitution`, `days_after_reconstitution`, and the prescription block —
-`is_prescription`, prescriber, pharmacy, `rx_number`, `refills_remaining`, `rx_expires_on`.
-
-`splittable` and `min_dose_increment` exist because half tablets are real and enteric-coated
-or extended-release tablets must not be split. The regimen form validates a dose against them.
-This is not clinical validation under
-[ADR-0015](../adr/0015-medication-records-never-advises.md): it compares a dose against a
-physical fact about a tablet that the household itself recorded, and asserts nothing the
-household did not already know.
-
-Creating a medication product sets defaults on the `products` row itself — `due_type = 2`,
-`hide_on_stock_overview = 1`, `not_check_stock_fulfillment_for_recipes = 1`,
-`treat_opened_as_out_of_stock = 0`, and `default_stock_label_type = 2` — rather than inventing
-parallel behaviour.
-
-That last default is this plan's answer to [ADR-0011](../adr/0011-label-namespace.md) Q3,
-which asks whether per-unit labelling stays the default granularity and leans to letting the
-consuming plans decide. For medication it does, and for a specific reason: `stockLabelType = 2`
-gives each physical unit its own stock entry and its own `stock_id`
-(`StockService.php:204`), which is exactly what a vial or
-a pen needs — its own pierce date, its own 30-day clock, its own lot. Per-unit labelling is not
-a printing preference here; it is what makes piece 2 correct.
-
-### Piece 2 — Lot, cold chain and the stock entry
-
-New `medication_stock_attributes`, keyed on **`stock_id`, not `stock.id`**. `stock.id` is a
-row that splits on partial open and is deleted when consumed to zero; `stock_id` is the
-`uniqid` string carried into every `stock_log` booking, so it is the only identifier under
-which a lot survives the bottle being finished — which is exactly when a recall notice
-arrives. Keying the table on `stock.id` instead would lose that lot record at the one moment
-it is needed.
-
-Columns: `lot_number`, `serial_number`, `national_code` (NDC/DIN/PZN), manufacturer,
-`reconstituted_date`, `first_pierced_date`, `quarantined`, `quarantine_reason`.
-
-**The split hazard.** `OpenProduct` splits an entry covering more than the requested amount
-and gives *the unopened remainder a new `stock_id`*
-(`StockService.php:1540`); `TransferProduct` does the
-same. An attribute row keyed to the original `stock_id` silently stops describing the
-remainder. Every split site must copy the attribute row — Q4 is where that copy lives. Piece
-1's per-unit labelling default reduces how often this fires but does not remove it, because a
-transfer still splits.
-
-**Excursions.** New `storage_excursions`: location_id, started, ended, observed min/max,
-source, note. Excursions arrive from outside — the fridge sensor lives in Home Assistant, not
-here — through an inbound API route. Not MQTT: [18](18-mqtt-state-publication.md) is
-publish-only and adding a subscriber is a larger change than this needs.
-
-**How this sits with [ADR-0012](../adr/0012-observations-are-proposals.md)**, accepted
-2026-09-04. A thermometer is not guessing, so an excursion is not a probabilistic observation
-and does not become a proposal; it also never touches the stock ledger, which is what 0012 and
-the constitution's "the stock ledger is exact history" actually protect. What *would* fall
-under 0012 is the inference built on top of it — "these entries are spoiled" is a
-confidence-bearing claim about stock, and 0012 now binds: it must arrive as a proposal a human
-confirms, never as a booking.
-
-That is a reason to keep v1 flagging only (Q8) beyond the alarm-fatigue argument. 0012's
-acceptance decided the contract and not the schedule — no `proposals` table exists, no
-endpoint exists, and no plan owns the work. So a v1 that wanted automatic quarantine would
-have to build 0012's machinery first, for one caller, ahead of any plan that owns it.
-
-The application records the excursion, surfaces it against the entries that were resident, and
-stops. Whether a vial is still good is a judgement a person makes —
-[ADR-0015](../adr/0015-medication-records-never-advises.md).
-
-### Piece 3 — Subjects
-
-New `subjects`: name, `user_id` (nullable FK to `users`), active, note. A subject is a person
-or animal a regimen is for; the nullable link is what lets a subject who is *also* a login see
-their own data without forcing every subject to be an account.
-
-**Visibility defaults to per-subject.** A subject's regimens and administrations are visible to
-the linked user, and to holders of a new `MEDICATIONS_ALL` permission; household-wide
-visibility is opt-in per subject. This is the sharpest data-visibility case in the application
-and it is enforced **server-side, in the service and the view predicate, on every route** — not
-by filtering in the frontend. Under
-[ADR-0006](../adr/0006-authenticated-issues-in-scope.md) a leak here is a finding, not a
-cosmetic issue.
-
-**Decided (Q5): this plan ships that enforcement itself, narrowly.** A caller sees the subjects
-linked to their own user, plus subjects explicitly marked household-visible, plus everything if
-they hold `MEDICATIONS_ALL`. The predicate lives in `MedicationService` and the medication
-views, applies to regimens and administrations, and is not a general mechanism.
-
-Two properties of that, both deliberate. **It is row filtering, not field redaction** — an
-invisible subject is absent, never a row with nulled columns — which is why it sidesteps the
-hardest problem [19](19-rbac.md) has, the absent-versus-redacted-versus-unknown contract that
-[ADR-0009](../adr/0009-database-as-the-logic-layer.md)'s question 4 and
-[ADR-0012](../adr/0012-observations-are-proposals.md)'s prerequisite both circle. Medication
-visibility is row-shaped, so none of that applies. And **a direct fetch of an invisible subject
-answers 404, not 403**, because 403 confirms the row exists, which is the whole thing being
-protected.
-
-**What this does not protect, stated so the plan does not overclaim.** Stock is shared and
-medication products are ordinary products. Anyone holding `STOCK` can see that the household
-holds a given drug, in what quantity, and — through piece 2 — its lot and storage history.
-`hide_on_stock_overview` keeps it off a screen; it is not an access control. What per-subject
-visibility protects is **the link between a drug and a person**, which is the sensitive half but
-not the whole of it. Closing the other half means gating stock reads, which is
-[19](19-rbac.md)'s question 8 and not this plan's to answer.
-
-**One constraint from [ADR-0014](../adr/0014-administering-a-user-is-a-subset-question.md),
-which wave 2 landed as `User::MayAdminister()`.** That rule compares the target's *resolved
-permissions* against the caller's, so it can only see things that are permissions. Subject
-visibility here is deliberately not one — it is a row predicate over `subjects.user_id` — which
-means administering a user tells you nothing about whose medication data they can read, and the
-subset check cannot reason about it either. That is fine as long as visibility stays data.
-
-It stops being fine the moment this plan grows a *grant*: a table saying "user X may see
-subject Y" would be a permission wearing a different shape, invisible to
-`User::CheckMayGrant()`, and an account could hand out access its own administrator could not
-see it holding. That is precisely the failure ADR-0014 exists to close.
-
-So the rule for this plan is that per-subject access is either **derived from the
-`subjects.user_id` link and the `MEDICATIONS_ALL` permission, or it is a real permission in
-`permission_hierarchy`** — never a third grant mechanism beside them. Worth stating now, because
-the natural next feature request after this ships is "let my partner see my regimens too", and
-the obvious implementation is the one that must not be built.
-
-New permission constants alongside the existing 30 in
-[controllers/Users/User.php](../../controllers/Users/User.php): `MEDICATIONS`,
-`MEDICATIONS_ADMINISTER`, `MEDICATIONS_UNDO`, `MEDICATIONS_ALL`.
-
-### Piece 4 — Regimens
-
-New `regimens`: subject_id, product_id, `schedule_type`, `dose_qu_id`, route, `start_date`,
-`end_date`, `previous_regimen_id`, `prn`, `prn_min_interval_minutes`, `prn_max_per_day`,
-`refill_lead_days`, active, note. Plus `regimen_doses`: regimen_id, `time_of_day`,
-`dose_amount`, `day_selector` — one row per dose event in a cycle, which is how 1 tablet in the
-morning and 2 at night is expressed.
-
-`schedule_type` for v1: `fixed_daily` (N times a day at wall-clock times), `interval_days`
-(every N days), `weekdays` (mask), `cycle` (N days on, M off), `prn`.
-
-**A regimen is versioned, not edited.** Changing a dose ends the current regimen and starts a
-new one linked by `previous_regimen_id`. Administrations reference the regimen they were taken
-under, so history stays interpretable against the instruction that was actually in force.
-
-Two things fall out of this for free. **A taper is a chain of regimens** with consecutive
-start/end dates and needs no separate model. And **the same product at different doses for
-different people** is two regimens against one product and one stock pool — the case that
-made a per-product schedule field unworkable in the first place.
-
-**Occurrence expansion lives in PHP**, in a new `MedicationService`, not in a view. That is
-[ADR-0016](../adr/0016-schedule-expansion-in-the-application.md)'s subject and the argument is
-there rather than here; the short form is that recursive date arithmetic is the surface where
-the two engines diverge most, and the dual-engine discipline is live regardless of
-[ADR-0008](../adr/0008-postgresql-only-runtime-engine.md)'s acceptance.
-
-### Piece 5 — Administrations
-
-New `administrations`: regimen_id, subject_id, product_id, `scheduled_time` (null for PRN),
-`actual_time`, `state`, `dose_amount`, `stock_transaction_id`, `recorded_by_user_id`, `undone`,
-`undone_timestamp`, note. States: taken, taken-late, skipped, refused, held, missed.
-
-**Nothing is ever generated automatically.** A dose is recorded because a person recorded it.
-Auto-consuming on schedule would make the adherence record fiction and the stock count a guess
-dressed as a measurement — which is the same defect
-[ADR-0012](../adr/0012-observations-are-proposals.md) exists to prevent, arrived at from a
-different direction.
-
-Consumption follows the log: recording a `taken` calls `StockService::ConsumeProduct` and
-stores the returned transaction id, inheriting FEFO, the correlated bookings and the
-transactional write path [13](landed/13-write-path-transactions.md) landed. Correction is
-undo-and-rerecord on the `stock_log` precedent — rows are never deleted.
-
-### Piece 6 — Supply and refills
-
-Days of supply = on-hand converted into dose units ÷ the summed daily dose of every active
-regimen against that product. Because the pool is shared, the figure is **pool-wide**; the plan
-does not allocate stock to subjects, and the UI must not imply it does.
-
-Refills surface in the medication module, keyed on `refill_lead_days`. They deliberately do
-**not** flow into the shopping list: `min_stock_amount` is a static number where
-days-of-supply is derived, and a refill is a pharmacy call rather than a grocery item.
-Adjacent to [03](landed/03-category-min-stock.md) but not built on it.
-
-### Piece 7 — Labels and scanning
-
-**This plan proposes no code format.**
-[ADR-0011](../adr/0011-label-namespace.md), accepted 2026-09-04, already decides it: opaque
-`vctl:<uid>` payloads, a `labels` table the database owns, grocycode retained as a read-only
-input symbology, printing through an outbox rather than the fire-and-forget webhook. Its Q2
-leans to QR for new labels but is not decided, so the symbology is 0011's to settle and not
-this plan's. The constitution states the same thing as a standing invariant — physical
-artifacts are contracts. A `stock_entry_codes` table invented here would be a second, worse
-version of an accepted record.
-
-What this plan contributes is a consumer and one answer: medication needs stock-entry-granular
-labels (piece 1), which is 0011's still-open Q3 resolved for this case — that question
-explicitly defers to the plans that consume labels, and this is one.
-
-**The binding half of 0011 is live; the built half is not.** Its acceptance "decides the
-namespace, not the schedule": there is no `labels` table, no print outbox, and the fork still
-emits Grocycodes through the webhook, with none of that work in the roadmap's wave order. So
-what binds this plan today is the prohibition — no new label payload carries a row id, no new
-Grocycode type — while the machinery piece 7 wants has no owner. Q6 is what to do about that.
-
-Intake stays manual: read the carton, type the expiry and the lot, print a label, and scan
-that label thereafter. GS1 DataMatrix parsing at intake — AI (01) GTIN, (17) expiry, (10) lot —
-would remove the typing, and is explicitly **out of scope** because the household is moving off
-DataMatrix and 0011 retires it to legacy-read-only. Noted so the manual intake cost is a known
-trade rather than an oversight.
-
-## Gotchas
-
-Collected because most of them are only visible from inside the existing code.
-
-- **`stock_id` splits.** Piece 2's central hazard, repeated because every future contributor
-  will meet it: open and transfer mint a new `stock_id` for the remainder.
-- **Half tablets drift.** `stock.amount` is `DOUBLE PRECISION` on both engines, so behaviour is
-  at least consistent, but a few hundred 0.5s accumulate off integers. Round for display,
-  compare with an epsilon, and never test a remaining amount with `= 0`.
-- **Reconstitution is a third transition.** `default_best_before_days_after_freezing` and
-  `_after_thawing` are one pair, and a frozen-until-reconstituted product needs a distinct
-  clock that starts at reconstitution and is usually refrigerated afterwards — a different
-  storage class as well as a different date.
-- **Verify the beyond-use cap against a missing due date.** The cap at
-  `StockService.php:1472` takes the *earlier* of the
-  computed date and the original, which is right. What is unverified is the behaviour when
-  `best_before_date` is absent or a far-future sentinel; a 28-day clock that silently evaluates
-  to "no date" would be a quiet safety hole. Confirm before relying on it — this is a check to
-  run, not a defect being claimed.
-- **Wall clock versus elapsed time.** Grocy stores naive `TIMESTAMP` and has no per-user time
-  zone. Wall clock is right for medication, so "every 12 hours" is two fixed times — but the
-  DST transitions belong in the test set, in both directions.
-- **The pillbox is a location with a storage class.** Dispensing a week ahead is a transfer
-  into an Ambient location, and a product whose `required_storage_class_id` is Fridge then
-  cannot be dispensed into it — the correct outcome, arrived at with no special case. FEFO
-  within a pillbox is meaningless and lot attribution blurs once tablets are commingled; the
-  plan accepts that for ambient products and forbids it for the rest.
-- **No interaction checking, dose validation or clinical advice, ever.**
-  [ADR-0015](../adr/0015-medication-records-never-advises.md) is the record; this line is here
-  because a plan is where the temptation actually arrives.
-- **MCP exposure is decided now.** Medication entities are excluded from
-  [02](02-mcp-endpoint.md) by default and administration is never a write tool. Cheap while
-  the spec is a draft, and 0014 makes it more than a privacy question: an LLM handed
-  medication data will synthesise advice whether or not a tool offers it.
-- **The parity suite cannot see this.** Fork-only surface with no upstream counterpart, so
-  `.devtools/parity/` will never exercise it and contract tests are the only guard —
-  [14](landed/14-contract-and-regression-scaffolding.md) piece 2.
-- **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
-  demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two files, claiming **0305** (medication master data and subjects)
-  and **0306** (regimens, administrations, excursions) — see
-  [RESERVATIONS.md](../../migrations/RESERVATIONS.md). The numbers have moved:
-
-  - 0304–0305 until issue #665's booking lineage migration (ADR-0036) was written on 2026-10-07
-    and took **0304**, the lowest free slot. Per the lowest-free-slot rule this plan's two
-    claims move up once more, to **0305–0306**.
-
-  - 0303–0304 until issue #612's label revival migration (ADR-0037) was written on 2026-10-06 and
-    took **0303**, the lowest free slot. Per the lowest-free-slot rule this plan's two claims
-    move up once more, to **0304–0305**.
-
-  - 0302–0303 until the `stock_edited_entries` performance fix was written on 2026-10-05 and
-    took **0302**, the lowest free slot. Per the lowest-free-slot rule this plan's two claims
-    move up once more, to **0303–0304**.
-
-  - 0301–0302 until issue #650's `TIMESTAMPTZ` migration was written on 2026-10-04 and took
-    **0301**, the lowest free slot. Per the lowest-free-slot rule this plan's two claims move
-    up once more, to **0302–0303**.
-
-  - 0299–0300 until PRs #624, #626, #627 and #628 had all merged to `master`. At that point
-    issue #521's view-permission migration (#487 remediation, `BATTERIES_VIEW`,
-    `CALENDAR_VIEW` and `EQUIPMENT_VIEW`) kept the **0299** it had already written to disk,
-    the lowest free slot below all four now-landed numbers. Open PR #634 (issue #629's recipe
-    cost/calorie follow-up) claimed **0300** on its own branch ahead of this plan. Per the
-    lowest-free-slot rule this plan's two claims move up once more, from 0299–0300 to
-    **0301–0302**.
-  - 0296–0297 until issue #521's view-permission gating (#487 remediation, `BATTERIES_VIEW`,
-    `CALENDAR_VIEW` and `EQUIPMENT_VIEW`) took **0299** on that branch — the lowest free slot
-    below the three still-open PRs #626/#627/#628, which held 0296 through 0298 unwritten on
-    this table at the time. PR #624, which this plan's own claim had been yielding to at
-    0295, had merged instead as issue #552/#558's product foreign-key migration, not #521's.
-    Per the lowest-free-slot rule this plan's two claims moved up once more, from 0296–0297
-    to 0300–0301 - since corrected, above, to 0301–0302.
-  - 0298–0299 until 2026-09-29, later still, when issue #622's `stock_current` aggregation
-    fix (#487 remediation) took **0298**, the lowest free slot below PRs #624, #626 and
-    #627 - all three merged to `master` by then - moving this plan's claims up to
-    **0299–0300** under the lowest-free-slot rule
-  - 0295–0296 until 2026-09-29, when three branches claimed the same lowest free slots in
-    parallel. PR #624 (issues #552/#558, products foreign keys and stock-entry label
-    retirement) writes `0295.pgsql.sql`. PR #626 (issue #516, cancel queued print jobs on
-    label retirement) writes `0296.pgsql.sql`. Issue #492's (H3, #487 remediation)
-    `stock_amount_non_negative_check` fix — ADR-0032's database-level `amount >= 0` backstop
-    for `stock`, behind the application refusal commit 2039d5947 already added — is written to
-    disk as `0297.pgsql.sql`, the next lowest free slot once 0295–0296 are spoken for, above
-    this plan's still-unwritten claims. This plan's two claims moved up to **0298–0299** under
-    the lowest-free-slot rule at the time. PR #624, PR #626 and PR #627 have since all merged
-    to `master` (18d0389d, 11783f76, 46cb862d) - 0295, 0296 and 0297 are landed migrations now
-  - 0296–0297 until 2026-09-29, briefly, on PR #626's own branch before it knew about issue
-    #492's claim. Issue #516's (M16, #487 remediation) print-job cancellation fix was written
-    to disk as `0296.pgsql.sql` above this plan's still-unwritten claims. That moved them to
-    0297–0298 under the lowest-free-slot rule at the time, superseded by the three-way
-    collision above once both branches merged
-  - 0295–0296 until 2026-09-28 once more, when issue #552's products foreign-key migration
-    (#487 remediation), also carrying issue #558's label-retirement fix, was written to disk
-    as `0295.pgsql.sql` above this plan's still-unwritten claims. It moved up to 0296–0297
-    under the lowest-free-slot rule, before PR #626 and issue #492's fix also claimed that
-    range and it moved again as above
-  - 0294–0295 until 2026-09-28 yet again, when issues #543 and #546's
-    `trg_cascade_change_qu_id_stock` fix (#487 remediation) was written to disk as
-    `0294.pgsql.sql` above this plan's still-unwritten claims. It rescales
-    `product_location_min_stock.min_stock_amount` and refuses a stock-unit change that would
-    rescale a measured open container or its live consume booking. It moved up to 0295–0296
-    under the lowest-free-slot rule
-  - 0293–0294 until 2026-09-28 once more, when issue #508's `product_groups_missing`
-    roll-up migration ([ADR-0034](../adr/0034-product-group-minimum-counts-descendant-groups.md),
-    #487 remediation) was written to disk as `0293.pgsql.sql` above this plan's still-unwritten
-    claims and moved up to 0294–0295 under the lowest-free-slot rule
-  - 0292–0293 until 2026-09-28, later still again, when issue #588's fix to
-    `trg_stock_log_DEL`'s id/product_id confusion (#487 remediation) was written to disk as
-    `0292.pgsql.sql` above this plan's still-unwritten claims and moved up to 0293–0294 under
-    the lowest-free-slot rule
-  - 0291–0292 until 2026-09-28, later still, when issue #506's maintainer decision D5 (an
-    explicit `chores_log.stock_transaction_id` column, #487 remediation) was written to disk
-    as `0291.pgsql.sql` above this plan's still-unwritten claims and moved up to 0292–0293
-    under the lowest-free-slot rule
-  - 0290–0291 until 2026-09-28, when issue #487 remediation's ADR-0033 decision-3 migration
-    (PR #580, narrowing `stock_splits` to never-expiring, unlabelled rows for issues 488 and
-    491) was written to disk as `0292.pgsql.sql` above this plan's still-unwritten claims and
-    moved down to 0290 under the lowest-free-slot rule
-  - 0289–0290 until 2026-09-26, when issue #487 remediation's view-correction migration
-    (PR #542, fixing issues 501, 505, 497 and the weekly-schedule half of 506) took 0289
-    under the lowest-free-slot rule
-  - 0288–0289 until 2026-09-24, when [issue 461](https://github.com/datagen24/victual/issues/461)'s
-    stock location foreign key ([ADR-0029](../adr/0029-stock-locations-reference-existing-locations.md))
-    took 0288 under the lowest-free-slot rule
-  - 0287–0288 until 2026-09-19, when
-    [issue 208](https://github.com/datagen24/victual/issues/208)'s `api_keys.read_only` took
-    0287 as scheduled work
-  - 0284–0285 until 2026-09-18, when plan 05's 0286 merged ahead of them and the hole was closed
-    by writing both as no-ops rather than by moving a file that was already in `master`
-  - 0275–0276 until 2026-09-14, when the four scheduled wave 4 plans took the lower slots
-  - 0279–0280 the next day, when [issue 148](https://github.com/datagen24/victual/issues/148)'s
-    own defect fix took 0277 ahead of plan 30
-  - 0280–0281 the day after that, when
-    [issue 130](https://github.com/datagen24/victual/issues/130) — plan 11's own listed
-    follow-up — took 0280 ahead of this plan
-  - 0281–0282 the same day, when plan 19 piece 2's own migration collided with issue 130's
-    landed 0280 at merge time and moved to the lowest free slot instead
-  - 0283–0284 later the same day, when
-    [issue 176](https://github.com/datagen24/victual/issues/176)'s follow-up to plan 19 piece 2
-    was written as `0282.pgsql.php` and took that slot with a file behind it
-  - and finally **0284–0285** on 2026-09-16, when [plan 32](landed/32-label-kinds.md)'s own
-    migration, written on its branch at 0285, was refused by CI over exactly this hole and
-    renumbered down to 0283. The same rule applied once more, this time against a file rather
-    than a scheduled plan, with rows added to
-    [RESERVATIONS.md](../../migrations/RESERVATIONS.md) before any file is written
-
-  0274 belongs to [23](landed/23-storage-classes.md), which lands first.
-
-  **These numbers have moved twenty-eight times.** In order:
-
-  - claimed as 0261–0262 until `master` landed 0261
-  - 0262–0264 until wave 2 landed 0262 through 0265
-  - 0267–0269 until wave 3a took 0266
-  - 0268–0270 to make room for 0267
-  - 0269–0271 to make room for wave 3b's [03](landed/03-category-min-stock.md)
-  - 0272–0273 to make room for wave 3b's [25](25-label-infrastructure.md)
-  - 0273–0275 for [27](landed/27-label-templates-and-rendering.md)
-  - 0275–0276 for [08](landed/08-nested-locations.md)
-  - 0279–0280 for issue 148's fix
-  - 0280–0281 for issue 130
-  - 0282–0283 for plan 19 piece 2's collision with it
-  - 0283–0284 for that plan's own written follow-up
-  - 0284–0285 for plan 32's own written migration
-  - 0287–0288 for the hole `master`'s merge of plan 05's 0286 left below this plan's numbers,
-    closed by spending 0284 and 0285 themselves as no-op migrations rather than by moving a
-    file
-  - 0288–0289 for issue 208's `api_keys.read_only`
-  - 0289–0290 for issue 461's stock location foreign key
-  - 0290–0291 for PR #542's view-correction migration
-  - 0291–0292 for PR #580's ADR-0033 decision-3 migration
-  - 0293–0294 for issue #588's `trg_stock_log_DEL` fix
-  - 0294–0295 for issue #508's `product_groups_missing` roll-up migration
-  - 0295–0296 for issues #543 and #546's `trg_cascade_change_qu_id_stock` fix
-
-  Two branches then carried this plan's claims forward in parallel, before either had merged
-  the other's history. They are labelled below rather than interleaved by date: forcing them
-  into one strict timeline would make each branch's own then-current status read as false
-  once the other branch's later events are known.
-
-  **`master`'s own sequence, as branches merged into it one at a time:**
-
-  - 0296–0297 for issue #552's products foreign-key migration, written to disk (still
-    unmerged at the time) as `0295.pgsql.sql` - later merged as PR #624
-  - 0297–0298 for issue #516's print-job cancellation fix, written to disk (still unmerged)
-    as `0296.pgsql.sql` - later merged as PR #626
-  - 0298–0299 for issue #492's `stock_amount_non_negative_check` fix, written to disk (still
-    unmerged) as `0297.pgsql.sql` once #624 and #626 had both taken their slots - later
-    merged as PR #627
-  - 0299–0300, once issue #622's `stock_current` aggregation fix took 0298, the lowest free
-    slot below all three of those branches - by then all merged to `master` - later merged
-    as PR #628
-
-  **This branch's own sequence, before it had merged any of the above into itself:**
-
-  - 0296–0297 for issue #521's view-permission gating, guessing (wrongly) that PR #624 would
-    claim 0296–0298 for further #521 work rather than for issue #552/#558
-  - 0300–0301 for the same view-permission gating, once #624 had in fact landed as issue
-    #552/#558's fix at 0295 and this plan's claims moved up again, ahead of the three still-open
-    PRs #626/#627/#628's still-unwritten 0296–0298
-
-  **Reconciled once this branch merged `master`'s four now-landed PRs:**
-
-  - and now **0301–0302**, since this branch's own view-permission migration had already
-    written its file at 0299 and open PR #634 had separately claimed 0300 ahead of this plan
-
-  This branch (PR #634) has now itself merged `master`'s four landed PRs plus PR #633's own
-  view-permission migration: nothing moved for this plan's own claims in that merge — both
-  sides already agreed on **0301–0302**.
-
-  So re-read that table at every resync rather than trusting a number this plan claimed a week
-  ago. Every correction cost one table edit because nothing had been written under the old
-  numbers, which is the argument for claiming before writing rather than before merging.
-
-  **The last eleven are the ones to know about:**
-
-  - 0267 went to a defect fix that was already written
-  - 0268 to a scheduled plan
-  - issue 148's fix again to a defect fix already being written
-  - issue 130 to plan 11's own follow-up also being written
-  - plan 19 piece 2 a second time, to the same migration merging into a `master` that had
-    claimed 0280 out from under it while it was in flight
-  - issue 176's fix to that plan's own review follow-up, which was written and on disk when this
-    table was next read
-  - plan 32's own migration a second time — first claimed at 0285 without displacing this
-    plan's numbers, then, once CI refused the hole that left, renumbered down to 0283 and this
-    plan moved up again
-  - the hole `master`'s own merge of plan 05's 0286 left below this plan's numbers, closed by
-    spending 0284 and 0285 as no-op migrations rather than by moving a file
-  - issue 208's own `api_keys.read_only`, written on its branch
-  - issue 461's own stock location foreign key, written on its branch
-  - and PR #542's own view-correction migration for issue #487's audit, written on its branch
-
-  So this plan's numbers have eleven times moved for work that was closer to having a file than
-  this one is.
-
-  Two files rather than two *pairs*: this plan was written when
-  [ADR-0004](../adr/0004-engine-specific-migrations.md) asked for a pair, and ADR-0008's
-  retirement has since frozen the SQLite line at
-  `DatabaseMigrationService::SQLITE_FROZEN_MIGRATION_ID` = 0265, above which
-  `check-migrations.php` refuses a `.sqlite.sql`. Both are lone `.pgsql.sql` files with no
-  `@engine-exclusive` marker, and every table they create has to be named in
-  `migratedifftest.php`'s `ENGINE_EXCLUSIVE_TABLES` — which above the freeze means "SQLite is
-  frozen", not "SQLite is deliberately different". See
-  [db/pgsql/README.md](../../db/pgsql/README.md).
+# 22. Medication inventory and private consumption recipes
+
+**Goal:** Track the medication, vitamin and supplement quantities on hand, record their
+consumption and identify when to request a refill. A prescription is a reusable,
+user-entered consumption recipe with access restricted to its owner and specifically
+authorized members. Dosing schedules, adherence tracking and dose reminders are outside
+Victual's scope.
+
+**Status:** preparation for v0.5.0; product scope decided, technical design gates open.
+
+**Release target:** v0.5.0. The maintainer clarified this scope on 2026-10-09. The target
+is a schedule; the release record and signed tag follow verified implementation under
+[the release procedure](../releases/README.md).
+
+**Dependencies:** [14](landed/14-contract-and-regression-scaffolding.md),
+[19](19-rbac.md), [23](landed/23-storage-classes.md), and the existing label subsystem
+([25](25-label-infrastructure.md), [27](landed/27-label-templates-and-rendering.md),
+[32](landed/32-label-kinds.md)). These capabilities are implemented. Apple Health access
+belongs to the native clients in `victual-kit`; Victual owns the receiving API.
+
+**Decisions in force:** [ADR-0011](../adr/0011-label-namespace.md) for labels,
+[ADR-0014](../adr/0014-administering-a-user-is-a-subset-question.md) and
+[ADR-0018](../adr/0018-role-grants-and-domain-reads.md) for authorization,
+[ADR-0032](../adr/0032-stock-amounts-compare-within-one-tolerance.md) for quantities,
+and [ADR-0036](../adr/0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md)
+for booking lineage. [ADR-0012](../adr/0012-observations-are-proposals.md) applies if a
+client proposes an inferred booking.
+
+**Proposed records:** [ADR-0015](../adr/0015-medication-records-never-advises.md) needs
+its boundary aligned with inventory and refill notices. [ADR-0016](../adr/0016-schedule-expansion-in-the-application.md)
+has no implementation consumer in this scope. Neither record's lifecycle status changes
+through this plan. New design records are needed for scoped sharing and external-event
+reconciliation; see [release readiness](#release-readiness).
+
+## Current behavior
+
+Source inspection on 2026-10-09 used working copy `e04065d6`. No application tests were run
+for this preparation review. The tree provides products, purchase-to-stock unit conversions,
+location transfers, consumption, undo, storage classes and stock-entry labels.
+`StockService`, `RecipesService`, `StockLineageService` and the permission model are the
+implementation references for those capabilities.
+
+Recipe permissions currently gate the recipe domain. They do not establish the per-owner
+and explicitly shared access required here. The new consumption recipe may reuse service
+behavior without inheriting food-recipe publication, meal planning or calendar exposure.
+
+The stock ledger already attributes quantities to addition bookings under ADR-0036.
+`stock_id` is a row-group tag. It must not become a new medication lot identity.
+
+## Scope
+
+The release covers ordinary stock for medication and vitamins, private reusable consumption
+recipes, organizer transfers, manual consumption, an authenticated external-consumption API,
+and refill tracking. Native Apple Health integration is implemented in `victual-kit`.
+
+There is no Victual dosing scheduler, recurrence expansion, missed-dose classification,
+adherence dashboard, dose alert or clinical recommendation. A refill notice is an inventory
+notice. No stock booking is generated because a dose was scheduled or a reminder elapsed.
+
+Dedicated manufacturer-batch recall, temperature-excursion ingestion and reconstitution
+workflows are deferred from this release. Existing expiry, storage classes and lineage
+remain available. The previous proposal for those extensions is not a requirement for
+ordinary tablet, liquid or single-use-unit stock.
+
+## Stock and organizer locations
+
+Stock units represent the physical quantity: tablets, capsules, mL or individual single-use
+items. Boxes and bottles can be purchase units converted into stock units. A single-use
+format uses the same unit-count behavior as a pill. This classification alone does not
+require a pierced-container clock, measured remainder or new label kind.
+
+Different products and strengths remain distinct stock products. Conversions express
+quantities entered by the household. A client must not infer a conversion from a drug name
+or calculate a therapeutic dose from concentration.
+
+Every organizer is a distinct tracked location. A household taking three weekly organizers
+on a trip can transfer stock into each separately. Filling an organizer changes location;
+it does not reduce total stock. Consumption deducts from the location that supplied it.
+Moving an organizer or returning unused contents must not book another consumption.
+
+A consumption request needs a source location or another unambiguous stock selection.
+An Apple medication event does not identify which organizer supplied the item. The API
+must support explicit selection and a configured source where appropriate, and must refuse
+an ambiguous selection rather than silently charge another organizer.
+
+## Private consumption recipes
+
+A recipe records user-entered product quantities that can be consumed repeatedly. The
+relationship between the owner and those products is private. Specifically authorized
+members may access it; ordinary household membership grants no access by itself.
+
+Shared stock readers can still see products and amounts. Prescription details, recipe
+names, ownership, refill rules and associated private events require the scoped policy.
+Shared stock references must not expose the private recipe or its owner.
+
+The design must define separate rights for reading, recording consumption, editing recipes,
+undoing consumption and managing sharing. Authorization applies to direct routes, generic
+objects, filters, counts, exports, labels, calendar and integration surfaces. An inaccessible
+private record is absent from lists and returns 404 on direct fetch.
+
+Explicit sharing is a new authorization requirement. It cannot be implemented as a table
+that bypasses ADR-0014's effective-grant and account-administration checks. The authorization
+ADR must specify how scoped rights participate in those checks, or explicitly propose the
+narrow amendment needed. Acceptance remains separate from substantive design changes.
+
+Recipe edits must leave past quantities and product references interpretable. Stock undo
+uses the recorded booking, never a recalculation from the recipe's current contents.
+
+## Consumption and the client API
+
+Manual consumption and native-client submissions use the existing stock write paths.
+A recipe with multiple lines commits all consumption bookings and its private reference
+atomically. Insufficient stock or a permission failure must leave no partial deduction.
+`ConsumeProduct()` supplies the transaction identifier through a reference parameter.
+
+The API contract must cover durable request identity, retries, concurrent submissions,
+corrections and deletions. A source event maps to at most one effective consumption.
+Event identity is scoped to the authenticated source and owner; another member must not
+be able to reuse that identity to read or alter the event.
+
+Deduplicating repeated imports does not identify a manually recorded consumption as the
+same real-world event. The design needs an explicit link or review flow for that case.
+Matching solely on product, quantity and approximate time could erase two separate uses.
+
+Corrections and direct stock undo require one consistent reconciliation policy. An event
+that was deliberately undone must not be silently rebooked on the next synchronization.
+Conflict handling must preserve the stock ledger and expose unresolved records to an
+authorized member. Skipped or unanswered dose events never deduct stock.
+
+### Apple Health boundary
+
+`victual-kit` owns HealthKit authorization, reading, synchronization and native presentation.
+Victual exposes a client-neutral API for consumption and refill state. This plan does not
+add a HealthKit reader or native notification service to the PHP application.
+
+Apple documents medication objects and dose events with per-medication authorization.
+Dose events can arrive late; editing can delete and recreate samples. Those behaviors
+require reconciliation beyond a repeated-request check. The documented medication object
+exposes whether a schedule exists; complete recurring schedule access is not established
+by this research and is not required here.
+
+Research source: [Apple, Meet the HealthKit Medications API](https://developer.apple.com/videos/play/wwdc2025/321/),
+reviewed 2026-10-09. Availability and actual payload behavior need a native-client test
+before claiming the integration works. A dose event alone does not establish that the
+medication came from this household's stock; the user must establish that mapping.
+
+## Refills and reorder notices
+
+Refill tracking is associated with the private prescription. It records the last fill date,
+the supplied duration, and any medication-specific reorder rule or explicit next reorder
+date. The supplied duration is entered for that fill; a 30-day and a 90-day fill need not
+have the same quantity or usage rate.
+
+A medication-specific rule takes precedence. Where no such rule exists, the maintainer's
+general fallback is:
+
+```text
+estimated reorder date = last fill date + supplied days - 14 days
+```
+
+A 30-day fill therefore gives an estimated reorder date 16 days after filling; a 90-day
+fill gives 76 days. These examples describe the fallback arithmetic. They do not establish
+insurance eligibility or override a medication-specific rule. Missing or invalid inputs
+produce an unknown estimate, not an invented date.
+
+The application flags that reordering is approaching and provides a notice on the reorder
+date. The proposed default warning lead is seven days, configurable independently of the
+14-day fallback. The maintainer confirmed an advance warning; the exact lead and delivery
+channel remain implementation recommendations, not recorded maintainer choices.
+
+The displayed date must identify whether it came from an explicit date, a medication-specific
+rule or the fallback. Historical fills remain recorded when a new fill resets the calculation.
+A reorder request does not add stock or establish a new fill date; receipt is a separate act.
+
+On-hand inventory and the refill estimate are separate values. Organizer transfers do not
+change either the fill date or household quantity. Missed or extra consumption changes
+inventory but does not silently change the refill rule. Low-stock information can therefore
+coexist with a future reorder date without asserting that an insurer will approve a refill.
+
+Native clients consume refill dates and state through the API. Notice delivery must avoid
+repeated alerts after retries and recompute when a fill or rule is corrected. Q16 covers
+warning defaults, completion state and delivery ownership.
+
+## Labels and storage
+
+Use existing product, stock-entry and location labels. Separate organizers already fit the
+location label model. No new payload format or medication label kind is required.
+Templates, previews, print captures and scan responses must not disclose private recipe or
+refill information to stock readers. Existing stock storage and expiry behavior remains
+subject to its current contract.
+
+## Release readiness
+
+The product decisions above replace the former seven-piece regimen proposal. Remaining
+technical gates are scoped authorization, the external-consumption reconciliation contract,
+and the refill rule and notice schema. Schema work follows those contracts; it is not
+constrained to the old two-migration design.
+
+Substantive preparation must revise Proposed ADR-0015 and present the lifecycle disposition
+of ADR-0016. Rejecting ADR-0016, if chosen, is its own bookkeeping-only pull request.
+New Proposed records must cover scoped recipe sharing and external-event reconciliation.
+Their relationship to accepted ADR-0014 must be explicit. No record is accepted by this plan.
+
+The API contract is developed in this repository. Native HealthKit implementation and
+platform-specific notices belong to `victual-kit`. Server verification can use representative
+client fixtures, but an end-to-end Apple integration claim requires real client evidence.
+The release record must distinguish those outcomes.
+
+[Migrations/RESERVATIONS.md](../../migrations/RESERVATIONS.md) currently claims 0305–0306
+for the previous schema sketch. Those claims are unwritten. Reconcile their descriptions
+and the required count before writing migrations; use the lowest available slots and
+PostgreSQL-only migrations. Do not retain obsolete regimen tables to fit old reservations.
+
+## Verification
+
+- Unit stock, liquid volume and single-use items use entered conversions. Shared quantity
+  comparisons use ADR-0032's tolerance. Invalid conversions cannot produce a booking.
+- Fill three organizer locations, consume from each and return unused contents. Transfers
+  preserve household quantity; consumption and undo preserve ADR-0036 attribution.
+- Owner, authorized member, unrelated member and account manager fixtures demonstrate the
+  scoped rights, grant limits, revocation and denied indirect reads.
+- Manual consumption, duplicate imports, simultaneous requests, deleted/recreated source
+  events and explicit manual/import reconciliation deduct each real consumption once.
+  Failed multi-product requests roll back completely. Direct stock undo remains effective.
+- Explicit reorder dates and medication-specific rules override the fallback. Cover 30-day
+  and 90-day fills, missing inputs, corrections, local calendar boundaries, warning dates,
+  notice deduplication and refill receipt. Organizer transfers do not reset refill dates.
+- PHPUnit against PostgreSQL covers services and APIs; pgTAP covers new SQL behavior;
+  contract snapshots cover response shapes; Playwright covers private recipes, organizer
+  transfers and refill notices. Run the supported PostgreSQL versions and preserve the
+  current aggregate coverage ratchet and per-file gates.
+- Release evidence includes an upgrade rehearsal, operator documentation, Vale, image and
+  Helm checks, and exact tested commits. A signed v0.5.0 tag follows the release procedure.
 
 ## Open questions
 
-1. **Should the storage-class work be its own plan?**
+Question numbers are retained from the broader draft. Responses below distinguish earlier
+answers from the maintainer's inventory scope decision on 2026-10-09.
 
-   > **Response:** Yes — extracted as [23](landed/23-storage-classes.md). It changes a column
-   > every `/objects/locations` client can see for the sake of a wine cooler and a
-   > cheese cave as much as a medication fridge, and a schema change justified only
-   > inside a medication plan is one nobody reading `locations` would think to open.
-   > 23 takes migration 0271 and lands first.
+1. **Should storage classes be their own plan?**
 
-2. **Where do lot numbers live?** A column on `stock` and `stock_log`, or a side table keyed on
-   `stock_id`.
+   > **Response:** Yes. Extracted as [23](landed/23-storage-classes.md), now landed.
 
-   > **Response:** A medication side table referenced to the root item. Taken as
-   > settled; the plan keys it on `stock_id` rather than `stock.id` for the reason in
-   > piece 2, which was not part of the question but follows from it.
+2. **Where do medication lot numbers live?**
+
+   > **Response:** The earlier answer chose a side table referenced to the root item; the
+   > draft interpreted that as `stock_id`. That interpretation is incompatible with using
+   > ADR-0036 lineage for attribution. Dedicated manufacturer-batch data is deferred from
+   > the narrowed release; existing booking lineage remains authoritative.
 
 3. **Per-subject or household visibility?**
 
-   > **Response:** Per-subject by default, household-level optional.
+   > **Response, maintainer, 2026-10-09:** Private recipes can be shared with specifically
+   > authorized members. Household membership does not itself provide access. This replaces
+   > the earlier per-subject default with optional household-wide visibility.
 
-4. **Where does the attribute row get copied on a split?** A trigger on `stock` insert
-   (portable, invisible, fires for every caller including the importer), or an explicit copy at
-   the three call sites in `StockService` (visible, testable, and forgettable when a fourth
-   split site is added). *Lean: the trigger, plus an assertion in the contract tests that no
-   `stock_id` belonging to a medication product lacks an attribute row — belt and braces,
-   because the failure is silent and safety-relevant.*
+4. **Where are medication attributes copied on a split?**
 
-   **Still open, and now with one constraint.** [23](landed/23-storage-classes.md) Q2 asked the same
-   trigger-versus-application question about deriving `is_freezer` and was answered
-   *application*, overturning its own lean — because its trigger case was
-   `bin/victual-db-import`, and an upstream grocy database carries no storage class for a
-   trigger to derive.
+   > **Response, scope revision, 2026-10-09:** The dedicated attribute table is deferred.
+   > Organizer transfers use existing stock lineage. A future batch or container extension
+   > must settle its identity model before choosing a trigger or service-level copy.
 
-   That argument does not transfer here: this question's trigger case is a
-   `StockService` split site somebody forgets when a fourth is added, in code that already has
-   three, which is a live risk rather than a speculative one. So the two may legitimately
-   diverge, and 23 Q2's response records why. What must not happen is diverging without
-   noticing — whoever answers this one says which of the two arguments they are applying.
+5. **Does visibility wait on plan 19?**
 
-5. **Does piece 3 ship its own visibility enforcement, or wait on [19](19-rbac.md)?** Waiting
-   blocks the whole plan behind a draft that is itself blocked on its own Q8. Shipping first
-   means writing enforcement 19 will subsume, and the risk is that a half-measure gets treated
-   as the finished thing. *Lean: ship a narrow version — subject-scoped predicates in
-   `MedicationService` and the medication views only, no general mechanism — and state in 19
-   that it is a client of whatever 19 builds.*
+   > **Response:** The 2026-09-04 answer chose narrow server-side predicates, 404 for hidden
+   > direct fetches and no claim to hide shared drug inventory. Plan 19 has since landed.
+   > Explicit member sharing now requires an authorization design compatible with ADR-0014;
+   > the former owner-link-only predicate is insufficient.
 
-   > **Response, 2026-09-04:** Ship it narrowly, as the lean stood. Waiting is not a real
-   > option on inspection: 19 is a draft, blocked on its own Q8, split across two waves and
-   > sitting behind wave 2's S5/S6 — so "wait" means pieces 3 through 6 do not exist for
-   > several waves, while pieces 1 and 2 are unaffected because they are product- and
-   > stock-shaped and need no subject at all.
-   >
-   > What made this decidable rather than a coin toss is that **medication visibility is row
-   > filtering, not field redaction**, so the half of 19 that is genuinely hard — deciding
-   > what an absent key means on the wire — does not arise. A subject a caller may not see is
-   > simply not in the result. That is expressible today, testable today, and does not
-   > pre-empt any answer 19 later gives about prices.
-   >
-   > Two obligations come with it. Piece 3's enforcement is server-side on every route, since
-   > [ADR-0006](../adr/0006-authenticated-issues-in-scope.md) makes a leak here a finding —
-   > and 404-not-403 on a direct fetch, because the existence of the row is the thing being
-   > protected. And [19](19-rbac.md) Q8 now carries a note that this exists, so the general
-   > answer is chosen knowing a narrow one already shipped rather than discovering it.
-   >
-   > The plan states plainly what this does not cover — stock-level existence of a drug is
-   > visible to anyone with `STOCK`, and only the drug-to-person link is protected. That
-   > limitation was not in the lean and is the more important half of this answer.
+6. **Does this plan build label infrastructure?**
 
-6. **[ADR-0011](../adr/0011-label-namespace.md) is accepted but unbuilt — does piece 7 build
-   it?** The question this asked before 2026-09-04 was what to do if 0011 were rejected; it
-   was accepted that day, and the real question turns out to be the opposite one. Nobody owns
-   the `labels` table or the print outbox, and piece 7 needs both. Three options: this plan
-   builds 0011's machinery as a prerequisite, which makes a medication plan the owner of a
-   general label system; piece 7 waits for a plan that does own it; or medication ships
-   without labels and gains them later. *Lean: the third — pieces 1–6 need no labels at all,
-   so piece 7 is genuinely detachable, and a medication plan quietly becoming the label
-   subsystem's owner is the same mistake Q1 caught with storage classes.* Worth deciding
-   out loud, because "medication needs QR codes" is exactly the argument that would otherwise
-   drag an unscheduled subsystem into this plan's scope.
+   > **Response:** The 2026-09-06 answer assigned that work to plan 25. Plans 25, 27 and 32
+   > now provide the infrastructure and stock-entry kinds. This plan consumes them.
 
-   > **Answered 2026-09-06 by the second option, and not by this plan.**
-   > [25](25-label-infrastructure.md) owns ADR-0011's machinery — the `labels` table, the print
-   > job, printer configuration and the rendering worker — and is scheduled into wave 3b
-   > because [06](06-location-barcodes.md) hit the same wall from the locations side and could
-   > not ship a print action without it. Piece 7 waits for 25 rather than building anything,
-   > and the lean above is vindicated in the specific way it predicted: the plan that became
-   > the label subsystem's owner is one whose subject *is* labels. Note what 25 does not
-   > deliver, because piece 7 will want it: only `location` uids are minted in wave 3b, so a
-   > `medication` or stock-entry kind is 25's schema already allowing it rather than 25 having
-   > built it.
+7. **How does a location with changing temperature settings use storage classes?**
 
-7. **What is the storage class of a location used at two set points over the year?** The wine
-   cooler again. One class per location and a second location for the second use, or a class
-   with a range wide enough for both? *Lean: two locations. Honest, and costs nothing.* Belongs
-   to [23](landed/23-storage-classes.md) but is recorded here because 23 was extracted from this plan
-   and the question originated with the medication fridge.
+   > **Response, scope revision, 2026-10-09:** This remains a storage-class question owned
+   > by plan 23. No new temperature model is required for medication inventory.
 
-8. **Does an excursion quarantine automatically, or only flag?** Automatic quarantine of every
-   entry in a fridge that touched 9 °C for twenty minutes produces alarm fatigue and then gets
-   ignored, which is worse than not having it. *Lean: flag only in v1.* If it ever becomes
-   automatic, [ADR-0012](../adr/0012-observations-are-proposals.md) governs: the claim "this
-   stock is spoiled" is confidence-bearing and must arrive as a proposal a human confirms.
+8. **Does an excursion quarantine automatically or only flag?**
 
-9. **Weight-based and age-based dosing.** Paediatric and veterinary dosing is often mg/kg,
-   which would put a weight on `subjects` and a computed dose on the regimen. The arithmetic is
-   trivial and the act is dose *calculation*, which
-   [ADR-0015](../adr/0015-medication-records-never-advises.md) puts outside the line: it
-   asserts a dose the household did not enter. *Lean: out of scope, and 0014 is the reason
-   rather than v1 sequencing — so this does not quietly return as a "small addition" later.*
+   > **Response, scope revision, 2026-10-09:** Excursion ingestion is deferred. This release
+   > adds no automatic quarantine or spoilage inference. ADR-0012 governs future proposals.
 
-## Effort
+9. **Are weight-based and age-based doses calculated?**
 
-Large, and genuinely so — seven pieces, two migration pairs, a new service, a new UI section
-and a new permission family, on top of [23](landed/23-storage-classes.md). But the pieces are
-separable and the first two are independently useful: with 23, medication master data and lot
-attributes give cold-chain-aware inventory with recall traceability and no scheduler at all.
-Regimens and administrations are the second half and the larger one.
+   > **Response, maintainer scope, 2026-10-09:** No. Victual tracks physical stock and entered
+   > consumption quantities. Dose calculation, scheduling and dose alerting are outside scope.
+
+10. **How do batches, lineage lots and containers relate?**
+
+    > **Response, scope revision, 2026-10-09:** Use ADR-0036's existing booking lineage.
+    > A single-use format is ordinary unit stock. The separate manufacturer-batch and
+    > container-transition design is deferred.
+
+11. **Who can access private recipes and manage sharing?**
+
+    > **Response, maintainer, 2026-10-09:** Specifically authorized members may access them.
+    > The grant authority, individual action rights and account-administration interaction
+    > remain technical design gates for a new ADR. Do not introduce an unchecked grant path.
+
+12. **What causes stock deduction?**
+
+    > **Response, maintainer, 2026-10-09:** Support manual consumption and Apple Health events
+    > submitted by `victual-kit` through the API. Filling an organizer is a transfer to its
+    > unique tracked location; multiple weekly organizers remain separate locations.
+    > Retry, correction and cross-source reconciliation still need an API contract.
+
+13. **What identifies a scheduled occurrence?**
+
+    > **Response, maintainer, 2026-10-09:** Victual does not schedule doses or provide dose
+    > alerts. Native Apple clients live in `victual-kit`. Source-event identity is an import
+    > concern; no Victual recurrence expansion or occurrence snapshot table is needed.
+
+14. **How are reorder dates calculated?**
+
+    > **Response, maintainer, 2026-10-09:** Use a medication-specific rule when present.
+    > The general last-fill/days-supplied rule with 14 days remaining is an approximate
+    > fallback. Support different fill durations, advance reorder warnings and a notice on
+    > the reorder date. This is not a dose-schedule forecast or guaranteed eligibility date.
+
+15. **What cold-chain evidence does this release add?**
+
+    > **Response, scope revision, 2026-10-09:** None beyond existing stock and storage behavior.
+    > Excursion residence reconstruction and reconstitution workflows are deferred.
+
+16. **What are the refill warning and notification defaults?**
+    Recommendation: seven days of advance warning, followed by a due state on the reorder
+    date. Define calendar zone, explicit-date precedence, supported medication-specific rule
+    forms, repeat suppression, ordered versus received state, and delivery ownership.
+    Victual must expose the state through its API; native delivery belongs to `victual-kit`.
+    The exact lead and server-side delivery surface remain open.
