@@ -69,6 +69,21 @@ class ConsumptionSchemaTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	public function testTheUserfieldRoutesRefuseEachTable(): void
+	{
+		foreach (self::TABLES as $table)
+		{
+			$get = (new ServerRequestFactory())->createServerRequest('GET', 'http://localhost/api');
+			$read = self::$generic->GetUserfields($get, new Response(), ['entity' => $table, 'objectId' => '1']);
+			self::assertSame(400, $read->getStatusCode(), "GET /api/userfields/$table/1 is refused");
+
+			$put = (new ServerRequestFactory())->createServerRequest('PUT', 'http://localhost/api')
+				->withParsedBody(['anything' => 'x'])->withHeader('Content-Type', 'application/json');
+			$write = self::$generic->SetUserfields($put, new Response(), ['entity' => $table, 'objectId' => '1']);
+			self::assertSame(400, $write->getStatusCode(), "PUT /api/userfields/$table/1 is refused");
+		}
+	}
+
 	public function testTheImporterClearsAllFiveTables(): void
 	{
 		foreach (self::TABLES as $table)

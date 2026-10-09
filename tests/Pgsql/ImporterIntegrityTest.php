@@ -624,6 +624,47 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 	}
 
 	/**
+	 * ADR-0040 and ADR-0041 (migration 0305): the private consumption tables are derived state no
+	 * supported source can carry. A non-forced import refuses a target that holds any of them, as it
+	 * does for every other derived table; a forced one clears all five.
+	 */
+	public function testImportRefusesThenClearsPrivateConsumptionData(): void
+	{
+		$db = self::Pdo();
+		$user = (int)$db->query("INSERT INTO users (username, password) VALUES ('consumption-import-owner', 'fixture') RETURNING id")->fetchColumn();
+		$recipe = (int)$db->query("INSERT INTO consumption_recipes (owner_user_id, name) VALUES ($user, 'Import private recipe') RETURNING id")->fetchColumn();
+		$product = (int)$db->query("INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock) VALUES ('Consumption import product', 1, 2, 2) RETURNING id")->fetchColumn();
+		$db->exec("INSERT INTO consumption_recipe_lines (recipe_id, position, product_id, amount, qu_id) VALUES ($recipe, 1, $product, 1, 2)");
+		$db->exec("INSERT INTO consumption_recipe_shares (recipe_id, user_id) SELECT $recipe, id FROM users WHERE id <> $user LIMIT 1");
+		$event = (int)$db->query("INSERT INTO consumption_events (user_id, source_system, source_event_id, recipe_id, state, transaction_id, occurred_at)
+			VALUES ($user, 'manual', 'import-private', $recipe, 'booked', 'import-private-tx', now()) RETURNING id")->fetchColumn();
+		$db->exec("INSERT INTO consumption_event_lines (event_id, product_id, amount) VALUES ($event, $product, 1)");
+
+		$source = $this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MAX);
+		try
+		{
+			$this->importer($source, function ($message)
+			{
+			})->Import(false);
+			self::fail('A non-forced import must refuse a target holding private consumption data');
+		}
+		catch (\Exception $exception)
+		{
+			self::assertStringContainsString('already contains data', $exception->getMessage());
+		}
+		self::assertSame(1, (int)$db->query('SELECT count(*) FROM consumption_recipes')->fetchColumn(), 'The refused import changed nothing');
+
+		$this->importer($source, function ($message)
+		{
+		})->Import(true);
+
+		foreach (['consumption_recipes', 'consumption_recipe_lines', 'consumption_recipe_shares', 'consumption_events', 'consumption_event_lines'] as $table)
+		{
+			self::assertSame(0, (int)$db->query("SELECT count(*) FROM $table")->fetchColumn(), "$table is empty after a forced import");
+		}
+	}
+
+	/**
 	 * ADR-0036 acceptance prerequisite 9. The lineage tables are derived state: an import
 	 * truncates them with the ledger it replaces, then RebuildStockLineage() runs migration
 	 * 0304's backfill over the imported ledger. The source here holds one family of each class

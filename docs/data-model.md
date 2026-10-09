@@ -3,10 +3,10 @@
 Victual stores everything in one PostgreSQL database: tables defined in DDL, views layered
 on top of them, and triggers that stand in for the constraints the schema does not declare.
 
-The DDL files and migrations define 77 tables and 50 views, with 67 triggers. A migrated database holds two
+The DDL files define 72 tables and 50 views, with 67 triggers. A migrated database holds two
 more base tables, which are created at run time and appear on no diagram: `migrations`
 (by `DatabaseMigrationService`) and `system_db_changed_time` (by `PostgresDialect`).
-Counted 2026-10-06 against PostgreSQL 16.15 after `bin/victual-migrate` on branch `claude/opus5_stock-entry-label-revival-53a24c` (74 base tables, 50 views, 67 triggers in the catalogue; migration 0305 adds five tables, which this count predates); the query and the
+Counted 2026-10-06 against PostgreSQL 16.15 after `bin/victual-migrate` on branch `claude/opus5_stock-entry-label-revival-53a24c` (74 base tables, 50 views, 67 triggers in the catalogue); the query and the
 matching file-based count are in the [diagram generator's README](../.devtools/diagrams/README.md).
 
 This document names what is where; the ten diagrams listed below show how the pieces
@@ -39,7 +39,7 @@ step. They render at 1100px or wider and scroll horizontally below that.
 | Diagram | Shows |
 |---|---|
 | [Data access · from request to engine](diagrams/orm-stack.html) | How a request reaches the database: controllers and services, LessQL, `DatabaseService`, the dialect, and the work deferred to commit. |
-| [Schema map](diagrams/schema-map.html) | All 72 tables (before migration 0305) as seven clusters, and the columns by which one cluster names another's rows. |
+| [Schema map](diagrams/schema-map.html) | All 72 tables as seven clusters, and the columns by which one cluster names another's rows. |
 | [Stock & products](diagrams/erd-stock.html) | The hub cluster: `products` and the seven tables around it, including `product_substitutions`. |
 | [Places](diagrams/erd-locations.html) | Locations and their tree, storage classes, stores, shopping lists, and per-location minimums. |
 | [Recipes & meal plan](diagrams/erd-recipes.html) | Recipes, their line items, recipe nesting, and the meal plan. |
@@ -171,6 +171,9 @@ the very booking its own guard exists to catch.
 
 `migrations` is not listed: `DatabaseMigrationService` creates it on every engine before
 the baseline loads, because it is what records that the baseline was applied.
+
+Migration 0305 (2026-10-09) adds five tables, listed under *Private consumption* below. The
+counts above were taken before it and are not re-measured here.
 
 **Stock & products (17)** — `products`, `product_groups`, `product_barcodes`,
 `product_substitutions`, `quantity_units`, `quantity_unit_conversions`, `locations`,

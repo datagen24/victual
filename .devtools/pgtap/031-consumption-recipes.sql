@@ -6,7 +6,7 @@
 -- its owner while an event outlives its recipe. Rights, locking and consumption are PHP and are
 -- covered by tests/Pgsql (ConsumptionRecipe*Test.php).
 
-SELECT plan(31);
+SELECT plan(32);
 
 INSERT INTO users (username, password) VALUES ('c31 owner', 'fixture'), ('c31 member', 'fixture'), ('c31 other', 'fixture');
 INSERT INTO locations (name) VALUES ('C31 location');
@@ -84,6 +84,9 @@ SELECT :e, p.id, 2, l.id FROM products p CROSS JOIN locations l WHERE p.name = '
 SELECT throws_ok($$INSERT INTO consumption_events (user_id, source_system, source_event_id, state, occurred_at)
 	SELECT id, 'manual', 'req-1', 'received', now() FROM users WHERE username = 'c31 member'$$, '23505', NULL,
 	'an event identity is unique per user, source system and source event id');
+SELECT throws_ok($$INSERT INTO consumption_events (user_id, source_system, source_event_id, state, transaction_id, occurred_at)
+	SELECT id, 'manual', 'req-same-tx', 'booked', 'tx-31-1', now() FROM users WHERE username = 'c31 other'$$, '23505', NULL,
+	'a stock transaction belongs to at most one event');
 SELECT lives_ok($$INSERT INTO consumption_events (user_id, source_system, source_event_id, state, occurred_at)
 	SELECT id, 'manual', 'req-1', 'received', now() FROM users WHERE username = 'c31 other'$$,
 	'another user may use the same source event id');
