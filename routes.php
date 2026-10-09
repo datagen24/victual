@@ -3,6 +3,7 @@
 use Victual\Controllers\Api\BatteriesApiController;
 use Victual\Controllers\Api\CalendarApiController;
 use Victual\Controllers\Api\ChoresApiController;
+use Victual\Controllers\Api\ConsumptionRecipesApiController;
 use Victual\Controllers\Api\FilesApiController;
 use Victual\Controllers\Api\GenericEntityApiController;
 use Victual\Controllers\Api\OpenApiController;
@@ -325,6 +326,21 @@ $app->group('/api', function (RouteCollectorProxy $group)
 	$group->post('/recipes/{recipeId}/consume', [RecipesApiController::class, 'ConsumeRecipe']);
 	$group->get('/recipes/fulfillment', [RecipesApiController::class, 'GetRecipeFulfillment']);
 	$group->Post('/recipes/{recipeId}/copy', [RecipesApiController::class, 'CopyRecipe']);
+
+	// Private consumption recipes (ADR-0040, ADR-0041)
+	$group->get('/consumption/recipes', [ConsumptionRecipesApiController::class, 'ListRecipes']);
+	$group->post('/consumption/recipes', [ConsumptionRecipesApiController::class, 'CreateRecipe']);
+	$group->get('/consumption/recipes/{recipeId}', [ConsumptionRecipesApiController::class, 'GetRecipe']);
+	$group->put('/consumption/recipes/{recipeId}', [ConsumptionRecipesApiController::class, 'UpdateRecipe']);
+	$group->delete('/consumption/recipes/{recipeId}', [ConsumptionRecipesApiController::class, 'DeleteRecipe']);
+	$group->post('/consumption/recipes/{recipeId}/consume', [ConsumptionRecipesApiController::class, 'ConsumeRecipe']);
+	$group->get('/consumption/recipes/{recipeId}/events', [ConsumptionRecipesApiController::class, 'ListEvents']);
+	$group->post('/consumption/recipes/{recipeId}/events/{eventId}/undo', [ConsumptionRecipesApiController::class, 'UndoEvent']);
+	$group->get('/consumption/recipes/{recipeId}/shares', [ConsumptionRecipesApiController::class, 'ListShares']);
+	$group->post('/consumption/recipes/{recipeId}/shares', [ConsumptionRecipesApiController::class, 'AddShare']);
+	$group->put('/consumption/recipes/{recipeId}/shares/{userId}', [ConsumptionRecipesApiController::class, 'SetShareRights']);
+	$group->delete('/consumption/recipes/{recipeId}/shares/{userId}', [ConsumptionRecipesApiController::class, 'RemoveShare']);
+	$group->post('/consumption/recipes/{recipeId}/transfer', [ConsumptionRecipesApiController::class, 'TransferOwnership']);
 
 
 	// Chores

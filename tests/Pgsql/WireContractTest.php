@@ -413,6 +413,24 @@ class WireContractTest extends PgsqlSchemaTestCase
 	 */
 	private const DOCUMENTED_BOOLEANS = [
 		'Chore.track_date_only' => 'chores',
+		// ADR-0040 and ADR-0041: ConsumptionRecipesApiController builds these as PHP booleans; no table
+		// column behind them is a SMALLINT, so there is nothing for WireBooleans to convert.
+		'ConsumptionEvent.replayed' => 'php',
+		'ConsumptionRecipeSummary.consume' => 'php',
+		'ConsumptionRecipeSummary.edit' => 'php',
+		'ConsumptionRecipeSummary.is_owner' => 'php',
+		'ConsumptionRecipeSummary.read' => 'php',
+		'ConsumptionRecipeSummary.share' => 'php',
+		'ConsumptionRecipeSummary.undo' => 'php',
+		'ConsumptionShare.consume' => 'php',
+		'ConsumptionShare.edit' => 'php',
+		'ConsumptionShare.read' => 'php',
+		'ConsumptionShare.share' => 'php',
+		'ConsumptionShare.undo' => 'php',
+		'ConsumptionShareRights.consume' => 'php',
+		'ConsumptionShareRights.edit' => 'php',
+		'ConsumptionShareRights.share' => 'php',
+		'ConsumptionShareRights.undo' => 'php',
 		'Chore.rollover' => 'chores',
 		'CurrentChoreResponse.track_date_only' => 'chores_current',
 		'CurrentChoreResponse.is_rescheduled' => 'chores_current',
@@ -721,8 +739,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 
 		self::assertSame([
 			'/paths//labels/attempts/{attemptId}/evidence/post/requestBody/content/application/json/schema/properties/observed_at',
+			'/components/schemas/ConsumptionConsumeRequest/properties/occurred_at',
 			'/components/schemas/TimeResponse/properties/time_local'
-		], $other, 'only a request field and time_local are date-time without the wire pattern');
+		], $other, 'only two request fields and time_local are date-time without the wire pattern');
 		self::assertGreaterThanOrEqual(40, count($wire), 'every instant on the legacy and label surfaces');
 
 		$localPattern = [];

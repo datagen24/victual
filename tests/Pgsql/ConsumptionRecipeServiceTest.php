@@ -79,8 +79,6 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		if ($boxConversion)
 		{
 			self::$db->prepare('INSERT INTO quantity_unit_conversions (from_qu_id, to_qu_id, factor, product_id) VALUES (?, ?, 10, ?)')->execute([self::$box, self::$tablet, $id]);
-			self::$db->exec('SELECT 1');
-			self::refreshConversions();
 		}
 
 		$stock = StockService::GetInstance();
@@ -94,12 +92,6 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		}
 
 		return $id;
-	}
-
-	private static function refreshConversions(): void
-	{
-		// The resolved conversions are a cache the application refreshes on a conversion write.
-		self::$db->exec('SELECT count(*) FROM cache__quantity_unit_conversions_resolved');
 	}
 
 	private static function onHand(int $productId, ?int $location = null): float
@@ -155,6 +147,20 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		$this->expectRefusal(fn() => self::$service->GetRecipe(987654, self::OWNER), 404, 'not_found');
 	}
 
+	public function testTimestampsAreRfc3339InUtcWithSixDigits(): void
+	{
+		$product = self::product('CR timestamps', 10);
+		$id = self::recipe([self::line($product, 1)]);
+		self::$service->SetShare($id, self::MEMBER, ['consume' => true], self::OWNER);
+		$event = self::$service->Consume($id, 'stamps', null, '2026-10-07T21:30:00-05:00', self::OWNER);
+		$pattern = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/';
+
+		self::assertMatchesRegularExpression($pattern, self::$service->GetRecipe($id, self::OWNER)['row_created_timestamp']);
+		self::assertMatchesRegularExpression($pattern, self::$service->ListRecipes(self::OWNER)[0]['row_updated_timestamp']);
+		self::assertMatchesRegularExpression($pattern, self::$service->ListShares($id, self::OWNER)[0]['granted_at']);
+		self::assertSame('2026-10-08T02:30:00.000000Z', $event['occurred_at'], 'the instant is stored and shown in UTC');
+	}
+
 	public function testTheGlobalPermissionIsCheckedAsWellAsTheShare(): void
 	{
 		$product = self::product('CR global', 10);
@@ -198,8 +204,9 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 
 		$this->expectRefusal(fn() => self::$service->Consume($id, 'r1', null, null, self::MEMBER), 403, 'right_missing');
 		$this->expectRefusal(fn() => self::$service->Consume($id, 'r2', null, null, self::OTHER), 404, 'not_found');
+		$this->expectRefusal(fn() => self::$service->Consume(987654, 'r3', null, null, self::OTHER), 404, 'not_found');
 		self::assertSame(10.0, self::onHand($product));
-		self::assertSame(0, (int)self::$db->query("SELECT count(*) FROM consumption_events WHERE source_event_id IN ('r1', 'r2')")->fetchColumn(), 'a refused consumption leaves no event');
+		self::assertSame(0, (int)self::$db->query("SELECT count(*) FROM consumption_events WHERE source_event_id IN ('r1', 'r2', 'r3')")->fetchColumn(), 'a refused consumption leaves no event');
 	}
 
 	public function testALineInBoxesBooksTenTabletsEach(): void
@@ -354,11 +361,29 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		$id = self::recipe([self::line($product, 2)]);
 		$event = self::$service->Consume($id, 'direct', null, null, self::OWNER);
 		StockService::GetInstance()->UndoTransaction($event['transaction_id']);
+		self::assertSame('undone', self::$service->ListEvents($id, self::OWNER)[0]['state'], 'the list reads the ledger and does not copy a stored state');
 
 		$result = self::$service->UndoConsumption($id, $event['id'], self::OWNER);
 
 		self::assertSame('undone', $result['state']);
 		self::assertSame(10.0, self::onHand($product), 'stock restored once');
+	}
+
+	public function testAnEventWithOneLineUndoneDirectlyIsPartiallyUndone(): void
+	{
+		$a = self::product('CR partial A', 10);
+		$b = self::product('CR partial B', 10);
+		$id = self::recipe([self::line($a, 1), self::line($b, 1)]);
+		$event = self::$service->Consume($id, 'partial', null, null, self::OWNER);
+		$booking = (int)self::$db->query("SELECT id FROM stock_log WHERE transaction_id = " . self::$db->quote($event['transaction_id']) . " AND product_id = $a")->fetchColumn();
+		StockService::GetInstance()->UndoBooking($booking);
+
+		$listed = self::$service->ListEvents($id, self::OWNER)[0];
+		self::assertSame(['needs_review', 'partially_undone'], [$listed['state'], $listed['reason']]);
+
+		self::$service->UndoConsumption($id, $event['id'], self::OWNER);
+		self::assertSame([10.0, 10.0], [self::onHand($a), self::onHand($b)], 'the remaining line is undone and nothing is undone twice');
+		self::assertSame('undone', self::$service->ListEvents($id, self::OWNER)[0]['state']);
 	}
 
 	// --- Sharing -----------------------------------------------------------------------------

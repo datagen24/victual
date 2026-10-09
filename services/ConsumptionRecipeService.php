@@ -3,7 +3,6 @@
 namespace Victual\Services;
 
 use Victual\Controllers\Users\User;
-use Victual\Services\Time\Instant;
 
 /**
  * Private consumption recipes: an owned list of product quantities a person consumes together
@@ -42,6 +41,12 @@ class ConsumptionRecipeService extends BaseService
 	private const REQUEST_ID_PATTERN = '/^[A-Za-z0-9._:-]{1,128}$/';
 	private const RIGHTS = ['consume', 'edit', 'undo', 'share'];
 
+	/** A TIMESTAMPTZ column as ADR-0027 puts it on the wire: RFC 3339 in UTC with six fractional digits. */
+	private static function Wire(string $column, string $alias): string
+	{
+		return "to_char($column AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') AS $alias";
+	}
+
 	private function Db(): \PDO
 	{
 		return DatabaseService::GetInstance()->GetDbConnectionRaw();
@@ -71,7 +76,8 @@ class ConsumptionRecipeService extends BaseService
 	/** Locks the recipe row and returns it, or null when it does not exist. */
 	private function LockRecipe(int $recipeId, bool $forUpdate): ?array
 	{
-		$statement = $this->Db()->prepare('SELECT * FROM consumption_recipes WHERE id = ? ' . ($forUpdate ? 'FOR UPDATE' : 'FOR SHARE'));
+		$statement = $this->Db()->prepare('SELECT *, ' . self::Wire('row_created_timestamp', 'created_wire') . ', ' . self::Wire('row_updated_timestamp', 'updated_wire')
+			. ' FROM consumption_recipes WHERE id = ? ' . ($forUpdate ? 'FOR UPDATE' : 'FOR SHARE'));
 		$statement->execute([$recipeId]);
 		$row = $statement->fetch(\PDO::FETCH_ASSOC);
 
@@ -136,7 +142,7 @@ class ConsumptionRecipeService extends BaseService
 		$userId = self::Actor($userId);
 		$this->RequireGlobal($userId, User::PERMISSION_STOCK_VIEW);
 
-		$statement = $this->Db()->prepare('SELECT r.*, s.can_consume, s.can_edit, s.can_undo, s.can_share,
+		$statement = $this->Db()->prepare('SELECT r.*, ' . self::Wire('r.row_created_timestamp', 'created_wire') . ', ' . self::Wire('r.row_updated_timestamp', 'updated_wire') . ', s.can_consume, s.can_edit, s.can_undo, s.can_share,
 				(SELECT count(*) FROM consumption_recipe_lines l WHERE l.recipe_id = r.id) AS line_count
 			FROM consumption_recipes r
 			LEFT JOIN consumption_recipe_shares s ON s.recipe_id = r.id AND s.user_id = :user
@@ -173,8 +179,8 @@ class ConsumptionRecipeService extends BaseService
 			'owner_user_id' => (int)$recipe['owner_user_id'],
 			'is_owner' => $rights['owner'],
 			'rights' => ['read' => true, 'consume' => $rights['consume'], 'edit' => $rights['edit'], 'undo' => $rights['undo'], 'share' => $rights['share']],
-			'row_created_timestamp' => Instant::FromDatabase((string)$recipe['row_created_timestamp']),
-			'row_updated_timestamp' => Instant::FromDatabase((string)$recipe['row_updated_timestamp']),
+			'row_created_timestamp' => $recipe['created_wire'],
+			'row_updated_timestamp' => $recipe['updated_wire'],
 		];
 	}
 
@@ -402,8 +408,8 @@ class ConsumptionRecipeService extends BaseService
 				$this->RequireGlobal($userId, User::PERMISSION_STOCK_VIEW, User::PERMISSION_STOCK_CONSUME);
 
 				$statement = $this->Db()->prepare("INSERT INTO consumption_events (user_id, source_system, source_event_id, recipe_id, state, occurred_at)
-					VALUES (?, 'manual', ?, ?, 'received', ?) ON CONFLICT (user_id, source_system, source_event_id) DO NOTHING RETURNING id");
-				$statement->execute([$userId, $requestId, $recipeId, $occurred]);
+					VALUES (?, 'manual', ?, NULL, 'received', ?) ON CONFLICT (user_id, source_system, source_event_id) DO NOTHING RETURNING id");
+				$statement->execute([$userId, $requestId, $occurred]);
 				$eventId = $statement->fetchColumn();
 
 				if ($eventId === false)
@@ -411,7 +417,11 @@ class ConsumptionRecipeService extends BaseService
 					return $this->StoredManualEvent($userId, $requestId) + ['replayed' => true];
 				}
 
+				// The recipe id is written only after the caller's right is proved. Inserting it with the
+				// event would fail the foreign key for an id that does not exist and so tell the caller
+				// something a hidden recipe does not (ADR-0040 rule 7).
 				[$recipe] = $this->Authorise($recipeId, $userId, 'consume', false);
+				$this->Db()->prepare('UPDATE consumption_events SET recipe_id = ? WHERE id = ?')->execute([$recipe['id'], $eventId]);
 				$rows = $this->Db()->prepare('SELECT product_id, amount, qu_id FROM consumption_recipe_lines WHERE recipe_id = ? ORDER BY position');
 				$rows->execute([$recipe['id']]);
 				$lines = $rows->fetchAll(\PDO::FETCH_ASSOC);
@@ -520,27 +530,60 @@ class ConsumptionRecipeService extends BaseService
 
 	private function EventById(int $eventId): array
 	{
-		$statement = $this->Db()->prepare('SELECT * FROM consumption_events WHERE id = ?');
+		$statement = $this->Db()->prepare('SELECT *, ' . self::Wire('occurred_at', 'occurred_wire') . ' FROM consumption_events WHERE id = ?');
 		$statement->execute([$eventId]);
 		$event = $statement->fetch(\PDO::FETCH_ASSOC);
 
 		$lines = $this->Db()->prepare('SELECT product_id, amount, location_id, stock_log_id FROM consumption_event_lines WHERE event_id = ? ORDER BY id');
 		$lines->execute([$eventId]);
 
+		[$state, $reason] = $this->DerivedState($event);
+
 		return [
 			'id' => (int)$event['id'],
 			'source_system' => $event['source_system'],
 			'source_event_id' => $event['source_event_id'],
 			'recipe_id' => $event['recipe_id'] === null ? null : (int)$event['recipe_id'],
-			'state' => $event['state'],
-			'reason' => $event['reason'],
+			'state' => $state,
+			'reason' => $reason,
 			'transaction_id' => $event['transaction_id'],
 			'revision' => (int)$event['revision'],
-			'occurred_at' => Instant::FromDatabase((string)$event['occurred_at']),
+			'occurred_at' => $event['occurred_wire'],
 			'lines' => array_map(fn(array $line) => ['product_id' => (int)$line['product_id'], 'amount' => (float)$line['amount'],
 				'location_id' => $line['location_id'] === null ? null : (int)$line['location_id'],
 				'stock_log_id' => $line['stock_log_id'] === null ? null : (int)$line['stock_log_id']], $lines->fetchAll(\PDO::FETCH_ASSOC)),
 		];
+	}
+
+	/**
+	 * A stored `booked` event reads `stock_log.undone` for its bookings and does not copy it
+	 * (ADR-0040 rule 2, ADR-0041 rule 8): all undone is `undone`, some undone is
+	 * `needs_review` / `partially_undone`. UndoConsumption() is the next touch that persists it.
+	 *
+	 * @return array{0: string, 1: string|null}
+	 */
+	private function DerivedState(array $event): array
+	{
+		if ($event['state'] !== 'booked' || $event['transaction_id'] === null)
+		{
+			return [$event['state'], $event['reason']];
+		}
+
+		$statement = $this->Db()->prepare('SELECT count(*) AS total, count(*) FILTER (WHERE undone = 0) AS remaining FROM stock_log WHERE transaction_id = ?');
+		$statement->execute([$event['transaction_id']]);
+		$counts = $statement->fetch(\PDO::FETCH_ASSOC);
+
+		if ((int)$counts['total'] > 0 && (int)$counts['remaining'] === 0)
+		{
+			return ['undone', null];
+		}
+
+		if ((int)$counts['remaining'] > 0 && (int)$counts['remaining'] < (int)$counts['total'])
+		{
+			return ['needs_review', 'partially_undone'];
+		}
+
+		return ['booked', null];
 	}
 
 	/** The caller's own events for a recipe, newest first (ADR-0040 rule 2: a share does not expose another user's events). */
@@ -628,7 +671,7 @@ class ConsumptionRecipeService extends BaseService
 			$this->RequireGlobal($userId, User::PERMISSION_STOCK_VIEW);
 			[$recipe, $rights] = $this->Authorise($recipeId, $userId, 'share', false);
 
-			$statement = $this->Db()->prepare('SELECT s.*, u.username FROM consumption_recipe_shares s JOIN users u ON u.id = s.user_id WHERE s.recipe_id = ? ORDER BY lower(u.username), s.user_id');
+			$statement = $this->Db()->prepare('SELECT s.*, ' . self::Wire('s.granted_at', 'granted_wire') . ', u.username FROM consumption_recipe_shares s JOIN users u ON u.id = s.user_id WHERE s.recipe_id = ? ORDER BY lower(u.username), s.user_id');
 			$statement->execute([$recipeId]);
 
 			$shares = [];
@@ -640,7 +683,7 @@ class ConsumptionRecipeService extends BaseService
 						'rights' => ['read' => true, 'consume' => (bool)$share['can_consume'], 'edit' => (bool)$share['can_edit'],
 							'undo' => (bool)$share['can_undo'], 'share' => (bool)$share['can_share']],
 						'granted_by_user_id' => $share['granted_by_user_id'] === null ? null : (int)$share['granted_by_user_id'],
-						'granted_at' => Instant::FromDatabase((string)$share['granted_at'])];
+						'granted_at' => $share['granted_wire']];
 				}
 			}
 

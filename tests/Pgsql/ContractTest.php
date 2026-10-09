@@ -10,6 +10,7 @@ use Slim\Psr7\Response;
 use Victual\Controllers\Api\BatteriesApiController;
 use Victual\Controllers\Api\CalendarApiController;
 use Victual\Controllers\Api\ChoresApiController;
+use Victual\Controllers\Api\ConsumptionRecipesApiController;
 use Victual\Controllers\Api\FilesApiController;
 use Victual\Controllers\Api\GenericEntityApiController;
 use Victual\Controllers\Api\PrintApiController;
@@ -520,6 +521,51 @@ class ContractTest extends PgsqlSchemaTestCase
 	}
 
 	#[Depends('testRecipesOperations')]
+	public function testConsumptionRecipeOperations(): void
+	{
+		$consumption = self::controller(ConsumptionRecipesApiController::class);
+		$stock = \Victual\Services\StockService::GetInstance();
+
+		$unit = (int)self::$db->query('SELECT min(id) FROM quantity_units')->fetchColumn();
+		$statement = self::$db->prepare('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price) VALUES (?, ?, ?, ?, ?, ?) RETURNING id');
+		$statement->execute(['Contract consumption product', self::$ids['location'], $unit, $unit, $unit, $unit]);
+		$product = (int)$statement->fetchColumn();
+		$stock->AddProduct($product, 20, '2999-12-31', \Victual\Services\StockService::TRANSACTION_TYPE_PURCHASE, '2026-01-01', null, self::$ids['location']);
+		self::$db->exec("INSERT INTO users (username, password) VALUES ('contract-consumption-member', 'fixture')");
+		$member = (int)self::$db->query("SELECT id FROM users WHERE username = 'contract-consumption-member'")->fetchColumn();
+		$lines = [['product_id' => $product, 'amount' => 2, 'qu_id' => $unit]];
+
+		$created = self::invokeAdmin('POST /api/consumption/recipes', fn() => $consumption->CreateRecipe(self::request('POST', ['name' => 'Contract consumption recipe', 'note' => 'fixture', 'lines' => $lines]), new Response(), []));
+		$recipeId = (int)$created['created_object_id'];
+		self::$ids['consumption_recipe'] = $recipeId;
+		$doomed = self::invokeAdmin('POST /api/consumption/recipes (second)', fn() => $consumption->CreateRecipe(self::request('POST', ['name' => 'Contract consumption doomed', 'lines' => $lines]), new Response(), []));
+
+		self::invokeAdmin('GET /api/consumption/recipes', fn() => $consumption->ListRecipes(self::request(), new Response(), []));
+		self::invokeAdmin('GET /api/consumption/recipes/{recipeId}', fn() => $consumption->GetRecipe(self::request(), new Response(), ['recipeId' => $recipeId]));
+		self::invokeAdmin('PUT /api/consumption/recipes/{recipeId}', fn() => $consumption->UpdateRecipe(self::request('PUT', ['note' => 'changed']), new Response(), ['recipeId' => $recipeId]));
+		self::invokeAdmin('DELETE /api/consumption/recipes/{recipeId}', fn() => $consumption->DeleteRecipe(self::request('DELETE'), new Response(), ['recipeId' => (int)$doomed['created_object_id']]));
+
+		self::invokeAdmin('POST /api/consumption/recipes/{recipeId}/shares', fn() => $consumption->AddShare(self::request('POST', ['user_id' => $member, 'consume' => true]), new Response(), ['recipeId' => $recipeId]));
+		self::invokeAdmin('GET /api/consumption/recipes/{recipeId}/shares', fn() => $consumption->ListShares(self::request(), new Response(), ['recipeId' => $recipeId]));
+		self::invokeAdmin('PUT /api/consumption/recipes/{recipeId}/shares/{userId}', fn() => $consumption->SetShareRights(self::request('PUT', ['consume' => true, 'edit' => true]), new Response(), ['recipeId' => $recipeId, 'userId' => $member]));
+
+		$event = self::invokeAdmin('POST /api/consumption/recipes/{recipeId}/consume', fn() => $consumption->ConsumeRecipe(self::request('POST', ['request_id' => 'contract-consume-1']), new Response(), ['recipeId' => $recipeId]));
+		self::invokeAdmin('GET /api/consumption/recipes/{recipeId}/events', fn() => $consumption->ListEvents(self::request(), new Response(), ['recipeId' => $recipeId]));
+		self::invokeAdmin('POST /api/consumption/recipes/{recipeId}/events/{eventId}/undo', fn() => $consumption->UndoEvent(self::request('POST'), new Response(), ['recipeId' => $recipeId, 'eventId' => (int)$event['id']]));
+
+		self::$db->exec("INSERT INTO users (username, password) VALUES ('contract-consumption-third', 'fixture')");
+		$third = (int)self::$db->query("SELECT id FROM users WHERE username = 'contract-consumption-third'")->fetchColumn();
+		self::invokeAdmin('POST /api/consumption/recipes/{recipeId}/shares (by username)', fn() => $consumption->AddShare(self::request('POST', ['username' => 'contract-consumption-third']), new Response(), ['recipeId' => $recipeId]));
+		self::invokeAdmin('DELETE /api/consumption/recipes/{recipeId}/shares/{userId}', fn() => $consumption->RemoveShare(self::request('DELETE'), new Response(), ['recipeId' => $recipeId, 'userId' => $third]));
+
+		// After the transfer the administrator is a share holder with every right; the restricted
+		// replay reads the recipe through that share.
+		self::invokeAdmin('POST /api/consumption/recipes/{recipeId}/transfer', fn() => $consumption->TransferOwnership(self::request('POST', ['user_id' => $member]), new Response(), ['recipeId' => $recipeId]));
+
+		self::assertGreaterThan(0, $recipeId, 'Fixture consumption recipe created');
+	}
+
+	#[Depends('testConsumptionRecipeOperations')]
 	public function testChoresOperations(): void
 	{
 		$generic = self::controller(GenericEntityApiController::class);
@@ -788,6 +834,7 @@ class ContractTest extends PgsqlSchemaTestCase
 		$calendar = self::controller(CalendarApiController::class);
 		$print = self::controller(PrintApiController::class);
 		$files = self::controller(FilesApiController::class);
+		$consumption = self::controller(ConsumptionRecipesApiController::class);
 
 		$productId = self::$ids['product'];
 
@@ -848,6 +895,12 @@ class ContractTest extends PgsqlSchemaTestCase
 			$key === 'GET /api/system/localization-strings' => fn() => $system->GetLocalizationStrings(self::request(), new Response(), []),
 			$key === 'GET /api/calendar/ical' => fn() => $calendar->Ical(self::request(), new Response(), []),
 			$key === 'GET /api/calendar/ical/sharing-link' => fn() => $calendar->IcalSharingLink(self::request(), new Response(), []),
+			// The replay is the same user, now holding a share with every right after the transfer, so it
+			// proves the permission gate (CHILD holds STOCK_VIEW) and the response shape. The denial
+			// cases, 404 for a user with no share, cannot be a 200 or a 403 and are covered by
+			// ConsumptionRecipeServiceTest and ConsumptionRecipeApiTest (ADR-0040 rule 7).
+			$key === 'GET /api/consumption/recipes' => fn() => $consumption->ListRecipes(self::request(), new Response(), []),
+			$key === 'GET /api/consumption/recipes/{recipeId}' => fn() => $consumption->GetRecipe(self::request(), new Response(), ['recipeId' => self::$ids['consumption_recipe']]),
 			$key === 'GET /api/print/shoppinglist/thermal' => fn() => $print->PrintShoppingListThermal(self::request(), new Response(), []),
 			default => null,
 		};

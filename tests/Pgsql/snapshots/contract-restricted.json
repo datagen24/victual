@@ -83,6 +83,56 @@
             "tracked_count": "integer"
         }
     },
+    "GET /api/consumption/recipes": {
+        "status": 200,
+        "shape": [
+            {
+                "id": "integer",
+                "is_owner": "boolean",
+                "line_count": "integer",
+                "name": "string",
+                "note": "string",
+                "owner_user_id": "integer",
+                "rights": {
+                    "consume": "boolean",
+                    "edit": "boolean",
+                    "read": "boolean",
+                    "share": "boolean",
+                    "undo": "boolean"
+                },
+                "row_created_timestamp": "string(date-time)",
+                "row_updated_timestamp": "string(date-time)"
+            }
+        ]
+    },
+    "GET /api/consumption/recipes/{recipeId}": {
+        "status": 200,
+        "shape": {
+            "id": "integer",
+            "is_owner": "boolean",
+            "lines": [
+                {
+                    "amount": "integer",
+                    "position": "integer",
+                    "product_id": "integer",
+                    "product_name": "string",
+                    "qu_id": "integer"
+                }
+            ],
+            "name": "string",
+            "note": "string",
+            "owner_user_id": "integer",
+            "rights": {
+                "consume": "boolean",
+                "edit": "boolean",
+                "read": "boolean",
+                "share": "boolean",
+                "undo": "boolean"
+            },
+            "row_created_timestamp": "string(date-time)",
+            "row_updated_timestamp": "string(date-time)"
+        }
+    },
     "GET /api/objects/{entity} (api_keys)": {
         "status": 400,
         "shape": {
@@ -1083,7 +1133,7 @@
                     "default_refill_location_id_to": "null",
                     "default_shopping_list_id": "null",
                     "default_stock_label_type": "integer",
-                    "description": "string",
+                    "description": "null|string",
                     "disable_open": "integer",
                     "due_type": "integer",
                     "enable_tare_weight_handling": "integer",
@@ -1098,7 +1148,7 @@
                     "not_check_stock_fulfillment_for_recipes": "integer",
                     "parent_product_id": "null",
                     "picture_file_name": "null",
-                    "product_group_id": "integer",
+                    "product_group_id": "integer|null",
                     "qu_id_consume": "integer",
                     "qu_id_price": "integer",
                     "qu_id_purchase": "integer",

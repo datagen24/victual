@@ -39,6 +39,10 @@
 			"name": "Recipes"
 		},
 		{
+			"name": "Consumption recipes",
+			"description": "Private recipes of household-entered product quantities, shared only with named users"
+		},
+		{
 			"name": "Chores"
 		},
 		{
@@ -9207,10 +9211,1334 @@
 					}
 				}
 			}
+		},
+		"/consumption/recipes": {
+			"get": {
+				"tags": [
+					"Consumption recipes"
+				],
+				"summary": "List the consumption recipes the caller owns or holds a share on",
+				"description": "Requires STOCK_VIEW. A recipe the caller holds no share on is absent from the list; household membership alone grants no access.",
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/ConsumptionRecipeSummary"
+									}
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"tags": [
+					"Consumption recipes"
+				],
+				"summary": "Create a consumption recipe",
+				"description": "Requires STOCK_VIEW and STOCK_CONSUME. The caller becomes the owner. Each line carries the amount in the unit the person entered; a unit with no entered conversion to the product's stock unit is refused.",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/ConsumptionRecipeWrite"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"created_object_id": {
+											"type": "integer"
+										}
+									}
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "The request cannot be acted on",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/consumption/recipes/{recipeId}": {
+			"get": {
+				"tags": [
+					"Consumption recipes"
+				],
+				"summary": "Get a consumption recipe",
+				"description": "Requires STOCK_VIEW and a share on the recipe, or ownership. Answers 404 without one.",
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionRecipe"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "recipeId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					}
+				]
+			},
+			"put": {
+				"tags": [
+					"Consumption recipes"
+				],
+				"summary": "Change a consumption recipe",
+				"description": "Requires STOCK_VIEW and the edit right. Any of name, note and lines may be sent; lines replace the whole list. What past consumptions booked does not change.",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/ConsumptionRecipeUpdate"
+							}
+						}
+					}
+				},
+				"responses": {
+					"204": {
+						"description": "Success"
+					},
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "The request cannot be acted on",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "recipeId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					}
+				]
+			},
+			"delete": {
+				"tags": [
+					"Consumption recipes"
+				],
+				"summary": "Delete a consumption recipe",
+				"description": "Requires STOCK_VIEW and ownership. Its shares and lines are deleted; the events it produced stay, without the recipe reference, and stock history is unchanged.",
+				"responses": {
+					"204": {
+						"description": "Success"
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "recipeId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					}
+				]
+			}
+		},
+		"/consumption/recipes/{recipeId}/consume": {
+			"post": {
+				"tags": [
+					"Consumption recipes"
+				],
+				"summary": "Consume every line of a consumption recipe",
+				"description": "Requires STOCK_VIEW, STOCK_CONSUME and the consume right. Every line is booked in one transaction or none is: a missing conversion, a missing right or too little stock books nothing and records no event. The call is idempotent only when request_id is sent; a repeat answers 200 with replayed true. A location_id limits consumption to that location, and a shortfall there is a refusal, never a charge to another location. occurred_at, with an offset, sets the booked date to the date written in that offset.",
+				"requestBody": {
+					"required": false,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/ConsumptionConsumeRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "A repeat of an earlier request_id",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionEvent"
+								}
+							}
+						}
+					},
+					"201": {
+						"description": "Booked",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionEvent"
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"409": {
+						"description": "The stock was refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "The request cannot be acted on",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "recipeId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					}
+				]
+			}
+		},
+		"/consumption/recipes/{recipeId}/events": {
+			"get": {
+				"tags": [
+					"Consumption recipes"
+				],
+				"summary": "List the caller's own consumption events for a recipe",
+				"description": "Requires STOCK_VIEW and a share on the recipe. Returns the caller's 100 most recent events, newest first; another user's events are never included. A booked event whose bookings were undone in the stock journal reads as undone or partially undone.",
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/ConsumptionEvent"
+									}
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "recipeId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					}
+				]
+			}
+		},
+		"/consumption/recipes/{recipeId}/events/{eventId}/undo": {
+			"post": {
+				"tags": [
+					"Consumption recipes"
+				],
+				"summary": "Undo one of the caller's consumption events through its recipe",
+				"description": "Requires STOCK_VIEW, STOCK_EDIT and the undo right. Undoes the event's recorded stock bookings, not a recalculation from the recipe. A holder of STOCK_EDIT can undo the same bookings through the stock routes.",
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionEvent"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"409": {
+						"description": "The event is not booked, or the stock refused the undo",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "recipeId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					},
+					{
+						"name": "eventId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					}
+				]
+			}
+		},
+		"/consumption/recipes/{recipeId}/shares": {
+			"get": {
+				"tags": [
+					"Consumption recipes"
+				],
+				"summary": "List shares",
+				"description": "Requires STOCK_VIEW and the share right. The owner sees every share; a holder of the share right sees only the shares they could change.",
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/ConsumptionShare"
+									}
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "recipeId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					}
+				]
+			},
+			"post": {
+				"tags": [
+					"Consumption recipes"
+				],
+				"summary": "Share a consumption recipe with a user",
+				"description": "Requires STOCK_VIEW and the share right. Name the recipient by user_id or username. The owner can grant any right; a holder of the share right can grant only rights they hold, never the share right, and cannot change a share that holds a right they lack. The share is accepted whether or not the recipient holds the global permission a right needs, and does nothing until they do.",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/ConsumptionShareWrite"
+							}
+						}
+					}
+				},
+				"responses": {
+					"204": {
+						"description": "Success"
+					},
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "The request cannot be acted on",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "recipeId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					}
+				]
+			}
+		},
+		"/consumption/recipes/{recipeId}/shares/{userId}": {
+			"put": {
+				"tags": [
+					"Consumption recipes"
+				],
+				"summary": "Change a user's share",
+				"description": "Requires STOCK_VIEW and the share right, within the rules of the POST.",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/ConsumptionShareRights"
+							}
+						}
+					}
+				},
+				"responses": {
+					"204": {
+						"description": "Success"
+					},
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "The request cannot be acted on",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "recipeId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					},
+					{
+						"name": "userId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					}
+				]
+			},
+			"delete": {
+				"tags": [
+					"Consumption recipes"
+				],
+				"summary": "Remove a user's share",
+				"description": "Requires STOCK_VIEW. Any user can remove their own share; the owner, or a holder of the share right within the rules of the POST, can remove another's.",
+				"responses": {
+					"204": {
+						"description": "Success"
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "recipeId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					},
+					{
+						"name": "userId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					}
+				]
+			}
+		},
+		"/consumption/recipes/{recipeId}/transfer": {
+			"post": {
+				"tags": [
+					"Consumption recipes"
+				],
+				"summary": "Transfer ownership to a user who holds a share",
+				"description": "Requires STOCK_VIEW and ownership. The new owner's share is deleted and the previous owner becomes a share holder with every right, whom the new owner can then revoke.",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"required": [
+									"user_id"
+								],
+								"properties": {
+									"user_id": {
+										"type": "integer"
+									}
+								}
+							}
+						}
+					}
+				},
+				"responses": {
+					"204": {
+						"description": "Success"
+					},
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "The request cannot be acted on",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "recipeId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					}
+				]
+			}
 		}
 	},
 	"components": {
 		"schemas": {
+			"ConsumptionError": {
+				"type": "object",
+				"properties": {
+					"error_message": {
+						"type": "string"
+					},
+					"error": {
+						"type": "string",
+						"description": "A stable token such as not_found, right_missing, permission_missing, stock_refused, no_conversion or invalid_user"
+					}
+				}
+			},
+			"ConsumptionRecipeLine": {
+				"type": "object",
+				"required": [
+					"product_id",
+					"amount",
+					"qu_id"
+				],
+				"properties": {
+					"product_id": {
+						"type": "integer"
+					},
+					"amount": {
+						"type": "number",
+						"exclusiveMinimum": 0,
+						"description": "In the unit qu_id, as the household entered it"
+					},
+					"qu_id": {
+						"type": "integer"
+					}
+				}
+			},
+			"ConsumptionRecipeLineRead": {
+				"allOf": [
+					{
+						"$ref": "#/components/schemas/ConsumptionRecipeLine"
+					},
+					{
+						"type": "object",
+						"properties": {
+							"position": {
+								"type": "integer"
+							},
+							"product_name": {
+								"type": "string"
+							}
+						}
+					}
+				]
+			},
+			"ConsumptionRecipeSummary": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "integer"
+					},
+					"name": {
+						"type": "string"
+					},
+					"note": {
+						"type": [
+							"string",
+							"null"
+						]
+					},
+					"owner_user_id": {
+						"type": "integer"
+					},
+					"is_owner": {
+						"type": "boolean"
+					},
+					"rights": {
+						"type": "object",
+						"properties": {
+							"read": {
+								"type": "boolean"
+							},
+							"consume": {
+								"type": "boolean"
+							},
+							"edit": {
+								"type": "boolean"
+							},
+							"undo": {
+								"type": "boolean"
+							},
+							"share": {
+								"type": "boolean"
+							}
+						}
+					},
+					"line_count": {
+						"type": "integer",
+						"description": "Present in the list only"
+					},
+					"row_created_timestamp": {
+						"type": "string",
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits (ADR-0027 decision 2)."
+					},
+					"row_updated_timestamp": {
+						"type": "string",
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits (ADR-0027 decision 2)."
+					}
+				}
+			},
+			"ConsumptionRecipe": {
+				"allOf": [
+					{
+						"$ref": "#/components/schemas/ConsumptionRecipeSummary"
+					},
+					{
+						"type": "object",
+						"properties": {
+							"lines": {
+								"type": "array",
+								"items": {
+									"$ref": "#/components/schemas/ConsumptionRecipeLineRead"
+								}
+							}
+						}
+					}
+				]
+			},
+			"ConsumptionRecipeWrite": {
+				"type": "object",
+				"required": [
+					"name",
+					"lines"
+				],
+				"properties": {
+					"name": {
+						"type": "string",
+						"minLength": 1,
+						"maxLength": 200
+					},
+					"note": {
+						"type": [
+							"string",
+							"null"
+						],
+						"maxLength": 2000
+					},
+					"lines": {
+						"type": "array",
+						"minItems": 1,
+						"maxItems": 50,
+						"items": {
+							"$ref": "#/components/schemas/ConsumptionRecipeLine"
+						}
+					}
+				}
+			},
+			"ConsumptionRecipeUpdate": {
+				"type": "object",
+				"properties": {
+					"name": {
+						"type": "string",
+						"minLength": 1,
+						"maxLength": 200
+					},
+					"note": {
+						"type": [
+							"string",
+							"null"
+						],
+						"maxLength": 2000
+					},
+					"lines": {
+						"type": "array",
+						"minItems": 1,
+						"maxItems": 50,
+						"items": {
+							"$ref": "#/components/schemas/ConsumptionRecipeLine"
+						}
+					}
+				}
+			},
+			"ConsumptionConsumeRequest": {
+				"type": "object",
+				"properties": {
+					"request_id": {
+						"type": "string",
+						"pattern": "^[A-Za-z0-9._:-]{1,128}$"
+					},
+					"location_id": {
+						"type": "integer"
+					},
+					"occurred_at": {
+						"type": "string",
+						"format": "date-time",
+						"description": "An RFC 3339 time with an offset or Z. The booked date is the calendar date as written in that offset, which is the person's local date; a time sent as Z books its UTC date. At most five minutes in the future."
+					}
+				}
+			},
+			"ConsumptionEventLine": {
+				"type": "object",
+				"description": "One row per stock_log row the consumption wrote",
+				"properties": {
+					"product_id": {
+						"type": "integer"
+					},
+					"amount": {
+						"type": "number",
+						"description": "In the product's stock unit, as booked"
+					},
+					"location_id": {
+						"type": [
+							"integer",
+							"null"
+						]
+					},
+					"stock_log_id": {
+						"type": [
+							"integer",
+							"null"
+						]
+					}
+				}
+			},
+			"ConsumptionEvent": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "integer"
+					},
+					"source_system": {
+						"type": "string"
+					},
+					"source_event_id": {
+						"type": "string"
+					},
+					"recipe_id": {
+						"type": [
+							"integer",
+							"null"
+						]
+					},
+					"state": {
+						"type": "string",
+						"enum": [
+							"received",
+							"needs_mapping",
+							"needs_review",
+							"booked",
+							"undone",
+							"voided",
+							"linked",
+							"dismissed"
+						]
+					},
+					"reason": {
+						"type": [
+							"string",
+							"null"
+						]
+					},
+					"transaction_id": {
+						"type": [
+							"string",
+							"null"
+						]
+					},
+					"revision": {
+						"type": "integer"
+					},
+					"occurred_at": {
+						"type": "string",
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits (ADR-0027 decision 2)."
+					},
+					"lines": {
+						"type": "array",
+						"items": {
+							"$ref": "#/components/schemas/ConsumptionEventLine"
+						}
+					},
+					"replayed": {
+						"type": "boolean",
+						"description": "Present on the consume response"
+					}
+				}
+			},
+			"ConsumptionShareRights": {
+				"type": "object",
+				"properties": {
+					"consume": {
+						"type": "boolean"
+					},
+					"edit": {
+						"type": "boolean"
+					},
+					"undo": {
+						"type": "boolean"
+					},
+					"share": {
+						"type": "boolean"
+					}
+				}
+			},
+			"ConsumptionShareWrite": {
+				"allOf": [
+					{
+						"$ref": "#/components/schemas/ConsumptionShareRights"
+					},
+					{
+						"type": "object",
+						"description": "Name the recipient with user_id or username",
+						"properties": {
+							"user_id": {
+								"type": "integer"
+							},
+							"username": {
+								"type": "string"
+							}
+						}
+					}
+				]
+			},
+			"ConsumptionShare": {
+				"type": "object",
+				"properties": {
+					"user_id": {
+						"type": "integer"
+					},
+					"username": {
+						"type": "string"
+					},
+					"rights": {
+						"type": "object",
+						"properties": {
+							"read": {
+								"type": "boolean"
+							},
+							"consume": {
+								"type": "boolean"
+							},
+							"edit": {
+								"type": "boolean"
+							},
+							"undo": {
+								"type": "boolean"
+							},
+							"share": {
+								"type": "boolean"
+							}
+						}
+					},
+					"granted_by_user_id": {
+						"type": [
+							"integer",
+							"null"
+						]
+					},
+					"granted_at": {
+						"type": "string",
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits (ADR-0027 decision 2)."
+					}
+				}
+			},
 			"Product": {
 				"type": "object",
 				"required": [
