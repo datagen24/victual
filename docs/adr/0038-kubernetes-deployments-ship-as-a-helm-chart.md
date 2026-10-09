@@ -343,7 +343,7 @@ configuration and run:
 helm pull oci://ghcr.io/datagen24/charts/victual --version 0.3.1
 ```
 
-Prerequisite 6's Talos deployment result remains unconfirmed in this record.
+Prerequisite 6 remains unmet on Talos; see the deployment status below.
 
 ### Prerequisite 4 on kind
 
@@ -417,6 +417,13 @@ session). Images were built from `b930242f` and tagged `0.3.0-helmkind`.
    at `0.2.0-MVP`, so if it still runs those images the first install also upgrades it, and
    an install runs no `pre-upgrade` hook: the preflight has to be run by hand first. Neither
    the adoption nor that upgrade has been observed on the cluster.
+
+On 2026-10-09, datagen24 confirmed that the published chart had not been deployed
+on Talos. The production configuration uses Home Assistant's InfluxDB 1.x server,
+but Victual's writer supported the 2.x API. [Release 0.3.2](../releases/0.3.2.md)
+adds 1.x support and the chart settings it needs. The maintainer has not tested that
+fix against the deployment. Prerequisite 6 remains unmet until the chart is deployed
+and the Talos cluster serves `/login`.
 
 ### Prerequisite 7 on kind
 
