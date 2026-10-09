@@ -172,8 +172,9 @@ the very booking its own guard exists to catch.
 `migrations` is not listed: `DatabaseMigrationService` creates it on every engine before
 the baseline loads, because it is what records that the baseline was applied.
 
-Migration 0305 (2026-10-09) adds five tables, listed under *Private consumption* below. The
-counts above were taken before it and are not re-measured here.
+Migration 0305 (2026-10-09) adds five tables and migration 0306 (2026-10-09) a sixth, all listed
+under *Private consumption* below. The counts above were taken before them and are not
+re-measured here.
 
 **Stock & products (17)** — `products`, `product_groups`, `product_barcodes`,
 `product_substitutions`, `quantity_units`, `quantity_unit_conversions`, `locations`,
@@ -254,8 +255,9 @@ The three `cache__*` tables are maintained entirely by triggers, and are read by
 file storage ([plan 01](plans/landed/01-file-storage.md)); `outbox` carries MQTT and InfluxDB
 events out of the request transaction ([plan 18](plans/18-mqtt-state-publication.md)).
 
-**Private consumption (5)** — `consumption_recipes`, `consumption_recipe_lines`,
-`consumption_recipe_shares`, `consumption_events`, `consumption_event_lines`. Migration 0305
+**Private consumption (6)** — `consumption_recipes`, `consumption_recipe_lines`,
+`consumption_recipe_shares`, `consumption_events`, `consumption_event_lines`,
+`consumption_mappings`. Migrations 0305 and 0306
 ([ADR-0040](adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md),
 [ADR-0041](adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md)).
 A consumption recipe is an owned list of product quantities, separate from the food `recipes`
@@ -263,7 +265,19 @@ table. A share names a user and the rights they hold; it confers no permission, 
 `trg_consumption_share_not_owner` keeps it from naming the owner. An event records one
 consumption and links it to its stock transaction by `transaction_id`, because
 `stock_log.recipe_id` is never set for these recipes. None of the five tables is an exposed
-entity. The importer clears all five, since no supported source can carry them.
+entity. The importer clears all six, since no supported source can carry them.
+
+Migration 0306 ([issue 700](https://github.com/datagen24/victual/issues/700)) adds
+`consumption_mappings` and extends the events and event lines instead of adding a second
+ledger. A mapping is what one user approved for one `(source_system, medication_ref)`: a recipe
+or product target, the confirmed unit labels, an optional default quantity, a location rule
+(`fixed`, `single` or `explicit`) and `effective_from`. `manual` cannot be a mapping source. An
+event also stores the request fields it was booked from, the client's `source_updated_at`, the
+mapping it used, the event it replaces, `voided_at`, the source's removal record, the candidate
+locations of an ambiguous source, a private stock refusal message and `linked_transaction_id`.
+`api_key_id` is audit only: identity stays `(user, source_system, source_event_id)`. A line
+stores the `used_date` it was booked under. Deleting a mapping removes its `voided` and
+`dismissed` tombstones in the service; events that booked stock keep their rows.
 
 **Recipes & meal plan (5)** — `recipes`, `recipes_pos`, `recipes_nestings`, `meal_plan`,
 `meal_plan_sections`. `recipes_nestings` names a recipe twice; the functions behind
