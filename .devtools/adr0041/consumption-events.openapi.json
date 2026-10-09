@@ -828,6 +828,7 @@
        "undo_refused",
        "invalid_mapping",
        "source_deleted",
+       "stock_error",
        null
       ]
      },
