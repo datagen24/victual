@@ -8,8 +8,10 @@
 //      receives (ADR-0041 rule 5), so the page must send the browser's own offset. The probe runs in
 //      America/New_York and reads the request body.
 //   2. The payload. A recipe name and note are private household data that reach the list, the
-//      consume dialog title and the share and history dialogs. The seeded name is a live
-//      <img onerror>; if any of those built markup from it, it would execute here (S29, AGENTS.md).
+//      consume dialog title and the share and history dialogs. The API purifies a string on write,
+//      so the stored name is the tag without its handler; the page's job is the second half, to show
+//      that stored markup as text. If any dialog built markup from it, an <img> element would exist
+//      here (S29, AGENTS.md).
 //   3. The refusals a person reads. A consumption that the stock refuses shows the stock's own
 //      sentence and books nothing, and a location is never swapped for another.
 //
@@ -92,7 +94,9 @@ const shownAsText = '<img src="x"';
 		page.on('request', request => { if (request.method() === 'POST' && request.url().endsWith('/consume')) sentBody = JSON.parse(request.postData()); });
 		await page.locator('#consumption-location').selectOption({ label: 'Organizer B ' + token });
 		await page.locator('#consumption-consume').click();
-		await page.locator('#consumption-message').filter({ hasText: /\S/ }).waitFor();
+		// The 201 for a newly recorded consumption must reach the success callback; the shared API
+		// helper once treated every status but 200, 202 and 204 as a failure.
+		await page.locator('#consumption-message').filter({ hasText: 'Consumption recorded.' }).waitFor();
 		assert.deepEqual([await onHand(organizerA), await onHand(organizerB)], [6, 12]);
 		assert.match(sentBody.occurred_at, /-0[45]:00$/, 'the request carries the New York offset, not Z');
 		assert.match(sentBody.request_id, /^[A-Za-z0-9._:-]{1,128}$/);
@@ -122,8 +126,10 @@ const shownAsText = '<img src="x"';
 		await shareRow.waitFor();
 		assert.equal(await shareRow.locator('input[type=checkbox]').nth(0).isChecked(), true);
 		await shareRow.locator('input[type=checkbox]').nth(1).check();
-		await shareRow.locator('.consumption-share-save').click();
-		await page.waitForTimeout(300);
+		await Promise.all([
+			page.waitForResponse(response => response.request().method() === 'PUT' && response.url().includes('/shares/')),
+			shareRow.locator('.consumption-share-save').click()
+		]);
 		await page.locator('#consumption-share-username').fill('nobody-by-that-name-' + token);
 		await page.locator('#consumption-share-add').click();
 		await page.locator('#consumption-share-error').filter({ hasText: /\S/ }).waitFor();

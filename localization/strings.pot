@@ -2976,7 +2976,7 @@ msgstr ""
 msgid "History"
 msgstr ""
 
-msgid "Leave"
+msgid "Remove my access"
 msgstr ""
 
 msgid "Delete this consumption recipe and its shares? Past consumptions stay in the stock history."

@@ -1,12 +1,14 @@
 # Consumption recipes
 
 A consumption recipe is a list of product quantities that you consume together, such as a
-daily set of tablets. **`/consumptionrecipes`** lists the recipes you own or that someone
-shared with you. It needs only the `STOCK_VIEW` permission to open; what you can do on a
-recipe depends on your rights on it (see [Sharing](#sharing)).
+prescription you have entered. **`/consumptionrecipes`** lists the recipes you own or that someone
+shared with you. It needs only the `STOCK_VIEW` permission to open. The menu entry appears when
+`FEATURE_FLAG_STOCK` is on, which it is by default. As for the other stock pages, the page
+itself stays reachable by its address when the flag is off. What you can do on a recipe depends
+on your rights on it (see [Sharing](#sharing)).
 
 Victual records what was consumed and what is on hand. It does not schedule anything, remind
-you, calculate an amount or give advice about any medicine or supplement. See
+you, calculate an amount or give advice about how to take any product. See
 [ADR-0015](../../adr/0015-medication-records-never-advises.md).
 
 ## Who can see a recipe
@@ -78,7 +80,7 @@ A share confers no permission. Recording a consumption also needs `STOCK_CONSUME
 needs `STOCK_EDIT`, and every action needs `STOCK_VIEW`; a share to a user who lacks the
 permission is accepted and does nothing until they hold it. A user with the *share* right can
 grant only rights they hold, never the *share* right itself, and cannot change a share that
-holds a right they lack. Anyone can remove their own share with **Leave**.
+holds a right they lack. Anyone can remove their own share with **Remove my access**.
 
 The owner can **Make owner** a user who already holds a share. The previous owner then holds a
 share with every right, which the new owner can remove. Only the owner deletes a recipe.

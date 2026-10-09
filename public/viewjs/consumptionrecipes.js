@@ -6,6 +6,7 @@
 	var products = [];
 	var productsById = {};
 	var locations = [];
+	var unitNames = {};
 	var recipes = [];
 	var editing = null;
 	var consuming = null;
@@ -70,7 +71,12 @@
 			Victual.Api.Get('objects/locations', function (rows2)
 			{
 				locations = rows2.filter(function (l) { return Number(l.active) === 1; }).sort(function (a, b) { return a.name.localeCompare(b.name); });
-				done();
+				Victual.Api.Get('objects/quantity_units', function (units)
+				{
+					unitNames = {};
+					units.forEach(function (u) { unitNames[u.id] = u.name; });
+					done();
+				}, Failed);
 			}, Failed);
 		}, Failed);
 	}
@@ -97,7 +103,7 @@
 				if (recipe.rights.share) actions.append(Button(__t('Share'), 'btn-outline-secondary consumption-share-button', function () { OpenShare(recipe.id); }));
 				actions.append(Button(__t('History'), 'btn-outline-secondary consumption-history-button', function () { OpenHistory(recipe.id); }));
 				if (recipe.is_owner) actions.append(Button(__t('Delete'), 'btn-outline-danger consumption-delete-button', function () { DeleteRecipe(recipe); }));
-				else actions.append(Button(__t('Leave'), 'btn-outline-danger consumption-leave-button', function () { LeaveRecipe(recipe); }));
+				else actions.append(Button(__t('Remove my access'), 'btn-outline-danger consumption-leave-button', function () { LeaveRecipe(recipe); }));
 				row.append(actions);
 				body.append(row);
 			});
@@ -143,14 +149,9 @@
 				seen[id] = true;
 				unitSelect.append($('<option>').attr('value', id).text(name));
 			};
-			Victual.Api.Get('objects/quantity_units', function (units)
-			{
-				var names = {};
-				units.forEach(function (u) { names[u.id] = u.name; });
-				add(product.qu_id_stock, names[product.qu_id_stock] || '');
-				rows.forEach(function (c) { if (String(c.to_qu_id) === String(product.qu_id_stock)) add(c.from_qu_id, names[c.from_qu_id] || c.from_qu_name); });
-				if (selectedUnit) unitSelect.val(String(selectedUnit));
-			}, Failed);
+			add(product.qu_id_stock, unitNames[product.qu_id_stock] || '');
+			rows.forEach(function (c) { if (String(c.to_qu_id) === String(product.qu_id_stock)) add(c.from_qu_id, c.from_qu_name || unitNames[c.from_qu_id] || ''); });
+			if (selectedUnit) unitSelect.val(String(selectedUnit));
 		}, Failed);
 	}
 
