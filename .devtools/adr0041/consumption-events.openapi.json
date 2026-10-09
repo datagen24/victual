@@ -600,6 +600,43 @@
      }
     }
    }
+  },
+  "/consumption/events/resolve": {
+   "post": {
+    "operationId": "bulkResolveConsumptionEvents",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ConsumptionBulkResolution"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "One result per handled event",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConsumptionBulkResolutionResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Invalid request",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -959,6 +996,86 @@
      "occurred_at": {
       "type": "string",
       "format": "date-time"
+     }
+    }
+   },
+   "ConsumptionBulkResolution": {
+    "type": "object",
+    "required": [
+     "action"
+    ],
+    "properties": {
+     "action": {
+      "type": "string",
+      "enum": [
+       "void",
+       "keep",
+       "dismiss",
+       "retry",
+       "approve_unit",
+       "rebook"
+      ]
+     },
+     "events": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+       "type": "object",
+       "required": [
+        "source_system",
+        "source_event_id"
+       ],
+       "properties": {
+        "source_system": {
+         "type": "string"
+        },
+        "source_event_id": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "filter": {
+      "type": "object",
+      "required": [
+       "source_system",
+       "medication_ref",
+       "state"
+      ],
+      "properties": {
+       "source_system": {
+        "type": "string"
+       },
+       "medication_ref": {
+        "type": "string"
+       },
+       "state": {
+        "type": "string"
+       },
+       "reason": {
+        "type": "string"
+       }
+      }
+     }
+    },
+    "description": "Exactly one of events or filter. A filter handles at most 50 events."
+   },
+   "ConsumptionBulkResolutionResult": {
+    "type": "object",
+    "required": [
+     "results"
+    ],
+    "properties": {
+     "results": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ConsumptionEventBatchResult"
+      }
+     },
+     "remaining": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Present with filter: matching events not handled by this call"
      }
     }
    }
