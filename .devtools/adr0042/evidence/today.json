@@ -1,0 +1,690 @@
+{
+    "probe": "today",
+    "facts": {
+        "php_default_zone_in_this_run": "UTC",
+        "shipped_image_php_ini_date_timezone": "UTC",
+        "TZ_America_New_York_does_php_follow_TZ": "UTC",
+        "postgres_bare_connection_TimeZone": "Etc/UTC",
+        "postgres_log_timezone": "Etc/UTC",
+        "postgres_dialect_statement": "services/Database/PostgresDialect.php:131  $pdo->exec(\"SET TIME ZONE \" . $pdo->quote(date_default_timezone_get()));",
+        "php_tzdata": "2026.3",
+        "postgres_version": "16.15 (Debian 16.15-1.pgdg13+2)"
+    },
+    "live_sample_at_run_time_utc": "2026-10-09T13:54:24+00:00",
+    "live_sample": [
+        {
+            "php_zone": "America/New_York",
+            "php_date_Y-m-d": "2026-10-09",
+            "php_time": "09:54:24",
+            "app_style_session_zone": "America/New_York",
+            "app_style_CURRENT_DATE": "2026-10-09",
+            "bare_session_zone": "Etc/UTC",
+            "bare_CURRENT_DATE": "2026-10-09",
+            "app_style_matches_php": true,
+            "bare_matches_php": true
+        },
+        {
+            "php_zone": "Pacific/Kiritimati",
+            "php_date_Y-m-d": "2026-10-10",
+            "php_time": "03:54:24",
+            "app_style_session_zone": "Pacific/Kiritimati",
+            "app_style_CURRENT_DATE": "2026-10-10",
+            "bare_session_zone": "Etc/UTC",
+            "bare_CURRENT_DATE": "2026-10-09",
+            "app_style_matches_php": true,
+            "bare_matches_php": false
+        },
+        {
+            "php_zone": "Pacific/Pago_Pago",
+            "php_date_Y-m-d": "2026-10-09",
+            "php_time": "02:54:24",
+            "app_style_session_zone": "Pacific/Pago_Pago",
+            "app_style_CURRENT_DATE": "2026-10-09",
+            "bare_session_zone": "Etc/UTC",
+            "bare_CURRENT_DATE": "2026-10-09",
+            "app_style_matches_php": true,
+            "bare_matches_php": true
+        },
+        {
+            "php_zone": "UTC",
+            "php_date_Y-m-d": "2026-10-09",
+            "php_time": "13:54:24",
+            "app_style_session_zone": "UTC",
+            "app_style_CURRENT_DATE": "2026-10-09",
+            "bare_session_zone": "Etc/UTC",
+            "bare_CURRENT_DATE": "2026-10-09",
+            "app_style_matches_php": true,
+            "bare_matches_php": true
+        }
+    ],
+    "bare_connection_zone_used_in_grid": "Etc/UTC",
+    "midnight_grid": [
+        {
+            "zone": "America/New_York",
+            "around_local_midnight_of": "2026-03-07",
+            "points": 5041,
+            "app_style": {
+                "disagreeing_minutes": 0,
+                "windows": []
+            },
+            "bare": {
+                "disagreeing_minutes": 1140,
+                "windows": [
+                    {
+                        "php_date": "2026-03-05",
+                        "postgres_date": "2026-03-06",
+                        "from_local": "2026-03-05 19:00 EST",
+                        "to_local": "2026-03-05 23:59 EST",
+                        "minutes": 300
+                    },
+                    {
+                        "php_date": "2026-03-06",
+                        "postgres_date": "2026-03-07",
+                        "from_local": "2026-03-06 19:00 EST",
+                        "to_local": "2026-03-06 23:59 EST",
+                        "minutes": 300
+                    },
+                    {
+                        "php_date": "2026-03-07",
+                        "postgres_date": "2026-03-08",
+                        "from_local": "2026-03-07 19:00 EST",
+                        "to_local": "2026-03-07 23:59 EST",
+                        "minutes": 300
+                    },
+                    {
+                        "php_date": "2026-03-08",
+                        "postgres_date": "2026-03-09",
+                        "from_local": "2026-03-08 20:00 EDT",
+                        "to_local": "2026-03-08 23:59 EDT",
+                        "minutes": 240
+                    }
+                ]
+            }
+        },
+        {
+            "zone": "America/New_York",
+            "around_local_midnight_of": "2026-03-08",
+            "points": 5041,
+            "app_style": {
+                "disagreeing_minutes": 0,
+                "windows": []
+            },
+            "bare": {
+                "disagreeing_minutes": 1080,
+                "windows": [
+                    {
+                        "php_date": "2026-03-06",
+                        "postgres_date": "2026-03-07",
+                        "from_local": "2026-03-06 19:00 EST",
+                        "to_local": "2026-03-06 23:59 EST",
+                        "minutes": 300
+                    },
+                    {
+                        "php_date": "2026-03-07",
+                        "postgres_date": "2026-03-08",
+                        "from_local": "2026-03-07 19:00 EST",
+                        "to_local": "2026-03-07 23:59 EST",
+                        "minutes": 300
+                    },
+                    {
+                        "php_date": "2026-03-08",
+                        "postgres_date": "2026-03-09",
+                        "from_local": "2026-03-08 20:00 EDT",
+                        "to_local": "2026-03-08 23:59 EDT",
+                        "minutes": 240
+                    },
+                    {
+                        "php_date": "2026-03-09",
+                        "postgres_date": "2026-03-10",
+                        "from_local": "2026-03-09 20:00 EDT",
+                        "to_local": "2026-03-09 23:59 EDT",
+                        "minutes": 240
+                    }
+                ]
+            }
+        },
+        {
+            "zone": "America/New_York",
+            "around_local_midnight_of": "2026-10-09",
+            "points": 5041,
+            "app_style": {
+                "disagreeing_minutes": 0,
+                "windows": []
+            },
+            "bare": {
+                "disagreeing_minutes": 960,
+                "windows": [
+                    {
+                        "php_date": "2026-10-07",
+                        "postgres_date": "2026-10-08",
+                        "from_local": "2026-10-07 20:00 EDT",
+                        "to_local": "2026-10-07 23:59 EDT",
+                        "minutes": 240
+                    },
+                    {
+                        "php_date": "2026-10-08",
+                        "postgres_date": "2026-10-09",
+                        "from_local": "2026-10-08 20:00 EDT",
+                        "to_local": "2026-10-08 23:59 EDT",
+                        "minutes": 240
+                    },
+                    {
+                        "php_date": "2026-10-09",
+                        "postgres_date": "2026-10-10",
+                        "from_local": "2026-10-09 20:00 EDT",
+                        "to_local": "2026-10-09 23:59 EDT",
+                        "minutes": 240
+                    },
+                    {
+                        "php_date": "2026-10-10",
+                        "postgres_date": "2026-10-11",
+                        "from_local": "2026-10-10 20:00 EDT",
+                        "to_local": "2026-10-10 23:59 EDT",
+                        "minutes": 240
+                    }
+                ]
+            }
+        },
+        {
+            "zone": "America/New_York",
+            "around_local_midnight_of": "2026-11-01",
+            "points": 5041,
+            "app_style": {
+                "disagreeing_minutes": 0,
+                "windows": []
+            },
+            "bare": {
+                "disagreeing_minutes": 1080,
+                "windows": [
+                    {
+                        "php_date": "2026-10-30",
+                        "postgres_date": "2026-10-31",
+                        "from_local": "2026-10-30 20:00 EDT",
+                        "to_local": "2026-10-30 23:59 EDT",
+                        "minutes": 240
+                    },
+                    {
+                        "php_date": "2026-10-31",
+                        "postgres_date": "2026-11-01",
+                        "from_local": "2026-10-31 20:00 EDT",
+                        "to_local": "2026-10-31 23:59 EDT",
+                        "minutes": 240
+                    },
+                    {
+                        "php_date": "2026-11-01",
+                        "postgres_date": "2026-11-02",
+                        "from_local": "2026-11-01 19:00 EST",
+                        "to_local": "2026-11-01 23:59 EST",
+                        "minutes": 300
+                    },
+                    {
+                        "php_date": "2026-11-02",
+                        "postgres_date": "2026-11-03",
+                        "from_local": "2026-11-02 19:00 EST",
+                        "to_local": "2026-11-02 23:59 EST",
+                        "minutes": 300
+                    }
+                ]
+            }
+        },
+        {
+            "zone": "Pacific/Kiritimati",
+            "around_local_midnight_of": "2026-10-09",
+            "points": 5041,
+            "app_style": {
+                "disagreeing_minutes": 0,
+                "windows": []
+            },
+            "bare": {
+                "disagreeing_minutes": 2881,
+                "windows": [
+                    {
+                        "php_date": "2026-10-08",
+                        "postgres_date": "2026-10-07",
+                        "from_local": "2026-10-08 00:00 +14",
+                        "to_local": "2026-10-08 13:59 +14",
+                        "minutes": 840
+                    },
+                    {
+                        "php_date": "2026-10-09",
+                        "postgres_date": "2026-10-08",
+                        "from_local": "2026-10-09 00:00 +14",
+                        "to_local": "2026-10-09 13:59 +14",
+                        "minutes": 840
+                    },
+                    {
+                        "php_date": "2026-10-10",
+                        "postgres_date": "2026-10-09",
+                        "from_local": "2026-10-10 00:00 +14",
+                        "to_local": "2026-10-10 13:59 +14",
+                        "minutes": 840
+                    },
+                    {
+                        "php_date": "2026-10-11",
+                        "postgres_date": "2026-10-10",
+                        "from_local": "2026-10-11 00:00 +14",
+                        "to_local": "2026-10-11 06:00 +14",
+                        "minutes": 361
+                    }
+                ]
+            }
+        },
+        {
+            "zone": "Pacific/Kiritimati",
+            "around_local_midnight_of": "1994-12-30",
+            "points": 5041,
+            "app_style": {
+                "disagreeing_minutes": 0,
+                "windows": []
+            },
+            "bare": {
+                "disagreeing_minutes": 2761,
+                "windows": [
+                    {
+                        "php_date": "1994-12-28",
+                        "postgres_date": "1994-12-29",
+                        "from_local": "1994-12-28 18:00 -10",
+                        "to_local": "1994-12-28 23:59 -10",
+                        "minutes": 360
+                    },
+                    {
+                        "php_date": "1994-12-29",
+                        "postgres_date": "1994-12-30",
+                        "from_local": "1994-12-29 14:00 -10",
+                        "to_local": "1994-12-29 23:59 -10",
+                        "minutes": 600
+                    },
+                    {
+                        "php_date": "1994-12-30",
+                        "postgres_date": "1994-12-31",
+                        "from_local": "1994-12-30 14:00 -10",
+                        "to_local": "1994-12-30 23:59 -10",
+                        "minutes": 600
+                    },
+                    {
+                        "php_date": "1995-01-01",
+                        "postgres_date": "1994-12-31",
+                        "from_local": "1995-01-01 00:00 +14",
+                        "to_local": "1995-01-01 13:59 +14",
+                        "minutes": 840
+                    },
+                    {
+                        "php_date": "1995-01-02",
+                        "postgres_date": "1995-01-01",
+                        "from_local": "1995-01-02 00:00 +14",
+                        "to_local": "1995-01-02 06:00 +14",
+                        "minutes": 361
+                    }
+                ]
+            }
+        },
+        {
+            "zone": "Pacific/Kiritimati",
+            "around_local_midnight_of": "1994-12-31",
+            "points": 5041,
+            "app_style": {
+                "disagreeing_minutes": 0,
+                "windows": []
+            },
+            "bare": {
+                "disagreeing_minutes": 3001,
+                "windows": [
+                    {
+                        "php_date": "1994-12-29",
+                        "postgres_date": "1994-12-30",
+                        "from_local": "1994-12-29 18:00 -10",
+                        "to_local": "1994-12-29 23:59 -10",
+                        "minutes": 360
+                    },
+                    {
+                        "php_date": "1994-12-30",
+                        "postgres_date": "1994-12-31",
+                        "from_local": "1994-12-30 14:00 -10",
+                        "to_local": "1994-12-30 23:59 -10",
+                        "minutes": 600
+                    },
+                    {
+                        "php_date": "1995-01-01",
+                        "postgres_date": "1994-12-31",
+                        "from_local": "1995-01-01 00:00 +14",
+                        "to_local": "1995-01-01 13:59 +14",
+                        "minutes": 840
+                    },
+                    {
+                        "php_date": "1995-01-02",
+                        "postgres_date": "1995-01-01",
+                        "from_local": "1995-01-02 00:00 +14",
+                        "to_local": "1995-01-02 13:59 +14",
+                        "minutes": 840
+                    },
+                    {
+                        "php_date": "1995-01-03",
+                        "postgres_date": "1995-01-02",
+                        "from_local": "1995-01-03 00:00 +14",
+                        "to_local": "1995-01-03 06:00 +14",
+                        "minutes": 361
+                    }
+                ]
+            }
+        },
+        {
+            "zone": "Pacific/Pago_Pago",
+            "around_local_midnight_of": "2026-10-09",
+            "points": 5041,
+            "app_style": {
+                "disagreeing_minutes": 0,
+                "windows": []
+            },
+            "bare": {
+                "disagreeing_minutes": 2340,
+                "windows": [
+                    {
+                        "php_date": "2026-10-07",
+                        "postgres_date": "2026-10-08",
+                        "from_local": "2026-10-07 18:00 SST",
+                        "to_local": "2026-10-07 23:59 SST",
+                        "minutes": 360
+                    },
+                    {
+                        "php_date": "2026-10-08",
+                        "postgres_date": "2026-10-09",
+                        "from_local": "2026-10-08 13:00 SST",
+                        "to_local": "2026-10-08 23:59 SST",
+                        "minutes": 660
+                    },
+                    {
+                        "php_date": "2026-10-09",
+                        "postgres_date": "2026-10-10",
+                        "from_local": "2026-10-09 13:00 SST",
+                        "to_local": "2026-10-09 23:59 SST",
+                        "minutes": 660
+                    },
+                    {
+                        "php_date": "2026-10-10",
+                        "postgres_date": "2026-10-11",
+                        "from_local": "2026-10-10 13:00 SST",
+                        "to_local": "2026-10-10 23:59 SST",
+                        "minutes": 660
+                    }
+                ]
+            }
+        },
+        {
+            "zone": "Pacific/Apia",
+            "around_local_midnight_of": "2011-12-29",
+            "points": 5041,
+            "app_style": {
+                "disagreeing_minutes": 0,
+                "windows": []
+            },
+            "bare": {
+                "disagreeing_minutes": 2761,
+                "windows": [
+                    {
+                        "php_date": "2011-12-27",
+                        "postgres_date": "2011-12-28",
+                        "from_local": "2011-12-27 18:00 -10",
+                        "to_local": "2011-12-27 23:59 -10",
+                        "minutes": 360
+                    },
+                    {
+                        "php_date": "2011-12-28",
+                        "postgres_date": "2011-12-29",
+                        "from_local": "2011-12-28 14:00 -10",
+                        "to_local": "2011-12-28 23:59 -10",
+                        "minutes": 600
+                    },
+                    {
+                        "php_date": "2011-12-29",
+                        "postgres_date": "2011-12-30",
+                        "from_local": "2011-12-29 14:00 -10",
+                        "to_local": "2011-12-29 23:59 -10",
+                        "minutes": 600
+                    },
+                    {
+                        "php_date": "2011-12-31",
+                        "postgres_date": "2011-12-30",
+                        "from_local": "2011-12-31 00:00 +14",
+                        "to_local": "2011-12-31 13:59 +14",
+                        "minutes": 840
+                    },
+                    {
+                        "php_date": "2012-01-01",
+                        "postgres_date": "2011-12-31",
+                        "from_local": "2012-01-01 00:00 +14",
+                        "to_local": "2012-01-01 06:00 +14",
+                        "minutes": 361
+                    }
+                ]
+            }
+        },
+        {
+            "zone": "Pacific/Apia",
+            "around_local_midnight_of": "2011-12-30",
+            "points": 5041,
+            "app_style": {
+                "disagreeing_minutes": 0,
+                "windows": []
+            },
+            "bare": {
+                "disagreeing_minutes": 3001,
+                "windows": [
+                    {
+                        "php_date": "2011-12-28",
+                        "postgres_date": "2011-12-29",
+                        "from_local": "2011-12-28 18:00 -10",
+                        "to_local": "2011-12-28 23:59 -10",
+                        "minutes": 360
+                    },
+                    {
+                        "php_date": "2011-12-29",
+                        "postgres_date": "2011-12-30",
+                        "from_local": "2011-12-29 14:00 -10",
+                        "to_local": "2011-12-29 23:59 -10",
+                        "minutes": 600
+                    },
+                    {
+                        "php_date": "2011-12-31",
+                        "postgres_date": "2011-12-30",
+                        "from_local": "2011-12-31 00:00 +14",
+                        "to_local": "2011-12-31 13:59 +14",
+                        "minutes": 840
+                    },
+                    {
+                        "php_date": "2012-01-01",
+                        "postgres_date": "2011-12-31",
+                        "from_local": "2012-01-01 00:00 +14",
+                        "to_local": "2012-01-01 13:59 +14",
+                        "minutes": 840
+                    },
+                    {
+                        "php_date": "2012-01-02",
+                        "postgres_date": "2012-01-01",
+                        "from_local": "2012-01-02 00:00 +14",
+                        "to_local": "2012-01-02 06:00 +14",
+                        "minutes": 361
+                    }
+                ]
+            }
+        },
+        {
+            "zone": "Pacific/Apia",
+            "around_local_midnight_of": "2011-12-31",
+            "points": 5041,
+            "app_style": {
+                "disagreeing_minutes": 0,
+                "windows": []
+            },
+            "bare": {
+                "disagreeing_minutes": 3001,
+                "windows": [
+                    {
+                        "php_date": "2011-12-28",
+                        "postgres_date": "2011-12-29",
+                        "from_local": "2011-12-28 18:00 -10",
+                        "to_local": "2011-12-28 23:59 -10",
+                        "minutes": 360
+                    },
+                    {
+                        "php_date": "2011-12-29",
+                        "postgres_date": "2011-12-30",
+                        "from_local": "2011-12-29 14:00 -10",
+                        "to_local": "2011-12-29 23:59 -10",
+                        "minutes": 600
+                    },
+                    {
+                        "php_date": "2011-12-31",
+                        "postgres_date": "2011-12-30",
+                        "from_local": "2011-12-31 00:00 +14",
+                        "to_local": "2011-12-31 13:59 +14",
+                        "minutes": 840
+                    },
+                    {
+                        "php_date": "2012-01-01",
+                        "postgres_date": "2011-12-31",
+                        "from_local": "2012-01-01 00:00 +14",
+                        "to_local": "2012-01-01 13:59 +14",
+                        "minutes": 840
+                    },
+                    {
+                        "php_date": "2012-01-02",
+                        "postgres_date": "2012-01-01",
+                        "from_local": "2012-01-02 00:00 +14",
+                        "to_local": "2012-01-02 06:00 +14",
+                        "minutes": 361
+                    }
+                ]
+            }
+        },
+        {
+            "zone": "Australia/Lord_Howe",
+            "around_local_midnight_of": "2026-04-05",
+            "points": 5041,
+            "app_style": {
+                "disagreeing_minutes": 0,
+                "windows": []
+            },
+            "bare": {
+                "disagreeing_minutes": 2281,
+                "windows": [
+                    {
+                        "php_date": "2026-04-04",
+                        "postgres_date": "2026-04-03",
+                        "from_local": "2026-04-04 00:00 +11",
+                        "to_local": "2026-04-04 10:59 +11",
+                        "minutes": 660
+                    },
+                    {
+                        "php_date": "2026-04-05",
+                        "postgres_date": "2026-04-04",
+                        "from_local": "2026-04-05 00:00 +11",
+                        "to_local": "2026-04-05 10:29 +1030",
+                        "minutes": 660
+                    },
+                    {
+                        "php_date": "2026-04-06",
+                        "postgres_date": "2026-04-05",
+                        "from_local": "2026-04-06 00:00 +1030",
+                        "to_local": "2026-04-06 10:29 +1030",
+                        "minutes": 630
+                    },
+                    {
+                        "php_date": "2026-04-07",
+                        "postgres_date": "2026-04-06",
+                        "from_local": "2026-04-07 00:00 +1030",
+                        "to_local": "2026-04-07 05:30 +1030",
+                        "minutes": 331
+                    }
+                ]
+            }
+        },
+        {
+            "zone": "Australia/Lord_Howe",
+            "around_local_midnight_of": "2026-10-04",
+            "points": 5041,
+            "app_style": {
+                "disagreeing_minutes": 0,
+                "windows": []
+            },
+            "bare": {
+                "disagreeing_minutes": 2311,
+                "windows": [
+                    {
+                        "php_date": "2026-10-03",
+                        "postgres_date": "2026-10-02",
+                        "from_local": "2026-10-03 00:00 +1030",
+                        "to_local": "2026-10-03 10:29 +1030",
+                        "minutes": 630
+                    },
+                    {
+                        "php_date": "2026-10-04",
+                        "postgres_date": "2026-10-03",
+                        "from_local": "2026-10-04 00:00 +1030",
+                        "to_local": "2026-10-04 10:59 +11",
+                        "minutes": 630
+                    },
+                    {
+                        "php_date": "2026-10-05",
+                        "postgres_date": "2026-10-04",
+                        "from_local": "2026-10-05 00:00 +11",
+                        "to_local": "2026-10-05 10:59 +11",
+                        "minutes": 660
+                    },
+                    {
+                        "php_date": "2026-10-06",
+                        "postgres_date": "2026-10-05",
+                        "from_local": "2026-10-06 00:00 +11",
+                        "to_local": "2026-10-06 06:30 +11",
+                        "minutes": 391
+                    }
+                ]
+            }
+        },
+        {
+            "zone": "UTC",
+            "around_local_midnight_of": "2026-10-09",
+            "points": 5041,
+            "app_style": {
+                "disagreeing_minutes": 0,
+                "windows": []
+            },
+            "bare": {
+                "disagreeing_minutes": 0,
+                "windows": []
+            }
+        }
+    ],
+    "midnight_grid_totals": {
+        "points": 70574,
+        "app_style_disagree": 0,
+        "bare_disagree": 28598
+    },
+    "all_zones_2026_2027": {
+        "zones_known_to_php": 419,
+        "zones_compared": 419,
+        "zones_php_has_and_postgres_lacks": [],
+        "instants_per_zone": 26280,
+        "instants_compared": 11011320,
+        "zones_with_disagreement": 0,
+        "disagreements": [],
+        "tzdata": {
+            "php": "2026.3",
+            "postgres_pg_timezone_names_rows": 487
+        }
+    },
+    "transaction_semantics": {
+        "first": {
+            "now": "2026-10-09 13:54:31.008064+00",
+            "clock_timestamp": "2026-10-09 13:54:31.008452+00",
+            "CURRENT_DATE": "2026-10-09"
+        },
+        "after_1_5_seconds_in_same_transaction": {
+            "now": "2026-10-09 13:54:31.008064+00",
+            "clock_timestamp": "2026-10-09 13:54:32.509056+00",
+            "CURRENT_DATE": "2026-10-09"
+        },
+        "now_unchanged": true,
+        "clock_timestamp_advanced": true,
+        "consequence": "CURRENT_DATE is derived from now(), the transaction start. date() reads the clock at the call."
+    }
+}

@@ -1,0 +1,56 @@
+server: 16.15 (Debian 16.15-1.pgdg13+2)
+--- two sessions: BEGIN; SELECT id FROM r WHERE id = 1 FOR SHARE; pg_sleep(1); UPDATE r ...; COMMIT;
+session B:  id 
+session B: ----
+session B:   1
+session B: (1 row)
+session B: 
+session B:  pg_sleep 
+session B: ----------
+session B:  
+session B: (1 row)
+session B: 
+session B: ERROR:  deadlock detected
+session B: DETAIL:  Process 71 waits for ShareLock on transaction 734; blocked by process 73.
+session B: Process 73 waits for ShareLock on transaction 733; blocked by process 71.
+session B: HINT:  See server log for query details.
+session B: CONTEXT:  while updating tuple (0,1) in relation "r"
+session A:  id 
+session A: ----
+session A:   1
+session A: (1 row)
+session A: 
+session A:  pg_sleep 
+session A: ----------
+session A:  
+session A: (1 row)
+session A: 
+--- two sessions: BEGIN; SELECT id FROM r WHERE id = 1 FOR UPDATE; pg_sleep(1); UPDATE r ...; COMMIT;
+session A:  id 
+session A: ----
+session A:   1
+session A: (1 row)
+session A: 
+session A:  pg_sleep 
+session A: ----------
+session A:  
+session A: (1 row)
+session A: 
+session B:  id 
+session B: ----
+session B:   1
+session B: (1 row)
+session B: 
+session B:  pg_sleep 
+session B: ----------
+session B:  
+session B: (1 row)
+session B: 
+--- server log
+2026-10-09 14:17:42.125 UTC [71] ERROR:  deadlock detected
+2026-10-09 14:17:42.125 UTC [71] DETAIL:  Process 71 waits for ShareLock on transaction 734; blocked by process 73.
+	Process 73 waits for ShareLock on transaction 733; blocked by process 71.
+	Process 71: BEGIN; SELECT id FROM r WHERE id = 1 FOR SHARE; SELECT pg_sleep(1); UPDATE r SET name = 'B' WHERE id = 1; COMMIT;
+	Process 73: BEGIN; SELECT id FROM r WHERE id = 1 FOR SHARE; SELECT pg_sleep(1); UPDATE r SET name = 'A' WHERE id = 1; COMMIT;
+2026-10-09 14:17:42.125 UTC [71] HINT:  See server log for query details.
+2026-10-09 14:17:42.125 UTC [71] CONTEXT:  while updating tuple (0,1) in relation "r"

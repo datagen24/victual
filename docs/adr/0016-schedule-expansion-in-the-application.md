@@ -1,6 +1,7 @@
 # ADR-0016: Schedule expansion lives in the application, not the database
 
-- **Status: Proposed.** Written to be argued with.
+- **Status: Rejected 2026-10-09.** Recurrence expansion has no consumer in plan 22's narrowed
+  scope; see Disposition. The reasoning below stays as history.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-04, alongside [plan 22](../plans/22-medication-tracking.md).
@@ -13,6 +14,29 @@
 - **Would affect:** [0009](0009-database-as-the-logic-layer.md)'s scope if accepted,
   [18](../plans/18-mqtt-state-publication.md) and [02](../plans/02-mcp-endpoint.md) by way of
   what they can answer without waking the pod.
+
+## Disposition (prepared 2026-10-09)
+
+This section prepares the maintainer's lifecycle decision. It does not change the status
+line, which stays Proposed, and it removes nothing from the record below.
+
+On 2026-10-09 the maintainer narrowed [plan 22](../plans/22-medication-tracking.md) to
+inventory, private consumption recipes and refill notices. The plan no longer schedules doses,
+expands recurrence rules, classifies missed doses or raises dose alerts. This record's subject,
+where recurrence expansion runs, therefore has no consumer in the planned release. Its
+constraint on plan 22 piece 4 refers to a piece that no longer exists.
+
+Recommended disposition: **Rejected**, as a bookkeeping-only pull request by the maintainer
+that changes the status line and the index row and nothing else. The reasoning below stays as
+history. The record remains useful as an input to
+[ADR-0009](0009-database-as-the-logic-layer.md): the dual-engine and recursive-date-arithmetic
+argument is a worked example of logic that ADR-0009 would have to treat as an exception.
+If recurrence expansion returns for any feature, a new record cites this one rather than
+reviving it, because [ADR-0008](0008-postgresql-only-runtime-engine.md) has since removed the
+dual-engine premise this record relied on.
+
+Alternatives for the maintainer: leave it Proposed as an input to ADR-0009 (it constrains
+nothing while Proposed), or accept it, which would bind a scheduler that does not exist.
 
 ## Context
 
