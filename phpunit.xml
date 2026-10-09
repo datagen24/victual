@@ -205,6 +205,8 @@
 			<file>tests/Pgsql/ConsumptionRecipeServiceTest.php</file>
 			<file>tests/Pgsql/ConsumptionRecipeRaceTest.php</file>
 			<file>tests/Pgsql/ConsumptionRecipeApiTest.php</file>
+			<file>tests/Pgsql/ConsumptionMappingServiceTest.php</file>
+			<file>tests/Pgsql/ConsumptionEventServiceTest.php</file>
 		</testsuite>
 	</testsuites>
 </phpunit>
