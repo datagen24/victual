@@ -42,5 +42,5 @@
   # Filled 2026-09-19 (issue #86) from the first `nix build .#mcp` after the lockfile was
   # generated, the same fail-on-purpose loop as the two above. Changes whenever
   # mcp/package-lock.json does: re-run the build and take the "got:" value.
-  mcpNpmDeps = "sha256-zUcj0IO+cX16TNSGV1sySK1v6IqHmqWkA8+oWqxGl6U=";
+  mcpNpmDeps = "sha256-7/MxycF8fRVRzfx39QIOTv/lxGM7MvtRJXdba1gjHO0=";
 }
