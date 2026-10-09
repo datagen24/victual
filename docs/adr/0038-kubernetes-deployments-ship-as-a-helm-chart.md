@@ -313,7 +313,7 @@ against `claude/adr38-chart-publish`.
 | 2 | **Met** | `test_helm_chart.ValuesMatrixTest`: six values files in `deploy/helm/victual/ci/` render with hooks and pass `validate()`. Between them they cover all four secrets modes, the MCP sidecar, both label CronJobs, the Ingress, and the MQTT and InfluxDB Secrets, which a test asserts. The negative control, `ci/negative/app-without-memory-limit.yaml`, fails with `container/app: resources.limits.memory must be set` |
 | 3 | **Met, with a different message** | `helm install victual deploy/helm/victual -f deploy/helm/victual/values.example.yaml --dry-run=client` exits non-zero and lists `at '/database/host'`, `at '/ingress/host'` and `at '/secrets/onepassword/vault'`, the example's three `CHANGE-ME` fields. Helm's validator words the refusal as `'not' failed` rather than `render.py`'s `still 'CHANGE-ME…'; fill it in`. Its regular-expression engine has no lookahead, so the schema can say "not this pattern" only through `not`. The example's header says what the refusal means |
 | 4 | **Met** | On kind, install at 0.2.0-MVP and upgrade to the hook Jobs' build both reached a ready Deployment. `helm rollback` across the migration exited 1: the older pod never became ready and the newer pod kept serving. See [Prerequisite 4 on kind](#prerequisite-4-on-kind) |
-| 5 | **Workflow in place; not met** | `release.yml` checks the tag against `Chart.yaml` and pushes the chart from `publish`. A local registry round-trip passed; the GHCR push is untested until `v0.3.1`. See [Prerequisite 5's workflow](#prerequisite-5s-workflow) |
+| 5 | **Met** | The [0.3.1 release workflow](https://github.com/datagen24/victual/actions/runs/37816437055) passed. The maintainer confirmed a successful anonymous Helm pull on 2026-10-09. See [Prerequisite 5's workflow](#prerequisite-5s-workflow). |
 | 6 | **Half met: kind** | `deploy/kind/up.sh` installs the chart with `deploy/kind/values.yaml`: from scratch, again over its own release, and over a namespace the old kustomize overlay had applied, each to a ready Deployment that logs in. `deploy/talos/up.sh` installs `oci://ghcr.io/datagen24/charts/victual` by version, or the local chart with `--local`; its rendering passes `validate()` and `kubectl apply --dry-run=client`, and has not been applied, so the talos cluster has not served `/login` from the published chart. See [Prerequisite 6](#prerequisite-6-kind-and-talos-through-the-chart) |
 | 7 | **Met** | On kind, a preflight refusal (exit 2) failed `helm upgrade` before any pod was replaced, and clients kept getting 200. The `post-upgrade` Job published nine retained topics to a local broker. See [Prerequisite 7 on kind](#prerequisite-7-on-kind) |
 
@@ -332,14 +332,18 @@ stubbed. It pushed `charts/victual:0.3.0`, the registry listed that as the only 
 `helm pull` of the reference it wrote returned the packaged bytes. With `VERSION=0.3.1` it
 stopped before pushing, because the package was `victual-0.3.0.tgz`.
 
-Three things remain:
+The [release workflow for `v0.3.1`](https://github.com/datagen24/victual/actions/runs/37816437055)
+succeeded. On 2026-10-09, datagen24 confirmed that anonymous Helm pull worked as expected.
+This is maintainer-reported operational evidence, completing prerequisite 5; no local
+pull was repeated for this update. The confirmation did not specify the chart version.
+To reproduce the gate for the first published chart, use an empty Helm registry
+configuration and run:
 
-1. The maintainer's signed `v0.3.1` tag, placed after the gate pull requests merge, which
-   runs the push to GHCR for the first time. A separate release pull request bumps
-   `version.json` and `Chart.yaml` and adds the record.
-2. Making the `charts/victual` package public once.
-3. `helm pull oci://ghcr.io/datagen24/charts/victual --version <Version>` without
-   credentials.
+```sh
+helm pull oci://ghcr.io/datagen24/charts/victual --version 0.3.1
+```
+
+Prerequisite 6's Talos deployment result remains unconfirmed in this record.
 
 ### Prerequisite 4 on kind
 
