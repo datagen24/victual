@@ -110,8 +110,9 @@ rule 1 describes and are visible only to their user.
 | `dismissed` | A person or the mapping window excluded it | None |
 | `no_consumption` | Response only: a non-`taken` status arrived and no row exists | None |
 
-`needs_review` reasons: `ambiguous_location`, `insufficient_stock`, `unit_mismatch`,
-`recipe_unavailable`, `partially_undone`, `changed_after_undo`, `undo_refused`, `invalid_mapping`.
+`needs_review` reasons: `ambiguous_location`, `insufficient_stock`, `unit_unconfirmed`,
+`quantity_missing`, `recipe_unavailable`, `partially_undone`, `changed_after_undo`,
+`undo_refused`, `invalid_mapping`, `source_deleted`.
 
 ### 3. Which source statuses book
 
@@ -120,7 +121,8 @@ The request carries `status`, the client's translation of the source status:
 | `status` | Effect |
 |---|---|
 | `taken` | Eligible to book |
-| `skipped`, `unanswered`, `scheduled` | Never book. If no row exists, none is created and the response is `no_consumption`. If a `booked` row exists, treat as rule 7 deletion. |
+| `not_logged` | The person undid a logged dose. Treated as a deletion with reason `entered_in_error` (rule 7) |
+| `skipped`, `unanswered`, `scheduled` | Never book. If no row exists, none is created and the response is `no_consumption`. If a `booked` row exists, treated like `not_logged` |
 
 A scheduled or reminded event never deducts stock. Victual stores no row for a skipped or
 unanswered dose that was never taken, so it accumulates no adherence record.
@@ -134,12 +136,22 @@ request, normally from a native approval screen, and holds:
 
 - a target: one consumption recipe (access per ADR-0040), or one product with a unit and a
   `quantity_factor`;
-- `unit_label`: the unit string the client will send; a different string yields
-  `unit_mismatch`;
+- `unit_labels`: the unit strings the person has confirmed for this medication. An event with a
+  label outside the list is not booked; it becomes `needs_review` / `unit_unconfirmed` and
+  carries the label it sent, so the person sees the exact string. Resolving with
+  `approve_unit` adds that label to the list and books the event. A mapping may start with an
+  empty list; the first event then teaches it through that approval;
+- `default_quantity`: optional. An event without `quantity` uses it. Without both, the event
+  is `needs_review` / `quantity_missing`. The server never invents a quantity, and a recipe
+  target ignores the event quantity;
 - a location rule: `fixed` (a named location, usually one organizer), `single` (book only if
   exactly one location holds enough stock), or `explicit` (each event carries `location_id`);
 - `effective_from`: events that occurred earlier are `dismissed`, so connecting a client does
   not book years of history.
+
+`medication_ref` matches `^[A-Za-z0-9._:-]{1,128}$`, the same pattern as `source_event_id`. The
+client derives it from the opaque medication identifier it receives, for example a hash, since
+HealthKit documents no string form. Victual treats it as opaque.
 
 Victual infers nothing: it does not guess a product from a medication name, a conversion from
 a strength or a location from a schedule. A product target must have an existing quantity
@@ -179,10 +191,19 @@ Processing for one request:
 | Request while state is `received`, or `needs_review` with reason `insufficient_stock` | Booking is attempted again |
 | Request while state is `needs_review` with any other reason | Stored, no booking; waits for an explicit resolve (rule 8) |
 
-`source_updated_at` (RFC 3339) is required. A request older than the stored value returns
-`200` with `stale: true` and changes nothing. The same value with a different payload hash
-returns `409 same_version_different_payload`. Payload hash covers `status`, `medication_ref`,
-`quantity`, `unit_label`, `occurred_at` and `location_id`.
+`source_updated_at` (RFC 3339) is optional. It is the client's observation time of the source
+record, for sources that can edit a record; HealthKit samples cannot be edited, so a client
+may omit it. The payload hash excludes it. Ordering and conflicts then work as follows:
+
+| Request | Result |
+|---|---|
+| Same payload hash as stored, any `source_updated_at` | Replay: stored result, `replayed: true`. A replay need not repeat its original value |
+| Different hash, `source_updated_at` older than stored | `200` with `stale: true`, no change |
+| Different hash, newer value, or either value absent | Applied as a correction (rule 6) |
+| Different hash, both values present and equal | `409 same_version_different_payload` |
+
+Payload hash covers `status`, `medication_ref`, `quantity`, `unit_label`, `occurred_at` and
+`location_id`.
 
 Multi-product consumption (a recipe target, or a product target with several lines) is booked
 in transaction 2 with one `$transactionId` passed by reference to every `ConsumeProduct()`
@@ -214,21 +235,41 @@ correction rolls back and the original booking stays in place, with `needs_revie
 
 ### 7. Deletions and recreation
 
-`DELETE /api/consumption/events/{source_system}/{source_event_id}` or a `PUT` whose `status`
-is no longer `taken` reports that the source no longer has a taken dose.
+A source deletion does not always mean the dose was not taken. Removing Health history,
+archiving a medication or revoking access deletes records without un-taking a dose. The
+`DELETE` request therefore carries a `reason` (query parameter or JSON body):
 
-- `booked`: undo the transaction in one database transaction, set `voided`, keep the row as a
-  tombstone with `voided_at`. If the undo is refused, set `needs_review` / `undo_refused`.
-- Not booked: set `voided`.
+| `reason` | Meaning | Effect on a `booked` event |
+|---|---|---|
+| `entered_in_error` | The person says the dose was not taken | Void: undo the transaction, state `voided` |
+| `history_cleared`, `medication_archived`, `access_revoked` | The source stopped holding the record | Stock untouched; the event stays `booked` with `source_removed_at` and the reason |
+| omitted or `unknown` | The client cannot say | `needs_review` / `source_deleted`; stock untouched |
+
+Two server rules apply on top, so a mistaken client cannot restore stock in bulk:
+
+- A void (`entered_in_error`, or status `not_logged`, `skipped`, `unanswered`, `scheduled`
+  on a booked row) applies automatically only when `occurred_at` is within the last 7 days
+  (an instance setting). An older one becomes `needs_review` / `source_deleted`.
+- A `replaces` void is exempt, because it books the replacement in the same transaction.
+
+A person resolves a `source_deleted` event with `void` (restore stock) or `keep` (leave the
+booking; the deletion is acknowledged). Neither is automatic.
+
+- Voided: the undo happens in one database transaction, the row stays as a tombstone with
+  `voided_at`. If the undo is refused, the event is `needs_review` / `undo_refused`.
+- Not booked: the event becomes `voided` for `entered_in_error`, otherwise `dismissed`.
 - A `PUT` of the same key with `source_updated_at` not after `voided_at` is stale and changes
-  nothing. A later `source_updated_at` is a new event.
+  nothing. A later value, or any `PUT` that differs in payload when both versions are absent
+  and the row is `voided`, is a new event.
 
 An edit that the source performs as delete-and-recreate arrives as a new `source_event_id`.
-The client **should** send `replaces: "<old source_event_id>"` on the new event. The server
-then voids the old event and books the new one in one transaction, which never leaves two
-deductions. Without `replaces`, the old event's delete and the new event's creation are
-independent requests and both orders end with one deduction, with a brief window of two
-or zero. Victual does not infer that two different ids are the same dose.
+The client sends `replaces: "<old source_event_id>"` only when it sees the deletion and the
+insertion together for the same medication and scheduled date. The server then voids the old
+event and books the new one in one transaction, which never leaves two deductions. Without
+`replaces`, the old event's deletion and the new event's creation are independent requests;
+a deletion with a reason other than `entered_in_error` leaves the old booking, so the client
+must not send one for an edit. Victual does not infer that two different ids are the same
+dose.
 
 ### 8. Local undo, resolution and the review inbox
 
@@ -251,6 +292,9 @@ A changed payload is rule 6. A person can act on an unresolved event with
 |---|---|---|
 | `retry` | `needs_mapping`, `needs_review` | Attempt the booking again with the current mapping |
 | `rebook` | `undone`, `partially_undone` | Book again; the only way an undone event returns |
+| `approve_unit` | `needs_review` / `unit_unconfirmed` | Add the event's label to the mapping, then book |
+| `void` | `needs_review` / `source_deleted` | Undo the booking and set `voided` |
+| `keep` | `needs_review` / `source_deleted` | Keep the booking; set `booked` with the removal recorded |
 | `dismiss` | any unbooked state | Terminal; never books |
 | `link` | `needs_review`, `booked`, `received` | Attach to an existing transaction (rule 9) |
 
@@ -281,7 +325,7 @@ suggestion; open question 1 asks whether to hold it instead.
 
 | Status | Body `error` | When |
 |---|---|---|
-| 400 | `invalid_request` | Malformed JSON, bad identity token, missing required field |
+| 400 | `invalid_request` | Malformed JSON, bad identity token, missing required field, unknown deletion `reason` |
 | 401 / 403 | none | Not authenticated; lacking `STOCK_CONSUME` |
 | 404 | `not_found` | No such event or mapping for this user; a recipe the user cannot read |
 | 409 | `same_version_different_payload` | Rule 5 |
@@ -367,6 +411,12 @@ ADR-0036 lineage and the audit trail. Rejected.
 2. **How long are `voided` and `dismissed` tombstones kept?** They guard against replaying a
    deleted event. *Lean: keep them while the mapping exists, then delete with it.*
 3. **What is the `possible_duplicates` default window?** *Lean: 30 minutes, an instance setting.*
+4. **Is 7 days the right automatic-void window?** A deletion or `not_logged` older than the
+   window waits for a person. *Lean: 7 days, an instance setting, because a mistaken bulk
+   deletion by a client then restores nothing without review.*
+5. **Does the client's rule for `replaces` (delete and insert together for the same medication
+   and scheduled date) need server support?** *Lean: no; the server voids exactly what the
+   client names.*
 
 ## Appendix: contract
 
@@ -384,10 +434,19 @@ ADR-0036 lineage and the audit trail. Rejected.
 | `GET /api/consumption/mappings`, `GET .../{source_system}/{medication_ref}` | Read mappings |
 | `DELETE /api/consumption/mappings/{source_system}/{medication_ref}` | Remove a mapping |
 | `POST /api/consumption/recipes/{id}/consume` | Manual consumption; body `request_id`, optional `location_id`, `occurred_at` |
+| `GET /api/consumption/capabilities` | `{contract_version, features[]}`, so a client tests for a feature rather than guessing from the server version |
+
+For the mapping screen, a product's valid unit conversions are
+`GET /api/objects/quantity_unit_conversions_resolved?query[]=product_id=<id>` and the
+locations holding it are `GET /api/stock/products/{productId}/locations`. Both exist today
+under `STOCK_VIEW`; no new route is needed.
 
 Permissions: every route needs authentication and `STOCK_CONSUME` (reads: `STOCK_VIEW`).
 Recipe targets additionally follow ADR-0040's action matrix. The fragment is
 [`.devtools/adr0041/consumption-events.openapi.json`](../../.devtools/adr0041/consumption-events.openapi.json).
+Until [issue 700](https://github.com/datagen24/victual/issues/700) merges these routes into
+`victual.openapi.json`, a client can generate types from that fragment and replace them when
+the spec is regenerated.
 
 ### Examples
 
@@ -407,7 +466,7 @@ Approving a mapping, then a retry books:
 
 ```json
 PUT /api/consumption/mappings/healthkit/hk:med:42
-{ "product_id": 17, "quantity_factor": 1, "unit_label": "tablet",
+{ "product_id": 17, "quantity_factor": 1, "unit_labels": [], "default_quantity": null,
   "location": { "mode": "fixed", "location_id": 9 },
   "effective_from": "2026-10-09T00:00:00-04:00" }
 
@@ -468,8 +527,13 @@ device. The two kinds of evidence are different and both are reported:
 | 5 | Late event (two days old) | `booked`, `used_date` is the event date |
 | 6 | Edit as new id with `replaces` | Old `voided`, new `booked`, net one deduction |
 | 7 | Edit as new id without `replaces`, delete then create, and create then delete | One deduction after both orders |
-| 8 | Source status changes to skipped after booking | `voided`, stock restored |
+| 8 | Source status changes to `skipped` or `not_logged` after booking, within 7 days | `voided`, stock restored |
 | 9 | Skipped or unanswered event with no row | `no_consumption`, no row |
+| 9a | `DELETE` with `access_revoked`, `history_cleared` or `medication_archived` on a booked event | Stock unchanged, event stays `booked` |
+| 9b | `DELETE` with no reason, or `entered_in_error` older than 7 days | `needs_review` / `source_deleted`; `void` restores, `keep` does not |
+| 9c | Event with no `quantity`: mapping with and without `default_quantity` | Booked with the default; `quantity_missing` without one |
+| 9d | First event with an unseen unit label | `unit_unconfirmed` showing the label; `approve_unit` books it and later events with it book directly |
+| 9e | Replay with a different `source_updated_at` or none | Replay, no conflict |
 | 10 | User undoes in stock, client replays the same event | Stays `undone`, no rebooking |
 | 11 | User undoes one line of a two-line recipe | `partially_undone`, no rebooking |
 | 12 | Manual consumption, then import, then `link` | One deduction total, event `linked` |

@@ -157,7 +157,24 @@
        }
       }
      }
-    }
+    },
+    "parameters": [
+     {
+      "name": "reason",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "entered_in_error",
+        "history_cleared",
+        "medication_archived",
+        "access_revoked",
+        "unknown"
+       ]
+      }
+     }
+    ]
    }
   },
   "/consumption/events/{source_system}/{source_event_id}/resolve": {
@@ -392,8 +409,7 @@
      "required": true,
      "schema": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 256
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$"
      }
     }
    ],
@@ -552,6 +568,38 @@
      }
     }
    }
+  },
+  "/consumption/capabilities": {
+   "get": {
+    "operationId": "getConsumptionCapabilities",
+    "responses": {
+     "200": {
+      "description": "Contract version and feature names",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "contract_version",
+          "features"
+         ],
+         "properties": {
+          "contract_version": {
+           "type": "integer"
+          },
+          "features": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -581,21 +629,22 @@
    "ConsumptionEventSubmission": {
     "type": "object",
     "required": [
-     "status",
-     "source_updated_at"
+     "status"
     ],
     "properties": {
      "status": {
       "type": "string",
       "enum": [
        "taken",
+       "not_logged",
        "skipped",
        "unanswered",
        "scheduled"
       ]
      },
      "medication_ref": {
-      "type": "string"
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$"
      },
      "quantity": {
       "type": "number",
@@ -610,7 +659,8 @@
      },
      "source_updated_at": {
       "type": "string",
-      "format": "date-time"
+      "format": "date-time",
+      "description": "Optional client observation time; excluded from the payload hash"
      },
      "location_id": {
       "type": "integer"
@@ -651,7 +701,10 @@
        "retry",
        "rebook",
        "dismiss",
-       "link"
+       "link",
+       "approve_unit",
+       "void",
+       "keep"
       ]
      },
      "transaction_id": {
@@ -713,12 +766,14 @@
       "enum": [
        "ambiguous_location",
        "insufficient_stock",
-       "unit_mismatch",
+       "unit_unconfirmed",
+       "quantity_missing",
        "recipe_unavailable",
        "partially_undone",
        "changed_after_undo",
        "undo_refused",
        "invalid_mapping",
+       "source_deleted",
        null
       ]
      },
@@ -771,6 +826,25 @@
         }
        }
       }
+     },
+     "source_removed_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "source_removed_reason": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "unit_label_seen": {
+      "type": [
+       "string",
+       "null"
+      ]
      }
     }
    },
@@ -816,9 +890,6 @@
       "type": "number",
       "exclusiveMinimum": 0
      },
-     "unit_label": {
-      "type": "string"
-     },
      "location": {
       "type": "object",
       "required": [
@@ -841,6 +912,19 @@
      "effective_from": {
       "type": "string",
       "format": "date-time"
+     },
+     "unit_labels": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "default_quantity": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "exclusiveMinimum": 0
      }
     },
     "description": "Exactly one of recipe_id or product_id."
