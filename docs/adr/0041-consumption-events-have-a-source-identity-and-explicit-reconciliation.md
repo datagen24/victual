@@ -298,7 +298,23 @@ A changed payload is rule 6. A person can act on an unresolved event with
 | `dismiss` | any unbooked state | Terminal; never books |
 | `link` | `needs_review`, `booked`, `received` | Attach to an existing transaction (rule 9) |
 
-An action not allowed in the current state returns `409 invalid_transition`. A user lists their
+An action not allowed in the current state returns `409 invalid_transition`.
+
+**Bulk resolution.** A bare HealthKit deletion has no reason, so clearing a medication's history
+would otherwise queue one `source_deleted` decision per dose.
+`POST /api/consumption/events/resolve` applies one `action` to up to 50 events, selected by
+either of two forms:
+
+- `events`: a list of `{source_system, source_event_id}` pairs;
+- `filter`: `{source_system, medication_ref, state, reason}` (all required except `reason`),
+  matching the caller's own events, oldest `occurred_at` first, then id.
+
+The action is `void`, `keep`, `dismiss`, `retry`, `approve_unit` or `rebook`; `link` is not
+bulk, because it needs one transaction id per event. Each item applies in its own transaction
+and returns its own result, so an item in the wrong state (`409 invalid_transition`) does not
+stop the others. With `filter`, the response also reports `remaining`, the count of matching
+events beyond the 50 handled, so a client loops until it is 0. Scoping to the caller's own
+events is the same rule as everywhere else: another user's events never match. A user lists their
 unresolved events with `GET /api/consumption/events?state=needs_review,needs_mapping`.
 
 ### 9. Manual and imported records are linked by an explicit act
@@ -411,12 +427,17 @@ ADR-0036 lineage and the audit trail. Rejected.
 2. **How long are `voided` and `dismissed` tombstones kept?** They guard against replaying a
    deleted event. *Lean: keep them while the mapping exists, then delete with it.*
 3. **What is the `possible_duplicates` default window?** *Lean: 30 minutes, an instance setting.*
-4. **Is 7 days the right automatic-void window?** A deletion or `not_logged` older than the
+4. **Is 7 days the right automatic-void window?** *Input from the `victual-kit` maintainer,
+   2026-10-09: keep it. A same-evening undo is the common case, and the larger risk is a stale
+   edit from a phone that was offline for longer.* A deletion or `not_logged` older than the
    window waits for a person. *Lean: 7 days, an instance setting, because a mistaken bulk
    deletion by a client then restores nothing without review.*
 5. **Does the client's rule for `replaces` (delete and insert together for the same medication
    and scheduled date) need server support?** *Lean: no; the server voids exactly what the
-   client names.*
+   client names. Input from the `victual-kit` maintainer, 2026-10-09: the client sends
+   `replaces` only when a deletion and an insertion arrive in the same anchored-query batch for
+   the same medication and scheduled date, only for scheduled doses and never for as-needed
+   ones. It does not need the server to verify the pairing and will not rely on it.*
 
 ## Appendix: contract
 
@@ -430,6 +451,7 @@ ADR-0036 lineage and the audit trail. Rejected.
 | `POST /api/consumption/events/{source_system}/{source_event_id}/resolve` | `retry`, `rebook`, `dismiss`, `link` |
 | `GET /api/consumption/events` | List own events; `state`, `since`, `limit` filters |
 | `POST /api/consumption/events/batch` | Up to 50 independent items |
+| `POST /api/consumption/events/resolve` | One action on up to 50 events, by list or by `filter`; reports `remaining` |
 | `PUT /api/consumption/mappings/{source_system}/{medication_ref}` | Approve or change a mapping |
 | `GET /api/consumption/mappings`, `GET .../{source_system}/{medication_ref}` | Read mappings |
 | `DELETE /api/consumption/mappings/{source_system}/{medication_ref}` | Remove a mapping |
@@ -534,6 +556,8 @@ device. The two kinds of evidence are different and both are reported:
 | 9c | Event with no `quantity`: mapping with and without `default_quantity` | Booked with the default; `quantity_missing` without one |
 | 9d | First event with an unseen unit label | `unit_unconfirmed` showing the label; `approve_unit` books it and later events with it book directly |
 | 9e | Replay with a different `source_updated_at` or none | Replay, no conflict |
+| 9f | 120 `source_deleted` events for one medication, `void` by filter | Three calls handle 50, 50 and 20; `remaining` is 70, 20 and 0; each event ends `voided` |
+| 9g | Bulk `keep` that includes an event already `voided` | That item reports `invalid_transition`; the rest apply |
 | 10 | User undoes in stock, client replays the same event | Stays `undone`, no rebooking |
 | 11 | User undoes one line of a two-line recipe | `partially_undone`, no rebooking |
 | 12 | Manual consumption, then import, then `link` | One deduction total, event `linked` |
