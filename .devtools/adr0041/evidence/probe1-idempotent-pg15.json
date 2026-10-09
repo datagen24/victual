@@ -1,0 +1,123 @@
+{
+    "probe": "idempotent-submission",
+    "environment": {
+        "php": "8.5.10",
+        "postgres": "15.19 (Debian 15.19-1.pgdg13+2)",
+        "deadlock_timeout": "100ms",
+        "max_connections": "250"
+    },
+    "run_seed": 410001,
+    "rounds_per_scenario": 200,
+    "scenario_A_parallel_identical": {
+        "N=16": {
+            "children": 16,
+            "rounds": 200,
+            "rounds_exactly_once": 200,
+            "violations": [],
+            "error_counts_by_sqlstate": {},
+            "requests_total": 3200,
+            "latency_ms": {
+                "p50": 72.7,
+                "p95": 131.8,
+                "max": 147.3
+            },
+            "worker_rss_mb_total_at_start": 531,
+            "distinct_winners": 16,
+            "first_seed": 2010002,
+            "last_seed": 2010201,
+            "seed_rule": "run_seed + N*100000 + round"
+        },
+        "N=64": {
+            "children": 64,
+            "rounds": 200,
+            "rounds_exactly_once": 200,
+            "violations": [],
+            "error_counts_by_sqlstate": {},
+            "requests_total": 12800,
+            "latency_ms": {
+                "p50": 113.3,
+                "p95": 146.6,
+                "max": 242.5
+            },
+            "worker_rss_mb_total_at_start": 2125,
+            "distinct_winners": 59,
+            "first_seed": 6810002,
+            "last_seed": 6810201,
+            "seed_rule": "run_seed + N*100000 + round"
+        }
+    },
+    "scenario_B_same_key_two_users": {
+        "children": 16,
+        "rounds": 60,
+        "rounds_two_independent_events_each_booked_once": 60,
+        "violations": [],
+        "lookup_of_other_users_key_rows_found": 0,
+        "seed_rule": "run_seed + 7000000 + round"
+    },
+    "scenario_C_crash": {
+        "after_t1_alone": {
+            "rounds": 30,
+            "ok": 30,
+            "violations": []
+        },
+        "after_t1_raced_by_8": {
+            "rounds": 30,
+            "ok": 30,
+            "violations": []
+        },
+        "killed_in_t2_before_commit": {
+            "rounds": 30,
+            "ok": 30,
+            "violations": []
+        },
+        "seed_rule": "run_seed + 8000000 + round"
+    },
+    "scenario_D_source_updated_at": {
+        "first": "booked",
+        "replays": {
+            "newer": {
+                "booked_now": false,
+                "state": "booked",
+                "same_transaction": true
+            },
+            "older": {
+                "booked_now": false,
+                "state": "booked",
+                "same_transaction": true
+            },
+            "omitted": {
+                "booked_now": false,
+                "state": "booked",
+                "same_transaction": true
+            },
+            "equal": {
+                "booked_now": false,
+                "state": "booked",
+                "same_transaction": true
+            }
+        },
+        "consume_bookings_total": 2,
+        "expected_bookings": 2,
+        "payload_hash_ignores_sua": true,
+        "ordering_table": {
+            "different hash, new sua older": "stale",
+            "different hash, new sua newer": "correction",
+            "different hash, new sua stored absent": "correction",
+            "different hash, new sua equal": "conflict_409",
+            "same hash, any sua": "replay"
+        }
+    },
+    "lineage_violations_after_all": 0,
+    "summary": {
+        "A": {
+            "N=16": "200/200",
+            "N=64": "200/200"
+        },
+        "B": "60/60",
+        "C": {
+            "after_t1_alone": "30/30",
+            "after_t1_raced_by_8": "30/30",
+            "killed_in_t2_before_commit": "30/30"
+        }
+    }
+}

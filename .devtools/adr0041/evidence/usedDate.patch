@@ -1,0 +1,51 @@
+--- a/services/StockService.php
++++ b/services/StockService.php
+@@ -706,14 +706,20 @@
+ 	 * @param string|null $transactionId By-reference; generated via uniqid() when null, shared across all bookings of this call
+ 	 * @param bool $allowSubproductSubstitution See above
+ 	 * @param bool $consumeExactAmount Retired with the product-level tare mechanism (ADR-0022); has no effect
++	 * @param string|null $usedDate Y-m-d date stored as used_date on every booking; today (server time zone) when null
+ 	 * @return string The transaction id of the booking(s)
+ 	 * @throws \Exception When the product or location does not exist, $amount <= 0, the amount exceeds
+ 	 *                    the stock amount available within the requested scope (location and/or
+ 	 *                    specific stock entry, in a common unit when substitution is allowed), or
+ 	 *                    $transactionType is not valid here
+ 	 */
+-	public function ConsumeProduct(int $productId, float $amount, bool $spoiled, $transactionType, $specificStockEntryId = 'default', $recipeId = null, $locationId = null, &$transactionId = null, $allowSubproductSubstitution = false, $consumeExactAmount = false)
++	public function ConsumeProduct(int $productId, float $amount, bool $spoiled, $transactionType, $specificStockEntryId = 'default', $recipeId = null, $locationId = null, &$transactionId = null, $allowSubproductSubstitution = false, $consumeExactAmount = false, $usedDate = null)
+ 	{
++		if ($usedDate !== null && (!is_string($usedDate) || \DateTimeImmutable::createFromFormat('!Y-m-d', $usedDate) === false || \DateTimeImmutable::createFromFormat('!Y-m-d', $usedDate)->format('Y-m-d') !== $usedDate))
++		{
++			throw new \InvalidArgumentException('used date must be a valid Y-m-d date');
++		}
++
+ 		if (!is_finite($amount) || $amount < 0)
+ 		{
+ 			throw new \InvalidArgumentException('Stock amount must be finite and non-negative');
+@@ -743,7 +749,7 @@
+ 
+ 			// One booking per touched stock entry, each paired with a delete or an amount
+ 			// update - so `stock` and `stock_log` can only ever agree if all of them land.
+-			DatabaseService::GetInstance()->InTransaction(function () use ($amount, $productId, $spoiled, $transactionType, $recipeId, $allowSubproductSubstitution, $locationId, $specificStockEntryId, &$transactionId)
++			DatabaseService::GetInstance()->InTransaction(function () use ($amount, $productId, $spoiled, $transactionType, $recipeId, $allowSubproductSubstitution, $locationId, $specificStockEntryId, &$transactionId, $usedDate)
+ 			{
+ 				// Locked, then read (issue #458): reading the candidate entries and the
+ 				// aggregated-amount check before the lock would let two concurrent consumes
+@@ -905,7 +911,7 @@
+ 							'amount' => $stockEntry->amount * -1,
+ 							'best_before_date' => $stockEntry->best_before_date,
+ 							'purchased_date' => $stockEntry->purchased_date,
+-							'used_date' => date('Y-m-d'),
++							'used_date' => $usedDate ?? date('Y-m-d'),
+ 							'spoiled' => $spoiled,
+ 							'stock_id' => $stockEntry->stock_id,
+ 							// The exact row this booking took from (#488, fourth review round):
+@@ -966,7 +972,7 @@
+ 							'amount' => $amount * -1,
+ 							'best_before_date' => $stockEntry->best_before_date,
+ 							'purchased_date' => $stockEntry->purchased_date,
+-							'used_date' => date('Y-m-d'),
++							'used_date' => $usedDate ?? date('Y-m-d'),
+ 							'spoiled' => $spoiled,
+ 							'stock_id' => $stockEntry->stock_id,
+ 							// The row this partial consume reduced. It is never deleted by a

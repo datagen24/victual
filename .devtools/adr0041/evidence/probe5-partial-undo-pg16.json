@@ -1,0 +1,151 @@
+{
+    "probe": "partial-undo",
+    "environment": {
+        "php": "8.5.10",
+        "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+        "deadlock_timeout": "100ms",
+        "max_connections": "250"
+    },
+    "1_two_line_consume": {
+        "transaction_id": "6ac91fc525fc9",
+        "consume_rows_have_null_correlation_id": true,
+        "steps": [
+            {
+                "step": "booked",
+                "effective_state": "booked",
+                "stock": [
+                    8,
+                    7
+                ],
+                "bookings": [
+                    {
+                        "id": 3,
+                        "product_id": 1,
+                        "amount": -2,
+                        "undone": 0,
+                        "correlation_id": null
+                    },
+                    {
+                        "id": 4,
+                        "product_id": 2,
+                        "amount": -3,
+                        "undone": 0,
+                        "correlation_id": null
+                    }
+                ],
+                "lineage_violations": 0
+            },
+            {
+                "step": "after UndoBooking(line 1): accepted",
+                "effective_state": "needs_review/partially_undone",
+                "stock": [
+                    10,
+                    7
+                ],
+                "bookings": [
+                    {
+                        "id": 3,
+                        "product_id": 1,
+                        "amount": -2,
+                        "undone": 1,
+                        "correlation_id": null
+                    },
+                    {
+                        "id": 4,
+                        "product_id": 2,
+                        "amount": -3,
+                        "undone": 0,
+                        "correlation_id": null
+                    }
+                ],
+                "lineage_violations": 0
+            },
+            {
+                "step": "after UndoTransaction on the remainder: accepted",
+                "effective_state": "undone",
+                "stock": [
+                    10,
+                    10
+                ],
+                "bookings": [
+                    {
+                        "id": 3,
+                        "product_id": 1,
+                        "amount": -2,
+                        "undone": 1,
+                        "correlation_id": null
+                    },
+                    {
+                        "id": 4,
+                        "product_id": 2,
+                        "amount": -3,
+                        "undone": 1,
+                        "correlation_id": null
+                    }
+                ],
+                "lineage_violations": 0
+            },
+            {
+                "step": "UndoTransaction on the fully undone transaction",
+                "result": "refused",
+                "class": "Exception",
+                "message": "This transaction was not found or already undone"
+            },
+            {
+                "step": "UndoBooking on an undone booking",
+                "result": "refused",
+                "class": "Exception",
+                "message": "Booking does not exist or was already undone"
+            }
+        ]
+    },
+    "2_one_line_two_bookings": [
+        {
+            "step": "booked",
+            "effective_state": "booked",
+            "bookings_for_line_1": 2
+        },
+        {
+            "step": "undo the older booking of line 1 first (the two bookings come from different lots)",
+            "result": "accepted",
+            "effective_state": "needs_review/partially_undone"
+        },
+        {
+            "step": "undo the newer booking of line 1",
+            "result": "accepted",
+            "effective_state": "needs_review/partially_undone"
+        },
+        {
+            "step": "undo the older booking again (already undone)",
+            "result": "refused",
+            "class": "Exception",
+            "message": "Booking does not exist or was already undone",
+            "effective_state": "needs_review/partially_undone",
+            "lineage_violations": 0
+        }
+    ],
+    "3_all_or_none_and_stuck_partial": [
+        {
+            "step": "UndoTransaction while line 1 has a later dependent booking",
+            "result": "refused",
+            "class": "Exception",
+            "message": "Booking has subsequent dependent bookings, undo not possible",
+            "ledger_unchanged": true,
+            "effective_state": "booked"
+        },
+        {
+            "step": "UndoBooking(line 2) alone",
+            "result": "accepted",
+            "effective_state": "needs_review/partially_undone",
+            "lineage_violations": 0
+        },
+        {
+            "step": "UndoTransaction again (line 1 still blocked)",
+            "result": "refused",
+            "class": "Exception",
+            "message": "Booking has subsequent dependent bookings, undo not possible",
+            "effective_state": "needs_review/partially_undone"
+        }
+    ],
+    "lineage_violations_after_all": 0
+}
