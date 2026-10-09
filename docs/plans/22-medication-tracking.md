@@ -6,8 +6,10 @@ user-entered consumption recipe with access restricted to its owner and specific
 authorized members. Dosing schedules, adherence tracking and dose reminders are outside
 Victual's scope.
 
-**Status:** preparation for v0.5.0; product scope decided, design records accepted
-2026-10-09, implementation not started.
+**Status:** in progress for v0.5.0; product scope decided, design records accepted
+2026-10-09. Issue 698 (private consumption recipes and manual booking) is merged. Issue 699
+(organizer inventory workflow) has its test evidence in [Executed](#executed). Issues 700 to
+703 are not complete; see the Executed section for what each still needs.
 
 **Release target:** v0.5.0. The maintainer clarified this scope on 2026-10-09. The target
 is a schedule; the release record and signed tag follow verified implementation under
@@ -351,3 +353,86 @@ answers from the maintainer's inventory scope decision on 2026-10-09.
     > **Response, maintainer, 2026-10-09:** seven days as a per-user setting with a
     > per-prescription override; all three rule kinds kept; a short supply gives an unknown
     > estimate. Server push stays out of this release.
+
+## Executed
+
+This section records what has shipped and what has been measured. The plan above keeps its
+original tense and decisions.
+
+### Issue 699: organizer inventory workflow
+
+Measured 2026-10-09 against working copy `8d234d7a5d9ba2b97c7be20d1c8a36f2ef11c091` (branch
+`claude/issue-699-household-organizer-yme490`, based on master at `7287b77`, the merge of pull
+request 736). It carries commit `ebfc342`, the organizer test commit also open as pull request
+738, and one further commit of tests, one controller change and documentation.
+
+Nothing was added to the schema, the label namespace or the services. An organizer is an
+ordinary location, filling it is `TransferProduct()`, and consuming from it is `ConsumeProduct()`
+with `location_id`. The recipe path charges the location the same way.
+
+| Criterion | Evidence |
+|---|---|
+| Each organizer is a unique tracked location with an existing location label | `OrganizerApiTest::testEachOrganizerIsAUniqueLocationAndKeepsItsLocationLabel` (a second top-level location with the same name is refused; the label context route answers for it). `OrganizerLabelDisclosureTest` issues and prints a location label. |
+| Filling three organizers keeps totals; consumption charges only the selected source; return is a transfer | `OrganizerApiTest::testThreeOrganizersAreFilledConsumedFromUndoneAndEmptiedBackWithTheTotalHeldAtEveryStep`: 90 tablets, 7 into each of three organizers, consume from B, undo, consume from A and C, return all three. Per-location quantities, the household total, the consume booking count and `stock_lineage_violations()` are asserted after every step. `OrganizerWorkflowTest` pins the same path through the recipe service. |
+| Explicit source selection; configured defaults; never another organizer | `location_id` and `stock_entry_id` on the stock consume route; `location_id` on the recipe route. `testAShortfallAtTheSelectedOrganizerRefusesAndChargesNoOtherOrganizer` and `testALocationIdThatNamesNothingUsableIsRefusedInsteadOfBecomingAnyLocation`. Configured sources: [the paragraph after the table](#issue-699-organizer-inventory-workflow). |
+| Conversions for tablets, liquids and single-use units; strengths stay distinct | `testLiquidSingleUseAndStrengthsStayDistinctThroughTheRoutes`: a 250 mL bottle read back as a factor of 250, half a bottle as 125 mL, ampoules as unit stock, 5 mg and 10 mg as separate products. |
+| ADR-0036 lineage and ADR-0032 comparisons | `stock_lineage_violations()` is empty after every step of every test above. The earlier consumption of a purchase cannot be undone once a later booking moved units of the same purchase (`400`, "subsequent dependent bookings"), which ADR-0036 requires and the manual documents. `OrganizerWorkflowTest::testFractionalAmountsAcrossOrganizersCompareWithinTheSharedTolerance` empties a row with ten consumptions of 0.1. |
+| Labels, previews and scans disclose no private recipe or refill data | `OrganizerLabelDisclosureTest` and `OrganizerApiTest::testAnOrdinaryStockReaderSeesNoPrivateRecipeData`, both as a caller holding `STOCK_VIEW` only. Fields covered: [the paragraph after the table](#issue-699-organizer-inventory-workflow). |
+| API and Playwright evidence, operator documentation | API: `OrganizerApiTest`, `OrganizerLabelDisclosureTest`. Browser: `.devtools/frontend/organizers.js`, wired into the `frontend-security` job (not run in this measurement). Operator documentation: the manual's Weekly organizers section in `consumption-recipes.md`, with the source-selection, labels and checking subsections. |
+
+The shortfall test asks for 5 from an organizer holding 3 while the other organizers hold 7 and
+the cabinet 63. The request is refused, books nothing and moves nothing. The only configured
+default today is the product's `default_consume_location_id`, which `stock_next_use` orders first
+when no location is sent. A source chosen for an external medication belongs to issue 700's
+mappings and is not built.
+
+The label test covers the location, product and stock entry kinds. It reads every catalogued field
+of a live capture and of a sample preview. It also reads the print job, the outbox event, the
+render request and the label row, then the scan, the context read, and the snapshot of a label
+retired when its row was emptied.
+
+A positive control shows that the recipe name, note and request id are stored, so their absence
+means something. The API test reads 17 stock, generic and label routes over HTTP
+and resolves a label of each kind over the scan route.
+
+One gap was found and fixed. `POST /stock/products/{id}/consume` dropped a `location_id` that
+was not a non-empty number. A value such as `"organizer-b"`, `0`, `true` or a list became "any
+location", and the consumption came from whichever organizer the product default or due date
+chose. `OrganizerApiTest::testALocationIdThatNamesNothingUsableIsRefusedInsteadOfBecomingAnyLocation`
+failed on that behaviour before the change (a `200` where a `400` was expected) and passes after.
+The route now validates the value as the add and edit routes do (issues 519 and 544); `null` and
+`""` still mean no location. This changes request validation, not a response shape, and the
+OpenAPI description and the changelog say so.
+
+Commands and results, all on PostgreSQL 16.15 and PHP 8.3.6:
+
+- `phpunit --configuration phpunit.xml --testsuite consumption`: 69 tests, 2,278 assertions, OK.
+  `rbac`: 54 tests, 568 assertions, OK.
+- `stockconcurrency` 23 tests OK; `labelapi` 124 OK; `labelservices` 293 OK; `chores` 20 OK;
+  `stocklocations` 59 OK; `labeltracking` 3 OK; `recipeoperations` 35 OK.
+- `wirecontract`, `contract`, `stockcoverage`, `stockmaintenance`, `stockpages` and `genericquery`
+  report failures (6, 1, 3, 1, 1 and 3). The same counts appear on untouched master at `7287b77`
+  in the same environment, so this change adds none. They appear to come from PHP 8.3 returning
+  strings where PHP 8.4 returns numbers; that cause was not confirmed.
+- `check-migrations.php` OK (no migration added), `check_vendor_paths.py` 0 errors,
+  `check-cited-jobs.php` OK, `mkdocs build --strict` exit 0, Vale 0 new findings on the changed
+  pages.
+
+Not run, and why:
+
+- PostgreSQL 15: no package is available in this environment. The suite has not run on 15.
+- Coverage (`SUITE_COVERAGE=1`), the aggregate ratchet and per-file figures: no coverage driver is
+  installed, and `run-tests.sh` cannot start here because its SQLite pre-build needs PHP 8.4. The
+  controller change is five lines, and the new tests reach both its accepting and refusing paths.
+- `.devtools/frontend/organizers.js` and the rest of the `frontend-security` job: the application
+  refuses to serve requests on PHP below 8.4.1. The probe's last recorded run is pull request
+  738's, on PHP 8.5.10. No changed file is under `public/viewjs`.
+- Contract snapshots were not regenerated: no response shape changed. The `contract` and
+  `wirecontract` suites could not give a clean result here, as listed above.
+- Pull request 738 reports a run of `organizers.js` with a negative control. That run is not
+  repeated in this measurement.
+
+Remaining dependencies: issue 700 owns configured sources for external medications (pull request
+739 is open for its first part). Issue 701 and issue 703 are untouched by this change. Issue 699
+is not closed by this change: the browser run and the PostgreSQL 15 run listed above are
+outstanding.
