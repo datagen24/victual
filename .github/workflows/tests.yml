@@ -794,6 +794,16 @@ jobs:
         working-directory: .devtools/frontend
         run: node nested-locations.js http://127.0.0.1:8085
 
+      # Plan 22 (issue #698). Against the demo instance on 8085: the consumption recipes page is
+      # a shell over the JSON API, and what only a browser can show is the offset the page sends
+      # (the server books the date written in it), that a private recipe's name reaches every
+      # dialog as text, and that a refused consumption shows the stock's sentence and books nothing.
+      # Who may see or use a recipe is covered by the PostgreSQL phase, which can sign in as
+      # several users; this single-user instance cannot.
+      - name: Run consumption recipe checks
+        working-directory: .devtools/frontend
+        run: node consumption-recipes.js http://127.0.0.1:8085
+
       # Plan 30. Against the demo instance on 8085 for the same reason the nested location
       # checks are: the parent picker, the path shown in a group dropdown, and the delete
       # refusal reaching the page are all things the PostgreSQL phase structurally cannot see -

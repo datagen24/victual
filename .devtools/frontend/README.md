@@ -193,6 +193,30 @@ retired, unknown, failure/recovery, literal HTML names and out-of-order response
 checks the camera event and clears on edit/reload. PostgreSQL identity and authorization
 coverage is in [the label tests](../labels/README.md).
 
+## Consumption recipes
+
+`node consumption-recipes.js <url>` runs against a disposable demo instance, in the
+America/New_York time zone. It creates a private consumption recipe through the page and checks:
+
+- the recipe name and note, seeded with the S29 payload, reach the list and the consume,
+  share and history dialogs as text and never as an element
+- a consumption asking for more than the chosen location holds shows the stock's refusal and
+  books nothing, and the other organizer is not charged
+- a consumption sent from the other organizer books there, and the request carries the
+  browser's own offset (`-04:00` or `-05:00`) rather than `Z`, so the booked date is the
+  user's local date
+- history lists the consumption and undo restores what it booked
+- sharing by username, changing a share's rights, a refusal for an unknown name, and removing
+  the share
+- deleting the recipe removes its row
+
+The demo instance has one user, so the probe cannot sign in as a second person. The rights of
+an owner, a member and a stranger are covered by `ConsumptionRecipeServiceTest` and
+`ConsumptionRecipeApiTest` in the PostgreSQL suite.
+
+CI runs it in `frontend-security` after the nested location checks, against the demo instance
+on 8085.
+
 ## Nested locations
 
 `node nested-locations.js <url>` runs against a disposable demo instance. It builds plan 08's

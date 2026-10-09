@@ -296,6 +296,16 @@
 						<span class="nav-link-text">{{ $__t('Consume') }}</span>
 					</a>
 				</li>
+				<li class="nav-item nav-item-sidebar permission-STOCK_VIEW @if($viewName == 'consumptionrecipes') active-page @endif"
+					data-toggle="tooltip"
+					data-placement="right"
+					title="{{ $__t('Consumption recipes') }}">
+					<a class="nav-link discrete-link"
+						href="{{ $U('/consumptionrecipes') }}">
+						<i class="fa-solid fa-fw fa-pills"></i>
+						<span class="nav-link-text">{{ $__t('Consumption recipes') }}</span>
+					</a>
+				</li>
 				@if(VICTUAL_FEATURE_FLAG_STOCK_LOCATION_TRACKING)
 				<li class="nav-item nav-item-sidebar permission-STOCK_TRANSFER @if($viewName == 'transfer') active-page @endif"
 					data-toggle="tooltip"

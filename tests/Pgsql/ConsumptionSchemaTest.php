@@ -23,16 +23,17 @@ class ConsumptionSchemaTest extends PgsqlSchemaTestCase
 
 	private static PDO $db;
 	private static GenericEntityApiController $generic;
+	private static \DI\Container $container;
 
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
 
 		self::$db = self::Pdo();
-		$container = new \DI\Container();
-		$container->set('view', new \Victual\Helpers\SlimBladeView(VICTUAL_ROOT_PATH . '/views', VICTUAL_DATAPATH));
-		$container->set('UrlManager', new \Victual\Helpers\UrlManager(''));
-		self::$generic = new GenericEntityApiController($container);
+		self::$container = new \DI\Container();
+		self::$container->set('view', new \Victual\Helpers\SlimBladeView(VICTUAL_ROOT_PATH . '/views', VICTUAL_DATAPATH));
+		self::$container->set('UrlManager', new \Victual\Helpers\UrlManager(''));
+		self::$generic = new GenericEntityApiController(self::$container);
 
 		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9000, 'consumption-schema-caller', 'fixture')");
 		self::$db->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT 9000, id FROM permission_hierarchy WHERE name = 'ADMIN'");
@@ -82,6 +83,19 @@ class ConsumptionSchemaTest extends PgsqlSchemaTestCase
 			$write = self::$generic->SetUserfields($put, new Response(), ['entity' => $table, 'objectId' => '1']);
 			self::assertSame(400, $write->getStatusCode(), "PUT /api/userfields/$table/1 is refused");
 		}
+	}
+
+	public function testThePageIsAShellThatRendersNoRecipe(): void
+	{
+		self::$db->exec("INSERT INTO consumption_recipes (owner_user_id, name) VALUES (9000, 'Page shell secret recipe')");
+		$controller = new \Victual\Controllers\ConsumptionRecipesController(self::$container);
+
+		$response = $controller->Overview((new ServerRequestFactory())->createServerRequest('GET', 'http://localhost/consumptionrecipes'), new Response(), []);
+		$html = (string)$response->getBody();
+
+		self::assertSame(200, $response->getStatusCode());
+		self::assertStringContainsString('id="consumption-rows"', $html, 'the table the script fills');
+		self::assertStringNotContainsString('Page shell secret recipe', $html, 'the server renders no private recipe, not even its owner\'s');
 	}
 
 	public function testTheImporterClearsAllFiveTables(): void

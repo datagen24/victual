@@ -2912,3 +2912,117 @@ msgid "%s stock entry label stays retired; print a new label"
 msgid_plural "%s stock entry labels stay retired; print new labels"
 msgstr[0] ""
 msgstr[1] ""
+
+msgid "Consumption recipes"
+msgstr ""
+
+msgid "A consumption recipe lists product quantities that are consumed together. Only you and the users you share it with can see it. Stock, and every consumption booking, stays visible to everyone who can see stock."
+msgstr ""
+
+msgid "New consumption recipe"
+msgstr ""
+
+msgid "Lines"
+msgstr ""
+
+msgid "Your rights"
+msgstr ""
+
+msgid "Actions"
+msgstr ""
+
+msgid "Enter each quantity in a unit that has a conversion to the stock unit of its product."
+msgstr ""
+
+msgid "Add line"
+msgstr ""
+
+msgid "Take from"
+msgstr ""
+
+msgid "When a location is chosen, only stock at that location is used."
+msgstr ""
+
+msgid "Record consumption"
+msgstr ""
+
+msgid "A share lets a user see this recipe and use the rights you give. It does not change what that user may do elsewhere."
+msgstr ""
+
+msgid "Edit"
+msgstr ""
+
+msgid "Share"
+msgstr ""
+
+msgid "Share with a user"
+msgstr ""
+
+msgid "Your own recorded consumptions of this recipe. What each one booked does not change when the recipe changes."
+msgstr ""
+
+msgid "Booked"
+msgstr ""
+
+msgid "The request could not be completed."
+msgstr ""
+
+msgid "View"
+msgstr ""
+
+msgid "Owner"
+msgstr ""
+
+msgid "History"
+msgstr ""
+
+msgid "Remove my access"
+msgstr ""
+
+msgid "Delete this consumption recipe and its shares? Past consumptions stay in the stock history."
+msgstr ""
+
+msgid "Consumption recipe deleted."
+msgstr ""
+
+msgid "Remove your own access to this consumption recipe?"
+msgstr ""
+
+msgid "Your access was removed."
+msgstr ""
+
+msgid "Choose a product"
+msgstr ""
+
+msgid "Remove line"
+msgstr ""
+
+msgid "Edit consumption recipe"
+msgstr ""
+
+msgid "Consumption recipe saved."
+msgstr ""
+
+msgid "Any location"
+msgstr ""
+
+msgid "Consumption recorded."
+msgstr ""
+
+msgid "Remove"
+msgstr ""
+
+msgid "Make owner"
+msgstr ""
+
+msgid "Transfer ownership to this user? You keep a share with every right, which the new owner can remove."
+msgstr ""
+
+msgid "Recorded"
+msgstr ""
+
+msgid "Undone"
+msgstr ""
+
+msgid "Needs review"
+msgstr ""
