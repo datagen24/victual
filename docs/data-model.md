@@ -269,15 +269,21 @@ entity. The importer clears all six, since no supported source can carry them.
 
 Migration 0306 ([issue 700](https://github.com/datagen24/victual/issues/700)) adds
 `consumption_mappings` and extends the events and event lines instead of adding a second
-ledger. A mapping is what one user approved for one `(source_system, medication_ref)`: a recipe
-or product target, the confirmed unit labels, an optional default quantity, a location rule
-(`fixed`, `single` or `explicit`) and `effective_from`. `manual` cannot be a mapping source. An
-event also stores the request fields it was booked from, the client's `source_updated_at`, the
-mapping it used, the event it replaces, `voided_at`, the source's removal record, the candidate
-locations of an ambiguous source, a private stock refusal message and `linked_transaction_id`.
-`api_key_id` is audit only: identity stays `(user, source_system, source_event_id)`. A line
-stores the `used_date` it was booked under. Deleting a mapping removes its `voided` and
-`dismissed` tombstones in the service; events that booked stock keep their rows.
+ledger. A mapping is what one user approved for one `(source_system, medication_ref)`:
+
+- a recipe or product target;
+- the confirmed unit labels and an optional default quantity;
+- a location rule (`fixed`, `single` or `explicit`) and `effective_from`.
+
+`manual` cannot be a mapping source.
+
+An event also stores the request fields it was booked from and the client's
+`source_updated_at`. It stores the mapping it used, the local `occurred_date` and the event it
+replaces. It stores `voided_at`, the source's removal record, the candidate locations of an
+ambiguous source, a private stock refusal message and `linked_transaction_id`. `api_key_id`
+is audit only: identity stays `(user, source_system, source_event_id)`. A line stores the
+`used_date` it was booked under. Deleting a mapping removes its `voided` and `dismissed`
+tombstones in the service; events that booked stock keep their rows.
 
 **Recipes & meal plan (5)** — `recipes`, `recipes_pos`, `recipes_nestings`, `meal_plan`,
 `meal_plan_sections`. `recipes_nestings` names a recipe twice; the functions behind
