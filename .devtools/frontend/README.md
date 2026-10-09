@@ -217,6 +217,23 @@ an owner, a member and a stranger are covered by `ConsumptionRecipeServiceTest` 
 CI runs it in `frontend-security` after the nested location checks, against the demo instance
 on 8085.
 
+## Weekly organizers
+
+`node organizers.js <url>` runs against a disposable demo instance, in the America/New_York
+time zone. It creates a cabinet and three organizer locations and drives the trip scenario of
+plan 22 through the pages, reading the stock back through the API after every step:
+
+- filling three organizers on `/transfer` moves 21 units and books no consumption
+- `/consume` with an organizer chosen charges that organizer only
+- returning an organizer on `/transfer` is a transfer and books no consumption
+- the consumption recipe dialog's **Take from** charges only the organizer it names, even when
+  the product's default consume location is another organizer
+
+Each step waits for the location list on `/transfer` and `/consume` to be rebuilt from the
+product's stock locations before it selects one (see the nested locations section).
+
+CI runs it in `frontend-security` after the consumption recipe checks.
+
 ## Consumption inbox
 
 `node consumption-inbox.js --url <url> --admin-password <password>` drives `/consumptioninbox`,

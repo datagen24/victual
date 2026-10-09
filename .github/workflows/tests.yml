@@ -804,6 +804,11 @@ jobs:
         working-directory: .devtools/frontend
         run: node consumption-recipes.js http://127.0.0.1:8085
 
+      # Plan 22 (issue #699). The weekly organizer trip through /transfer, /consume and the
+      # consumption recipe dialog, with the stock read back through the API after each step.
+      - name: Run organizer checks
+        working-directory: .devtools/frontend
+        run: node organizers.js http://127.0.0.1:8085
       # Issue #700. The consumption inbox needs people who sign in: one with no stock permission,
       # one with STOCK_VIEW only and one who may resolve events, plus that person's API key for the
       # external client's request. Demo and dev mode have one identity for every request, so this runs
