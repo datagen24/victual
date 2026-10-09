@@ -4,17 +4,33 @@
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-04, alongside [plan 22](../plans/22-medication-tracking.md). The
-  decision was made when the plan was drafted; this record is not a backfill.
+  decision was made when the plan was drafted; this record is not a backfill. **Revised
+  2026-10-09** for the inventory scope the maintainer set that day (see Context). The status
+  stays Proposed.
 - **Relationship:** constrains [22](../plans/22-medication-tracking.md) throughout, and
-  [23](../plans/landed/23-storage-classes.md) Q6 defers to it. Pairs with
-  [ADR-0016](0016-schedule-expansion-in-the-application.md), written at the same time and
-  deciding a different question about the same plan.
+  [23](../plans/landed/23-storage-classes.md) Q6 defers to it. Written with
+  [ADR-0016](0016-schedule-expansion-in-the-application.md), whose subject has no consumer
+  in the revised scope (see its Disposition). The scope it governs is described by
+  [ADR-0040](0040-consumption-recipes-are-private-rows-with-scoped-shares.md),
+  [ADR-0041](0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md) and
+  [ADR-0042](0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md), all Proposed.
 - **Would affect:** [02](../plans/02-mcp-endpoint.md),
   [18](../plans/18-mqtt-state-publication.md), [17](../plans/17-ecosystem-clients.md).
 
 ## Context
 
-[Plan 22](../plans/22-medication-tracking.md) puts drug strength, route, dose, schedule and
+### Revision, 2026-10-09
+
+The maintainer narrowed [plan 22](../plans/22-medication-tracking.md) on 2026-10-09. It now
+covers medication and vitamin inventory, private consumption recipes, organizer locations,
+consumption entered by hand or sent by a client, and refill notices. The earlier proposal
+for per-person regimens, a dose scheduler, administrations, adherence and dose alerts is
+withdrawn. This record keeps the original argument below, because it explains why the line
+sits where it does, and revises the decision to fit the new scope.
+
+### Original context (2026-09-04)
+
+[Plan 22](../plans/22-medication-tracking.md) then put drug strength, route, dose, schedule and
 per-person regimens into the database. Once a system holds those five things it is one small,
 useful feature away from clinical decision support, and it will be one small feature away
 permanently.
@@ -62,29 +78,64 @@ tools look like, not merely on what they return.
 
 ## Decision (proposed)
 
-**The medication module records what a person did and what is physically present. It does not
-evaluate, warn, calculate or recommend.**
+**Victual records what a person did and what is physically present. It does not evaluate,
+warn, calculate or recommend about medication.**
 
 The line, stated so it can be applied to a feature request without re-arguing this record:
 
 > **Arithmetic over data the household entered is in scope. Any assertion requiring knowledge
 > the household did not enter is not.**
 
-**In scope.** Schedules a human wrote down; administrations a human recorded; quantities,
-dates, lots, storage conditions. Days-of-supply, which is division over the household's own
-numbers, and a physical-fact comparison between two fields the household supplied — a dose
-against a tablet's recorded `min_dose_increment`, a product's recorded storage requirement
-against a location's recorded class.
+**In scope.**
 
-**Out of scope, permanently.** Drug–drug, drug–food and drug–condition interaction checking.
-Dose-range or maximum-dose validation against any external reference. Duplicate-therapy or
-same-ingredient detection. Missed-dose guidance. Weight- or age-based dose calculation.
-Allergy and contraindication checking. Importing or embedding any clinical drug knowledge base.
+- Stock quantities, units the household entered, expiry and storage, and transfers between
+  locations such as weekly organizers.
+- A consumption recipe: a list of products and quantities a person wrote down and can
+  consume together ([ADR-0040](0040-consumption-recipes-are-private-rows-with-scoped-shares.md)).
+- A recorded consumption, entered by hand or reported by the person's own device
+  ([ADR-0041](0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md)).
+- A refill estimate: a calendar date computed from the fill date and supply the person
+  entered and a rule the household chose, shown with the rule that produced it, and a
+  notice that the date is approaching or has arrived
+  ([ADR-0042](0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md)).
+- A comparison between two values the household entered, such as a quantity against an
+  existing stock amount.
 
-**The excursion case is where this bites first and hardest.** Plan 22 records that a fridge
-went out of range and which stock was in it. It does not decide whether the insulin is still
-good. That judgement stays with a person, and the usability cost of stopping there is real and
-accepted.
+**Out of scope, permanently.**
+
+- Drug-drug, drug-food and drug-condition interaction checking.
+- Dose-range or maximum-dose validation against any external reference, and weight- or
+  age-based dose calculation.
+- Duplicate-therapy or same-ingredient detection.
+- Allergy and contraindication checking.
+- Importing or embedding any clinical drug knowledge base.
+- Missed-dose guidance of any kind.
+- Dose scheduling, recurrence expansion, adherence or missed-dose classification, and dose
+  alerts or reminders. These left the scope on 2026-10-09 and returning them needs a new
+  decision, because a reminder is behaviorally a prompt to act.
+
+A refill estimate is an inventory fact. It must not say or imply that an insurer or pharmacy
+will approve a refill, that a person has too little medication, or that they should
+change how they take it.
+
+### Wording
+
+UI copy, API field names, error messages, notices and MCP tool descriptions state facts and
+never give instructions.
+
+| Use | Avoid |
+|---|---|
+| "Estimated reorder date 2026-03-18 (from your last fill)" | "Time to reorder", "Reorder now" |
+| "Reorder date reached" | "You are running out", "You will run out" |
+| "Consumed 1 tablet from Organizer A" | "Dose taken", "Take your dose" |
+| "No stock recorded at this location" | "You missed your medication" |
+| "Fill recorded 2026-01-01, 90 days supplied" | "Refill eligible", "Insurance allows" |
+| "Recipe", "consumption recipe", "prescription (as you entered it)" | "Regimen", "treatment plan", "therapy" |
+
+**The excursion case, as originally written.** A fridge that went out of range is not an
+event this release records. If excursion ingestion returns, it records which stock was
+resident and does not decide whether a product is still good. That judgement stays with a
+person.
 
 ## Options considered
 
@@ -114,8 +165,8 @@ will notice the absence. Worth saying in the module's own documentation rather t
 a gap people assume is a missing feature.
 
 **[02](../plans/02-mcp-endpoint.md) inherits the hardest version of the problem, and this
-record does not solve it.** Excluding medication tools from MCP keeps the model from *querying*
-the data; it does not stop a user pasting their regimen into a chat. What this record can bind
+record does not solve it.** Excluding consumption and refill routes from MCP keeps the model
+from *querying* that data; it does not stop a user pasting a prescription into a chat. What this record can bind
 is what this repository ships: no tool that answers a clinical question, and no tool
 *description* phrased as though it could.
 
@@ -123,45 +174,45 @@ A tool description is part of what a model reasons over, so it is in scope for r
 same way UI copy is. Beyond that, the boundary is the model's, not ours, and pretending
 otherwise would be the kind of claim this corpus is supposed to catch.
 
-**It is not enforceable by tooling.** There is no grep for "this feature crossed the line", and
-this record should not pretend there is. It is a review discipline, applied to plan 22's UI
-copy and to any later feature request, and its only enforcement is that a reviewer has
-something specific to point at. Open question 4.
+**It is mostly not enforceable by tooling.** There is no grep for "this feature crossed the line".
+It is a review discipline, applied to plan 22's UI copy and to any later feature request. One
+narrow part is mechanical: `mcp/tests/tools/medication-exposure.test.mjs` fails if an MCP tool
+reaches a consumption or refill route or its description uses clinical language. Open question 4.
 
 **It does not make the data less sensitive.** Refusing to give advice is orthogonal to who can
-read a subject's regimen; that is [19](../plans/19-rbac.md)'s and plan 22 piece 3's problem,
-and this record settles none of it.
+read a prescription; [ADR-0040](0040-consumption-recipes-are-private-rows-with-scoped-shares.md)
+settles that, and this record settles none of it.
 
 ## Acceptance prerequisites
 
-- **Plan 22's UI copy is reviewed against the line** before the module ships — specifically
-  that state is displayed and never phrased as an instruction. "3 doses due today" is a fact;
-  "take your morning dose" is an imperative the application is not entitled to issue.
-- **[02](../plans/02-mcp-endpoint.md)'s interface spec states medication exposure**, including
-  tool descriptions, rather than leaving it to be decided when that plan is built.
+1. **UI copy, API names, notices and error strings are reviewed against the wording table
+   above before the feature ships.** Status on 2026-10-09: **unmet**, because no UI exists.
+   The implementing pull requests ([issue 698](https://github.com/datagen24/victual/issues/698),
+   [699](https://github.com/datagen24/victual/issues/699) and
+   [701](https://github.com/datagen24/victual/issues/701)) each list the strings they add in
+   their description, and the reviewer checks them against the table.
+2. **[The MCP interface spec](../mcp-interface-spec.md) states medication exposure, including
+   tool descriptions.** Status on 2026-10-09: **met** by
+   [section 10.1](../mcp-interface-spec.md#101-medication-and-private-consumption-data) and
+   by the test named in Consequences.
 
 ## Open questions
 
-1. **Do reminders count as advice?** A notification that a dose is due repeats the household's
-   own instruction back to it and asserts nothing new, which puts it inside the line as drawn.
-   It is nonetheless the closest call in this record, because a reminder is *behaviourally* a
-   prompt to act. *Lean: in scope — a reminder restates a user-entered schedule and adds no
-   knowledge. Phrasing carries the weight: "due at 08:00" rather than "time to take your
-   medication".*
-2. **Missed doses.** Displaying a dose as missed is a fact. Ordering the next action is not.
-   *Lean: display the state, offer the recording actions (taken / skipped / held), and never
-   rank or recommend among them.*
-3. **Does an ingredient field re-open duplicate-therapy detection by the back door?** If
-   products carry active ingredients — useful for grouping a generic under a brand — then "two
-   of these contain paracetamol" becomes a query rather than a knowledge base. *Lean: an
-   ingredient field is fine as master data the household enters and the module may group by;
-   surfacing a warning derived from it is not, because the warning is the assertion, not the
-   data. This is the sharpest test of whether the line as stated is actually workable, and if
-   it turns out not to be, this record needs revising rather than reinterpreting.*
-4. **Should anything mechanical enforce this?** *Lean: no, and say so rather than shipping a
-   check that catches nothing and implies coverage. The honest enforcement is that plan 22 and
-   this record are both cited in the module's own documentation, so a contributor proposing an
-   interaction checker meets the argument before writing the code.*
+Questions 2 and 3 of the 2026-09-04 text concerned missed doses and an ingredient field. The
+2026-10-09 scope has neither a schedule nor an ingredient field, so both are withdrawn and
+recorded here so the earlier numbering stays traceable.
+
+1. **Does a refill notice count as advice?** A notice that a reorder date has arrived repeats
+   the household's own rule and asserts nothing new. It is nonetheless a prompt to act.
+   *Lean: in scope, because it restates a user-entered fill and rule. The wording table
+   carries the weight: "Reorder date reached" rather than "Time to reorder".*
+2. **Missed doses.** Withdrawn 2026-10-09; no schedule exists to miss.
+3. **Ingredient field.** Withdrawn 2026-10-09; products carry no active ingredient in this
+   scope. If one returns, grouping by ingredient is master data and a warning derived from it
+   is an assertion, so this record would need revising before it ships.
+4. **Should anything mechanical enforce this?** *Lean: only what is already mechanical, the
+   MCP test above and the wording review in prerequisite 1. A broader check would catch
+   nothing and imply coverage.*
 
 ## Research
 
