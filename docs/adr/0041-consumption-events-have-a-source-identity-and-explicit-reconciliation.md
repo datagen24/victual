@@ -427,8 +427,9 @@ for the proposed ones, timing jitter rather than controlled schedules):
 - Lock order event, recipe, products: 0 deadlocks against direct consumes and undo in 300
   trials per scenario. Corrections without the union lock deadlocked, as rule 6 now states.
 - The `$usedDate` patch passed four stock phases (309, 23, 35 and 74 tests) unchanged, wrote
-  both bookings of a two-lot consume with the earlier date, and a tokenizer audit of 135 call
-  sites found at most 10 arguments and no spreads.
+  both bookings of a two-lot consume with the earlier date, and a tokenizer audit of every
+  `ConsumeProduct` call site found at most 10 arguments and no spreads. The count of call sites
+  differed between two runs (135, then 119 on a different working copy); the maximum did not.
 - Partial undo is reachable and ends in `undone` after `UndoTransaction()` on the remainder;
   lineage violations stayed at 0.
 

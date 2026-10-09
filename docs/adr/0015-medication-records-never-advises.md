@@ -14,7 +14,7 @@
   in the revised scope (see its Disposition). The scope it governs is described by
   [ADR-0040](0040-consumption-recipes-are-private-rows-with-scoped-shares.md),
   [ADR-0041](0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md) and
-  [ADR-0042](0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md), all Proposed.
+  [ADR-0042](0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md), all Accepted 2026-10-09.
 - **Would affect:** [02](../plans/02-mcp-endpoint.md),
   [18](../plans/18-mqtt-state-publication.md), [17](../plans/17-ecosystem-clients.md).
 
