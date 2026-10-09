@@ -1,0 +1,883 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "ADR-0041 consumption events (design fragment, not merged)",
+  "version": "0"
+ },
+ "paths": {
+  "/consumption/events/{source_system}/{source_event_id}": {
+   "parameters": [
+    {
+     "name": "source_system",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$"
+     }
+    },
+    {
+     "name": "source_event_id",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+     }
+    }
+   ],
+   "put": {
+    "operationId": "putConsumptionEvent",
+    "summary": "Create or update a consumption event",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ConsumptionEventSubmission"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Stored; replay or update",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConsumptionEvent"
+        }
+       }
+      }
+     },
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConsumptionEvent"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Invalid request",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Not authenticated"
+     },
+     "403": {
+      "description": "Permission missing"
+     },
+     "404": {
+      "description": "Not found for this user",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "Conflict",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Unprocessable",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "operationId": "getConsumptionEvent",
+    "responses": {
+     "200": {
+      "description": "The event",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConsumptionEvent"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not found for this user",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteConsumptionEvent",
+    "summary": "The source no longer has this event",
+    "responses": {
+     "200": {
+      "description": "Voided or already voided",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConsumptionEvent"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not found for this user",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/consumption/events/{source_system}/{source_event_id}/resolve": {
+   "parameters": [
+    {
+     "name": "source_system",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$"
+     }
+    },
+    {
+     "name": "source_event_id",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+     }
+    }
+   ],
+   "post": {
+    "operationId": "resolveConsumptionEvent",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ConsumptionEventResolution"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Resolved",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConsumptionEvent"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not found for this user",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "Conflict",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Unprocessable",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/consumption/events": {
+   "get": {
+    "operationId": "listConsumptionEvents",
+    "parameters": [
+     {
+      "name": "state",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "Comma-separated states"
+     },
+     {
+      "name": "since",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 500
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Own events",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ConsumptionEvent"
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/consumption/events/batch": {
+   "post": {
+    "operationId": "batchConsumptionEvents",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "events"
+        ],
+        "properties": {
+         "events": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+           "allOf": [
+            {
+             "$ref": "#/components/schemas/ConsumptionEventSubmission"
+            },
+            {
+             "type": "object",
+             "required": [
+              "source_system",
+              "source_event_id"
+             ],
+             "properties": {
+              "source_system": {
+               "type": "string"
+              },
+              "source_event_id": {
+               "type": "string"
+              }
+             }
+            }
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "One result per item, in order",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ConsumptionEventBatchResult"
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Invalid request",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/consumption/mappings": {
+   "get": {
+    "operationId": "listConsumptionMappings",
+    "responses": {
+     "200": {
+      "description": "Own mappings",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ConsumptionMapping"
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/consumption/mappings/{source_system}/{medication_ref}": {
+   "parameters": [
+    {
+     "name": "source_system",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$"
+     }
+    },
+    {
+     "name": "medication_ref",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+     }
+    }
+   ],
+   "put": {
+    "operationId": "putConsumptionMapping",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ConsumptionMappingInput"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Stored",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConsumptionMapping"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not found for this user",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Unprocessable",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "operationId": "getConsumptionMapping",
+    "responses": {
+     "200": {
+      "description": "The mapping",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConsumptionMapping"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not found for this user",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteConsumptionMapping",
+    "responses": {
+     "204": {
+      "description": "Removed"
+     },
+     "404": {
+      "description": "Not found for this user",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/consumption/recipes/{id}/consume": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer"
+     }
+    }
+   ],
+   "post": {
+    "operationId": "consumeConsumptionRecipe",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ManualConsumptionRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Replay",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConsumptionEvent"
+        }
+       }
+      }
+     },
+     "201": {
+      "description": "Booked",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConsumptionEvent"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not found for this user",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "Conflict",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "schemas": {
+   "Error": {
+    "type": "object",
+    "required": [
+     "error_message"
+    ],
+    "properties": {
+     "error_message": {
+      "type": "string"
+     },
+     "error": {
+      "type": "string",
+      "enum": [
+       "invalid_request",
+       "not_found",
+       "same_version_different_payload",
+       "invalid_transition",
+       "invalid_mapping",
+       "future_occurred_at"
+      ]
+     }
+    }
+   },
+   "ConsumptionEventSubmission": {
+    "type": "object",
+    "required": [
+     "status",
+     "source_updated_at"
+    ],
+    "properties": {
+     "status": {
+      "type": "string",
+      "enum": [
+       "taken",
+       "skipped",
+       "unanswered",
+       "scheduled"
+      ]
+     },
+     "medication_ref": {
+      "type": "string"
+     },
+     "quantity": {
+      "type": "number",
+      "exclusiveMinimum": 0
+     },
+     "unit_label": {
+      "type": "string"
+     },
+     "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "source_updated_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "location_id": {
+      "type": "integer"
+     },
+     "replaces": {
+      "type": "string",
+      "description": "source_event_id of an event this one supersedes"
+     }
+    },
+    "if": {
+     "properties": {
+      "status": {
+       "const": "taken"
+      }
+     },
+     "required": [
+      "status"
+     ]
+    },
+    "then": {
+     "required": [
+      "medication_ref",
+      "quantity",
+      "unit_label",
+      "occurred_at"
+     ]
+    }
+   },
+   "ConsumptionEventResolution": {
+    "type": "object",
+    "required": [
+     "action"
+    ],
+    "properties": {
+     "action": {
+      "type": "string",
+      "enum": [
+       "retry",
+       "rebook",
+       "dismiss",
+       "link"
+      ]
+     },
+     "transaction_id": {
+      "type": "string"
+     }
+    }
+   },
+   "ConsumptionEventLine": {
+    "type": "object",
+    "properties": {
+     "product_id": {
+      "type": "integer"
+     },
+     "amount": {
+      "type": "number"
+     },
+     "location_id": {
+      "type": "integer"
+     },
+     "used_date": {
+      "type": "string",
+      "format": "date"
+     }
+    }
+   },
+   "ConsumptionEvent": {
+    "type": "object",
+    "required": [
+     "source_system",
+     "source_event_id",
+     "state"
+    ],
+    "properties": {
+     "source_system": {
+      "type": "string"
+     },
+     "source_event_id": {
+      "type": "string"
+     },
+     "state": {
+      "type": "string",
+      "enum": [
+       "received",
+       "needs_mapping",
+       "needs_review",
+       "booked",
+       "undone",
+       "voided",
+       "linked",
+       "dismissed",
+       "no_consumption"
+      ]
+     },
+     "reason": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "ambiguous_location",
+       "insufficient_stock",
+       "unit_mismatch",
+       "recipe_unavailable",
+       "partially_undone",
+       "changed_after_undo",
+       "undo_refused",
+       "invalid_mapping",
+       null
+      ]
+     },
+     "replayed": {
+      "type": "boolean"
+     },
+     "stale": {
+      "type": "boolean"
+     },
+     "revision": {
+      "type": "integer"
+     },
+     "transaction_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "source_updated_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "lines": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ConsumptionEventLine"
+      }
+     },
+     "candidate_location_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      }
+     },
+     "possible_duplicates": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "transaction_id": {
+         "type": "string"
+        },
+        "occurred_at": {
+         "type": "string",
+         "format": "date-time"
+        }
+       }
+      }
+     }
+    }
+   },
+   "ConsumptionEventBatchResult": {
+    "type": "object",
+    "required": [
+     "source_system",
+     "source_event_id",
+     "http_status"
+    ],
+    "properties": {
+     "source_system": {
+      "type": "string"
+     },
+     "source_event_id": {
+      "type": "string"
+     },
+     "http_status": {
+      "type": "integer"
+     },
+     "event": {
+      "$ref": "#/components/schemas/ConsumptionEvent"
+     },
+     "error": {
+      "$ref": "#/components/schemas/Error"
+     }
+    }
+   },
+   "ConsumptionMappingInput": {
+    "type": "object",
+    "required": [
+     "location",
+     "effective_from"
+    ],
+    "properties": {
+     "recipe_id": {
+      "type": "integer"
+     },
+     "product_id": {
+      "type": "integer"
+     },
+     "quantity_factor": {
+      "type": "number",
+      "exclusiveMinimum": 0
+     },
+     "unit_label": {
+      "type": "string"
+     },
+     "location": {
+      "type": "object",
+      "required": [
+       "mode"
+      ],
+      "properties": {
+       "mode": {
+        "type": "string",
+        "enum": [
+         "fixed",
+         "single",
+         "explicit"
+        ]
+       },
+       "location_id": {
+        "type": "integer"
+       }
+      }
+     },
+     "effective_from": {
+      "type": "string",
+      "format": "date-time"
+     }
+    },
+    "description": "Exactly one of recipe_id or product_id."
+   },
+   "ConsumptionMapping": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/ConsumptionMappingInput"
+     },
+     {
+      "type": "object",
+      "properties": {
+       "source_system": {
+        "type": "string"
+       },
+       "medication_ref": {
+        "type": "string"
+       }
+      }
+     }
+    ]
+   },
+   "ManualConsumptionRequest": {
+    "type": "object",
+    "properties": {
+     "request_id": {
+      "type": "string"
+     },
+     "location_id": {
+      "type": "integer"
+     },
+     "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
+   }
+  }
+ }
+}
