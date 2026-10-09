@@ -1,6 +1,6 @@
 # ADR-0040: Consumption recipes are private rows shared through scoped rights that confer no permission
 
-- **Status:** **Proposed.** Written to be argued with.
+- **Status:** **Accepted 2026-10-09.** Shares narrow rows and confer no permission, so ADR-0014 and ADR-0018 are not amended. Prerequisites are stated in the accepting pull request.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-09, against `master` at `216af2b2`. Design work only: it changes no
