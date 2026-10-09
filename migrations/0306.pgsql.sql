@@ -11,7 +11,7 @@
 --     read by another. `manual` is reserved and cannot be a mapping's source_system.
 --   - consumption_events: the request fields the event was booked from (so a correction can be
 --     compared and a retry can book without the client), the client's `source_updated_at`, the
---     mapping used, the audit-only API key, the event it replaces, `voided_at`, the source's removal
+--     mapping used, the local `occurred_date`, the audit-only API key, the event it replaces, `voided_at`, the source's removal
 --     record, the candidate locations of an ambiguous source, the private stock refusal message, and
 --     `linked_transaction_id` for an explicit link to an existing booking (ADR-0041 rule 9).
 --   - consumption_event_lines: `used_date`, the calendar date each line was booked under.
@@ -77,6 +77,10 @@ ALTER TABLE consumption_events ADD COLUMN IF NOT EXISTS quantity DOUBLE PRECISIO
 ALTER TABLE consumption_events ADD COLUMN IF NOT EXISTS unit_label TEXT;
 ALTER TABLE consumption_events ADD COLUMN IF NOT EXISTS requested_location_id INTEGER REFERENCES locations (id) ON DELETE SET NULL;
 ALTER TABLE consumption_events ADD COLUMN IF NOT EXISTS source_updated_at TIMESTAMPTZ;
+-- The calendar date of occurred_at in the offset the client sent, which is the date a booking is made
+-- under (ADR-0041 rule 5). Kept because the instant alone no longer says which local date it was, and
+-- a retry or resolve books long after the request that carried the offset.
+ALTER TABLE consumption_events ADD COLUMN IF NOT EXISTS occurred_date DATE;
 -- Audit only (ADR-0041 rule 1): identity is never scoped to the key.
 ALTER TABLE consumption_events ADD COLUMN IF NOT EXISTS api_key_id INTEGER REFERENCES api_keys (id) ON DELETE SET NULL;
 ALTER TABLE consumption_events ADD COLUMN IF NOT EXISTS replaces_event_id INTEGER REFERENCES consumption_events (id) ON DELETE SET NULL;
