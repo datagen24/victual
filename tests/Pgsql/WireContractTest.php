@@ -416,6 +416,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		// ADR-0040 and ADR-0041: ConsumptionRecipesApiController builds these as PHP booleans; no table
 		// column behind them is a SMALLINT, so there is nothing for WireBooleans to convert.
 		'ConsumptionEvent.replayed' => 'php',
+		// ADR-0041: ConsumptionEventService builds these as PHP booleans in the response of an external event.
+		'ConsumptionExternalEvent.replayed' => 'php',
+		'ConsumptionExternalEvent.stale' => 'php',
 		'ConsumptionRecipeSummary.consume' => 'php',
 		'ConsumptionRecipeSummary.edit' => 'php',
 		'ConsumptionRecipeSummary.is_owner' => 'php',
@@ -739,9 +742,16 @@ class WireContractTest extends PgsqlSchemaTestCase
 
 		self::assertSame([
 			'/paths//labels/attempts/{attemptId}/evidence/post/requestBody/content/application/json/schema/properties/observed_at',
+			// ADR-0041: the `since` filter of the external event list is a request parameter, sent with the client's offset.
+			'/paths//consumption/events/get/parameters/1/schema',
 			'/components/schemas/ConsumptionConsumeRequest/properties/occurred_at',
-			'/components/schemas/TimeResponse/properties/time_local'
-		], $other, 'only two request fields and time_local are date-time without the wire pattern');
+			'/components/schemas/TimeResponse/properties/time_local',
+			// ADR-0041: request fields of the external event contract. A client writes the time with its own offset
+			// (the booked date is the date written in that offset); every instant the API sends back carries the wire pattern.
+			'/components/schemas/ConsumptionEventSubmission/properties/occurred_at',
+			'/components/schemas/ConsumptionEventSubmission/properties/source_updated_at',
+			'/components/schemas/ConsumptionMappingInput/properties/effective_from'
+		], $other, 'only request fields and time_local are date-time without the wire pattern');
 		self::assertGreaterThanOrEqual(40, count($wire), 'every instant on the legacy and label surfaces');
 
 		$localPattern = [];
