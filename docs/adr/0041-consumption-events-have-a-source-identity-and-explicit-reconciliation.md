@@ -46,7 +46,10 @@ Facts from `StockService` on `master` at `216af2b2`:
 
 - `ConsumeProduct()` takes the transaction identifier by reference, generates one with
   `uniqid()` when null, and restricts consumption to `$locationId` when given. It refuses
-  an amount above the stock in that scope by throwing a generic `\Exception`.
+  an amount above the stock in that scope by throwing a generic `\Exception`. Nine different
+  causes (a missing or inactive product, a missing location, four insufficient-stock variants,
+  an invalid type, a measured-container fraction) share that class and code 0, so a caller
+  cannot tell them apart without matching the message.
 - `DatabaseService::InTransaction()` begins a transaction only when none is open. A nested
   call runs its work inside the open transaction with no savepoint, and an exception rolls
   back everything at the outermost level. A caller needing several lines atomic wraps them in
@@ -55,10 +58,13 @@ Facts from `StockService` on `master` at `216af2b2`:
 - `used_date` is written as `date('Y-m-d')` at booking (`StockService.php:908`, `:969`).
   A late event cannot carry its true date without a new optional parameter.
 - `UndoTransaction()` undoes every booking of a transaction or none. `UndoBooking()` through
-  `POST /stock/bookings/{id}/undo` undoes one booking and only its `correlation_id` partners
+  `POST /api/stock/bookings/{bookingId}/undo` undoes one booking and only its `correlation_id` partners
   (a transfer's two halves). The lines of a multi-product consumption share a
   `transaction_id` and no `correlation_id`, so one line can be undone alone.
-- Locks are taken per product, in ascending id order (`LockProductsStock()`).
+- A caller that locks several products up front takes them in ascending id order
+  (`LockProductsStock()`, as `RecipesService.php:193` does). `ConsumeProduct()` and
+  `UndoTransaction()` lock lazily, so two operations that touch overlapping products without
+  a shared up-front lock can deadlock.
 - No existing table records which client or source a booking came from.
 
 ### What deduplication alone does not solve
@@ -112,7 +118,7 @@ rule 1 describes and are visible only to their user.
 
 `needs_review` reasons: `ambiguous_location`, `insufficient_stock`, `unit_unconfirmed`,
 `quantity_missing`, `recipe_unavailable`, `partially_undone`, `changed_after_undo`,
-`undo_refused`, `invalid_mapping`, `source_deleted`.
+`undo_refused`, `invalid_mapping`, `source_deleted`, `stock_error`.
 
 ### 3. Which source statuses book
 
@@ -161,7 +167,8 @@ with 422. A mapping to a recipe takes the recipe's lines once per event.
 Location outcomes: `fixed` with too little stock there gives `insufficient_stock`; it never
 falls back to another organizer. `single` with several candidates gives `ambiguous_location`.
 `explicit` without `location_id` gives `ambiguous_location`. Nothing books in these cases.
-A mapping read before the event is processed applies: an event that arrives after the
+A `fixed` location matches that `location_id` exactly: stock held in a child location of an
+organizer is not counted. A mapping read before the event is processed applies: an event that arrives after the
 person switches the `fixed` location is charged to the new location. A client that knows the
 organizer sends `location_id` and the mapping may allow it as an override. This limitation
 is documented in the operator guide.
@@ -177,10 +184,15 @@ Processing for one request:
 1. Transaction 1 inserts the row with `INSERT ... ON CONFLICT DO NOTHING` and commits, so the
    identity and any later failure reason are durable.
 2. Transaction 2 locks the event row with `FOR UPDATE`, then the recipe row if the target is a
-   recipe (ADR-0040 rule 8), then the product lock set in ascending order, then books every
-   line and sets the state. Lock order: event, recipe, products.
-3. If a booking throws, transaction 2 rolls back completely and transaction 3 sets
-   `needs_review` with the reason. No partial deduction remains.
+   recipe (`FOR SHARE` for a consumption, per ADR-0040 rule 8), then the product lock set in
+   ascending order, then books every line and sets the state. Lock order: event, recipe,
+   products.
+3. If a booking throws, the exception escapes transaction 2 so the whole transaction rolls
+   back, and transaction 3 sets `needs_review` with the reason. Transaction 2 must not catch
+   the exception and continue. Insufficient stock is a PHP exception thrown before any SQL
+   fails, so catching it inside the nested `InTransaction()` would leave earlier lines booked:
+   the evidence measured stock falling from 10 to 6 with the event reporting `needs_review`.
+   A swallowed SQL error followed by a commit rolls everything back without an error.
 
 | Interleaving | Result |
 |---|---|
@@ -211,11 +223,11 @@ call. Any failure, including permission, an inactive product or insufficient sto
 every line. The recipe path does not use `ConsumeRecipe()`'s cap-at-available behavior.
 
 `occurred_at` more than five minutes in the future is refused with 422. For a past
-`occurred_at`, `used_date` is the date in the server time zone, which requires the optional
-parameter described in the Consequences. The server zone matches how `date('Y-m-d')` decides
-"today" elsewhere in the application and no per-user zone exists. A trip across zones can
-shift the recorded date by one day. [Issue 697](https://github.com/datagen24/victual/issues/697)
-owns the calendar-zone decision for refills.
+`occurred_at`, `used_date` is the calendar date written in the offset the client sent, which
+is the person's local date. A value sent as `Z` gives its UTC date. This follows the design
+that the server runs in UTC and clients know local time, and it needs the optional parameter
+described in the Consequences. [ADR-0042](0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md)
+applies the same principle to refill dates through `as_of`.
 
 ### 6. Corrections
 
@@ -229,9 +241,22 @@ An edit with a newer `source_updated_at` and a changed payload hash applies as f
 | `voided` | Any, with `source_updated_at` after the void | Treated as a new event (rule 7) |
 | `needs_mapping`, `needs_review`, `received` | Any | Stored; booking is attempted again as for a first submission |
 
-If the correction needs more stock than exists after the old booking is undone, the whole
-correction rolls back and the original booking stays in place, with `needs_review` and
-`insufficient_stock` recorded on the event for the person to resolve.
+A correction locks the union of the old and new products, in ascending order, before it undoes
+anything. Without that union lock, two corrections deadlocked in 160 of 300 requests for
+different recipes in the evidence; with it, 0.
+
+The whole correction rolls back, the original booking stays in place, and the event records
+`needs_review` when either step fails:
+
+- the new booking needs more stock than exists after the old one is undone: `insufficient_stock`;
+- the undo of the old transaction is refused because a later booking depends on the same lot:
+  `undo_refused`. This hit 212 of 600 corrections in the mixed workload, so it is a normal
+  outcome and not a rare one.
+
+`UndoTransaction()` reads its booking set before it takes locks, so a concurrent
+`UndoBooking()` on the same transaction makes it fail with "already undone" (446 refusals in
+300 trials). The event path re-reads the event's bookings once and retries; if every booking is
+undone it sets `undone`, and if some remain it sets `partially_undone`.
 
 ### 7. Deletions and recreation
 
@@ -390,6 +415,25 @@ would then duplicate every event. Rejected.
 **E. Overwrite instead of undo-and-rebook on correction.** Editing booked rows in place breaks
 ADR-0036 lineage and the audit trail. Rejected.
 
+## Evidence
+
+[Pull request 722](https://github.com/datagen24/victual/pull/722) holds the probes and
+`RESULTS.md` (2026-10-09, PostgreSQL 16.15 and 15.19, PHP 8.5.10, scratch tables standing in
+for the proposed ones, timing jitter rather than controlled schedules):
+
+- Identical requests, 16 and 64 in parallel, 200 rounds each on both versions: exactly one
+  booking set per round, 0 errors. Two users with one key: 60 of 60 rounds gave two events.
+  A child killed after transaction 1 or mid-transaction 2 left the ledger consistent.
+- Lock order event, recipe, products: 0 deadlocks against direct consumes and undo in 300
+  trials per scenario. Corrections without the union lock deadlocked, as rule 6 now states.
+- The `$usedDate` patch passed four stock phases (309, 23, 35 and 74 tests) unchanged, wrote
+  both bookings of a two-lot consume with the earlier date, and a tokenizer audit of 135 call
+  sites found at most 10 arguments and no spreads.
+- Partial undo is reachable and ends in `undone` after `UndoTransaction()` on the remainder;
+  lineage violations stayed at 0.
+
+It does not exercise HealthKit, HTTP, the outbox, or victual-kit.
+
 ## Consequences
 
 - **`ConsumeProduct()` needs an optional trailing `$usedDate` parameter**, defaulting to today,
@@ -398,6 +442,11 @@ ADR-0036 lineage and the audit trail. Rejected.
 - **Insufficient stock must be classified without parsing a message.** The implementation
   pre-checks available stock in scope under the product locks, using `CompareAmounts()`
   (ADR-0032), and throws a typed exception, rather than matching the generic exception text.
+  The pre-check agreed with `ConsumeProduct()` in 300 of 300 cases when it summed only the
+  entries in the requested location scope; a product-wide sum disagreed in 154. A fractional
+  consume of a measured container passes the pre-check and is then refused by
+  `ConsumeProduct()`. The event path maps any refusal it cannot classify to `needs_review` /
+  `stock_error` and stores the message privately for the person.
 - **Imported events book as the authenticated user.** `stock_log.user_id` is that user.
 - **Skipped and unanswered doses leave no trace.** Victual cannot answer an adherence
   question, by design.
@@ -570,3 +619,12 @@ device. The two kinds of evidence are different and both are reported:
 | 15 | Mapping `single` with stock in two locations | `ambiguous_location`, nothing deducted |
 | 16 | Recipe share revoked before the event is processed | `needs_review` / `recipe_unavailable` |
 | 17 | Another user sends the same `source_event_id` | Separate event; neither can read the other's |
+6. **When a correction's undo is refused because a later booking depends on the same lot, what
+   happens?** *Lean: the whole correction rolls back and the original booking stays, with
+   `needs_review` / `undo_refused`.* *Decider's answer, 2026-10-09: take the lean.*
+7. **Is a concurrent "already undone" refusal retryable?** *Lean: yes, once, after re-reading
+   the bookings.* *Decider's answer, 2026-10-09: take the lean.*
+8. **Does a `fixed` location include child locations?** *Lean: no, exact match, and say so.*
+   *Decider's answer, 2026-10-09: take the lean.*
+9. **How is a measured-container refusal handled?** *Lean: map it to `needs_review` /
+   `stock_error`.* *Decider's answer, 2026-10-09: take the lean.*
