@@ -81,6 +81,8 @@ class RbacTest extends PgsqlSchemaTestCase
 		// Explicitly ADMIN-gated - verified by grep for User::CheckPermission(...PERMISSION_ADMIN) in each file.
 		'LabelPrintJobsController' => 'Both GET methods (Index, Printers) require PERMISSION_ADMIN directly',
 		'LabelTemplatesController' => 'Both GET methods (TemplatesList, TemplateEditor) require PERMISSION_ADMIN directly',
+		'McpSettingsController' => 'Its one GET method (Settings, the /mcpsettings page) requires PERMISSION_ADMIN directly (ADR-0039)',
+		'McpConfigApiController' => 'GetConfig answers any authenticated credential on purpose - a list of tool names, which the MCP sidecar reads with a read-only MCP key (ADR-0039 decision 3); SetConfig, the PUT, requires PERMISSION_ADMIN directly',
 
 		// Mixed gated/self-scoped controllers: the gated methods are individually verified
 		// (grep for User::CheckPermission), and the self-scoped ones return only the calling
