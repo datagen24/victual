@@ -1,0 +1,463 @@
+{
+    "environment": {
+        "php": "8.5.10",
+        "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+        "caller": 9301,
+        "caller_permissions": [
+            "MASTER_DATA_EDIT",
+            "STOCK_VIEW"
+        ],
+        "exposed_entity_enum_size": 58,
+        "entity_read_policy_entries": 59
+    },
+    "entity_membership": {
+        "a40_recipes": {
+            "in_EntityReadPolicy_PERMISSIONS": false,
+            "in_ExposedEntity_enum": false,
+            "EntityReadPolicy_Covers": false
+        },
+        "a40_recipe_lines": {
+            "in_EntityReadPolicy_PERMISSIONS": false,
+            "in_ExposedEntity_enum": false,
+            "EntityReadPolicy_Covers": false
+        },
+        "a40_recipe_shares": {
+            "in_EntityReadPolicy_PERMISSIONS": false,
+            "in_ExposedEntity_enum": false,
+            "EntityReadPolicy_Covers": false
+        },
+        "a40_consume_events": {
+            "in_EntityReadPolicy_PERMISSIONS": false,
+            "in_ExposedEntity_enum": false,
+            "EntityReadPolicy_Covers": false
+        },
+        "consumption_recipes": {
+            "in_EntityReadPolicy_PERMISSIONS": false,
+            "in_ExposedEntity_enum": false,
+            "EntityReadPolicy_Covers": false
+        },
+        "consumption_recipe_lines": {
+            "in_EntityReadPolicy_PERMISSIONS": false,
+            "in_ExposedEntity_enum": false,
+            "EntityReadPolicy_Covers": false
+        },
+        "consumption_recipe_shares": {
+            "in_EntityReadPolicy_PERMISSIONS": false,
+            "in_ExposedEntity_enum": false,
+            "EntityReadPolicy_Covers": false
+        },
+        "consumption_events": {
+            "in_EntityReadPolicy_PERMISSIONS": false,
+            "in_ExposedEntity_enum": false,
+            "EntityReadPolicy_Covers": false
+        },
+        "label_artifacts": {
+            "in_EntityReadPolicy_PERMISSIONS": false,
+            "in_ExposedEntity_enum": false,
+            "EntityReadPolicy_Covers": false
+        },
+        "label_captures": {
+            "in_EntityReadPolicy_PERMISSIONS": false,
+            "in_ExposedEntity_enum": false,
+            "EntityReadPolicy_Covers": false
+        }
+    },
+    "generic_surface_refusals": {
+        "a40_recipes": {
+            "GET \/objects\/{entity} (GetObjects)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "GET \/objects\/{entity}\/1 (GetObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "GET \/userfields\/{entity}\/1 (GetUserfields)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "PUT \/userfields\/{entity}\/1 (SetUserfields)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "POST \/objects\/{entity} (AddObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "PUT \/objects\/{entity}\/1 (EditObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "DELETE \/objects\/{entity}\/1 (DeleteObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Invalid entity\"}"
+            }
+        },
+        "a40_recipe_lines": {
+            "GET \/objects\/{entity} (GetObjects)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "GET \/objects\/{entity}\/1 (GetObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "GET \/userfields\/{entity}\/1 (GetUserfields)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "PUT \/userfields\/{entity}\/1 (SetUserfields)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "POST \/objects\/{entity} (AddObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "PUT \/objects\/{entity}\/1 (EditObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "DELETE \/objects\/{entity}\/1 (DeleteObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Invalid entity\"}"
+            }
+        },
+        "a40_recipe_shares": {
+            "GET \/objects\/{entity} (GetObjects)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "GET \/objects\/{entity}\/1 (GetObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "GET \/userfields\/{entity}\/1 (GetUserfields)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "PUT \/userfields\/{entity}\/1 (SetUserfields)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "POST \/objects\/{entity} (AddObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "PUT \/objects\/{entity}\/1 (EditObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "DELETE \/objects\/{entity}\/1 (DeleteObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Invalid entity\"}"
+            }
+        },
+        "a40_consume_events": {
+            "GET \/objects\/{entity} (GetObjects)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "GET \/objects\/{entity}\/1 (GetObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "GET \/userfields\/{entity}\/1 (GetUserfields)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "PUT \/userfields\/{entity}\/1 (SetUserfields)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "POST \/objects\/{entity} (AddObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "PUT \/objects\/{entity}\/1 (EditObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "DELETE \/objects\/{entity}\/1 (DeleteObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Invalid entity\"}"
+            }
+        },
+        "consumption_recipes": {
+            "GET \/objects\/{entity} (GetObjects)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "GET \/objects\/{entity}\/1 (GetObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "GET \/userfields\/{entity}\/1 (GetUserfields)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "PUT \/userfields\/{entity}\/1 (SetUserfields)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "POST \/objects\/{entity} (AddObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "PUT \/objects\/{entity}\/1 (EditObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "DELETE \/objects\/{entity}\/1 (DeleteObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Invalid entity\"}"
+            }
+        },
+        "consumption_recipe_lines": {
+            "GET \/objects\/{entity} (GetObjects)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "GET \/objects\/{entity}\/1 (GetObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "GET \/userfields\/{entity}\/1 (GetUserfields)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "PUT \/userfields\/{entity}\/1 (SetUserfields)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "POST \/objects\/{entity} (AddObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "PUT \/objects\/{entity}\/1 (EditObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "DELETE \/objects\/{entity}\/1 (DeleteObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Invalid entity\"}"
+            }
+        },
+        "consumption_recipe_shares": {
+            "GET \/objects\/{entity} (GetObjects)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "GET \/objects\/{entity}\/1 (GetObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "GET \/userfields\/{entity}\/1 (GetUserfields)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "PUT \/userfields\/{entity}\/1 (SetUserfields)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "POST \/objects\/{entity} (AddObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "PUT \/objects\/{entity}\/1 (EditObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "DELETE \/objects\/{entity}\/1 (DeleteObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Invalid entity\"}"
+            }
+        },
+        "consumption_events": {
+            "GET \/objects\/{entity} (GetObjects)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "GET \/objects\/{entity}\/1 (GetObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "GET \/userfields\/{entity}\/1 (GetUserfields)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "PUT \/userfields\/{entity}\/1 (SetUserfields)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "POST \/objects\/{entity} (AddObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "PUT \/objects\/{entity}\/1 (EditObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Entity does not exist or is not exposed\"}"
+            },
+            "DELETE \/objects\/{entity}\/1 (DeleteObject)": {
+                "status": 400,
+                "body": "{\"error_message\":\"Invalid entity\"}"
+            }
+        }
+    },
+    "userfields_service_direct": {
+        "a40_recipes": {
+            "SetValues": "Exception: Entity does not exist or is not exposed",
+            "GetValues": "Exception: Entity does not exist or is not exposed"
+        },
+        "a40_recipe_lines": {
+            "SetValues": "Exception: Entity does not exist or is not exposed",
+            "GetValues": "Exception: Entity does not exist or is not exposed"
+        },
+        "a40_recipe_shares": {
+            "SetValues": "Exception: Entity does not exist or is not exposed",
+            "GetValues": "Exception: Entity does not exist or is not exposed"
+        },
+        "a40_consume_events": {
+            "SetValues": "Exception: Entity does not exist or is not exposed",
+            "GetValues": "Exception: Entity does not exist or is not exposed"
+        },
+        "consumption_recipes": {
+            "SetValues": "Exception: Entity does not exist or is not exposed",
+            "GetValues": "Exception: Entity does not exist or is not exposed"
+        },
+        "consumption_recipe_lines": {
+            "SetValues": "Exception: Entity does not exist or is not exposed",
+            "GetValues": "Exception: Entity does not exist or is not exposed"
+        },
+        "consumption_recipe_shares": {
+            "SetValues": "Exception: Entity does not exist or is not exposed",
+            "GetValues": "Exception: Entity does not exist or is not exposed"
+        },
+        "consumption_events": {
+            "SetValues": "Exception: Entity does not exist or is not exposed",
+            "GetValues": "Exception: Entity does not exist or is not exposed"
+        }
+    },
+    "scratch_rows_untouched_after_all_refusals": true,
+    "refusal_calls_total": 72,
+    "refusal_calls_refused_for_the_entity": 72,
+    "refusal_messages_by_call": {
+        "GET \/objects\/{entity} (GetObjects)": {
+            "400 Entity does not exist or is not exposed": 8
+        },
+        "GET \/objects\/{entity}\/1 (GetObject)": {
+            "400 Entity does not exist or is not exposed": 8
+        },
+        "GET \/userfields\/{entity}\/1 (GetUserfields)": {
+            "400 Entity does not exist or is not exposed": 8
+        },
+        "PUT \/userfields\/{entity}\/1 (SetUserfields)": {
+            "400 Entity does not exist or is not exposed": 8
+        },
+        "POST \/objects\/{entity} (AddObject)": {
+            "400 Entity does not exist or is not exposed": 8
+        },
+        "PUT \/objects\/{entity}\/1 (EditObject)": {
+            "400 Entity does not exist or is not exposed": 8
+        },
+        "DELETE \/objects\/{entity}\/1 (DeleteObject)": {
+            "400 Invalid entity": 8
+        },
+        "UserfieldsService::SetValues": {
+            "Exception: Entity does not exist or is not exposed": 8
+        },
+        "UserfieldsService::GetValues": {
+            "Exception: Entity does not exist or is not exposed": 8
+        }
+    },
+    "positive_controls": {
+        "locations (STOCK_VIEW) GetObjects": {
+            "status": 200,
+            "body": "[{\"id\":2,\"name\":\"Fridge\",\"description\":null,\"row_created_timestamp\":\"2026-10-09T13:51:03.000000Z\",\"is_freezer\":0,\"active\":1,\"parent_location"
+        },
+        "recipes (RECIPES_VIEW) GetObjects": {
+            "status": 403,
+            "body": "Permission missing: RECIPES_VIEW"
+        },
+        "locations SetUserfields with an unknown field": {
+            "status": 400,
+            "body": "{\"error_message\":\"Field x is not a valid userfield of the given entity\"}"
+        },
+        "locations SetValues with an unknown field": "Field x is not a valid userfield of the given entity"
+    },
+    "stock_log_residual_leak": {
+        "caller_permissions": [
+            "MASTER_DATA_EDIT",
+            "STOCK_VIEW"
+        ],
+        "private_recipe_two_product_consume": {
+            "stock_log_via_GET_objects_stock_log": [
+                {
+                    "id": 3,
+                    "product_id": 1,
+                    "amount": -1,
+                    "transaction_id": "a40-private-recipe-tx",
+                    "recipe_id": null,
+                    "row_created_timestamp": "2026-10-09T13:51:04.000000Z"
+                },
+                {
+                    "id": 4,
+                    "product_id": 2,
+                    "amount": -1,
+                    "transaction_id": "a40-private-recipe-tx",
+                    "recipe_id": null,
+                    "row_created_timestamp": "2026-10-09T13:51:04.000000Z"
+                }
+            ],
+            "GET_stock_transactions": [
+                {
+                    "product_id": 1,
+                    "amount": -1,
+                    "recipe_id": null
+                },
+                {
+                    "product_id": 2,
+                    "amount": -1,
+                    "recipe_id": null
+                }
+            ],
+            "GET_stock_bookings_one": {
+                "id": 3,
+                "transaction_id": "a40-private-recipe-tx",
+                "recipe_id": null
+            }
+        },
+        "food_recipe_consume_for_contrast": {
+            "stock_log_via_GET_objects_stock_log": [
+                {
+                    "id": 5,
+                    "product_id": 1,
+                    "amount": -1,
+                    "transaction_id": "a40-food-recipe-tx",
+                    "recipe_id": 1,
+                    "row_created_timestamp": "2026-10-09T13:51:04.000000Z"
+                },
+                {
+                    "id": 6,
+                    "product_id": 2,
+                    "amount": -1,
+                    "transaction_id": "a40-food-recipe-tx",
+                    "recipe_id": 1,
+                    "row_created_timestamp": "2026-10-09T13:51:04.000000Z"
+                }
+            ],
+            "GET_stock_transactions": [
+                {
+                    "product_id": 1,
+                    "amount": -1,
+                    "recipe_id": 1
+                },
+                {
+                    "product_id": 2,
+                    "amount": -1,
+                    "recipe_id": 1
+                }
+            ]
+        }
+    }
+}
