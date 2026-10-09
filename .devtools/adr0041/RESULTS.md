@@ -193,6 +193,13 @@ others in production code are `ChoresService.php:374` (9), `DemoDataGeneratorSer
 `StockService.php:2298` (4) and `:3341` (7). No call uses a spread or more than 10 arguments, and a grep for
 `call_user_func`, string method names and `ReflectionMethod` near `ConsumeProduct` found none.
 
+The committed JSON records the original run. A rerun of the corrected probe on 2026-10-09 against a
+working copy of this branch scanned 501 files and found 119 calls (4 arguments: 43, 9 arguments: 9)
+with the same maximum of 10 and no spread. The difference in counts from the original run is not
+explained; the conclusion about the maximum is unchanged. The probe now builds its excluded
+directory list at run time because `.devtools/ci/check_vendor_paths.py` rejects a literal
+vendor path in any `.devtools` PHP file.
+
 ## Probe 5: partial undo and derived state
 
 `evidence/probe5-partial-undo-pg16.json`. Effective state is computed as rule 8 states.
