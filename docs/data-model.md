@@ -172,6 +172,9 @@ the very booking its own guard exists to catch.
 `migrations` is not listed: `DatabaseMigrationService` creates it on every engine before
 the baseline loads, because it is what records that the baseline was applied.
 
+Migration 0305 (2026-10-09) adds five tables, listed under *Private consumption* below. The
+counts above were taken before it and are not re-measured here.
+
 **Stock & products (17)** — `products`, `product_groups`, `product_barcodes`,
 `product_substitutions`, `quantity_units`, `quantity_unit_conversions`, `locations`,
 `storage_classes`, `product_location_min_stock`, `shopping_locations`, `stock`, `stock_log`,
@@ -250,6 +253,17 @@ nothing, so it does not appear in the household diagram.
 The three `cache__*` tables are maintained entirely by triggers, and are read by the views as if they were views themselves. `files` is database
 file storage ([plan 01](plans/landed/01-file-storage.md)); `outbox` carries MQTT and InfluxDB
 events out of the request transaction ([plan 18](plans/18-mqtt-state-publication.md)).
+
+**Private consumption (5)** — `consumption_recipes`, `consumption_recipe_lines`,
+`consumption_recipe_shares`, `consumption_events`, `consumption_event_lines`. Migration 0305
+([ADR-0040](adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md),
+[ADR-0041](adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md)).
+A consumption recipe is an owned list of product quantities, separate from the food `recipes`
+table. A share names a user and the rights they hold; it confers no permission, and
+`trg_consumption_share_not_owner` keeps it from naming the owner. An event records one
+consumption and links it to its stock transaction by `transaction_id`, because
+`stock_log.recipe_id` is never set for these recipes. None of the five tables is an exposed
+entity. The importer clears all five, since no supported source can carry them.
 
 **Recipes & meal plan (5)** — `recipes`, `recipes_pos`, `recipes_nestings`, `meal_plan`,
 `meal_plan_sections`. `recipes_nestings` names a recipe twice; the functions behind

@@ -80,7 +80,11 @@ const ENGINE_EXCLUSIVE_TABLES = ['files', 'roles', 'role_permissions', 'user_rol
  // ADR-0036, migration 0304. Same freeze: lot contributions and allocations are written by
  // PostgreSQL-only writers (StockLineageService does nothing on the SQLite side) and checked by
  // pgTAP 030 and PHPUnit.
- 'stock_row_lots', 'stock_booking_lots'];
+ 'stock_row_lots', 'stock_booking_lots',
+ // ADR-0040 and ADR-0041, migration 0305. Same freeze: private consumption recipes, their shares
+ // and consumption events are PostgreSQL-only application data checked by pgTAP 031 and PHPUnit.
+ 'consumption_recipes', 'consumption_recipe_lines', 'consumption_recipe_shares', 'consumption_events',
+ 'consumption_event_lines'];
 
 $sqlitePath = getenv('MIGRATEDIFF_SQLITE_PATH');
 $pgsqlDsn = getenv('MIGRATEDIFF_PGSQL_DSN');
