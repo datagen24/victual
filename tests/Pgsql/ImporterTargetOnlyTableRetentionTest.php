@@ -120,6 +120,19 @@ class ImporterTargetOnlyTableRetentionTest extends PgsqlSchemaTestCase
 			'the pre-import row must not survive - the ordinary common-table copy replaces it with exactly the source\'s own rows, not a superset');
 	}
 
+	// --- mcp_tool_settings (0307, ADR-0039): references users, which an import replaces ------
+
+	public function testImportResetsTheMcpToolSwitchesToTheirDefaults(): void
+	{
+		$db = self::Pdo();
+		$db->exec("INSERT INTO mcp_tool_settings (tool_name, enabled, updated_by) VALUES ('consume_product', true, 1)");
+
+		$this->importer($this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MAX))->Import(true);
+
+		self::assertSame(0, (int)$db->query('SELECT count(*) FROM mcp_tool_settings')->fetchColumn(),
+			'TRUNCATE users ... CASCADE empties mcp_tool_settings (updated_by references users), so an import puts every tool back on its default: the write tools off');
+	}
+
 	// --- stock_entry_origins: split-stock lineage keyed to a stock_id the import replaces --
 
 	public function testImportClearsAStaleStockEntryOriginRow(): void
