@@ -341,6 +341,11 @@ class ConsumptionEventService extends BaseService
 			$event['recipe_id'] = (int)$row['recipe_id'];
 		}
 
+		if ($row['medication_ref'] !== null)
+		{
+			$event['medication_ref'] = $row['medication_ref'];
+		}
+
 		if ($row['version_wire'] !== null)
 		{
 			$event['source_updated_at'] = $row['version_wire'];
@@ -1607,18 +1612,24 @@ class ConsumptionEventService extends BaseService
 			}
 
 			self::CheckIdentity($filter['source_system'], 'x');
-			$sql = 'SELECT source_system, source_event_id FROM consumption_events WHERE user_id = ? AND source_system = ? AND medication_ref = ? AND state = ?';
-			$parameters = [$userId, $filter['source_system'], $filter['medication_ref'], $filter['state']];
+			// The state a person sees is derived from stock_log on read, so an event undone in the stock journal
+			// is still stored as `booked` until something touches it. The candidates are therefore the stored
+			// states that can derive to the requested one, and the derived state is compared here.
+			$all = $this->Db()->prepare("SELECT * FROM consumption_events WHERE user_id = ? AND source_system = ? AND medication_ref = ?
+				AND state IN (?, 'booked', 'needs_review') ORDER BY occurred_at, id");
+			$all->execute([$userId, $filter['source_system'], $filter['medication_ref'], $filter['state']]);
+			$matching = [];
 
-			if (isset($filter['reason']) && is_string($filter['reason']))
+			foreach ($all->fetchAll(\PDO::FETCH_ASSOC) as $candidate)
 			{
-				$sql .= ' AND reason = ?';
-				$parameters[] = $filter['reason'];
+				[$state, $reason] = $this->EffectiveState($candidate);
+
+				if ($state === $filter['state'] && (!isset($filter['reason']) || !is_string($filter['reason']) || $reason === $filter['reason']))
+				{
+					$matching[] = [$candidate['source_system'], $candidate['source_event_id']];
+				}
 			}
 
-			$all = $this->Db()->prepare($sql . ' ORDER BY occurred_at, id');
-			$all->execute($parameters);
-			$matching = $all->fetchAll(\PDO::FETCH_NUM);
 			$targets = array_slice($matching, 0, self::BULK_MAX);
 			$remaining = max(0, count($matching) - count($targets));
 		}

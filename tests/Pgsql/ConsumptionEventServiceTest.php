@@ -911,6 +911,38 @@ class ConsumptionEventServiceTest extends PgsqlSchemaTestCase
 		self::assertSame('invalid_transition', $mixed['results'][0]['error']['error']);
 	}
 
+	public function testBulkRebookFindsEventsUndoneInTheStockJournal(): void
+	{
+		$product = self::product('CE bulk undone', 10);
+		$ref = self::map($product);
+		$ids = [];
+		for ($i = 0; $i < 3; $i++)
+		{
+			$ids[] = $id = self::uid();
+			$this->put($id, self::body($ref, ['occurred_at' => self::ago((5 + $i) . ' hours')]));
+		}
+		// Undo newest-first so ADR-0036 allows each, leaving the stored state `booked` until an event is touched.
+		foreach (array_reverse($ids) as $id)
+		{
+			StockService::GetInstance()->UndoTransaction($this->event($id)['transaction_id']);
+		}
+		self::assertSame(10.0, self::onHand($product));
+		self::assertSame('booked', self::$db->query("SELECT state FROM consumption_events WHERE source_event_id = '{$ids[0]}'")->fetchColumn(), 'stored state has not caught up');
+
+		$result = self::$events->BulkResolve(self::ME, 'rebook', null, ['source_system' => 'healthkit', 'medication_ref' => $ref, 'state' => 'undone']);
+
+		self::assertSame([200, 200, 200], array_column($result['results'], 'http_status'));
+		self::assertSame(0, $result['remaining']);
+		self::assertSame(7.0, self::onHand($product));
+	}
+
+	public function testAnEventNamesItsMedicationReference(): void
+	{
+		$ref = self::map(self::product('CE medication ref', 5));
+
+		self::assertSame($ref, $this->put(self::uid(), self::body($ref))['event']['medication_ref']);
+	}
+
 	public function testBulkResolutionOnlyEverMatchesTheCallersOwnEvents(): void
 	{
 		$product = self::product('CE bulk privacy', 10);

@@ -14557,6 +14557,10 @@
 					"message": {
 						"type": "string",
 						"description": "Present with reason stock_error: the refusal text of the stock layer, private to the event's user"
+					},
+					"medication_ref": {
+						"type": "string",
+						"description": "The client's opaque identifier of the medication, as the event was submitted"
 					}
 				},
 				"description": "An event reported for the authenticated user. `state` and `reason` report the outcome even when the answer is 200 or 201: a stored event that does not book is not an error. Identity is (user, source_system, source_event_id); another user's event answers 404."

@@ -94,15 +94,21 @@ an integer); inside a longer string it is substituted as text.
 
 ## The fixtures
 
-Issue 700 acceptance criteria referred to below, in the order the issue lists them: **C1** persistent
-identity, authorization, mappings, atomic stock writes, correction/deletion/conflict behavior;
-**C2** repeated and concurrent submissions deduct once, and sources cannot collide into or inspect
-another owner's event; **C3** manual/import overlap reconciled explicitly, unresolved records
-exposed; **C4** direct stock undo is not reversed by replay, and insufficient stock, invalid units
-and ambiguous location leave no partial booking; **C5** skipped and unanswered events cause no
-deduction, a scheduled dose never consumes; **C6** examples and fixtures for victual-kit;
-**C7** tests cover late events, delete/recreate edits, replay after undo, source mapping, revocation
-and multi-line rollback. Every fixture supports C6.
+The criteria of issue 700 are numbered here in the order the issue lists them:
+
+- **C1**: persistent identity, authorization, mappings, atomic stock writes, correction,
+  deletion and conflict behavior.
+- **C2**: repeated and concurrent submissions deduct once, and sources cannot collide into or
+  inspect another owner's event.
+- **C3**: manual and imported overlap is reconciled explicitly, and unresolved records are
+  exposed.
+- **C4**: a direct stock undo is not reversed by replay, and insufficient stock, invalid units
+  and ambiguous location leave no partial booking.
+- **C5**: skipped and unanswered events cause no deduction, and a scheduled dose never
+  consumes.
+- **C6**: examples and fixtures for victual-kit. Every fixture supports C6.
+- **C7**: tests cover late events, delete and recreate edits, replay after undo, source mapping,
+  revocation and multi-line rollback.
 
 | File | ADR-0041 row | What it shows | Criteria |
 |---|---|---|---|
@@ -114,7 +120,7 @@ and multi-line rollback. Every fixture supports C6.
 | `05-late-event-two-days-old.json` | 5 | Late event books; `used_date` is the date in the offset sent | C7 (late events) |
 | `06-edit-as-new-id-with-replaces.json` | 6 | `replaces`: old `voided`, new `booked`, net one deduction | C1, C7 (delete/recreate) |
 | `07a-delete-then-create.json` | 7 | Edit seen as delete, then create: one deduction | C7 (delete/recreate) |
-| `07b-create-then-delete.json` | 7 | Edit seen as create, then delete: one deduction (two lots, see below) | C7 (delete/recreate) |
+| `07b-create-then-delete.json` | 7 | Edit seen as create, then delete: one deduction (two lots; see [Known behaviour](#known-behaviour-a-client-should-read-before-relying-on-a-sequence)) | C7 (delete/recreate) |
 | `08-status-change-after-booking.json` | 8 | `not_logged` or `skipped` after booking, within 7 days: `voided`, stock restored | C1, C5 |
 | `09-skipped-or-unanswered-without-a-row.json` | 9 | `skipped`, `unanswered`, `scheduled`, `not_logged` with no row: `no_consumption`, no row | C5 |
 | `09a-source-stopped-holding-the-record.json` | 9a | `access_revoked`, `history_cleared`, `medication_archived`: stays `booked` | C1 |
