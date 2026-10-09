@@ -72,6 +72,8 @@ fix. The decision constrains the shape:
 
 - The owner is a non-null foreign key to `users`.
 - Shares are unique on (recipe, user) and never reference the owner.
+- Consumption events are visible to the user who recorded them. A share on the recipe does not
+  expose another user's events, which can describe when that person took a medication.
 - `stock_log.recipe_id` is never set for a consumption recipe. The recipe is linked to its
   bookings by a separate event table keyed by `transaction_id`, readable only through the
   dedicated routes. A booking in `stock_log` therefore carries no pointer to the recipe.
@@ -86,7 +88,7 @@ tests, both evaluated inside the transaction that performs the action:
 
 | Right | What it allows on the recipe | Global permission also required |
 |---|---|---|
-| `read` | View name, lines, quantities and the event history of that recipe | `STOCK_VIEW` |
+| `read` | View name, lines and quantities of that recipe, and the caller's own consumption events for it | `STOCK_VIEW` |
 | `consume` | Book the recipe's lines as one consumption | `STOCK_CONSUME` |
 | `edit` | Change the name, lines and quantities | `STOCK_VIEW` |
 | `undo` | Undo, through the recipe, a consumption the recipe produced | `STOCK_EDIT`, which the stock undo routes require today |
@@ -218,7 +220,7 @@ existing recipe; a caller with `read` but not the listed right receives 403.
 | Add, change or remove a share | `share`, within rules 3 and 4 | `STOCK_VIEW` | 404 or 403 |
 | Remove own share | Any share | `STOCK_VIEW` | 404 |
 | Transfer ownership | Owner only | `STOCK_VIEW` | 404 or 403 |
-| Read event history | `read` | `STOCK_VIEW` | 404 |
+| Read own consumption events for the recipe | `read` | `STOCK_VIEW` | 404 |
 
 ### 10. Surface matrix
 
