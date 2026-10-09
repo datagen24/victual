@@ -590,8 +590,21 @@
           "features": {
            "type": "array",
            "items": {
-            "type": "string"
-           }
+            "type": "string",
+            "enum": [
+             "events",
+             "mappings",
+             "batch",
+             "bulk_resolve",
+             "manual_consume",
+             "deletion_reasons",
+             "not_logged",
+             "default_quantity",
+             "unit_labels",
+             "replaces"
+            ]
+           },
+           "description": "Names of the features this server implements; a client gates on membership, never on a version guess"
           }
          }
         }
@@ -720,11 +733,15 @@
     "then": {
      "required": [
       "medication_ref",
-      "quantity",
-      "unit_label",
       "occurred_at"
      ]
-    }
+    },
+    "dependentRequired": {
+     "quantity": [
+      "unit_label"
+     ]
+    },
+    "description": "For status taken, medication_ref and occurred_at are required. quantity may be omitted when the mapping has default_quantity; otherwise the event is needs_review/quantity_missing. A supplied quantity needs unit_label."
    },
    "ConsumptionEventResolution": {
     "type": "object",
@@ -882,6 +899,29 @@
        "string",
        "null"
       ]
+     },
+     "replaces": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "required": [
+       "source_event_id",
+       "state"
+      ],
+      "properties": {
+       "source_event_id": {
+        "type": "string"
+       },
+       "state": {
+        "type": "string",
+        "enum": [
+         "voided",
+         "needs_review"
+        ]
+       }
+      },
+      "description": "Present when the request named an event it replaces"
      }
     }
    },
