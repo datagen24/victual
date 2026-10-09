@@ -693,6 +693,24 @@ class ConsumptionEventServiceTest extends PgsqlSchemaTestCase
 		self::assertSame([9.0, 10.0], [self::onHand($product, self::$organizerA), self::onHand($product, self::$organizerB)]);
 	}
 
+	public function testARefusalThePreCheckCannotClassifyBecomesAPrivateStockError(): void
+	{
+		$product = self::product('CE measured', 0);
+		$stock = StockService::GetInstance();
+		$stock->AddProduct($product, 1, '2999-12-31', StockService::TRANSACTION_TYPE_PURCHASE, '2026-01-01', null, self::$organizerA);
+		$row = (int)self::$db->query('SELECT id FROM stock WHERE product_id = ' . $product)->fetchColumn();
+		$stock->OpenProduct($product, 1);
+		$stock->MeasureStockEntry($row, ['amount' => 0.6, 'qu_id' => self::$tablet]);
+		$ref = self::map($product);
+
+		$result = $this->put(self::uid(), self::body($ref, ['quantity' => 0.5]));
+
+		self::assertSame(['needs_review', 'stock_error'], [$result['event']['state'], $result['event']['reason']]);
+		self::assertStringContainsString('measured container', $result['event']['message'], 'the text is kept for the person it belongs to');
+		self::assertSame(1.0, self::onHand($product), 'the refusal rolled back');
+		self::assertSame(0, (int)self::$db->query('SELECT count(*) FROM stock_log WHERE transaction_type = \'consume\' AND product_id = ' . $product)->fetchColumn());
+	}
+
 	// --- Isolation ---------------------------------------------------------------------------
 
 	public function testTwoUsersWithTheSameSourceIdsHaveSeparateEventsAndCannotReadEachOther(): void
