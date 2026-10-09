@@ -210,6 +210,7 @@
 			<file>tests/Pgsql/ConsumptionEventRaceTest.php</file>
 			<file>tests/Pgsql/ConsumptionEventApiTest.php</file>
 			<file>tests/Pgsql/ConsumptionEventFixtureTest.php</file>
+			<file>tests/Pgsql/OrganizerWorkflowTest.php</file>
 		</testsuite>
 	</testsuites>
 </phpunit>

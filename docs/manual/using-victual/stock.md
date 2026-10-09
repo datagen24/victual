@@ -18,7 +18,7 @@ Each has its own page, and each only offers products that make sense for it.
 |---|---|---|
 | Purchase | `/purchase` | Any product. Records a due date, price and location for the batch you are adding. |
 | Consume | `/consume` | Only products currently in stock. Books a booking; can consume "spoiled" instead of eaten, which is tracked separately. |
-| Transfer | `/transfer` | Only products that currently have stock of their own (not a product whose stock lives entirely under a parent). Moves an amount from one location to another. |
+| Transfer | `/transfer` | Only products that currently have stock of their own (not a product whose stock lives entirely under a parent). Moves an amount from one location to another, and books no consumption. A weekly organizer is a location, so filling one is a transfer; see [Weekly organizers](consumption-recipes.md#weekly-organizers). |
 | Inventory | `/inventory` | Any product. Sets the stock amount to a stated value rather than adding or removing a delta — the stocktaking booking. |
 
 A barcode scan on any of the four pre-selects the matching product; scan mode
