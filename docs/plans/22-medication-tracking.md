@@ -32,7 +32,9 @@ has no implementation consumer in this scope. Neither record's lifecycle status 
 through this plan. [ADR-0040](../adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md)
 (Proposed) records the scoped-sharing design.
 [ADR-0041](../adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md)
-(Proposed) records the external-event and reconciliation design. See [release readiness](#release-readiness).
+(Proposed) records the external-event and reconciliation design.
+[ADR-0042](../adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md)
+(Proposed) records the refill rules and notice design. See [release readiness](#release-readiness).
 
 ## Current behavior
 
@@ -335,3 +337,8 @@ answers from the maintainer's inventory scope decision on 2026-10-09.
     forms, repeat suppression, ordered versus received state, and delivery ownership.
     Victual must expose the state through its API; native delivery belongs to `victual-kit`.
     The exact lead and server-side delivery surface remain open.
+
+    > **Design, 2026-10-09:** [ADR-0042](../adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md)
+    > (Proposed) recommends a seven-day lead as a per-user setting with a per-prescription
+    > override, calendar dates in the server zone with a client `as_of`, no server push, and
+    > acknowledged notice keys. These are recommendations until the maintainer decides.
