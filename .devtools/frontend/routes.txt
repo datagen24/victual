@@ -45,6 +45,7 @@
 /shoppinglistsettings
 /recipes
 /consumptionrecipes
+/consumptioninbox
 /recipe/{recipeId}
 /recipe/{recipeId}/pos/{recipePosId}
 /recipessettings
