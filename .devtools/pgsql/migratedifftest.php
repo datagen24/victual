@@ -80,7 +80,10 @@ const ENGINE_EXCLUSIVE_TABLES = ['files', 'roles', 'role_permissions', 'user_rol
  // ADR-0036, migration 0304. Same freeze: lot contributions and allocations are written by
  // PostgreSQL-only writers (StockLineageService does nothing on the SQLite side) and checked by
  // pgTAP 030 and PHPUnit.
- 'stock_row_lots', 'stock_booking_lots'];
+ 'stock_row_lots', 'stock_booking_lots',
+ // ADR-0039, migration 0307. Same freeze: MCP tool switches exist only on PostgreSQL, written by
+ // McpConfigService and checked by McpAuthTest.
+ 'mcp_tool_settings'];
 
 $sqlitePath = getenv('MIGRATEDIFF_SQLITE_PATH');
 $pgsqlDsn = getenv('MIGRATEDIFF_PGSQL_DSN');
