@@ -7,6 +7,9 @@
 	var productsById = {};
 	var locations = [];
 	var unitNames = {};
+	// Conversion rows by product id, completed or in flight, so lines for one product share one request.
+	// Cleared whenever the edit dialog opens, because conversions can change between openings.
+	var conversionRequests = {};
 	var recipes = [];
 	var editing = null;
 	var consuming = null;
@@ -140,7 +143,7 @@
 		unitSelect.empty();
 		var product = productsById[productId];
 		if (!product) return;
-		Victual.Api.Get('objects/quantity_unit_conversions_resolved?query[]=product_id=' + encodeURIComponent(productId), function (rows)
+		ConversionsOf(productId, function (rows)
 		{
 			var seen = {};
 			var add = function (id, name)
@@ -152,7 +155,24 @@
 			add(product.qu_id_stock, unitNames[product.qu_id_stock] || '');
 			rows.forEach(function (c) { if (String(c.to_qu_id) === String(product.qu_id_stock)) add(c.from_qu_id, c.from_qu_name || unitNames[c.from_qu_id] || ''); });
 			if (selectedUnit) unitSelect.val(String(selectedUnit));
-		}, Failed);
+		});
+	}
+
+	function ConversionsOf(productId, done)
+	{
+		var request = conversionRequests[productId];
+		if (request && request.rows) { done(request.rows); return; }
+		if (request) { request.waiting.push(done); return; }
+		request = conversionRequests[productId] = { rows: null, waiting: [done] };
+		Victual.Api.Get('objects/quantity_unit_conversions_resolved?query[]=product_id=' + encodeURIComponent(productId), function (rows)
+		{
+			request.rows = rows;
+			request.waiting.splice(0).forEach(function (callback) { callback(rows); });
+		}, function (xhr)
+		{
+			delete conversionRequests[productId];
+			Failed(xhr);
+		});
 	}
 
 	function AddLine(line)
@@ -172,6 +192,7 @@
 
 	function OpenEdit(id)
 	{
+		conversionRequests = {};
 		$('#consumption-edit-error').text('');
 		$('#consumption-lines').empty();
 		editing = id;
