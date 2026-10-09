@@ -1,6 +1,6 @@
 # ADR-0042: Refill dates are calendar dates derived from recorded fills, and Victual exposes notices without sending them
 
-- **Status:** **Proposed.** Written to be argued with.
+- **Status:** **Accepted 2026-10-09.** Prerequisites are stated in the accepting pull request.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-09, against `master` at `216af2b2`. Design work only: it changes no
