@@ -59,6 +59,13 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-10-09 — Plan 22 design records, implementation gated** (branches `claude/sonnet5_adr0040-*`
+  through `claude/sonnet5_plan22-migration-claims-*`): ADR-0040 (private recipe sharing), 0041
+  (consumption events), 0042 (refill rules) and the ADR-0015/0016/MCP revision are stacked PRs
+  708 → 711 → 712 → 713 → 714; merge in that order. All stay Proposed, so issues 698–702 did not
+  start: a Proposed record constrains nothing. PHP is absent on this host, so
+  `check-migrations.php` and `npm test` did not run here. Migrations 0305–0306 are claimed but
+  can still move under ADR-0039.
 - **2026-10-08 — ADR-0038 decision 8: kind and talos are chart values files** (branch
   `claude/adr38-kind-talos-values`): `deploy/kind/up.sh` and `deploy/talos/up.sh` run
   `helm upgrade --install`; talos needs `KUBE_CONTEXT` (the current context here is the prod
@@ -85,14 +92,7 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   official `php:*-cli` image compiling
   PDO/pdo_sqlite/sqlite3/tokenizer *in*, which neither an 8.5 CI leg nor an 8.4 pin would catch.
   The `images` job now runs the suite in the image. See [[reference_local_environment]].
-- **2026-09-21 — Three write routes stop discarding a caller's timestamp** (branch
-  `claude/elegant-burnell-24f169`, [PR 235](https://github.com/datagen24/victual/pull/235),
-  merged): `tracked_time` on chore execution and battery charge, `done_time` on task
-  completion, all booked **now** whenever the value was not exactly `Y-m-d H:i:s`, answering
-  200. [ADR-0028](../docs/adr/0028-a-timestamp-a-write-route-cannot-read-is-refused.md)
-  (**Proposed**) refuses *and* widens. Five defects found in review, all from two mistakes:
-  the accepted set written twice, and a test comparing the two by sampling. The durable
-  part is [[feedback_one_definition_of_an_accepted_set]].
+
 ## DOCTRINE (operator-locked decisions)
 
 - [Wire moves or document moves](feedback_wire_vs_document.md) — 2026-09-21, issues
