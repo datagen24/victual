@@ -91,6 +91,7 @@ have recorded it.
 | 0304 | issue [#665](https://github.com/datagen24/victual/issues/665), [ADR-0036](../docs/adr/0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md) — `stock_row_lots` (contributions) and `stock_booking_lots` (allocations), the legacy backfill (`stock_lineage_families()`, `stock_lineage_backfill()`) with invariant validation (`stock_lineage_violations()`), and `trg_cascade_change_qu_id_stock` redefined to rescale both tables | pending PR |
 | 0305 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
 | 0306 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0307 | [ADR-0039](../docs/adr/0039-the-mcp-sidecar-reads-its-configuration-from-victual.md) prerequisite spike (branch `claude/adr0039-prerequisites`) — `mcp_tool_settings` (tool name, enabled, updated_at, updated_by), the MCP sidecar's per-tool switches. Taken above plan 22's unwritten 0305–0306 by instruction; a real PR would take the lowest free slot (0305) per this file's rule | spike branch |
 
 Renumbered on 2026-10-07: issue #665's booking lineage migration (ADR-0036) is being written
 and takes the lowest free slot, **0304**, under the lowest-free-slot rule. Plan 22's two unwritten
