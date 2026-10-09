@@ -127,8 +127,9 @@ needs.
 The full suite found two defects that the spike's targeted tests did not, and both are fixed
 on the branch. `RbacTest::testEveryGetRouteControllerIsSweptOrExcepted` wants each new
 controller classified. The freshly-migrated comparison in `migratedifftest.php` wants each
-PostgreSQL-only table listed. The base tree's run has one failure of its own, the runner's
-coverage report running out of memory, and so does every run here.
+PostgreSQL-only table listed. A full run of `dbc83da6` has one failure, the one the base tree
+has too: the runner's own coverage report running out of memory. All 29 PHPUnit phases and
+the differential phases pass.
 
 Also run on the spike:
 
