@@ -18,7 +18,8 @@
   (Proposed; timestamps are RFC 3339). Related to
   [ADR-0012](0012-observations-are-proposals.md): an imported event is a report by a person's
   own device, so it books through the stock write paths after the person approves a mapping.
-  It is not a probabilistic observation.
+  It is not a probabilistic observation; acceptance prerequisite 4 asks the maintainer to
+  confirm that reading.
 
 ## Context
 
@@ -46,14 +47,17 @@ Facts from `StockService` on `master` at `216af2b2`:
 - `ConsumeProduct()` takes the transaction identifier by reference, generates one with
   `uniqid()` when null, and restricts consumption to `$locationId` when given. It refuses
   an amount above the stock in that scope by throwing a generic `\Exception`.
-- Each call opens its own `InTransaction()`. The transaction wrapper does not nest with
-  savepoints, so a caller needing several lines atomic wraps them in an outer transaction, as
-  `RecipesService::ConsumeRecipe()` does. That method caps each line at available stock; the
-  new path must refuse instead.
+- `DatabaseService::InTransaction()` begins a transaction only when none is open. A nested
+  call runs its work inside the open transaction with no savepoint, and an exception rolls
+  back everything at the outermost level. A caller needing several lines atomic wraps them in
+  one outer call, as `RecipesService::ConsumeRecipe()` does. That method caps each line at
+  available stock; the new path must refuse instead.
 - `used_date` is written as `date('Y-m-d')` at booking (`StockService.php:908`, `:969`).
   A late event cannot carry its true date without a new optional parameter.
 - `UndoTransaction()` undoes every booking of a transaction or none. `UndoBooking()` through
-  `POST /stock/bookings/{id}/undo` can undo one booking of a multi-product transaction.
+  `POST /stock/bookings/{id}/undo` undoes one booking and only its `correlation_id` partners
+  (a transfer's two halves). The lines of a multi-product consumption share a
+  `transaction_id` and no `correlation_id`, so one line can be undone alone.
 - Locks are taken per product, in ascending id order (`LockProductsStock()`).
 - No existing table records which client or source a booking came from.
 
@@ -72,12 +76,15 @@ An event is identified by **(authenticated user, `source_system`, `source_event_
 
 - The user is the authenticated principal of the request, never a request field. A lookup by
   another user finds nothing and answers 404, so identities cannot be probed or reused.
+  This reads "scoped to the authenticated client and owner" as the authenticated user plus
+  the client's own `source_system` name; see option D for why a key is not part of it.
 - `source_system` is a lowercase token matching `^[a-z0-9][a-z0-9._-]{0,31}$`. The value
   `manual` is reserved for events the server creates when a person consumes a recipe in
   Victual. A native client uses a stable name for itself, such as `healthkit`.
 - `source_event_id` is a client-chosen string of 1 to 128 characters from `[A-Za-z0-9._:-]`,
   case-sensitive. For `manual` events it is a client-supplied `request_id` (a UUID) or, if
-  omitted, a server-generated one.
+  omitted, a server-generated one. A manual consume is idempotent only when the client sends
+  `request_id`; without it, a retry books again. The Victual UI always sends one.
 - Identity is **not** scoped to an API key. A key can be rotated or a person can use two
   devices, and either would orphan the events. The key used is recorded for audit only.
 
@@ -101,6 +108,7 @@ rule 1 describes and are visible only to their user.
 | `voided` | The source reported the event deleted or not taken | Reversed by Victual |
 | `linked` | Attached to an existing booking transaction | No new deduction |
 | `dismissed` | A person or the mapping window excluded it | None |
+| `no_consumption` | Response only: a non-`taken` status arrived and no row exists | None |
 
 `needs_review` reasons: `ambiguous_location`, `insufficient_stock`, `unit_mismatch`,
 `recipe_unavailable`, `partially_undone`, `changed_after_undo`, `undo_refused`, `invalid_mapping`.
@@ -168,7 +176,8 @@ Processing for one request:
 | Two identical requests at once | One inserts; the other waits for the row lock, then returns the stored result |
 | Same key from two devices of one user | Same as above; the key space is per user |
 | Crash after transaction 1 | State stays `received`; the next request with that key continues |
-| Request while state is `needs_review` | Retried only if the reason is `insufficient_stock` or `received`; other reasons wait for an explicit resolve (rule 8) |
+| Request while state is `received`, or `needs_review` with reason `insufficient_stock` | Booking is attempted again |
+| Request while state is `needs_review` with any other reason | Stored, no booking; waits for an explicit resolve (rule 8) |
 
 `source_updated_at` (RFC 3339) is required. A request older than the stored value returns
 `200` with `stale: true` and changes nothing. The same value with a different payload hash
@@ -182,7 +191,10 @@ every line. The recipe path does not use `ConsumeRecipe()`'s cap-at-available be
 
 `occurred_at` more than five minutes in the future is refused with 422. For a past
 `occurred_at`, `used_date` is the date in the server time zone, which requires the optional
-parameter described in the Consequences.
+parameter described in the Consequences. The server zone matches how `date('Y-m-d')` decides
+"today" elsewhere in the application and no per-user zone exists. A trip across zones can
+shift the recorded date by one day. [Issue 697](https://github.com/datagen24/victual/issues/697)
+owns the calendar-zone decision for refills.
 
 ### 6. Corrections
 
@@ -342,6 +354,9 @@ ADR-0036 lineage and the audit trail. Rejected.
    the maintainer accepts this record's reliance on its private-table and lock-order rules.
 3. The maintainer confirms that the optional `$usedDate` parameter is acceptable for
    `ConsumeProduct()`, which this record treats as an internal API.
+4. The maintainer confirms that a client-reported dose event is outside
+   [ADR-0012](0012-observations-are-proposals.md) and may book through the stock write paths
+   once the person has approved a mapping.
 
 ## Open questions
 

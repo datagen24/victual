@@ -619,6 +619,24 @@
       "type": "string",
       "description": "source_event_id of an event this one supersedes"
      }
+    },
+    "if": {
+     "properties": {
+      "status": {
+       "const": "taken"
+      }
+     },
+     "required": [
+      "status"
+     ]
+    },
+    "then": {
+     "required": [
+      "medication_ref",
+      "quantity",
+      "unit_label",
+      "occurred_at"
+     ]
     }
    },
    "ConsumptionEventResolution": {
