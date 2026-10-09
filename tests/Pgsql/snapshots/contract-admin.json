@@ -117,6 +117,14 @@
             "content_type": "application/pdf"
         }
     },
+    "GET /api/mcp/config": {
+        "status": 200,
+        "shape": {
+            "enabled_tools": [
+                "string"
+            ]
+        }
+    },
     "GET /api/objects/{entity} (api_keys)": {
         "status": 400,
         "shape": {
@@ -2763,6 +2771,14 @@
     "PUT /api/files/{group}/{fileName}": {
         "status": 204,
         "shape": "empty"
+    },
+    "PUT /api/mcp/config": {
+        "status": 200,
+        "shape": {
+            "enabled_tools": [
+                "string"
+            ]
+        }
     },
     "PUT /api/objects/{entity}/{objectId} (products)": {
         "status": 204,

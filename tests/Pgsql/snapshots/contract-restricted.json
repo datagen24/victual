@@ -83,6 +83,14 @@
             "tracked_count": "integer"
         }
     },
+    "GET /api/mcp/config": {
+        "status": 200,
+        "shape": {
+            "enabled_tools": [
+                "string"
+            ]
+        }
+    },
     "GET /api/objects/{entity} (api_keys)": {
         "status": 400,
         "shape": {
