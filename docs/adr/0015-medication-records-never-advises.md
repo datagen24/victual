@@ -192,8 +192,8 @@ settles that, and this record settles none of it.
    [701](https://github.com/datagen24/victual/issues/701)) each list the strings they add in
    their description, and the reviewer checks them against the table.
 2. **[The MCP interface spec](../mcp-interface-spec.md) states medication exposure, including
-   tool descriptions.** Status on 2026-10-09: **met** by
-   [section 10.1](../mcp-interface-spec.md#101-medication-and-private-consumption-data) and
+   tool descriptions.** Evidence recorded 2026-10-09, with the verdict left to the accepting
+   pull request: [section 10.1](../mcp-interface-spec.md#101-medication-and-private-consumption-data) and
    by the test named in Consequences.
 
 ## Open questions
