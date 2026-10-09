@@ -202,6 +202,7 @@
 		<testsuite name="consumption">
 			<file>tests/Pgsql/ConsumptionSchemaTest.php</file>
 			<file>tests/Pgsql/ConsumeProductUsedDateTest.php</file>
+			<file>tests/Pgsql/ConsumptionRecipeServiceTest.php</file>
 		</testsuite>
 	</testsuites>
 </phpunit>
