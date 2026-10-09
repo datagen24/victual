@@ -153,6 +153,7 @@ nav:
           - 0038 Kubernetes deployments ship as a Helm chart: development/adr/0038-kubernetes-deployments-ship-as-a-helm-chart.md
           - 0039 The MCP sidecar reads its configuration from Victual: development/adr/0039-the-mcp-sidecar-reads-its-configuration-from-victual.md
           - 0040 Consumption recipes are private rows with scoped shares: development/adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md
+          - 0041 Consumption events have a source identity: development/adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md
       - Build and deployment:
           - Container images: development/images.md
           - Deployment: development/deployment.md

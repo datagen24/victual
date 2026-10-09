@@ -30,8 +30,9 @@ client proposes an inferred booking.
 its boundary aligned with inventory and refill notices. [ADR-0016](../adr/0016-schedule-expansion-in-the-application.md)
 has no implementation consumer in this scope. Neither record's lifecycle status changes
 through this plan. [ADR-0040](../adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md)
-(Proposed) records the scoped-sharing design. A design record for external-event
-reconciliation is still needed; see [release readiness](#release-readiness).
+(Proposed) records the scoped-sharing design.
+[ADR-0041](../adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md)
+(Proposed) records the external-event and reconciliation design. See [release readiness](#release-readiness).
 
 ## Current behavior
 
