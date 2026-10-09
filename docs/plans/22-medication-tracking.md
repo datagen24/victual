@@ -210,10 +210,13 @@ platform-specific notices belong to `victual-kit`. Server verification can use r
 client fixtures, but an end-to-end Apple integration claim requires real client evidence.
 The release record must distinguish those outcomes.
 
-[Migrations/RESERVATIONS.md](../../migrations/RESERVATIONS.md) currently claims 0305–0306
-for the previous schema sketch. Those claims are unwritten. Reconcile their descriptions
-and the required count before writing migrations; use the lowest available slots and
-PostgreSQL-only migrations. Do not retain obsolete regimen tables to fit old reservations.
+[Migrations/RESERVATIONS.md](../../migrations/RESERVATIONS.md) claims 0305 and 0306 for this plan.
+Reconciled 2026-10-09: 0305 covers private consumption recipes, shares, consumption events
+and source mappings; 0306 covers refill settings, fills, orders and notice acknowledgements.
+Both are unwritten, and the table descriptions replace the withdrawn regimen sketch. The
+numbers can still move: [ADR-0039](../adr/0039-the-mcp-sidecar-reads-its-configuration-from-victual.md)
+implementation may claim a lower slot first. Re-read the table, claim the lowest free slots
+before writing a file, and write PostgreSQL-only migrations.
 
 ## Verification
 
