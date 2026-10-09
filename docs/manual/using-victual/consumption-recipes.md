@@ -56,6 +56,32 @@ and does not consume it.
 
 The booked date is the date in your browser's time zone when you press the button.
 
+## Weekly organizers
+
+A weekly pill organizer, or two or three of them for a trip, is an ordinary
+[location](stock.md): create one location per organizer and print its label from the location
+page. The stock stays tracked, product by product, while it is in an organizer.
+
+- **Filling an organizer** is a transfer on `/transfer` from the location that holds the stock to
+  the organizer. It moves stock and books no consumption, so the household total does not change.
+- **Recording a consumption from an organizer** uses **Take from**, or the location on `/consume`.
+  Only stock in that location is used. If it holds too little, the consumption is refused; the
+  difference is never taken from another organizer or from the cabinet.
+- **Returning unused contents** is another transfer, from the organizer back to the cabinet.
+- **Any location** uses the product's default consume location first, if it has one, and then the
+  earliest due date across every location, organizers included. Set a product's default consume
+  location to the organizer in use, or choose **Take from**, when a particular organizer must be
+  the one charged. Rows with the same due date and purchase date have no defined order.
+- **Distinct strengths** are distinct products. Each has its own stock and its own conversions.
+- **Tablets, liquids and single-use items** are all stock in the product's stock unit: tablets,
+  millilitres or single items. A bottle or a box is a purchase unit converted to that unit by a
+  conversion you enter.
+
+An undo reverses a booking using the purchase it came from. When a later booking has moved units
+of the same purchase, for example the return of another organizer, the earlier consumption can
+no longer be undone and the request is refused with a message saying so. Undo consumptions
+before the later transfers, or correct the amount with an inventory booking.
+
 ## History and undo
 
 **History** lists your own recorded consumptions of the recipe. Other users' consumptions of a
