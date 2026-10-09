@@ -77,6 +77,22 @@ can change a user's password can sign in as that user
 ([ADR-0014](../../adr/0014-administering-a-user-is-a-subset-question.md)), which this model
 accepts for a household instance.
 
+## Consumption events and mappings
+
+An [external consumption event](external-consumption.md) and the mapping it books through belong
+to one user. Nothing is shared: no share, role or administrator permission lets another user
+read or act on them, and another user's event answers `404`.
+
+| Act | Needs |
+|---|---|
+| Read events, mappings and capabilities | `STOCK_VIEW` |
+| Report, delete or resolve an event; write or delete a mapping | `STOCK_VIEW` and `STOCK_CONSUME` |
+| Map to a consumption recipe | The right to record consumption on that recipe |
+| Link an event to a transaction that another user recorded | `STOCK_EDIT` as well |
+
+The bookings an event makes are stock bookings made as the signed-in user, and anyone who can
+see the stock journal sees them.
+
 ## Permission reference
 
 `ADMIN` implies every other permission. The rest, by domain:

@@ -87,6 +87,7 @@ nav:
           - The REST API: manual/operator/rest-api.md
           - Barcodes and scanning: manual/operator/barcodes-scanning.md
           - Label printing: manual/operator/label-printing.md
+          - External consumption events: manual/operator/external-consumption.md
           - Home Assistant and MQTT: manual/operator/home-assistant-mqtt.md
           - Roles and permissions: manual/operator/roles-permissions.md
           - Updating and migrations: manual/operator/updating-migrations.md
