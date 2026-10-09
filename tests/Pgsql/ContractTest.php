@@ -572,6 +572,41 @@ class ContractTest extends PgsqlSchemaTestCase
 	}
 
 	#[Depends('testConsumptionRecipeOperations')]
+	public function testConsumptionEventOperations(): void
+	{
+		$events = self::controller(\Victual\Controllers\Api\ConsumptionEventsApiController::class);
+		$stock = \Victual\Services\StockService::GetInstance();
+
+		$unit = (int)self::$db->query('SELECT min(id) FROM quantity_units')->fetchColumn();
+		$statement = self::$db->prepare('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price) VALUES (?, ?, ?, ?, ?, ?) RETURNING id');
+		$statement->execute(['Contract event product', self::$ids['location'], $unit, $unit, $unit, $unit]);
+		$product = (int)$statement->fetchColumn();
+		$stock->AddProduct($product, 20, '2999-12-31', \Victual\Services\StockService::TRANSACTION_TYPE_PURCHASE, '2026-01-01', null, self::$ids['location']);
+		$mapping = ['product_id' => $product, 'unit_labels' => ['tablet'], 'location' => ['mode' => 'fixed', 'location_id' => self::$ids['location']], 'effective_from' => '2026-01-01T00:00:00Z'];
+		$taken = fn(string $ref, array $extra = []) => $extra + ['status' => 'taken', 'medication_ref' => $ref, 'quantity' => 1, 'unit_label' => 'tablet', 'occurred_at' => gmdate('Y-m-d\TH:i:s\Z', time() - 3600)];
+
+		self::invokeAdmin('GET /api/consumption/capabilities', fn() => $events->Capabilities(self::request(), new Response(), []));
+		self::invokeAdmin('PUT /api/consumption/mappings/{source_system}/{medication_ref}', fn() => $events->PutMapping(self::request('PUT', $mapping), new Response(), ['source_system' => 'contract', 'medication_ref' => 'med-a']));
+		self::invokeAdmin('GET /api/consumption/mappings', fn() => $events->ListMappings(self::request(), new Response(), []));
+		self::invokeAdmin('GET /api/consumption/mappings/{source_system}/{medication_ref}', fn() => $events->GetMapping(self::request(), new Response(), ['source_system' => 'contract', 'medication_ref' => 'med-a']));
+
+		self::invokeAdmin('PUT /api/consumption/events/{source_system}/{source_event_id}', fn() => $events->PutEvent(self::request('PUT', $taken('med-a')), new Response(), ['source_system' => 'contract', 'source_event_id' => 'event-1']));
+		self::invokeAdmin('PUT /api/consumption/events/{source_system}/{source_event_id} (unmapped)', fn() => $events->PutEvent(self::request('PUT', $taken('med-unmapped')), new Response(), ['source_system' => 'contract', 'source_event_id' => 'event-2']));
+		self::invokeAdmin('GET /api/consumption/events/{source_system}/{source_event_id}', fn() => $events->GetEvent(self::request(), new Response(), ['source_system' => 'contract', 'source_event_id' => 'event-1']));
+		self::invokeAdmin('GET /api/consumption/events', fn() => $events->ListEvents(self::request('GET', null, ['state' => 'booked,needs_mapping']), new Response(), []));
+		self::invokeAdmin('POST /api/consumption/events/{source_system}/{source_event_id}/resolve', fn() => $events->ResolveEvent(self::request('POST', ['action' => 'dismiss']), new Response(), ['source_system' => 'contract', 'source_event_id' => 'event-2']));
+		self::invokeAdmin('POST /api/consumption/events/batch', fn() => $events->BatchEvents(self::request('POST', ['events' => [
+			['source_system' => 'contract', 'source_event_id' => 'event-3'] + $taken('med-a'),
+			['source_system' => 'contract', 'source_event_id' => 'event-4', 'status' => 'skipped'],
+		]]), new Response(), []));
+		self::invokeAdmin('POST /api/consumption/events/resolve', fn() => $events->BulkResolve(self::request('POST', ['action' => 'void', 'filter' => ['source_system' => 'contract', 'medication_ref' => 'med-a', 'state' => 'needs_review']]), new Response(), []));
+		self::invokeAdmin('DELETE /api/consumption/events/{source_system}/{source_event_id}', fn() => $events->DeleteEvent(self::request('DELETE', null, ['reason' => 'history_cleared']), new Response(), ['source_system' => 'contract', 'source_event_id' => 'event-3']));
+		self::invokeAdmin('DELETE /api/consumption/mappings/{source_system}/{medication_ref}', fn() => $events->DeleteMapping(self::request('DELETE'), new Response(), ['source_system' => 'contract', 'medication_ref' => 'med-a']));
+
+		self::assertSame(1, (int)self::$db->query("SELECT count(*) FROM consumption_events WHERE source_event_id = 'event-1'")->fetchColumn(), 'Fixture event recorded');
+	}
+
+	#[Depends('testConsumptionEventOperations')]
 	public function testChoresOperations(): void
 	{
 		$generic = self::controller(GenericEntityApiController::class);

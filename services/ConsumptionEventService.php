@@ -722,6 +722,14 @@ class ConsumptionEventService extends BaseService
 
 		if ($created)
 		{
+			// The request that inserted the row. A concurrent identical request may have taken the lock first and
+			// booked it already; booking again here would undo that booking and make another, so only a row still
+			// `received` is booked.
+			if ($row['state'] !== 'received')
+			{
+				return $this->Present($row);
+			}
+
 			return $this->Present($this->Dispatch($row, $payload, $replaced, 'first'), $this->ReplacesExtra($replaced, $payload));
 		}
 

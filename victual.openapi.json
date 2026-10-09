@@ -59,6 +59,10 @@
 		},
 		{
 			"name": "Print"
+		},
+		{
+			"name": "Consumption events",
+			"description": "Events a client reports for the authenticated user, the mappings the user approved for them, and the explicit reconciliation of those events with stock. Private to the user: another user's event or mapping answers 404."
 		}
 	],
 	"paths": {
@@ -10168,6 +10172,787 @@
 					}
 				]
 			}
+		},
+		"/consumption/events/{source_system}/{source_event_id}": {
+			"put": {
+				"operationId": "putConsumptionEvent",
+				"summary": "Create or update a consumption event",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/ConsumptionEventSubmission"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Stored; replay or update",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionExternalEvent"
+								}
+							}
+						}
+					},
+					"201": {
+						"description": "Created",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionExternalEvent"
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Invalid request",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated"
+					},
+					"403": {
+						"description": "Permission missing"
+					},
+					"404": {
+						"description": "Not found for this user",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"409": {
+						"description": "Conflict",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Unprocessable",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"tags": [
+					"Consumption events"
+				],
+				"description": "Requires STOCK_VIEW and STOCK_CONSUME. Scoped to the authenticated user.",
+				"parameters": [
+					{
+						"name": "source_system",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"pattern": "^[a-z0-9][a-z0-9._-]{0,31}$"
+						}
+					},
+					{
+						"name": "source_event_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"pattern": "^[A-Za-z0-9._:-]{1,128}$"
+						}
+					}
+				]
+			},
+			"get": {
+				"operationId": "getConsumptionEvent",
+				"responses": {
+					"200": {
+						"description": "The event",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionExternalEvent"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "Not found for this user",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated"
+					},
+					"403": {
+						"description": "Permission missing"
+					}
+				},
+				"tags": [
+					"Consumption events"
+				],
+				"description": "Requires STOCK_VIEW. Scoped to the authenticated user.",
+				"parameters": [
+					{
+						"name": "source_system",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"pattern": "^[a-z0-9][a-z0-9._-]{0,31}$"
+						}
+					},
+					{
+						"name": "source_event_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"pattern": "^[A-Za-z0-9._:-]{1,128}$"
+						}
+					}
+				]
+			},
+			"delete": {
+				"operationId": "deleteConsumptionEvent",
+				"summary": "The source no longer has this event",
+				"responses": {
+					"200": {
+						"description": "Voided or already voided",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionExternalEvent"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "Not found for this user",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated"
+					},
+					"403": {
+						"description": "Permission missing"
+					}
+				},
+				"parameters": [
+					{
+						"name": "source_system",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"pattern": "^[a-z0-9][a-z0-9._-]{0,31}$"
+						}
+					},
+					{
+						"name": "source_event_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"pattern": "^[A-Za-z0-9._:-]{1,128}$"
+						}
+					},
+					{
+						"name": "reason",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "string",
+							"enum": [
+								"entered_in_error",
+								"history_cleared",
+								"medication_archived",
+								"access_revoked",
+								"unknown"
+							]
+						}
+					}
+				],
+				"tags": [
+					"Consumption events"
+				],
+				"description": "Requires STOCK_VIEW and STOCK_CONSUME. Scoped to the authenticated user."
+			}
+		},
+		"/consumption/events/{source_system}/{source_event_id}/resolve": {
+			"post": {
+				"operationId": "resolveConsumptionEvent",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/ConsumptionEventResolution"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Resolved",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionExternalEvent"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "Not found for this user",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"409": {
+						"description": "Conflict",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Unprocessable",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated"
+					},
+					"403": {
+						"description": "Permission missing"
+					}
+				},
+				"tags": [
+					"Consumption events"
+				],
+				"description": "Requires STOCK_VIEW and STOCK_CONSUME. Scoped to the authenticated user.",
+				"parameters": [
+					{
+						"name": "source_system",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"pattern": "^[a-z0-9][a-z0-9._-]{0,31}$"
+						}
+					},
+					{
+						"name": "source_event_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"pattern": "^[A-Za-z0-9._:-]{1,128}$"
+						}
+					}
+				]
+			}
+		},
+		"/consumption/events": {
+			"get": {
+				"operationId": "listConsumptionEvents",
+				"parameters": [
+					{
+						"name": "state",
+						"in": "query",
+						"schema": {
+							"type": "string"
+						},
+						"description": "Comma-separated states"
+					},
+					{
+						"name": "since",
+						"in": "query",
+						"schema": {
+							"type": "string",
+							"format": "date-time"
+						}
+					},
+					{
+						"name": "limit",
+						"in": "query",
+						"schema": {
+							"type": "integer",
+							"minimum": 1,
+							"maximum": 500
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Own events",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/ConsumptionExternalEvent"
+									}
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated"
+					},
+					"403": {
+						"description": "Permission missing"
+					}
+				},
+				"tags": [
+					"Consumption events"
+				],
+				"description": "Requires STOCK_VIEW. Scoped to the authenticated user."
+			}
+		},
+		"/consumption/events/batch": {
+			"post": {
+				"operationId": "batchConsumptionEvents",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"required": [
+									"events"
+								],
+								"properties": {
+									"events": {
+										"type": "array",
+										"maxItems": 50,
+										"items": {
+											"allOf": [
+												{
+													"$ref": "#/components/schemas/ConsumptionEventSubmission"
+												},
+												{
+													"type": "object",
+													"required": [
+														"source_system",
+														"source_event_id"
+													],
+													"properties": {
+														"source_system": {
+															"type": "string"
+														},
+														"source_event_id": {
+															"type": "string"
+														}
+													}
+												}
+											]
+										}
+									}
+								}
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "One result per item, in order",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/ConsumptionEventBatchResult"
+									}
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Invalid request",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated"
+					},
+					"403": {
+						"description": "Permission missing"
+					}
+				},
+				"tags": [
+					"Consumption events"
+				],
+				"description": "Requires STOCK_VIEW and STOCK_CONSUME. Scoped to the authenticated user."
+			}
+		},
+		"/consumption/mappings": {
+			"get": {
+				"operationId": "listConsumptionMappings",
+				"responses": {
+					"200": {
+						"description": "Own mappings",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/ConsumptionMapping"
+									}
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated"
+					},
+					"403": {
+						"description": "Permission missing"
+					}
+				},
+				"tags": [
+					"Consumption events"
+				],
+				"description": "Requires STOCK_VIEW. Scoped to the authenticated user."
+			}
+		},
+		"/consumption/mappings/{source_system}/{medication_ref}": {
+			"put": {
+				"operationId": "putConsumptionMapping",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/ConsumptionMappingInput"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Stored",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionMapping"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "Not found for this user",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Unprocessable",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated"
+					},
+					"403": {
+						"description": "Permission missing"
+					}
+				},
+				"tags": [
+					"Consumption events"
+				],
+				"description": "Requires STOCK_VIEW and STOCK_CONSUME. Scoped to the authenticated user.",
+				"parameters": [
+					{
+						"name": "source_system",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"pattern": "^[a-z0-9][a-z0-9._-]{0,31}$"
+						}
+					},
+					{
+						"name": "medication_ref",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"pattern": "^[A-Za-z0-9._:-]{1,128}$"
+						}
+					}
+				]
+			},
+			"get": {
+				"operationId": "getConsumptionMapping",
+				"responses": {
+					"200": {
+						"description": "The mapping",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionMapping"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "Not found for this user",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated"
+					},
+					"403": {
+						"description": "Permission missing"
+					}
+				},
+				"tags": [
+					"Consumption events"
+				],
+				"description": "Requires STOCK_VIEW. Scoped to the authenticated user.",
+				"parameters": [
+					{
+						"name": "source_system",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"pattern": "^[a-z0-9][a-z0-9._-]{0,31}$"
+						}
+					},
+					{
+						"name": "medication_ref",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"pattern": "^[A-Za-z0-9._:-]{1,128}$"
+						}
+					}
+				]
+			},
+			"delete": {
+				"operationId": "deleteConsumptionMapping",
+				"responses": {
+					"204": {
+						"description": "Removed"
+					},
+					"404": {
+						"description": "Not found for this user",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated"
+					},
+					"403": {
+						"description": "Permission missing"
+					}
+				},
+				"tags": [
+					"Consumption events"
+				],
+				"description": "Requires STOCK_VIEW and STOCK_CONSUME. Scoped to the authenticated user.",
+				"parameters": [
+					{
+						"name": "source_system",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"pattern": "^[a-z0-9][a-z0-9._-]{0,31}$"
+						}
+					},
+					{
+						"name": "medication_ref",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"pattern": "^[A-Za-z0-9._:-]{1,128}$"
+						}
+					}
+				]
+			}
+		},
+		"/consumption/capabilities": {
+			"get": {
+				"operationId": "getConsumptionCapabilities",
+				"responses": {
+					"200": {
+						"description": "Contract version and feature names",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"contract_version",
+										"features"
+									],
+									"properties": {
+										"contract_version": {
+											"type": "integer"
+										},
+										"features": {
+											"type": "array",
+											"items": {
+												"type": "string",
+												"enum": [
+													"events",
+													"mappings",
+													"batch",
+													"bulk_resolve",
+													"manual_consume",
+													"deletion_reasons",
+													"not_logged",
+													"default_quantity",
+													"unit_labels",
+													"replaces"
+												]
+											},
+											"description": "Names of the features this server implements; a client gates on membership, never on a version guess"
+										}
+									}
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated"
+					},
+					"403": {
+						"description": "Permission missing"
+					}
+				},
+				"tags": [
+					"Consumption events"
+				],
+				"description": "Requires STOCK_VIEW. Scoped to the authenticated user."
+			}
+		},
+		"/consumption/events/resolve": {
+			"post": {
+				"operationId": "bulkResolveConsumptionEvents",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/ConsumptionBulkResolution"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "One result per handled event",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionBulkResolutionResult"
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Invalid request",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated"
+					},
+					"403": {
+						"description": "Permission missing"
+					},
+					"422": {
+						"description": "invalid_link: the transaction cannot be linked",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"tags": [
+					"Consumption events"
+				],
+				"description": "Requires STOCK_VIEW and STOCK_CONSUME. Scoped to the authenticated user."
+			}
 		}
 	},
 	"components": {
@@ -10180,7 +10965,7 @@
 					},
 					"error": {
 						"type": "string",
-						"description": "A stable token such as not_found, right_missing, permission_missing, stock_refused, no_conversion or invalid_user"
+						"description": "A stable token such as not_found, right_missing, permission_missing, stock_refused, no_conversion, invalid_user, invalid_request, same_version_different_payload, invalid_transition, invalid_mapping, invalid_link or future_occurred_at"
 					}
 				}
 			},
@@ -13342,6 +14127,458 @@
 				"type": "object",
 				"additionalProperties": true,
 				"description": "A map of the entity's writable columns. Deliberately untyped, because that is what the server implements: `POST /objects/{entity}` and `PUT /objects/{entity}/{objectId}` take whatever keys the body carries, drop the two columns the server owns (`id` and `row_created_timestamp`) plus `userfields`, which is not a column at all - GetObject()/GetObjects() attach it to every read response, and a client that PUTs it back no longer fails on it (see GenericEntityApiController::WithoutServerOwnedColumns), and `PUT` writes only the keys present, so a partial body is a partial update. Nothing validates the body against a schema.\n\nThese two bodies used to be documented as the same undiscriminated `oneOf` the read response used. That was never accurate - the union was matched by declaration order so every entity's body was really a `Product`, and both of `Product`'s server-owned properties were documented as settable. Once the read union's members gained `required` properties for issue #232, continuing to share them would have meant documenting `id` as mandatory on a create and forcing a read-modify-write for every partial update. The column vocabulary to use here is the schema of the entity being written - Product, Chore, Battery, Location, QuantityUnit, ShoppingListItem, StockEntry, ProductBarcode, Userfield - minus `id`, `row_created_timestamp` and `userfields`."
+			},
+			"ConsumptionEventSubmission": {
+				"type": "object",
+				"required": [
+					"status"
+				],
+				"properties": {
+					"status": {
+						"type": "string",
+						"enum": [
+							"taken",
+							"not_logged",
+							"skipped",
+							"unanswered",
+							"scheduled"
+						]
+					},
+					"medication_ref": {
+						"type": "string",
+						"pattern": "^[A-Za-z0-9._:-]{1,128}$"
+					},
+					"quantity": {
+						"type": "number",
+						"exclusiveMinimum": 0
+					},
+					"unit_label": {
+						"type": "string"
+					},
+					"occurred_at": {
+						"type": "string",
+						"format": "date-time"
+					},
+					"source_updated_at": {
+						"type": "string",
+						"format": "date-time",
+						"description": "Optional client observation time; excluded from the payload hash"
+					},
+					"location_id": {
+						"type": "integer"
+					},
+					"replaces": {
+						"type": "string",
+						"description": "source_event_id of an event this one supersedes"
+					}
+				},
+				"if": {
+					"properties": {
+						"status": {
+							"const": "taken"
+						}
+					},
+					"required": [
+						"status"
+					]
+				},
+				"then": {
+					"required": [
+						"medication_ref",
+						"occurred_at"
+					]
+				},
+				"dependentRequired": {
+					"quantity": [
+						"unit_label"
+					]
+				},
+				"description": "For status taken, medication_ref and occurred_at are required. quantity may be omitted when the mapping has default_quantity; otherwise the event is needs_review/quantity_missing. A supplied quantity needs unit_label."
+			},
+			"ConsumptionEventResolution": {
+				"type": "object",
+				"required": [
+					"action"
+				],
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"retry",
+							"rebook",
+							"dismiss",
+							"link",
+							"approve_unit",
+							"void",
+							"keep"
+						]
+					},
+					"transaction_id": {
+						"type": "string"
+					}
+				}
+			},
+			"ConsumptionEventBatchResult": {
+				"type": "object",
+				"required": [
+					"source_system",
+					"source_event_id",
+					"http_status"
+				],
+				"properties": {
+					"source_system": {
+						"type": "string"
+					},
+					"source_event_id": {
+						"type": "string"
+					},
+					"http_status": {
+						"type": "integer"
+					},
+					"event": {
+						"$ref": "#/components/schemas/ConsumptionExternalEvent"
+					},
+					"error": {
+						"$ref": "#/components/schemas/ConsumptionError"
+					}
+				}
+			},
+			"ConsumptionMappingInput": {
+				"type": "object",
+				"required": [
+					"location",
+					"effective_from"
+				],
+				"properties": {
+					"recipe_id": {
+						"type": "integer"
+					},
+					"product_id": {
+						"type": "integer"
+					},
+					"quantity_factor": {
+						"type": "number",
+						"exclusiveMinimum": 0
+					},
+					"location": {
+						"type": "object",
+						"required": [
+							"mode"
+						],
+						"properties": {
+							"mode": {
+								"type": "string",
+								"enum": [
+									"fixed",
+									"single",
+									"explicit"
+								],
+								"description": "fixed: the named location. single: the one location holding enough stock, else ambiguous_location. explicit: each event carries location_id."
+							},
+							"location_id": {
+								"type": "integer",
+								"description": "Required for mode fixed (an exact location; stock in a child location is not counted and there is no fallback); refused for single and explicit"
+							}
+						}
+					},
+					"effective_from": {
+						"type": "string",
+						"format": "date-time"
+					},
+					"unit_labels": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					},
+					"default_quantity": {
+						"type": [
+							"number",
+							"null"
+						],
+						"exclusiveMinimum": 0
+					},
+					"qu_id": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "Product target only: the quantity unit the event quantity is expressed in. Null or absent means the product's stock unit. Needs an entered conversion to the stock unit, or the mapping is refused with 422 invalid_mapping."
+					}
+				},
+				"description": "Exactly one of recipe_id or product_id."
+			},
+			"ConsumptionMapping": {
+				"allOf": [
+					{
+						"$ref": "#/components/schemas/ConsumptionMappingInput"
+					},
+					{
+						"type": "object",
+						"properties": {
+							"source_system": {
+								"type": "string"
+							},
+							"medication_ref": {
+								"type": "string"
+							}
+						}
+					}
+				]
+			},
+			"ConsumptionBulkResolution": {
+				"type": "object",
+				"required": [
+					"action"
+				],
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"void",
+							"keep",
+							"dismiss",
+							"retry",
+							"approve_unit",
+							"rebook"
+						]
+					},
+					"events": {
+						"type": "array",
+						"maxItems": 50,
+						"items": {
+							"type": "object",
+							"required": [
+								"source_system",
+								"source_event_id"
+							],
+							"properties": {
+								"source_system": {
+									"type": "string"
+								},
+								"source_event_id": {
+									"type": "string"
+								}
+							}
+						}
+					},
+					"filter": {
+						"type": "object",
+						"required": [
+							"source_system",
+							"medication_ref",
+							"state"
+						],
+						"properties": {
+							"source_system": {
+								"type": "string"
+							},
+							"medication_ref": {
+								"type": "string"
+							},
+							"state": {
+								"type": "string"
+							},
+							"reason": {
+								"type": "string"
+							}
+						}
+					}
+				},
+				"description": "Exactly one of events or filter. A filter handles at most 50 events."
+			},
+			"ConsumptionBulkResolutionResult": {
+				"type": "object",
+				"required": [
+					"results"
+				],
+				"properties": {
+					"results": {
+						"type": "array",
+						"items": {
+							"$ref": "#/components/schemas/ConsumptionEventBatchResult"
+						}
+					},
+					"remaining": {
+						"type": "integer",
+						"minimum": 0,
+						"description": "Present with filter: matching events not handled by this call"
+					}
+				}
+			},
+			"ConsumptionExternalEvent": {
+				"type": "object",
+				"required": [
+					"source_system",
+					"source_event_id",
+					"state"
+				],
+				"properties": {
+					"source_system": {
+						"type": "string"
+					},
+					"source_event_id": {
+						"type": "string"
+					},
+					"state": {
+						"type": "string",
+						"enum": [
+							"received",
+							"needs_mapping",
+							"needs_review",
+							"booked",
+							"undone",
+							"voided",
+							"linked",
+							"dismissed",
+							"no_consumption"
+						],
+						"description": "no_consumption is a response only: no row exists"
+					},
+					"reason": {
+						"type": [
+							"string",
+							"null"
+						],
+						"enum": [
+							"ambiguous_location",
+							"insufficient_stock",
+							"unit_unconfirmed",
+							"quantity_missing",
+							"recipe_unavailable",
+							"partially_undone",
+							"changed_after_undo",
+							"undo_refused",
+							"invalid_mapping",
+							"source_deleted",
+							"stock_error",
+							null
+						]
+					},
+					"replayed": {
+						"type": "boolean"
+					},
+					"stale": {
+						"type": "boolean"
+					},
+					"revision": {
+						"type": "integer"
+					},
+					"transaction_id": {
+						"type": [
+							"string",
+							"null"
+						]
+					},
+					"occurred_at": {
+						"type": "string",
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "RFC 3339 in UTC with six fractional digits (ADR-0027 decision 2)"
+					},
+					"source_updated_at": {
+						"type": "string",
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$"
+					},
+					"lines": {
+						"type": "array",
+						"items": {
+							"$ref": "#/components/schemas/ConsumptionExternalEventLine"
+						}
+					},
+					"candidate_location_ids": {
+						"type": "array",
+						"items": {
+							"type": "integer"
+						}
+					},
+					"possible_duplicates": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"transaction_id": {
+									"type": "string"
+								},
+								"occurred_at": {
+									"type": "string",
+									"format": "date-time"
+								}
+							}
+						}
+					},
+					"source_removed_at": {
+						"type": [
+							"string",
+							"null"
+						],
+						"format": "date-time"
+					},
+					"source_removed_reason": {
+						"type": [
+							"string",
+							"null"
+						]
+					},
+					"unit_label_seen": {
+						"type": [
+							"string",
+							"null"
+						]
+					},
+					"replaces": {
+						"type": [
+							"object",
+							"null"
+						],
+						"required": [
+							"source_event_id",
+							"state"
+						],
+						"properties": {
+							"source_event_id": {
+								"type": "string"
+							},
+							"state": {
+								"type": "string",
+								"enum": [
+									"voided",
+									"needs_review"
+								]
+							}
+						},
+						"description": "Present when the request named an event it replaces"
+					},
+					"recipe_id": {
+						"type": "integer",
+						"description": "Present on a manual event recorded through a consumption recipe"
+					},
+					"message": {
+						"type": "string",
+						"description": "Present with reason stock_error: the refusal text of the stock layer, private to the event's user"
+					}
+				},
+				"description": "An event reported for the authenticated user. `state` and `reason` report the outcome even when the answer is 200 or 201: a stored event that does not book is not an error. Identity is (user, source_system, source_event_id); another user's event answers 404."
+			},
+			"ConsumptionExternalEventLine": {
+				"type": "object",
+				"properties": {
+					"product_id": {
+						"type": "integer"
+					},
+					"amount": {
+						"type": "number"
+					},
+					"location_id": {
+						"type": "integer"
+					},
+					"used_date": {
+						"type": "string",
+						"format": "date",
+						"description": "The calendar date the line was booked under, in the offset the client sent"
+					}
+				}
 			}
 		},
 		"securitySchemes": {

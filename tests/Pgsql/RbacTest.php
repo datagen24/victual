@@ -57,7 +57,7 @@ class RbacTest extends PgsqlSchemaTestCase
 		'TasksController', 'StockApiController', 'RecipesApiController', 'ChoresApiController',
 		'TasksApiController', 'PrintApiController',
 		// ADR-0040: every consumption recipe route needs STOCK_VIEW before the service is reached.
-		'ConsumptionRecipesApiController', 'ConsumptionRecipesController',
+		'ConsumptionRecipesApiController', 'ConsumptionRecipesController', 'ConsumptionEventsApiController',
 		// ADR-0035 (2026-09-29): BATTERIES_VIEW/CALENDAR_VIEW/EQUIPMENT_VIEW now gate every
 		// GET method of these five, uniformly refusing without the grant, the same as every
 		// other entry above - closing the FINDINGs this class used to except them for.
