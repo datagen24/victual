@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Disposable runtime only: builds throwaway PostgreSQL + PHP containers, extracts the
 # repository tree at HEAD plus this directory, runs one probe, and removes everything.
-# Usage: .spike-adr37/run.sh baseline|model   (writes JSON to stdout)
+# Usage: .devtools/adr0037/run.sh baseline|model   (writes JSON to stdout)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 engine="${ENGINE:-podman}"
@@ -23,8 +23,8 @@ trap cleanup EXIT
     -e PHPUNIT_DB_NAME=adr37_spike -e VICTUAL_DATAPATH=/tmp/adr37-data \
     -e VICTUAL_BOOTSTRAP_ADMIN_PASSWORD=adr37-fixture-only -e ADR37_N="${ADR37_N:-}" "${PHP_IMAGE:-localhost/victual:dev}" sleep infinity >/dev/null
 git archive HEAD | tar -x -C "$work"
-rm -rf "$work/.spike-adr37"   # the committed copy in HEAD would otherwise receive this one as a subdirectory
-cp -R .spike-adr37 "$work/.spike-adr37"
+rm -rf "$work/.devtools/adr0037"   # the committed copy in HEAD would otherwise receive this one as a subdirectory
+cp -R .devtools/adr0037 "$work/.devtools/adr0037"
 (cd "$work" && COPYFILE_DISABLE=1 tar --no-xattrs --exclude='._*' -cf ../adr37-tree.tar .)
 "$engine" cp "$work/../adr37-tree.tar" "$name-php:/tmp/tree.tar"
 rm -f "$work/../adr37-tree.tar"
@@ -37,4 +37,4 @@ for _ in {1..60}; do
     sleep 1
 done
 if [[ "$ready" -ne 1 ]]; then echo "PostgreSQL did not accept TCP connections within 60 s" >&2; exit 1; fi
-"$engine" exec "$name-php" sh -c "cd /app && php .spike-adr37/${probe}-probe.php"
+"$engine" exec "$name-php" sh -c "cd /app && php .devtools/adr0037/${probe}-probe.php"

@@ -3,7 +3,7 @@
 - **Status: Accepted, 2026-09-17.** **Three test tiers: PHPUnit against a real PostgreSQL
   for application code, pgTAP for the SQL logic, the browser probes as they are.** All five
   acceptance prerequisites below are met, each annotated in place with what met it; the
-  evidence is [`.spike-adr25/RESULTS.md`](../../.spike-adr25/RESULTS.md), merged as
+  evidence is [`.devtools/adr0025/RESULTS.md`](../../.devtools/adr0025/RESULTS.md), merged as
   [PR #194](https://github.com/datagen24/victual/pull/194), and the spikes' products
   (`tests/Support/PgsqlSchemaTestCase.php`, `tests/Pgsql/RbacTest.php`,
   `.devtools/pgtap/`, the `pgtap` phase of `run-tests.sh`, `phpunit/phpunit ^11.5` in
@@ -175,7 +175,7 @@ refuses an unlisted one is both stricter and cheaper.
 ## Acceptance prerequisites
 
 Each is a disposable spike: throwaway work that answers one question, merged into `master`
-under a `.spike-adr25/` directory the way ADR-0022's spikes were, so the evidence outlives
+under a `.devtools/adr0025/` directory the way ADR-0022's spikes were, so the evidence outlives
 any branch. The accepting pull request states how each was met.
 
 1. **PHPUnit resolves on the floor.** `composer require --dev phpunit/phpunit` succeeds

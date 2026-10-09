@@ -103,7 +103,7 @@ below does not address it.
 ## Decision
 
 The maintainer chose a shared comparison tolerance and unrounded storage in the
-recorded session. On 2026-09-27, after the [comparison spike](../../.spike-adr32/RESULTS.md),
+recorded session. On 2026-09-27, after the [comparison spike](../../.devtools/adr0032/RESULTS.md),
 the maintainer selected the combined relative tolerance and accepted its wider loss of
 precision at large amounts. The record remains Proposed pending its acceptance gates.
 Decisions 3, 4 and 5 and the implementation scope remain refinements requiring formal
@@ -333,7 +333,7 @@ only the lifecycle bookkeeping required by the ADR index.
 
 ## Acceptance evidence
 
-The [2026-09-27 comparison spike](../../.spike-adr32/RESULTS.md) exercises absolute and
+The [2026-09-27 comparison spike](../../.devtools/adr0032/RESULTS.md) exercises absolute and
 relative tolerances through real stock services on PostgreSQL. It records the combined
 master and undo-dependency revisions, experimental changes, reproduction commands, and
 an audit of all six gates. Both policies retain a bulk residue; the relative policy also

@@ -16,7 +16,7 @@
   [ADR-0033](0033-stock-rows-merge-only-in-maintenance-for-non-expiring-rows.md) open question 1
   and its decision 6 (the decider's answer of 2026-10-04), and the revival question that
   [ADR-0036](0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md) section 10
-  leaves open; evidence in [`.spike-adr37/RESULTS.md`](../../.spike-adr37/RESULTS.md).
+  leaves open; evidence in [`.devtools/adr0037/RESULTS.md`](../../.devtools/adr0037/RESULTS.md).
 
 This record was written as design work and does not accept ADR-0033 or ADR-0036. A Proposed
 record constrains nothing. The implementation followed on 2026-10-06 in
@@ -35,7 +35,7 @@ acceptance prerequisite. Implementing the record does not accept it.
 | Record status | ADR-0033 (including decision 6) and ADR-0036 are Proposed. PR 645 (merged 2026-10-04T14:58:04Z) delivered ADR-0036 and its spike. It implemented no per-booking lineage. ADR-0036 section 10 leaves revival out of scope. | `git log`, GitHub |
 | Implemented | Retirement triggers (`0269`, `0283`, `0295`, `0296`) and an undo that rebuilds a consumed row. Nothing of this design. | Tree at `7e311cd3` |
 | Not implemented | A deployed schedule for any maintenance command. [Issue 133](https://github.com/datagen24/victual/issues/133) (K3S apply) is backlogged, and this design does not depend on it. | `deploy/`, plan 20 |
-| Verified here | The behavior in the next two sections, by running the real `StockService` and label services in a disposable schema. Test suites were not run. | [`baseline.json`](../../.spike-adr37/evidence/baseline.json) |
+| Verified here | The behavior in the next two sections, by running the real `StockService` and label services in a disposable schema. Test suites were not run. | [`baseline.json`](../../.devtools/adr0037/evidence/baseline.json) |
 
 ### Current behavior
 
@@ -377,13 +377,13 @@ CREATE TABLE stock_label_retirements (
 	jobs_through_id BIGINT, revivable_until TIMESTAMPTZ,
 	outcome TEXT CHECK (outcome IN ('revived', 'declined')), reason TEXT,
 	closed_at TIMESTAMPTZ, revived_target_id BIGINT
-	-- plus the CHECKs listed in .spike-adr37/proposed.sql
+	-- plus the CHECKs listed in .devtools/adr0037/proposed.sql
 );
 CREATE UNIQUE INDEX ON stock_label_retirements (import_epoch, booking_id) WHERE booking_id IS NOT NULL;
 CREATE INDEX ON stock_label_retirements (label_uid);
 ```
 
-The statements are the schema exercised in the spike ([`proposed.sql`](../../.spike-adr37/proposed.sql)).
+The statements are the schema exercised in the spike ([`proposed.sql`](../../.devtools/adr0037/proposed.sql)).
 Final names are an implementation detail.
 
 Invariants. Each one is a pgTAP or PHPUnit assertion in the acceptance prerequisites.
@@ -407,10 +407,10 @@ events for one uid, both `revived`, the second window starting at the second ret
 
 ## Worked examples
 
-All results were produced by [`model-probe.php`](../../.spike-adr37/model-probe.php) with the real
-`StockService`, and by [`baseline-probe.php`](../../.spike-adr37/baseline-probe.php) for current
+All results were produced by [`model-probe.php`](../../.devtools/adr0037/model-probe.php) with the real
+`StockService`, and by [`baseline-probe.php`](../../.devtools/adr0037/baseline-probe.php) for current
 behavior. Row and booking ids come from one run and are illustrative.
-[`evidence/model.json`](../../.spike-adr37/evidence/model.json) has the full state after every step.
+[`evidence/model.json`](../../.devtools/adr0037/evidence/model.json) has the full state after every step.
 `L` is a label uid, a row is `row(amount)`, and the window is 30 days.
 
 ### E1. Full consumption and undo inside the window

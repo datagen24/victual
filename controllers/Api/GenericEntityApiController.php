@@ -805,7 +805,7 @@ class GenericEntityApiController extends BaseApiController
 	 * still be saved unchanged - this is a business rule about what a client may newly
 	 * choose, not a constraint on data that predates the retirement, and `products` carries
 	 * no CHECK of its own for the same reason plan 28's spike gives for convertibility
-	 * (.spike-adr22/RESULTS.md#prerequisite-7-conversion-failure): the fact being refused is
+	 * (.devtools/adr0022/RESULTS.md#prerequisite-7-conversion-failure): the fact being refused is
 	 * not a property of the row being written, it is a property of the write itself.
 	 *
 	 * @param array $requestBody The parsed, purified, server-owned-column-stripped request body

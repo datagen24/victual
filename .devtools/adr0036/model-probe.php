@@ -1,7 +1,7 @@
 <?php
 // SPIKE ONLY. Feasibility probe for ADR-0036 in a disposable, fully migrated PostgreSQL schema.
 //   1. builds legacy states with the real StockService (old-style merges that rewrite stock_id)
-//   2. applies .spike-adr36/proposed.sql and runs the backfill classification over them
+//   2. applies .devtools/adr0036/proposed.sql and runs the backfill classification over them
 //   3. runs the worked examples through the reference model (ref-model.php)
 //   4. concurrency, interruption, and cost measurements
 // Output: JSON on stdout. Nothing under services/, migrations/ or controllers/ is touched.

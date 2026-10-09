@@ -106,7 +106,7 @@ class Adr37Model extends PgsqlSchemaTestCase
             self::$db->exec("INSERT INTO users(id,username,password) VALUES(9000,'adr37','fixture')");
             self::$db->exec("INSERT INTO user_permissions(user_id,permission_id) SELECT 9000,id FROM permission_hierarchy WHERE name='ADMIN'");
             self::$loc = (int)self::$db->query("INSERT INTO locations(name) VALUES('L1') RETURNING id")->fetchColumn();
-            self::$db->exec(file_get_contents('/app/.spike-adr37/proposed.sql'));
+            self::$db->exec(file_get_contents('/app/.devtools/adr0037/proposed.sql'));
             self::$out['environment'] = ['php' => PHP_VERSION, 'postgres' => self::$db->query('SHOW server_version')->fetchColumn()];
 
             self::fullCycle();
@@ -363,7 +363,7 @@ class Adr37Model extends PgsqlSchemaTestCase
     {
         $env = ['PGHOST' => getenv('PGHOST'), 'PGPORT' => getenv('PGPORT'), 'PGUSER' => getenv('PGUSER'), 'PGPASSWORD' => getenv('PGPASSWORD'),
             'PHPUNIT_DB_NAME' => getenv('PHPUNIT_DB_NAME'), 'ADR37_SCHEMA' => self::Schema(), 'PATH' => getenv('PATH'), 'VICTUAL_DATAPATH' => getenv('VICTUAL_DATAPATH')];
-        $p = proc_open(['php', '/app/.spike-adr37/conc-child.php', $mode, json_encode($args)], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, '/app', $env);
+        $p = proc_open(['php', '/app/.devtools/adr0037/conc-child.php', $mode, json_encode($args)], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, '/app', $env);
         return ['proc' => $p, 'pipe' => $pipes[1], 'err' => $pipes[2], 'start' => microtime(true)];
     }
     private static function finish(array $c): array

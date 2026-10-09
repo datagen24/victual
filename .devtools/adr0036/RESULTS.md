@@ -18,10 +18,10 @@ Disposable schemas only. Nothing under `services/`, `migrations/`, `controllers/
 ## Commands
 
 ```sh
-.spike-adr36/run.sh baseline > .spike-adr36/evidence/baseline.json
-.spike-adr36/run.sh model    > .spike-adr36/evidence/model.json
-ADR36_N=100000 .spike-adr36/run.sh model          # larger synthetic ledger (200,114 bookings)
-PG_IMAGE=docker.io/library/postgres:15 ADR36_N=20000 .spike-adr36/run.sh model
+.devtools/adr0036/run.sh baseline > .devtools/adr0036/evidence/baseline.json
+.devtools/adr0036/run.sh model    > .devtools/adr0036/evidence/model.json
+ADR36_N=100000 .devtools/adr0036/run.sh model          # larger synthetic ledger (200,114 bookings)
+PG_IMAGE=docker.io/library/postgres:15 ADR36_N=20000 .devtools/adr0036/run.sh model
 ```
 
 | File | Role |

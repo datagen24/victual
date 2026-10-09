@@ -31,8 +31,8 @@ PostgreSQL 16.15 on aarch64 Debian.
     fi
     sleep 1
   done
-  python3 .spike-adr29/probe.py
-  python3 .spike-adr29/source_probe.py
+  python3 .devtools/adr0029/probe.py
+  python3 .devtools/adr0029/source_probe.py
 )
 ```
 

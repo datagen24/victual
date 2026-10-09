@@ -426,7 +426,7 @@ failures=0
 # here as well, the way build_pgsql() does for every differential phase, would build a
 # public schema nothing then reads. This is the one place decision 3's "nothing else
 # does [change]" needed a small addendum once a phase actually made the switch; see the
-# spike's evidence in .spike-adr25/README.md.
+# spike's evidence in .devtools/adr0025/RESULTS.md.
 run_rbac_tests() {
 	local dbname="victual_rbac"
 	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
