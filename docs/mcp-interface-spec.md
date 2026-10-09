@@ -433,6 +433,35 @@ Recorded so their absence reads as decided, not forgotten:
 - Fuzzy search (§5.4) and localization of names and `text` blocks (English v1).
 - Any write beyond §6's three.
 
+### 10.1 Medication and private consumption data
+
+Decided for [plan 22](plans/22-medication-tracking.md) and recorded in
+[ADR-0015](adr/0015-medication-records-never-advises.md) (Proposed):
+
+- **No tool reads or writes the consumption or refill routes.** The routes under
+  `/api/consumption` and `/api/refills` hold owner-private prescriptions, shares, events and
+  refill dates ([ADR-0040](adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md),
+  [ADR-0041](adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md),
+  [ADR-0042](adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md)). The tool
+  set is fixed in code, and adding a tool that reaches them needs an amendment to this section
+  and the ADR-0015 review.
+- **Medications appear as ordinary stock.** A medication product and its quantity are visible
+  to `stock_overview`, `expiring_soon`, `missing_products` and `find_product`, and
+  `consume_product` can book any product, because Victual's stock routes do not distinguish
+  them and shared stock is visible to every `STOCK_VIEW` holder. The sidecar adds no
+  medication filter. A deployment that does not want a medication product seen by an
+  assistant should not issue that assistant's key to a user who can see it.
+- **`recipes_i_can_cook` reads food recipes only.** Consumption recipes are separate tables and
+  never reach `/api/recipes/fulfillment` or `/api/objects/recipes`.
+- **Tool descriptions state mechanics, never clinical claims.** `consume_product` books an
+  amount "as used up" and says nothing about dosing, safety or timing.
+- **The boundary has a limit.** A person can paste prescription details into a chat, and the
+  model will answer from them. Nothing in this repository can prevent that.
+
+`mcp/tests/tools/medication-exposure.test.mjs` fails if a tool source names a
+`/api/consumption` or `/api/refills` route, or a tool description uses dosing or clinical
+language.
+
 ## 11. Verification
 
 > **Status, 2026-09-19** (issue #86). Run against a production-mode Victual on kind
