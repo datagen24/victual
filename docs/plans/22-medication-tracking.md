@@ -6,7 +6,8 @@ user-entered consumption recipe with access restricted to its owner and specific
 authorized members. Dosing schedules, adherence tracking and dose reminders are outside
 Victual's scope.
 
-**Status:** preparation for v0.5.0; product scope decided, technical design gates open.
+**Status:** preparation for v0.5.0; product scope decided, design records accepted
+2026-10-09, implementation not started.
 
 **Release target:** v0.5.0. The maintainer clarified this scope on 2026-10-09. The target
 is a schedule; the release record and signed tag follow verified implementation under
@@ -26,15 +27,16 @@ and [ADR-0036](../adr/0036-stock-quantities-are-attributed-to-the-bookings-that-
 for booking lineage. [ADR-0012](../adr/0012-observations-are-proposals.md) applies if a
 client proposes an inferred booking.
 
-**Proposed records:** [ADR-0015](../adr/0015-medication-records-never-advises.md) needs
-its boundary aligned with inventory and refill notices. [ADR-0016](../adr/0016-schedule-expansion-in-the-application.md)
-has no implementation consumer in this scope. Neither record's lifecycle status changes
-through this plan. [ADR-0040](../adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md)
-(Proposed) records the scoped-sharing design.
+**Design records, all decided 2026-10-09:** [ADR-0015](../adr/0015-medication-records-never-advises.md)
+(Accepted) sets the boundary for inventory and refill notices; its UI-wording prerequisite binds the
+implementing pull requests. [ADR-0016](../adr/0016-schedule-expansion-in-the-application.md)
+(Rejected) had no consumer in this scope.
+[ADR-0040](../adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md) (Accepted)
+records the scoped-sharing design.
 [ADR-0041](../adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md)
-(Proposed) records the external-event and reconciliation design.
+(Accepted) records the external-event and reconciliation design.
 [ADR-0042](../adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md)
-(Proposed) records the refill rules and notice design. See [release readiness](#release-readiness).
+(Accepted) records the refill rules and notice design.
 
 ## Current behavior
 
@@ -200,10 +202,10 @@ technical gates are scoped authorization, the external-consumption reconciliatio
 and the refill rule and notice schema. Schema work follows those contracts; it is not
 constrained to the old two-migration design.
 
-Substantive preparation must revise Proposed ADR-0015 and present the lifecycle disposition
-of ADR-0016. Rejecting ADR-0016, if chosen, is its own bookkeeping-only pull request.
-New Proposed records must cover scoped recipe sharing and external-event reconciliation.
-Their relationship to accepted ADR-0014 must be explicit. No record is accepted by this plan.
+The design records are decided: ADR-0015 revised and accepted, ADR-0016 rejected, and ADR-0040,
+ADR-0041 and ADR-0042 accepted, each in its own bookkeeping pull request. ADR-0040 leaves
+ADR-0014 and ADR-0018 unamended. The evidence is in `.devtools/adr0040/`, `.devtools/adr0041/` and
+`.devtools/adr0042/`. Implementation is tracked by issues 698 to 703 and has not started.
 
 The API contract is developed in this repository. Native HealthKit implementation and
 platform-specific notices belong to `victual-kit`. Server verification can use representative
@@ -306,8 +308,8 @@ answers from the maintainer's inventory scope decision on 2026-10-09.
     > The grant authority, individual action rights and account-administration interaction
     > remain technical design gates for a new ADR. Do not introduce an unchecked grant path.
     > [ADR-0040](../adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md)
-    > (Proposed, 2026-10-09) answers these as a design; the maintainer's open questions on
-    > administrator access and account deletion remain.
+    > (Accepted 2026-10-09) answers these as a design. The maintainer kept ADR-0014's
+    > administrator behavior and chose deletion of private recipes with their owner.
 
 12. **What causes stock deduction?**
 
@@ -342,7 +344,7 @@ answers from the maintainer's inventory scope decision on 2026-10-09.
     The exact lead and server-side delivery surface remain open.
 
     > **Design, 2026-10-09:** [ADR-0042](../adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md)
-    > (Proposed) recommends a seven-day lead as a per-user setting with a per-prescription
+    > (Accepted 2026-10-09) records a seven-day lead as a per-user setting with a per-prescription
     > override, calendar dates in the server zone with a client `as_of`, no server push, and
     > acknowledged notice keys.
     >
