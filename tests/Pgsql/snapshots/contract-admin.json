@@ -10,6 +10,7 @@
                     "used_date": "string(date)"
                 }
             ],
+            "medication_ref": "string",
             "occurred_at": "string(date-time)",
             "possible_duplicates": {
                 "__empty_list__": true
@@ -161,6 +162,7 @@
         "shape": [
             {
                 "lines": "object",
+                "medication_ref": "string",
                 "occurred_at": "string(date-time)",
                 "possible_duplicates": {
                     "__empty_list__": "object"
@@ -185,6 +187,7 @@
                     "used_date": "string(date)"
                 }
             ],
+            "medication_ref": "string",
             "occurred_at": "string(date-time)",
             "possible_duplicates": {
                 "__empty_list__": true
@@ -2422,11 +2425,13 @@
             {
                 "event": {
                     "lines": "missing|object",
+                    "medication_ref": "missing|string",
                     "occurred_at": "missing|string(date-time)",
                     "possible_duplicates": {
                         "__empty_list__": "object"
                     },
                     "reason": "null",
+                    "replayed": "boolean|missing",
                     "revision": "integer|missing",
                     "source_event_id": "string",
                     "source_system": "string",
@@ -2454,6 +2459,7 @@
             "lines": {
                 "__empty_list__": true
             },
+            "medication_ref": "string",
             "occurred_at": "string(date-time)",
             "reason": "null",
             "revision": "integer",
@@ -3099,11 +3105,13 @@
                     "used_date": "string(date)"
                 }
             ],
+            "medication_ref": "string",
             "occurred_at": "string(date-time)",
             "possible_duplicates": {
                 "__empty_list__": true
             },
             "reason": "null",
+            "replayed": "boolean",
             "revision": "integer",
             "source_event_id": "string",
             "source_system": "string",
@@ -3117,8 +3125,10 @@
             "lines": {
                 "__empty_list__": true
             },
+            "medication_ref": "string",
             "occurred_at": "string(date-time)",
             "reason": "null",
+            "replayed": "boolean",
             "revision": "integer",
             "source_event_id": "string",
             "source_system": "string",
