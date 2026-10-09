@@ -1,0 +1,303 @@
+{
+    "probe": "dates",
+    "environment": {
+        "php": "8.5.10",
+        "php_timezone": "Pacific/Pago_Pago",
+        "php_ini_date_timezone": "Pacific/Pago_Pago",
+        "php_tzdata": "2026.3",
+        "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+        "postgres_server_timezone_default": "Pacific/Pago_Pago",
+        "sql_session_timezone": "Pacific/Pago_Pago",
+        "zones_known_to_postgres": {
+            "UTC": true,
+            "America/New_York": true,
+            "Pacific/Kiritimati": true,
+            "Pacific/Pago_Pago": true,
+            "Pacific/Apia": true,
+            "Australia/Lord_Howe": true
+        }
+    },
+    "seed": 20261009,
+    "cases": 120036,
+    "cases_by_category": {
+        "uniform": 60000,
+        "leap_feb": 12000,
+        "year_end": 12000,
+        "month_end": 12000,
+        "dst": 20000,
+        "skipped_day": 4036
+    },
+    "case_set_md5": "69e76e3551df8ebb5cb8a3423ea8c437",
+    "sql_result_md5": "fda9d8ba94eca0763544b21bf5f944c3",
+    "sql_result_md5_by_session_zone": {
+        "UTC": "033f873d785a6db93c327936a3dce2b2",
+        "America/New_York": "033f873d785a6db93c327936a3dce2b2",
+        "Pacific/Kiritimati": "033f873d785a6db93c327936a3dce2b2",
+        "Pacific/Pago_Pago": "033f873d785a6db93c327936a3dce2b2",
+        "Pacific/Apia": "033f873d785a6db93c327936a3dce2b2"
+    },
+    "outcome_distribution": {
+        "explicit": 7195,
+        "fallback": 30606,
+        "rule:days_before_end": 19651,
+        "rule:fixed_interval": 14364,
+        "rule:fraction_elapsed": 21536,
+        "unknown:invalid_rule": 5976,
+        "unknown:invalid_supply": 5955,
+        "unknown:no_fill": 4775,
+        "unknown:supply_not_longer_than_lead": 9978
+    },
+    "adr_examples": [
+        {
+            "fill": "2026-01-01",
+            "supplied": 30,
+            "adr_says": "2026-01-17",
+            "php": "2026-01-17",
+            "sql": "2026-01-17",
+            "days_after_fill": 16,
+            "agree": true,
+            "note": "fallback"
+        },
+        {
+            "fill": "2026-01-01",
+            "supplied": 90,
+            "adr_says": "2026-03-18",
+            "php": "2026-03-18",
+            "sql": "2026-03-18",
+            "days_after_fill": 76,
+            "agree": true,
+            "note": "fallback"
+        },
+        {
+            "fill": "2027-12-20",
+            "supplied": 90,
+            "adr_says": "2028-03-05",
+            "php": "2028-03-05",
+            "sql": "2028-03-05",
+            "days_after_fill": 76,
+            "agree": true,
+            "note": "fallback (year end)"
+        },
+        {
+            "fill": "2028-01-15",
+            "supplied": 30,
+            "adr_says": "2028-01-31",
+            "php": "2028-01-31",
+            "sql": "2028-01-31",
+            "days_after_fill": 16,
+            "agree": true,
+            "note": "fallback (2028 leap year)"
+        },
+        {
+            "rule": "fraction_elapsed 0.75 on a 90-day fill",
+            "adr_says": "filled_on + 67",
+            "php_days": 67,
+            "sql_days": 67
+        }
+    ],
+    "tuple_php_utc_calendar_vs_sql": {
+        "count": 0,
+        "examples": []
+    },
+    "php_variants_vs_sql_reorder_date": {
+        "utc_calendar": {
+            "compared": 86157,
+            "mismatches": 0,
+            "by_category": [],
+            "examples": []
+        },
+        "default_zone_calendar": {
+            "compared": 86157,
+            "mismatches": 0,
+            "by_category": [],
+            "examples": []
+        },
+        "strtotime_days": {
+            "compared": 86157,
+            "mismatches": 0,
+            "by_category": [],
+            "examples": []
+        },
+        "seconds_86400": {
+            "compared": 86157,
+            "mismatches": 0,
+            "by_category": [],
+            "examples": []
+        }
+    },
+    "fraction_elapsed_in_random_set": {
+        "compared": 21536,
+        "php_float_vs_sql_numeric": 37,
+        "sql_float8_vs_sql_numeric": 37,
+        "examples": [
+            {
+                "supplied": 100,
+                "F": "0.58",
+                "exact_days": 58,
+                "php_float_days": 57
+            },
+            {
+                "supplied": 100,
+                "F": "0.58",
+                "exact_days": 58,
+                "php_float_days": 57
+            },
+            {
+                "supplied": 180,
+                "F": "0.70",
+                "exact_days": 126,
+                "php_float_days": 125
+            },
+            {
+                "supplied": 100,
+                "F": "0.58",
+                "exact_days": 58,
+                "php_float_days": 57
+            },
+            {
+                "supplied": 730,
+                "F": "0.70",
+                "exact_days": 511,
+                "php_float_days": 510
+            },
+            {
+                "supplied": 180,
+                "F": "0.35",
+                "exact_days": 63,
+                "php_float_days": 62
+            }
+        ]
+    },
+    "fraction_elapsed_exhaustive_grid": {
+        "denominator_100": {
+            "php_total": 72270,
+            "php_float_vs_integer_exact_mismatches": 44,
+            "examples": [
+                {
+                    "supplied": 50,
+                    "F": "58/100",
+                    "exact": 29,
+                    "php_float_k_over_den": 28,
+                    "php_float_of_text": 28
+                },
+                {
+                    "supplied": 90,
+                    "F": "70/100",
+                    "exact": 63,
+                    "php_float_k_over_den": 62,
+                    "php_float_of_text": 62
+                },
+                {
+                    "supplied": 100,
+                    "F": "29/100",
+                    "exact": 29,
+                    "php_float_k_over_den": 28,
+                    "php_float_of_text": 28
+                },
+                {
+                    "supplied": 100,
+                    "F": "57/100",
+                    "exact": 57,
+                    "php_float_k_over_den": 56,
+                    "php_float_of_text": 56
+                },
+                {
+                    "supplied": 100,
+                    "F": "58/100",
+                    "exact": 58,
+                    "php_float_k_over_den": 57,
+                    "php_float_of_text": 57
+                }
+            ],
+            "sql": {
+                "total": 72270,
+                "numeric_vs_integer": 0,
+                "float8_vs_numeric": 44
+            }
+        },
+        "denominator_1000": {
+            "php_total": 729270,
+            "php_float_vs_integer_exact_mismatches": 76,
+            "examples": [
+                {
+                    "supplied": 50,
+                    "F": "580/1000",
+                    "exact": 29,
+                    "php_float_k_over_den": 28,
+                    "php_float_of_text": 28
+                },
+                {
+                    "supplied": 90,
+                    "F": "700/1000",
+                    "exact": 63,
+                    "php_float_k_over_den": 62,
+                    "php_float_of_text": 62
+                },
+                {
+                    "supplied": 100,
+                    "F": "290/1000",
+                    "exact": 29,
+                    "php_float_k_over_den": 28,
+                    "php_float_of_text": 28
+                },
+                {
+                    "supplied": 100,
+                    "F": "570/1000",
+                    "exact": 57,
+                    "php_float_k_over_den": 56,
+                    "php_float_of_text": 56
+                },
+                {
+                    "supplied": 100,
+                    "F": "580/1000",
+                    "exact": 58,
+                    "php_float_k_over_den": 57,
+                    "php_float_of_text": 57
+                }
+            ],
+            "sql": {
+                "total": 729270,
+                "numeric_vs_integer": 0,
+                "float8_vs_numeric": 76
+            }
+        }
+    },
+    "skipped_calendar_days": [
+        {
+            "filled": "1994-12-30",
+            "days": 2,
+            "sql": "1995-01-01",
+            "utc_calendar": "1995-01-01",
+            "default_zone_calendar": "1995-01-01",
+            "strtotime_days": "1995-01-01",
+            "seconds_86400": "1995-01-01"
+        },
+        {
+            "filled": "1994-12-31",
+            "days": 0,
+            "sql": "1994-12-31",
+            "utc_calendar": "1994-12-31",
+            "default_zone_calendar": "1994-12-31",
+            "strtotime_days": "1994-12-31",
+            "seconds_86400": "1994-12-31"
+        },
+        {
+            "filled": "2011-12-29",
+            "days": 2,
+            "sql": "2011-12-31",
+            "utc_calendar": "2011-12-31",
+            "default_zone_calendar": "2011-12-31",
+            "strtotime_days": "2011-12-31",
+            "seconds_86400": "2011-12-31"
+        },
+        {
+            "filled": "2011-12-30",
+            "days": 0,
+            "sql": "2011-12-30",
+            "utc_calendar": "2011-12-30",
+            "default_zone_calendar": "2011-12-30",
+            "strtotime_days": "2011-12-30",
+            "seconds_86400": "2011-12-30"
+        }
+    ]
+}

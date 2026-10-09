@@ -739,6 +739,11 @@ topic, and has no Response yet. See Q5.
    follow for this question, and **neither answers it** — the Response below does, later
    the same day.
 
+   > **Update, 2026-10-09:** plan 22 dropped regimens and administrations. Its row filter now
+   > applies to private consumption recipes shared with named members, designed in
+   > [ADR-0040](../adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md)
+   > (Proposed). The reasoning above about row filtering still applies to that design.
+
    Option (c) was reworded rather than left standing. As originally written it said only
    prices restrict what a user can see, and that is now false, so it reads *read-gating
    out of scope for roles*, with a domain that needs its own predicate owning it locally.

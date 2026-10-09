@@ -1,0 +1,379 @@
+{
+    "probe": "clock",
+    "zone": "America/New_York",
+    "bare_zone": "Etc/UTC",
+    "app_style_zone": "America/New_York",
+    "postgres_clock_at_start_utc": "2026-10-09T03:58:20+00:00",
+    "local_midnight_utc": "2026-10-09T04:00:00+00:00",
+    "seconds_to_midnight_at_start": 100,
+    "real_wall_clock_utc_of_this_host": "2026-10-09T13:48:13+00:00",
+    "samples_taken": 558,
+    "date_changes_first_value_then_changes": {
+        "php": [
+            {
+                "at_utc": "03:58:20.770",
+                "to": "2026-10-08"
+            },
+            {
+                "at_utc": "04:00:00.096",
+                "to": "2026-10-09"
+            }
+        ],
+        "app_style": [
+            {
+                "at_utc": "03:58:20.770",
+                "to": "2026-10-08"
+            },
+            {
+                "at_utc": "04:00:00.096",
+                "to": "2026-10-09"
+            }
+        ],
+        "bare": [
+            {
+                "at_utc": "03:58:20.770",
+                "to": "2026-10-09"
+            }
+        ]
+    },
+    "samples_where_app_style_CURRENT_DATE_differs_from_php_date": 0,
+    "samples_where_bare_CURRENT_DATE_differs_from_php_date": 494,
+    "sample_every_10th": [
+        {
+            "pg_utc": "03:58:20",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:58:22",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:58:24",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:58:26",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:58:28",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:58:30",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:58:32",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:58:34",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:58:36",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:58:38",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:58:40",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:58:42",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:58:44",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:58:46",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:58:48",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:58:50",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:58:52",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:58:54",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:58:56",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:58:58",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:00",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:02",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:05",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:07",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:09",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:11",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:13",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:15",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:17",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:19",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:21",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:23",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:25",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:27",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:29",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:31",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:33",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:35",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:37",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:39",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:41",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:43",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:45",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:47",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:49",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:51",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:53",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:55",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:57",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "03:59:59",
+            "php_date": "2026-10-08",
+            "app_style_CURRENT_DATE": "2026-10-08",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "04:00:01",
+            "php_date": "2026-10-09",
+            "app_style_CURRENT_DATE": "2026-10-09",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "04:00:03",
+            "php_date": "2026-10-09",
+            "app_style_CURRENT_DATE": "2026-10-09",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "04:00:05",
+            "php_date": "2026-10-09",
+            "app_style_CURRENT_DATE": "2026-10-09",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "04:00:07",
+            "php_date": "2026-10-09",
+            "app_style_CURRENT_DATE": "2026-10-09",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "04:00:09",
+            "php_date": "2026-10-09",
+            "app_style_CURRENT_DATE": "2026-10-09",
+            "bare_CURRENT_DATE": "2026-10-09"
+        },
+        {
+            "pg_utc": "04:00:11",
+            "php_date": "2026-10-09",
+            "app_style_CURRENT_DATE": "2026-10-09",
+            "bare_CURRENT_DATE": "2026-10-09"
+        }
+    ]
+}

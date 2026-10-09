@@ -1,0 +1,83 @@
+{
+    "root": "/app",
+    "php_files_scanned": 509,
+    "calls_total": 135,
+    "calls_by_argument_count": {
+        "3": 46,
+        "4": 58,
+        "5": 1,
+        "7": 4,
+        "8": 14,
+        "9": 10,
+        "10": 2
+    },
+    "max_arguments": 10,
+    "calls_with_more_than_10_arguments_or_a_spread": [],
+    "calls_with_3_or_fewer_arguments_are_the_controller_method_not_the_service": {
+        "controllers/Api/StockApiController.php": 1,
+        "tests/Pgsql/ContractTest.php": 2,
+        "tests/Pgsql/CrossOperationLedgerInvariantTest.php": 3,
+        "tests/Pgsql/MeasuredContainerPartialOperationsTest.php": 4,
+        "tests/Pgsql/StockCoverageTest.php": 20,
+        "tests/Pgsql/StockMaintenanceCompactionTest.php": 1,
+        "tests/Pgsql/StockUndoIntegrityTest.php": 15
+    },
+    "calls_by_area": {
+        "services": 5,
+        "controllers": 2,
+        "tests": 85,
+        ".devtools": 27,
+        "other": 16
+    },
+    "production_calls": [
+        {
+            "file": "controllers/Api/StockApiController.php",
+            "line": 578,
+            "class": "StockApiController",
+            "args": 10,
+            "spread": false
+        },
+        {
+            "file": "controllers/Api/StockApiController.php",
+            "line": 607,
+            "class": "StockApiController",
+            "args": 3,
+            "spread": false
+        },
+        {
+            "file": "services/ChoresService.php",
+            "line": 374,
+            "class": "ChoresService",
+            "args": 9,
+            "spread": false
+        },
+        {
+            "file": "services/DemoDataGeneratorService.php",
+            "line": 411,
+            "class": "DemoDataGeneratorService",
+            "args": 4,
+            "spread": false
+        },
+        {
+            "file": "services/RecipesService.php",
+            "line": 253,
+            "class": "RecipesService",
+            "args": 10,
+            "spread": false
+        },
+        {
+            "file": "services/StockService.php",
+            "line": 2298,
+            "class": "AddMissingProductsToShoppingList",
+            "args": 4,
+            "spread": false
+        },
+        {
+            "file": "services/StockService.php",
+            "line": 3341,
+            "class": "AddMissingProductsToShoppingList",
+            "args": 7,
+            "spread": false
+        }
+    ]
+}

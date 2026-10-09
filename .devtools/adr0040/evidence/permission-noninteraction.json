@@ -1,0 +1,582 @@
+{
+    "environment": {
+        "php": "8.5.10",
+        "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+        "schema": "phpunit_7f856bd3455e4407"
+    },
+    "users": {
+        "owner": 9101,
+        "grantee": 9102,
+        "unrelated": 9103,
+        "manager": 9104,
+        "admin": 9105
+    },
+    "permissions_held": {
+        "owner": [
+            "STOCK_VIEW",
+            "STOCK_CONSUME"
+        ],
+        "grantee": [
+            "STOCK_VIEW",
+            "STOCK_CONSUME"
+        ],
+        "unrelated": [
+            "STOCK_VIEW"
+        ],
+        "manager": [
+            "USERS_EDIT",
+            "STOCK_VIEW",
+            "STOCK_CONSUME"
+        ],
+        "admin": [
+            "ADMIN"
+        ]
+    },
+    "grant_sets_checked": {
+        "STOCK_VIEW": [
+            31
+        ],
+        "STOCK_CONSUME": [
+            16
+        ],
+        "STOCK_EDIT": [
+            20
+        ],
+        "USERS_EDIT": [
+            4
+        ],
+        "ADMIN": [
+            1
+        ],
+        "STOCK_VIEW+STOCK_CONSUME": [
+            31,
+            16
+        ]
+    },
+    "snapshots_per_step": "5 callers x (resolved set of 5 users, MayAdminister x5 targets, CheckMayGrant x6 sets)",
+    "baseline_sha256": "214906242fc99d2220ffb840d4daf19f97b5ddfa3b2366324fd4a9a88a511e70",
+    "baseline": {
+        "admin": {
+            "caller": 9105,
+            "check_may_grant": {
+                "ADMIN": "ok",
+                "STOCK_CONSUME": "ok",
+                "STOCK_EDIT": "ok",
+                "STOCK_VIEW": "ok",
+                "STOCK_VIEW+STOCK_CONSUME": "ok",
+                "USERS_EDIT": "ok"
+            },
+            "may_administer": {
+                "9101": true,
+                "9102": true,
+                "9103": true,
+                "9104": true,
+                "9105": true
+            },
+            "resolved": {
+                "9101": [
+                    "STOCK_CONSUME",
+                    "STOCK_VIEW"
+                ],
+                "9102": [
+                    "STOCK_CONSUME",
+                    "STOCK_VIEW"
+                ],
+                "9103": [
+                    "STOCK_VIEW"
+                ],
+                "9104": [
+                    "STOCK_CONSUME",
+                    "STOCK_VIEW",
+                    "USERS_EDIT",
+                    "USERS_READ"
+                ],
+                "9105": [
+                    "ADMIN",
+                    "BATTERIES",
+                    "BATTERIES_TRACK_CHARGE_CYCLE",
+                    "BATTERIES_UNDO_CHARGE_CYCLE",
+                    "BATTERIES_VIEW",
+                    "CALENDAR",
+                    "CALENDAR_VIEW",
+                    "CHORES",
+                    "CHORES_VIEW",
+                    "CHORE_TRACK_EXECUTION",
+                    "CHORE_UNDO_EXECUTION",
+                    "EQUIPMENT",
+                    "EQUIPMENT_VIEW",
+                    "MASTER_DATA_EDIT",
+                    "MEALPLAN_VIEW",
+                    "RECIPES",
+                    "RECIPES_MEALPLAN",
+                    "RECIPES_VIEW",
+                    "SHOPPINGLIST",
+                    "SHOPPINGLIST_ITEMS_ADD",
+                    "SHOPPINGLIST_ITEMS_DELETE",
+                    "SHOPPINGLIST_VIEW",
+                    "STOCK",
+                    "STOCK_CONSUME",
+                    "STOCK_EDIT",
+                    "STOCK_INVENTORY",
+                    "STOCK_OPEN",
+                    "STOCK_PRICES_VIEW",
+                    "STOCK_PURCHASE",
+                    "STOCK_TRANSFER",
+                    "STOCK_VIEW",
+                    "TASKS",
+                    "TASKS_MARK_COMPLETED",
+                    "TASKS_UNDO_EXECUTION",
+                    "TASKS_VIEW",
+                    "USERS",
+                    "USERS_CREATE",
+                    "USERS_EDIT",
+                    "USERS_EDIT_SELF",
+                    "USERS_READ"
+                ]
+            }
+        },
+        "grantee": {
+            "caller": 9102,
+            "check_may_grant": {
+                "ADMIN": "Victual\\Controllers\\Users\\PermissionMissingException: Permission missing: ADMIN, MASTER_DATA_EDIT, CALENDAR, EQUIPMENT, TASKS, BATTERIES, CHORES, RECIPES, SHOPPINGLIST, STOCK, USERS_EDIT_SELF, USERS, CALENDAR_VIEW, EQUIPMENT_VIEW, TASKS_VIEW, TASKS_MARK_COMPLETED, TASKS_UNDO_EXECUTION, BATTERIES_VIEW, BATTERIES_UNDO_CHARGE_CYCLE, BATTERIES_TRACK_CHARGE_CYCLE, CHORES_VIEW, CHORE_UNDO_EXECUTION, CHORE_TRACK_EXECUTION, RECIPES_VIEW, RECIPES_MEALPLAN, SHOPPINGLIST_VIEW, SHOPPINGLIST_ITEMS_DELETE, SHOPPINGLIST_ITEMS_ADD, STOCK_EDIT, STOCK_OPEN, STOCK_TRANSFER, STOCK_INVENTORY, STOCK_PURCHASE, USERS_CREATE, MEALPLAN_VIEW, STOCK_PRICES_VIEW, USERS_EDIT, USERS_READ",
+                "STOCK_CONSUME": "ok",
+                "STOCK_EDIT": "Victual\\Controllers\\Users\\PermissionMissingException: Permission missing: STOCK_EDIT",
+                "STOCK_VIEW": "ok",
+                "STOCK_VIEW+STOCK_CONSUME": "ok",
+                "USERS_EDIT": "Victual\\Controllers\\Users\\PermissionMissingException: Permission missing: USERS_EDIT, USERS_READ"
+            },
+            "may_administer": {
+                "9101": true,
+                "9102": true,
+                "9103": true,
+                "9104": false,
+                "9105": false
+            },
+            "resolved": {
+                "9101": [
+                    "STOCK_CONSUME",
+                    "STOCK_VIEW"
+                ],
+                "9102": [
+                    "STOCK_CONSUME",
+                    "STOCK_VIEW"
+                ],
+                "9103": [
+                    "STOCK_VIEW"
+                ],
+                "9104": [
+                    "STOCK_CONSUME",
+                    "STOCK_VIEW",
+                    "USERS_EDIT",
+                    "USERS_READ"
+                ],
+                "9105": [
+                    "ADMIN",
+                    "BATTERIES",
+                    "BATTERIES_TRACK_CHARGE_CYCLE",
+                    "BATTERIES_UNDO_CHARGE_CYCLE",
+                    "BATTERIES_VIEW",
+                    "CALENDAR",
+                    "CALENDAR_VIEW",
+                    "CHORES",
+                    "CHORES_VIEW",
+                    "CHORE_TRACK_EXECUTION",
+                    "CHORE_UNDO_EXECUTION",
+                    "EQUIPMENT",
+                    "EQUIPMENT_VIEW",
+                    "MASTER_DATA_EDIT",
+                    "MEALPLAN_VIEW",
+                    "RECIPES",
+                    "RECIPES_MEALPLAN",
+                    "RECIPES_VIEW",
+                    "SHOPPINGLIST",
+                    "SHOPPINGLIST_ITEMS_ADD",
+                    "SHOPPINGLIST_ITEMS_DELETE",
+                    "SHOPPINGLIST_VIEW",
+                    "STOCK",
+                    "STOCK_CONSUME",
+                    "STOCK_EDIT",
+                    "STOCK_INVENTORY",
+                    "STOCK_OPEN",
+                    "STOCK_PRICES_VIEW",
+                    "STOCK_PURCHASE",
+                    "STOCK_TRANSFER",
+                    "STOCK_VIEW",
+                    "TASKS",
+                    "TASKS_MARK_COMPLETED",
+                    "TASKS_UNDO_EXECUTION",
+                    "TASKS_VIEW",
+                    "USERS",
+                    "USERS_CREATE",
+                    "USERS_EDIT",
+                    "USERS_EDIT_SELF",
+                    "USERS_READ"
+                ]
+            }
+        },
+        "manager": {
+            "caller": 9104,
+            "check_may_grant": {
+                "ADMIN": "Victual\\Controllers\\Users\\PermissionMissingException: Permission missing: ADMIN, MASTER_DATA_EDIT, CALENDAR, EQUIPMENT, TASKS, BATTERIES, CHORES, RECIPES, SHOPPINGLIST, STOCK, USERS_EDIT_SELF, USERS, CALENDAR_VIEW, EQUIPMENT_VIEW, TASKS_VIEW, TASKS_MARK_COMPLETED, TASKS_UNDO_EXECUTION, BATTERIES_VIEW, BATTERIES_UNDO_CHARGE_CYCLE, BATTERIES_TRACK_CHARGE_CYCLE, CHORES_VIEW, CHORE_UNDO_EXECUTION, CHORE_TRACK_EXECUTION, RECIPES_VIEW, RECIPES_MEALPLAN, SHOPPINGLIST_VIEW, SHOPPINGLIST_ITEMS_DELETE, SHOPPINGLIST_ITEMS_ADD, STOCK_EDIT, STOCK_OPEN, STOCK_TRANSFER, STOCK_INVENTORY, STOCK_PURCHASE, USERS_CREATE, MEALPLAN_VIEW, STOCK_PRICES_VIEW",
+                "STOCK_CONSUME": "ok",
+                "STOCK_EDIT": "Victual\\Controllers\\Users\\PermissionMissingException: Permission missing: STOCK_EDIT",
+                "STOCK_VIEW": "ok",
+                "STOCK_VIEW+STOCK_CONSUME": "ok",
+                "USERS_EDIT": "ok"
+            },
+            "may_administer": {
+                "9101": true,
+                "9102": true,
+                "9103": true,
+                "9104": true,
+                "9105": false
+            },
+            "resolved": {
+                "9101": [
+                    "STOCK_CONSUME",
+                    "STOCK_VIEW"
+                ],
+                "9102": [
+                    "STOCK_CONSUME",
+                    "STOCK_VIEW"
+                ],
+                "9103": [
+                    "STOCK_VIEW"
+                ],
+                "9104": [
+                    "STOCK_CONSUME",
+                    "STOCK_VIEW",
+                    "USERS_EDIT",
+                    "USERS_READ"
+                ],
+                "9105": [
+                    "ADMIN",
+                    "BATTERIES",
+                    "BATTERIES_TRACK_CHARGE_CYCLE",
+                    "BATTERIES_UNDO_CHARGE_CYCLE",
+                    "BATTERIES_VIEW",
+                    "CALENDAR",
+                    "CALENDAR_VIEW",
+                    "CHORES",
+                    "CHORES_VIEW",
+                    "CHORE_TRACK_EXECUTION",
+                    "CHORE_UNDO_EXECUTION",
+                    "EQUIPMENT",
+                    "EQUIPMENT_VIEW",
+                    "MASTER_DATA_EDIT",
+                    "MEALPLAN_VIEW",
+                    "RECIPES",
+                    "RECIPES_MEALPLAN",
+                    "RECIPES_VIEW",
+                    "SHOPPINGLIST",
+                    "SHOPPINGLIST_ITEMS_ADD",
+                    "SHOPPINGLIST_ITEMS_DELETE",
+                    "SHOPPINGLIST_VIEW",
+                    "STOCK",
+                    "STOCK_CONSUME",
+                    "STOCK_EDIT",
+                    "STOCK_INVENTORY",
+                    "STOCK_OPEN",
+                    "STOCK_PRICES_VIEW",
+                    "STOCK_PURCHASE",
+                    "STOCK_TRANSFER",
+                    "STOCK_VIEW",
+                    "TASKS",
+                    "TASKS_MARK_COMPLETED",
+                    "TASKS_UNDO_EXECUTION",
+                    "TASKS_VIEW",
+                    "USERS",
+                    "USERS_CREATE",
+                    "USERS_EDIT",
+                    "USERS_EDIT_SELF",
+                    "USERS_READ"
+                ]
+            }
+        },
+        "owner": {
+            "caller": 9101,
+            "check_may_grant": {
+                "ADMIN": "Victual\\Controllers\\Users\\PermissionMissingException: Permission missing: ADMIN, MASTER_DATA_EDIT, CALENDAR, EQUIPMENT, TASKS, BATTERIES, CHORES, RECIPES, SHOPPINGLIST, STOCK, USERS_EDIT_SELF, USERS, CALENDAR_VIEW, EQUIPMENT_VIEW, TASKS_VIEW, TASKS_MARK_COMPLETED, TASKS_UNDO_EXECUTION, BATTERIES_VIEW, BATTERIES_UNDO_CHARGE_CYCLE, BATTERIES_TRACK_CHARGE_CYCLE, CHORES_VIEW, CHORE_UNDO_EXECUTION, CHORE_TRACK_EXECUTION, RECIPES_VIEW, RECIPES_MEALPLAN, SHOPPINGLIST_VIEW, SHOPPINGLIST_ITEMS_DELETE, SHOPPINGLIST_ITEMS_ADD, STOCK_EDIT, STOCK_OPEN, STOCK_TRANSFER, STOCK_INVENTORY, STOCK_PURCHASE, USERS_CREATE, MEALPLAN_VIEW, STOCK_PRICES_VIEW, USERS_EDIT, USERS_READ",
+                "STOCK_CONSUME": "ok",
+                "STOCK_EDIT": "Victual\\Controllers\\Users\\PermissionMissingException: Permission missing: STOCK_EDIT",
+                "STOCK_VIEW": "ok",
+                "STOCK_VIEW+STOCK_CONSUME": "ok",
+                "USERS_EDIT": "Victual\\Controllers\\Users\\PermissionMissingException: Permission missing: USERS_EDIT, USERS_READ"
+            },
+            "may_administer": {
+                "9101": true,
+                "9102": true,
+                "9103": true,
+                "9104": false,
+                "9105": false
+            },
+            "resolved": {
+                "9101": [
+                    "STOCK_CONSUME",
+                    "STOCK_VIEW"
+                ],
+                "9102": [
+                    "STOCK_CONSUME",
+                    "STOCK_VIEW"
+                ],
+                "9103": [
+                    "STOCK_VIEW"
+                ],
+                "9104": [
+                    "STOCK_CONSUME",
+                    "STOCK_VIEW",
+                    "USERS_EDIT",
+                    "USERS_READ"
+                ],
+                "9105": [
+                    "ADMIN",
+                    "BATTERIES",
+                    "BATTERIES_TRACK_CHARGE_CYCLE",
+                    "BATTERIES_UNDO_CHARGE_CYCLE",
+                    "BATTERIES_VIEW",
+                    "CALENDAR",
+                    "CALENDAR_VIEW",
+                    "CHORES",
+                    "CHORES_VIEW",
+                    "CHORE_TRACK_EXECUTION",
+                    "CHORE_UNDO_EXECUTION",
+                    "EQUIPMENT",
+                    "EQUIPMENT_VIEW",
+                    "MASTER_DATA_EDIT",
+                    "MEALPLAN_VIEW",
+                    "RECIPES",
+                    "RECIPES_MEALPLAN",
+                    "RECIPES_VIEW",
+                    "SHOPPINGLIST",
+                    "SHOPPINGLIST_ITEMS_ADD",
+                    "SHOPPINGLIST_ITEMS_DELETE",
+                    "SHOPPINGLIST_VIEW",
+                    "STOCK",
+                    "STOCK_CONSUME",
+                    "STOCK_EDIT",
+                    "STOCK_INVENTORY",
+                    "STOCK_OPEN",
+                    "STOCK_PRICES_VIEW",
+                    "STOCK_PURCHASE",
+                    "STOCK_TRANSFER",
+                    "STOCK_VIEW",
+                    "TASKS",
+                    "TASKS_MARK_COMPLETED",
+                    "TASKS_UNDO_EXECUTION",
+                    "TASKS_VIEW",
+                    "USERS",
+                    "USERS_CREATE",
+                    "USERS_EDIT",
+                    "USERS_EDIT_SELF",
+                    "USERS_READ"
+                ]
+            }
+        },
+        "unrelated": {
+            "caller": 9103,
+            "check_may_grant": {
+                "ADMIN": "Victual\\Controllers\\Users\\PermissionMissingException: Permission missing: ADMIN, MASTER_DATA_EDIT, CALENDAR, EQUIPMENT, TASKS, BATTERIES, CHORES, RECIPES, SHOPPINGLIST, STOCK, USERS_EDIT_SELF, USERS, CALENDAR_VIEW, EQUIPMENT_VIEW, TASKS_VIEW, TASKS_MARK_COMPLETED, TASKS_UNDO_EXECUTION, BATTERIES_VIEW, BATTERIES_UNDO_CHARGE_CYCLE, BATTERIES_TRACK_CHARGE_CYCLE, CHORES_VIEW, CHORE_UNDO_EXECUTION, CHORE_TRACK_EXECUTION, RECIPES_VIEW, RECIPES_MEALPLAN, SHOPPINGLIST_VIEW, SHOPPINGLIST_ITEMS_DELETE, SHOPPINGLIST_ITEMS_ADD, STOCK_EDIT, STOCK_OPEN, STOCK_TRANSFER, STOCK_INVENTORY, STOCK_CONSUME, STOCK_PURCHASE, USERS_CREATE, MEALPLAN_VIEW, STOCK_PRICES_VIEW, USERS_EDIT, USERS_READ",
+                "STOCK_CONSUME": "Victual\\Controllers\\Users\\PermissionMissingException: Permission missing: STOCK_CONSUME",
+                "STOCK_EDIT": "Victual\\Controllers\\Users\\PermissionMissingException: Permission missing: STOCK_EDIT",
+                "STOCK_VIEW": "ok",
+                "STOCK_VIEW+STOCK_CONSUME": "Victual\\Controllers\\Users\\PermissionMissingException: Permission missing: STOCK_CONSUME",
+                "USERS_EDIT": "Victual\\Controllers\\Users\\PermissionMissingException: Permission missing: USERS_EDIT, USERS_READ"
+            },
+            "may_administer": {
+                "9101": false,
+                "9102": false,
+                "9103": true,
+                "9104": false,
+                "9105": false
+            },
+            "resolved": {
+                "9101": [
+                    "STOCK_CONSUME",
+                    "STOCK_VIEW"
+                ],
+                "9102": [
+                    "STOCK_CONSUME",
+                    "STOCK_VIEW"
+                ],
+                "9103": [
+                    "STOCK_VIEW"
+                ],
+                "9104": [
+                    "STOCK_CONSUME",
+                    "STOCK_VIEW",
+                    "USERS_EDIT",
+                    "USERS_READ"
+                ],
+                "9105": [
+                    "ADMIN",
+                    "BATTERIES",
+                    "BATTERIES_TRACK_CHARGE_CYCLE",
+                    "BATTERIES_UNDO_CHARGE_CYCLE",
+                    "BATTERIES_VIEW",
+                    "CALENDAR",
+                    "CALENDAR_VIEW",
+                    "CHORES",
+                    "CHORES_VIEW",
+                    "CHORE_TRACK_EXECUTION",
+                    "CHORE_UNDO_EXECUTION",
+                    "EQUIPMENT",
+                    "EQUIPMENT_VIEW",
+                    "MASTER_DATA_EDIT",
+                    "MEALPLAN_VIEW",
+                    "RECIPES",
+                    "RECIPES_MEALPLAN",
+                    "RECIPES_VIEW",
+                    "SHOPPINGLIST",
+                    "SHOPPINGLIST_ITEMS_ADD",
+                    "SHOPPINGLIST_ITEMS_DELETE",
+                    "SHOPPINGLIST_VIEW",
+                    "STOCK",
+                    "STOCK_CONSUME",
+                    "STOCK_EDIT",
+                    "STOCK_INVENTORY",
+                    "STOCK_OPEN",
+                    "STOCK_PRICES_VIEW",
+                    "STOCK_PURCHASE",
+                    "STOCK_TRANSFER",
+                    "STOCK_VIEW",
+                    "TASKS",
+                    "TASKS_MARK_COMPLETED",
+                    "TASKS_UNDO_EXECUTION",
+                    "TASKS_VIEW",
+                    "USERS",
+                    "USERS_CREATE",
+                    "USERS_EDIT",
+                    "USERS_EDIT_SELF",
+                    "USERS_READ"
+                ]
+            }
+        }
+    },
+    "steps": [
+        {
+            "step": "create recipe and lines",
+            "share_table_writes": 3,
+            "sha256": "214906242fc99d2220ffb840d4daf19f97b5ddfa3b2366324fd4a9a88a511e70",
+            "identical_to_baseline": true
+        },
+        {
+            "step": "owner grants read to grantee",
+            "share_table_writes": 4,
+            "sha256": "214906242fc99d2220ffb840d4daf19f97b5ddfa3b2366324fd4a9a88a511e70",
+            "identical_to_baseline": true
+        },
+        {
+            "step": "owner widens grantee to consume, edit, undo",
+            "share_table_writes": 5,
+            "sha256": "214906242fc99d2220ffb840d4daf19f97b5ddfa3b2366324fd4a9a88a511e70",
+            "identical_to_baseline": true
+        },
+        {
+            "step": "grantee (share holder) grants read to unrelated",
+            "share_table_writes": 7,
+            "sha256": "214906242fc99d2220ffb840d4daf19f97b5ddfa3b2366324fd4a9a88a511e70",
+            "identical_to_baseline": true
+        },
+        {
+            "step": "all five rights shared to account manager and to administrator",
+            "share_table_writes": 9,
+            "sha256": "214906242fc99d2220ffb840d4daf19f97b5ddfa3b2366324fd4a9a88a511e70",
+            "identical_to_baseline": true
+        },
+        {
+            "step": "owner revokes grantee",
+            "share_table_writes": 10,
+            "sha256": "214906242fc99d2220ffb840d4daf19f97b5ddfa3b2366324fd4a9a88a511e70",
+            "identical_to_baseline": true
+        },
+        {
+            "step": "ownership transfer owner to grantee, previous owner kept as share holder",
+            "share_table_writes": 14,
+            "sha256": "214906242fc99d2220ffb840d4daf19f97b5ddfa3b2366324fd4a9a88a511e70",
+            "identical_to_baseline": true
+        },
+        {
+            "step": "recipes owned by the account manager and by the administrator, shared to others",
+            "share_table_writes": 20,
+            "sha256": "214906242fc99d2220ffb840d4daf19f97b5ddfa3b2366324fd4a9a88a511e70",
+            "identical_to_baseline": true
+        },
+        {
+            "step": "recipe deleted, shares cascade",
+            "share_table_writes": 21,
+            "sha256": "214906242fc99d2220ffb840d4daf19f97b5ddfa3b2366324fd4a9a88a511e70",
+            "identical_to_baseline": true
+        },
+        {
+            "step": "random phase (seed 40100909), after 50 operations",
+            "share_table_writes": 66,
+            "sha256": "214906242fc99d2220ffb840d4daf19f97b5ddfa3b2366324fd4a9a88a511e70",
+            "identical_to_baseline": true
+        },
+        {
+            "step": "random phase (seed 40100909), after 100 operations",
+            "share_table_writes": 98,
+            "sha256": "214906242fc99d2220ffb840d4daf19f97b5ddfa3b2366324fd4a9a88a511e70",
+            "identical_to_baseline": true
+        },
+        {
+            "step": "random phase (seed 40100909), after 150 operations",
+            "share_table_writes": 135,
+            "sha256": "214906242fc99d2220ffb840d4daf19f97b5ddfa3b2366324fd4a9a88a511e70",
+            "identical_to_baseline": true
+        },
+        {
+            "step": "random phase (seed 40100909), after 200 operations",
+            "share_table_writes": 175,
+            "sha256": "214906242fc99d2220ffb840d4daf19f97b5ddfa3b2366324fd4a9a88a511e70",
+            "identical_to_baseline": true
+        },
+        {
+            "step": "random phase (seed 40100909), after 250 operations",
+            "share_table_writes": 216,
+            "sha256": "214906242fc99d2220ffb840d4daf19f97b5ddfa3b2366324fd4a9a88a511e70",
+            "identical_to_baseline": true
+        },
+        {
+            "step": "random phase (seed 40100909), after 300 operations",
+            "share_table_writes": 252,
+            "sha256": "214906242fc99d2220ffb840d4daf19f97b5ddfa3b2366324fd4a9a88a511e70",
+            "identical_to_baseline": true
+        },
+        {
+            "step": "random phase (seed 40100909), after 350 operations",
+            "share_table_writes": 291,
+            "sha256": "214906242fc99d2220ffb840d4daf19f97b5ddfa3b2366324fd4a9a88a511e70",
+            "identical_to_baseline": true
+        },
+        {
+            "step": "random phase (seed 40100909), after 400 operations",
+            "share_table_writes": 326,
+            "sha256": "214906242fc99d2220ffb840d4daf19f97b5ddfa3b2366324fd4a9a88a511e70",
+            "identical_to_baseline": true
+        },
+        {
+            "step": "all recipes deleted",
+            "share_table_writes": 350,
+            "sha256": "214906242fc99d2220ffb840d4daf19f97b5ddfa3b2366324fd4a9a88a511e70",
+            "identical_to_baseline": true
+        }
+    ],
+    "all_steps_identical_to_baseline": true,
+    "total_share_table_rows_written": 350,
+    "positive_control": {
+        "action": "INSERT user_permissions(grantee, USERS_EDIT)",
+        "snapshot_differs_from_baseline": true,
+        "sections_that_differ": [
+            "admin.resolved",
+            "grantee.resolved",
+            "grantee.may_administer",
+            "grantee.check_may_grant",
+            "manager.resolved",
+            "owner.resolved",
+            "owner.may_administer",
+            "unrelated.resolved"
+        ],
+        "restored_after_revert": true
+    }
+}

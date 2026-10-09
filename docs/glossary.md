@@ -30,6 +30,21 @@ A recorded stock operation, such as a purchase, consumption, transfer, inventory
 correction, or opening. The stock journal records booking history and supports undo.
 See [Stock](manual/using-victual/stock.md).
 
+### Consumption recipe
+
+Proposed in [ADR-0040](adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md) (Proposed, not implemented).
+An owned list of product lines and quantities consumed together, such as a prescription.
+It is separate from the food `recipes` table and visible only to its owner and users it is
+shared with. See [plan 22](plans/22-medication-tracking.md).
+
+### Consumption event
+
+Proposed in [ADR-0041](adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md) (Proposed, not implemented).
+A record that one consumption happened, identified by the owning user, a source system and a
+source event id. It books stock once through the stock write paths and has a state such as
+`booked`, `needs_review` or `undone`. A client such as `victual-kit` submits events for
+medication doses; a recipe consumption in Victual creates a `manual` event.
+
 ### Contribution
 
 Proposed in [ADR-0036](adr/0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md) (Proposed, not implemented). The amount of one lot currently held by one
@@ -101,6 +116,19 @@ See [ADR-0023](adr/0023-taxonomy-is-groups-packaging-is-parent-product.md).
 A unit of measure in `quantity_units`, such as a bag or gram. A product's stock unit is
 identified by `qu_id_stock`; purchase units can differ through quantity-unit conversions.
 See [Stock](manual/using-victual/stock.md).
+
+### Share (consumption recipe)
+
+Proposed in [ADR-0040](adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md) (Proposed, not implemented).
+A row granting one user a set of rights (`read`, `consume`, `edit`, `undo`, `share`) on one
+consumption recipe. A share narrows which recipes a user sees and confers no permission.
+
+### Refill estimate
+
+Proposed in [ADR-0042](adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md) (Proposed, not implemented).
+The calendar date on which a prescription's reorder is estimated to be due, derived from the
+last recorded fill and a rule. It is approximate, carries the rule that produced it, and is
+separate from stock on hand. It does not state that an insurer will approve a refill.
 
 ### Shopping location
 

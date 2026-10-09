@@ -29,8 +29,12 @@ client proposes an inferred booking.
 **Proposed records:** [ADR-0015](../adr/0015-medication-records-never-advises.md) needs
 its boundary aligned with inventory and refill notices. [ADR-0016](../adr/0016-schedule-expansion-in-the-application.md)
 has no implementation consumer in this scope. Neither record's lifecycle status changes
-through this plan. New design records are needed for scoped sharing and external-event
-reconciliation; see [release readiness](#release-readiness).
+through this plan. [ADR-0040](../adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md)
+(Proposed) records the scoped-sharing design.
+[ADR-0041](../adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md)
+(Proposed) records the external-event and reconciliation design.
+[ADR-0042](../adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md)
+(Proposed) records the refill rules and notice design. See [release readiness](#release-readiness).
 
 ## Current behavior
 
@@ -206,10 +210,13 @@ platform-specific notices belong to `victual-kit`. Server verification can use r
 client fixtures, but an end-to-end Apple integration claim requires real client evidence.
 The release record must distinguish those outcomes.
 
-[Migrations/RESERVATIONS.md](../../migrations/RESERVATIONS.md) currently claims 0305–0306
-for the previous schema sketch. Those claims are unwritten. Reconcile their descriptions
-and the required count before writing migrations; use the lowest available slots and
-PostgreSQL-only migrations. Do not retain obsolete regimen tables to fit old reservations.
+[Migrations/RESERVATIONS.md](../../migrations/RESERVATIONS.md) claims 0305 and 0306 for this plan.
+Reconciled 2026-10-09: 0305 covers private consumption recipes, shares, consumption events
+and source mappings; 0306 covers refill settings, fills, orders and notice acknowledgements.
+Both are unwritten, and the table descriptions replace the withdrawn regimen sketch. The
+numbers can still move: [ADR-0039](../adr/0039-the-mcp-sidecar-reads-its-configuration-from-victual.md)
+implementation may claim a lower slot first. Re-read the table, claim the lowest free slots
+before writing a file, and write PostgreSQL-only migrations.
 
 ## Verification
 
@@ -298,6 +305,9 @@ answers from the maintainer's inventory scope decision on 2026-10-09.
     > **Response, maintainer, 2026-10-09:** Specifically authorized members may access them.
     > The grant authority, individual action rights and account-administration interaction
     > remain technical design gates for a new ADR. Do not introduce an unchecked grant path.
+    > [ADR-0040](../adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md)
+    > (Proposed, 2026-10-09) answers these as a design; the maintainer's open questions on
+    > administrator access and account deletion remain.
 
 12. **What causes stock deduction?**
 
@@ -330,3 +340,12 @@ answers from the maintainer's inventory scope decision on 2026-10-09.
     forms, repeat suppression, ordered versus received state, and delivery ownership.
     Victual must expose the state through its API; native delivery belongs to `victual-kit`.
     The exact lead and server-side delivery surface remain open.
+
+    > **Design, 2026-10-09:** [ADR-0042](../adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md)
+    > (Proposed) recommends a seven-day lead as a per-user setting with a per-prescription
+    > override, calendar dates in the server zone with a client `as_of`, no server push, and
+    > acknowledged notice keys.
+    >
+    > **Response, maintainer, 2026-10-09:** seven days as a per-user setting with a
+    > per-prescription override; all three rule kinds kept; a short supply gives an unknown
+    > estimate. Server push stays out of this release.

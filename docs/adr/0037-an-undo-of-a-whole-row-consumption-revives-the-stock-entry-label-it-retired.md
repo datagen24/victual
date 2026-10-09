@@ -1,6 +1,6 @@
 # ADR-0037: An undo of a whole-row consumption revives the stock-entry label it retired
 
-- **Status:** Proposed.
+- **Status:** Accepted 2026-10-09. All fifteen acceptance prerequisites have recorded evidence.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-04, against `master` at `7e311cd35c26c7422855d02887f46b5e2e7b4d22`
@@ -652,7 +652,43 @@ they say CI. Merged CI evidence is what an accepting pull request cites.
 | 12. ADR-0036 interface | Met locally | ADR-0036 is not implemented; `StockLabelRevivalTest.php` asserts the interface now, so the later implementation inherits the test. |
 | 13. Coverage | Met locally; CI decides the ratchet | Local run at `8012aef4` with the label CLI tests merged: 11,762 of 12,197 lines (96.43%), above the 96.31% ratchet, without three CI-only steps. `StockLabelRevivalService.php` 95.24%. Every touched file is at or above its figure in master's CI clover at `082764b2` (for example `StockService.php` 98.38% to 98.41%), and no file is below 75%. |
 | 14. Browser probes | Met locally | `undo-toasts.js`: 15 of 15 scenarios, including restored, retired, mixed, absent and refused notices. The demo instance has no printer, so the probe adds the header to real undo responses; the server side is PHPUnit's. |
-| 15. Deployment and release notes | Partly met | The upgrade page carries the order and consequences. No release record for the first release with migration 0303 exists yet; that record must link the upgrade section. |
+| 15. Deployment and release notes | Met | The upgrade page carries the order and consequences. The [0.3.0 release record](../releases/0.3.0.md#installing-and-upgrading) links the migration 0303 upgrade instructions; gate 15 is met. |
+
+### Merged CI audit (2026-10-09)
+
+All fifteen prerequisites have evidence. The local results above are supplemented by
+[merged CI run 37556925318](https://github.com/datagen24/victual/actions/runs/37556925318),
+which passed on 2026-10-07 at `86f239da415390a585bcaceac1e9ab1a04e18a13`, the merge of PR 663.
+The `suite`, `suite-floor`, `frontend-security`, `lint` and `images` jobs passed.
+The separate [prose run](https://github.com/datagen24/victual/actions/runs/37556924932) passed.
+
+The suite jobs cover the PostgreSQL 16 and 15 environments. Their passing results support
+gates 3–10 and 12. The label CLI checks, canonical JSON and renderer agreement also passed.
+The browser job reports 15/15 undo scenarios, supporting gate 14. Gates 1–2 retain the
+maintainer answers and migration reservation cited above. Documentation checks support gate 11.
+The release record and its migration 0303 upgrade link complete gate 15.
+
+For gate 13, the merged `coverage-clover` artifact reports 11,786 of 12,197 executable
+lines covered (96.63031893088464%). No file is below 75%. The new
+`StockLabelRevivalService.php` covers 60/63 lines (95.24%). Comparing statement counts with
+[baseline run 37538063422](https://github.com/datagen24/victual/actions/runs/37538063422)
+at `082764b2` shows no decrease in any of the eight existing application files PR 663 changed.
+
+| File | Baseline covered/total | Merged covered/total |
+|---|---|---|
+| `BaseApiController.php` | 219/221 | 222/224 |
+| `ChoresApiController.php` | 51/54 | 52/55 |
+| `StockApiController.php` | 522/524 | 524/526 |
+| `CorsMiddleware.php` | 23/23 | 25/25 |
+| `ChoresService.php` | 139/156 | 141/158 |
+| `DatabaseImporter.php` | 378/432 | 378/432 |
+| `PrintAttemptService.php` | 83/84 | 83/84 |
+| `StockService.php` | 1579/1605 | 1608/1634 |
+
+To reproduce the audit, use `gh run view 37556925318 --log`, then download
+`coverage-clover` from runs 37556925318 and 37538063422 with `gh run download`.
+Compare each file's `type="stmt"` lines in `clover.xml`, counting positive `count` values
+as covered. The audit inspects recorded CI results; it does not rerun the suite.
 
 ## Acceptance prerequisites
 

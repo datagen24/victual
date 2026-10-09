@@ -1,0 +1,420 @@
+{
+    "probe": "constraints",
+    "environment": {
+        "php": "8.5.10",
+        "php_timezone": "UTC",
+        "php_ini_date_timezone": "UTC",
+        "php_tzdata": "2026.3",
+        "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+        "postgres_server_timezone_default": "Etc/UTC"
+    },
+    "declarative_constraints": {
+        "cases": 37,
+        "unexpected": 0,
+        "results": [
+            {
+                "case": "supplied_days = 1",
+                "expected": "ok",
+                "got": "ok",
+                "pass": true
+            },
+            {
+                "case": "supplied_days = 730",
+                "expected": "ok",
+                "got": "ok",
+                "pass": true
+            },
+            {
+                "case": "supplied_days = 0",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "supplied_days = 731",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "supplied_days = -1",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "supplied_days = NULL",
+                "expected": "23502",
+                "got": "23502",
+                "pass": true
+            },
+            {
+                "case": "filled_on = NULL",
+                "expected": "23502",
+                "got": "23502",
+                "pass": true
+            },
+            {
+                "case": "fill for a recipe that does not exist",
+                "expected": "23503",
+                "got": "23503",
+                "pass": true
+            },
+            {
+                "case": "void reason without voided_at",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "ordered_on = NULL",
+                "expected": "23502",
+                "got": "23502",
+                "pass": true
+            },
+            {
+                "case": "order state = 'lost'",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "order closed as received with no fill",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "order open but pointing at a fill",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "order received with a fill of another recipe",
+                "expected": "23503",
+                "got": "23503",
+                "pass": true
+            },
+            {
+                "case": "order received with a fill of the same recipe",
+                "expected": "ok",
+                "got": "ok",
+                "pass": true
+            },
+            {
+                "case": "days_before_end N = 0",
+                "expected": "ok",
+                "got": "ok",
+                "pass": true
+            },
+            {
+                "case": "days_before_end N = 730",
+                "expected": "ok",
+                "got": "ok",
+                "pass": true
+            },
+            {
+                "case": "days_before_end N = -1",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "days_before_end N = 731",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "days_before_end N = 7.5",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "fixed_interval D = 1",
+                "expected": "ok",
+                "got": "ok",
+                "pass": true
+            },
+            {
+                "case": "fixed_interval D = 0",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "fixed_interval D = 731",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "fraction_elapsed F = 0.5",
+                "expected": "ok",
+                "got": "ok",
+                "pass": true
+            },
+            {
+                "case": "fraction_elapsed F = 0",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "fraction_elapsed F = 1",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "fraction_elapsed F = 1.0",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "fraction_elapsed F = 0.0001",
+                "expected": "ok",
+                "got": "ok",
+                "pass": true
+            },
+            {
+                "case": "rule kind without parameter",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "unknown rule kind",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "lead_days = 0",
+                "expected": "ok",
+                "got": "ok",
+                "pass": true
+            },
+            {
+                "case": "lead_days = 60",
+                "expected": "ok",
+                "got": "ok",
+                "pass": true
+            },
+            {
+                "case": "lead_days = 61",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "lead_days = -1",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "explicit date without a fill reference",
+                "expected": "23514",
+                "got": "23514",
+                "pass": true
+            },
+            {
+                "case": "explicit date bound to a fill of another recipe",
+                "expected": "23503",
+                "got": "23503",
+                "pass": true
+            },
+            {
+                "case": "explicit date bound to a fill of its own recipe",
+                "expected": "ok",
+                "got": "ok",
+                "pass": true
+            }
+        ],
+        "recipe_delete_cascade": {
+            "delete": "ok",
+            "rows_before_fills_orders_settings": [
+                1,
+                1,
+                1
+            ],
+            "rows_after": [
+                0,
+                0,
+                0
+            ]
+        }
+    },
+    "one_open_order_per_recipe": [
+        {
+            "concurrent_inserts": 2,
+            "rounds": 40,
+            "rounds_with_exactly_one_success_and_one_open_row": 40,
+            "outcome_counts_over_all_children": {
+                "23505": 40,
+                "inserted": 40
+            },
+            "rounds_where_not_all_children_were_waiting_at_release": 0
+        },
+        {
+            "concurrent_inserts": 8,
+            "rounds": 20,
+            "rounds_with_exactly_one_success_and_one_open_row": 20,
+            "outcome_counts_over_all_children": {
+                "23505": 140,
+                "inserted": 20
+            },
+            "rounds_where_not_all_children_were_waiting_at_release": 0
+        },
+        {
+            "concurrent_inserts": 32,
+            "rounds": 20,
+            "rounds_with_exactly_one_success_and_one_open_row": 20,
+            "outcome_counts_over_all_children": {
+                "23505": 620,
+                "inserted": 20
+            },
+            "rounds_where_not_all_children_were_waiting_at_release": 0
+        }
+    ],
+    "receive_order": {
+        "normal": {
+            "child": {
+                "result": "received",
+                "fill_id": 11
+            },
+            "order": {
+                "state": "received",
+                "has_fill": true
+            },
+            "fills": 1
+        },
+        "killed_inside_transaction": {
+            "child": {
+                "result": "mid_transaction",
+                "fill_id": 12
+            },
+            "order_state_after": "open",
+            "fills_after": 0,
+            "nothing_half_applied": true
+        },
+        "control_autocommit_killed_between_writes": {
+            "order_state_after": "open",
+            "fills_after": 1,
+            "half_applied": true
+        },
+        "second_statement_fails_then_rollback": {
+            "second_statement": "23514",
+            "order_state_after": "open",
+            "fills_after": 0
+        },
+        "eight_concurrent_receives_of_one_order": {
+            "rounds": 10,
+            "rounds_with_exactly_one_received_and_one_fill": 10,
+            "first_round": {
+                "outcomes": {
+                    "lost_race_rolled_back": 7,
+                    "received": 1
+                },
+                "fills_in_table": 1,
+                "order_state": "received"
+            }
+        }
+    },
+    "notice_ack_idempotent": {
+        "concurrent_identical_acks": 32,
+        "rounds": 20,
+        "rounds_with_exactly_one_row": 20,
+        "rounds_with_exactly_one_inserting_call": 20,
+        "rounds_where_all_32_calls_read_the_same_acknowledged_at": 20,
+        "calls_that_raised_an_error": 0
+    },
+    "notice_keys": {
+        "steps": [
+            {
+                "step": "fill 1 (2026-01-01, 90 days), as_of 2026-03-12",
+                "notices": [
+                    {
+                        "kind": "approaching",
+                        "key": "118:95:approaching:2026-03-18",
+                        "acknowledged": false
+                    }
+                ]
+            },
+            {
+                "step": "user 1 acknowledges the approaching notice",
+                "notices": [
+                    {
+                        "kind": "approaching",
+                        "key": "118:95:approaching:2026-03-18",
+                        "acknowledged": true
+                    }
+                ]
+            },
+            {
+                "step": "same state, user 2 (sharer)",
+                "notices": [
+                    {
+                        "kind": "approaching",
+                        "key": "118:95:approaching:2026-03-18",
+                        "acknowledged": false
+                    }
+                ]
+            },
+            {
+                "step": "fill 1 voided, identical fill 2 recorded (same date, same supply)",
+                "notices": [
+                    {
+                        "kind": "approaching",
+                        "key": "118:96:approaching:2026-03-18",
+                        "acknowledged": false
+                    }
+                ]
+            },
+            {
+                "step": "fill 2 voided, fill 3 recorded with filled_on 2026-01-05 (reorder date moves to 2026-03-22), as_of 2026-03-16",
+                "notices": [
+                    {
+                        "kind": "approaching",
+                        "key": "118:97:approaching:2026-03-22",
+                        "acknowledged": false
+                    }
+                ]
+            },
+            {
+                "step": "as_of 2026-03-22 (due) with nothing acknowledged for fill 3",
+                "notices": [
+                    {
+                        "kind": "approaching",
+                        "key": "118:97:approaching:2026-03-22",
+                        "acknowledged": false
+                    },
+                    {
+                        "kind": "due",
+                        "key": "118:97:due:2026-03-22",
+                        "acknowledged": false
+                    }
+                ]
+            },
+            {
+                "step": "explicit date 2026-03-30 set on fill 3, as_of 2026-03-25",
+                "notices": [
+                    {
+                        "kind": "approaching",
+                        "key": "118:97:approaching:2026-03-30",
+                        "acknowledged": false
+                    }
+                ]
+            },
+            {
+                "step": "open order recorded, as_of 2026-03-25",
+                "notices": []
+            }
+        ],
+        "ack_of_a_key_no_notice_has_produced": "ok"
+    }
+}

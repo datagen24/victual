@@ -1,0 +1,63 @@
+postgres 15.19 (Debian 15.19-1.pgdg13+2) | seed 40090910 | iterations per scenario 400
+
+S1_consume_vs_revoke_safe: analysed=400 ties=0 hung=0
+  deadlock delta: 0 | errors by SQLSTATE: [] | violations: [] 
+    204  lock_first=A consume=consumed revoke=revoked commit_first=consume
+    196  lock_first=B consume=absent revoke=revoked commit_first=revoke
+
+S1_consume_vs_revoke_unsafe: analysed=400 ties=0 hung=0
+  deadlock delta: 0 | errors by SQLSTATE: [] | violations: {'consume_committed_after_revoke_committed': 344, 'outcome_differs_from_lock_order': 135, 'second_lock_before_first_commit': 331} 
+    209  lock_first=A consume=consumed revoke=revoked commit_first=revoke
+     56  lock_first=B consume=absent revoke=revoked commit_first=revoke
+    135  lock_first=B consume=consumed revoke=revoked commit_first=revoke
+
+S2_grant_vs_grant_safe: analysed=400 ties=0 hung=0
+  deadlock delta: 0 | errors by SQLSTATE: [] | violations: [] {'final_rights_equal_later_committers_checked': 400, 'final_rights_differ_from_later_committer': 0, 'iterations_with_share_row_count_not_one': 0}
+    400  outcomes=inserted+updated
+
+S2_grant_vs_grant_unlocked: analysed=148 ties=0 hung=0
+  deadlock delta: 0 | errors by SQLSTATE: {'23505': 252} | violations: {'missing_log_row': 252} {'final_rights_equal_later_committers_checked': 148, 'final_rights_differ_from_later_committer': 0, 'iterations_with_share_row_count_not_one': 0}
+    148  outcomes=inserted+updated
+
+S3_transfer_vs_consume: analysed=400 ties=0 hung=0
+  deadlock delta: 0 | errors by SQLSTATE: [] | violations: [] 
+    104  lock_first=consume consumer=new_owner transfer=transferred consume=consumed
+    108  lock_first=consume consumer=old_owner transfer=transferred consume=consumed
+     94  lock_first=transfer consumer=new_owner transfer=transferred consume=consumed
+     94  lock_first=transfer consumer=old_owner transfer=transferred consume=consumed
+
+S4_owner_delete_vs_consume: analysed=400 ties=0 hung=0
+  deadlock delta: 0 | errors by SQLSTATE: [] | violations: [] 
+     93  lock_first=consume consumer=owner consume=consumed
+     95  lock_first=consume consumer=share_holder consume=consumed
+    110  lock_first=delete consumer=owner consume=absent
+    102  lock_first=delete consumer=share_holder consume=absent
+
+S5_holder_grant_vs_holder_revoked: analysed=400 ties=0 hung=0
+  deadlock delta: 0 | errors by SQLSTATE: [] | violations: [] 
+     96  lock_first=grant revoke share grant=inserted
+     95  lock_first=grant strip share right grant=inserted
+    100  lock_first=owner_change revoke share grant=absent
+    109  lock_first=owner_change strip share right grant=refused
+
+S6_consume_vs_consume_overlapping_products: analysed=400 ties=0 hung=0
+  deadlock delta: 0 | errors by SQLSTATE: [] | violations: [] 
+      7  both=consumed/consumed overlap=0
+     72  both=consumed/consumed overlap=1
+    178  both=consumed/consumed overlap=2
+    102  both=consumed/consumed overlap=3
+     41  both=consumed/consumed overlap=4
+
+S7a_edit_vs_edit_for_share_name_only: analysed=400 ties=0 hung=0
+  deadlock delta: 196 | errors by SQLSTATE: {'40P01': 196} | violations: [] 
+    204  edited + edited
+    196  edited + error:40P01
+
+S7b_edit_vs_edit_for_share_lines_only: analysed=400 ties=0 hung=0
+  deadlock delta: 88 | errors by SQLSTATE: {'40P01': 88} | violations: [] 
+    312  edited + edited
+     88  edited + error:40P01
+
+S7c_edit_vs_edit_for_update_name_and_lines: analysed=400 ties=0 hung=0
+  deadlock delta: 0 | errors by SQLSTATE: [] | violations: [] 
+    400  edited + edited
