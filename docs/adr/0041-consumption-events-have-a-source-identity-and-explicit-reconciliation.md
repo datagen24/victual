@@ -462,6 +462,11 @@ ADR-0036 lineage and the audit trail. Rejected.
 | `POST /api/consumption/recipes/{id}/consume` | Manual consumption; body `request_id`, optional `location_id`, `occurred_at` |
 | `GET /api/consumption/capabilities` | `{contract_version, features[]}`, so a client tests for a feature rather than guessing from the server version |
 
+`features` lists only what the server implements. Version 1 names: `events`, `mappings`, `batch`,
+`bulk_resolve`, `manual_consume`, `deletion_reasons`, `not_logged`, `default_quantity`,
+`unit_labels` and `replaces`. A client gates a screen on membership, and a name is added when
+its behavior ships, so a partial deployment never advertises a feature it lacks.
+
 For the mapping screen, a product's valid unit conversions are
 `GET /api/objects/quantity_unit_conversions_resolved?query[]=product_id=<id>` and the
 locations holding it are `GET /api/stock/products/{productId}/locations`. Both exist today
