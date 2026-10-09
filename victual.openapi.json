@@ -9930,8 +9930,8 @@
 				"tags": [
 					"Consumption recipes"
 				],
-				"summary": "Change a user's share",
-				"description": "Requires STOCK_VIEW and the share right, within the rules of the POST.",
+				"summary": "Set a user's share",
+				"description": "Requires STOCK_VIEW and the share right, within the rules of the POST. Replaces the user's rights, and creates the share when the user holds none.",
 				"requestBody": {
 					"required": true,
 					"content": {

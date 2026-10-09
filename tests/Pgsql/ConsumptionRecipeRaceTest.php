@@ -37,7 +37,8 @@ class ConsumptionRecipeRaceTest extends PgsqlSchemaTestCase
 
 		self::$db = self::Pdo();
 		self::$service = ConsumptionRecipeService::GetInstance();
-		self::$seed = random_int(1, PHP_INT_MAX);
+		// CONSUMPTION_RACE_SEED replays a failing run's schedule of delays (the seed is in every failure message).
+		self::$seed = (int)(getenv('CONSUMPTION_RACE_SEED') ?: random_int(1, PHP_INT_MAX));
 		mt_srand(self::$seed);
 
 		foreach ([self::OWNER => 'owner', self::MEMBER => 'member', self::THIRD => 'third'] as $id => $name)

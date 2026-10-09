@@ -34,7 +34,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 			catch (ConsumptionException $exception)
 			{
 				$response = $response->withStatus($exception->status);
-				return $this->ApiResponse($response, ['error_message' => $exception->getMessage(), 'error' => $exception->errorCode]);
+				return $this->ApiResponse($response, ['error_message' => self::WithoutDriverText($exception->getMessage()), 'error' => $exception->errorCode]);
 			}
 		});
 	}

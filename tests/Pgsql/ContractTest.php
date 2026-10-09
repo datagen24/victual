@@ -58,6 +58,12 @@ use Victual\Tests\Support\RouteInventory;
  *     row - the completeness leg, which step 7 is structurally blind to because an
  *     unclassified field looks identical for both identities.
  *
+ * The consumption recipe routes (ADR-0040) are invoked for the administrator, and only the list and
+ * the by-id read are replayed for CHILD. A user with no share on a recipe gets 404 from every by-id
+ * route (ADR-0040 rule 7), which the restricted leg's 200-or-403 rule cannot represent; that denial
+ * is covered by ConsumptionRecipeServiceTest and ConsumptionRecipeApiTest, and the replay here
+ * proves the permission gate and the response shape for the one user who owns the recipe.
+ *
  * What is deliberately not called: the operations behind the label pairing/worker/
  * renderer/template-admin routes (LabelWorkerApiController, LabelPrintersApiController,
  * LabelRenderApiController, LabelTemplatesApiController, plus LabelsApiController's own
