@@ -120,7 +120,7 @@ class ImporterTargetOnlyTableRetentionTest extends PgsqlSchemaTestCase
 			'the pre-import row must not survive - the ordinary common-table copy replaces it with exactly the source\'s own rows, not a superset');
 	}
 
-	// --- mcp_tool_settings (0307, ADR-0039): references users, which an import replaces ------
+	// --- mcp_tool_settings (0305, ADR-0039): references users, which an import replaces ------
 
 	public function testImportResetsTheMcpToolSwitchesToTheirDefaults(): void
 	{

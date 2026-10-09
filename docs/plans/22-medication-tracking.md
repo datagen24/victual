@@ -319,8 +319,8 @@ Collected because most of them are only visible from inside the existing code.
   [14](landed/14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two files, claiming **0305** (medication master data and subjects)
-  and **0306** (regimens, administrations, excursions) — see
+- **Migration numbering.** Two files, claiming **0306** (medication master data and subjects)
+  and **0307** (regimens, administrations, excursions) — see
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md). The numbers have moved:
 
   - 0304–0305 until issue #665's booking lineage migration (ADR-0036) was written on 2026-10-07

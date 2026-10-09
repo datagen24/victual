@@ -82,8 +82,12 @@ changes, in PostgreSQL, behind pages and the `ADMIN` permission.
 ## Prerequisite status
 
 Recorded 2026-10-08 against the spike branch `claude/adr0039-prerequisites`, which is
-disposable and not mergeable: it takes migration 0307 above plan 22's unwritten 0305 and
-0306, so `check-migrations.php` fails on it without `--allow-reserved-holes`. Prerequisite 1
+disposable and not mergeable. The evidence below was gathered with the migration at 0307, above
+plan 22's unwritten 0305 and 0306, where `check-migrations.php` failed without
+`--allow-reserved-holes`. On 2026-10-09 the migration moved to 0305 and plan 22's claims to
+0306 and 0307, so CI could reach the tests.
+
+Prerequisite 1
 ran on the code at `dbc83da6`. The kind images for prerequisites 2 to 4 came from `529a6fb3`,
 which differs from `dbc83da6` only in tests, evidence scripts and one development-tool
 exclusion. They were built from the flake's `image-*` outputs in a Nix builder container
@@ -289,7 +293,7 @@ Ran in the scratch namespace `victual-adr39-base`: Victual, web and migrate imag
 ### What the real change still has to do
 
 - Take the lowest free migration slot (0305 under `migrations/RESERVATIONS.md`'s rule), or
-  wait for plan 22, and rename `0307.pgsql.sql` and the reservation row to match.
+  wait for plan 22, and rename `0305.pgsql.sql` and the reservation row to match.
 - Run the full CI, including the ratchet, the label steps and a PHP 8.4 leg.
 - Change the sidecar's startup line (`N tool(s) enabled`). It reports the environment's list,
   which is wrong when Victual serves the config.
