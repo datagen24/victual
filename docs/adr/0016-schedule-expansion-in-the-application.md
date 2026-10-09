@@ -1,6 +1,7 @@
 # ADR-0016: Schedule expansion lives in the application, not the database
 
-- **Status: Proposed.** Written to be argued with.
+- **Status: Rejected 2026-10-09.** Recurrence expansion has no consumer in plan 22's narrowed
+  scope; see Disposition. The reasoning below stays as history.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-04, alongside [plan 22](../plans/22-medication-tracking.md).
