@@ -23,14 +23,13 @@ redeployed sidecar; it records what Victual now offers.
   recorded *shapes*, but not the frozen fixtures themselves.
 - **The actual client (§11.4).** The two motivating questions have not yet been asked
   through Claude in real use.
-- **Household use of the read tools.** Issue #86 is still open. The write tools below were
-  built ahead of its gate (see the next section).
+- **Household use of the read tools.** Issue #86 is still open.
 
 ## Write tools (issue #209, 2026-10-08)
 
 `add_to_shopping_list`, `consume_product` and `purchase_product` are built per spec §6.
-The maintainer chose to build them before #86's "deployed and in use" gate was met; that
-waiver is recorded in plan 02's Q2 response. They are **off by default**: `all-read` does
+The earlier condition that they wait for #86 to be in household use was added by an
+agent, not decided by the maintainer, and is withdrawn (plan 02 Q2). They are **off by default**: `all-read` does
 not include them, so an operator enables each by name, for example
 `MCP_ENABLED_TOOLS=all-read,add_to_shopping_list,consume_product,purchase_product`.The `all-read` keyword expands inside a comma list.
 

@@ -313,8 +313,9 @@ Appendix A for why nothing may depend on that internal naming convention again).
 
 ## 6. Tools — writes (built 2026-10-08, issue #209)
 
-Per 02-Q2 these were to ship only after read-only v1 had proven the transport in use.
-The maintainer waived that gate on 2026-10-08 and the tools are built, off by default. They
+02-Q2 originally held these until read-only v1 had been used in the household. The
+maintainer withdrew that condition on 2026-10-08: it was added by an agent, not decided by
+the maintainer. The tools are built, off by default. They
 needed [13](plans/landed/13-write-path-transactions.md), which had landed. The table is
 the build specification:
 
