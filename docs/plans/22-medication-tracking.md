@@ -439,9 +439,18 @@ pass shows the absence of the failures in those rounds and not a proof.
 Server fixtures replay Victual's answers. They are not evidence that the Apple client has
 synchronized (issue 702).
 
-**Not run here.** PostgreSQL 15, which cannot be installed in the environment that produced
-this evidence; PHP 8.4 and 8.5; the coverage run behind the aggregate ratchet and the per-file
-floor (no coverage driver); Psalm; the whole `frontend-security` job; and the full test suite.
-The `contract` phase fails on this host in `testAdminSnapshotMatchesGolden` on `price` fields
-of `/api/objects/*`, and fails the same way on unmodified `master` at `7287b77`. The new
-snapshot entries were generated here and merged into the committed snapshot as additions.
+**CI evidence.** The pull request checks ran on GitHub Actions with PHP 8.4 or later and with
+both PostgreSQL versions: `suite-floor` uses PostgreSQL 15, `images` uses PostgreSQL 16 and `suite`
+runs the aggregate coverage ratchet. At `0a63015` (pull request 741) and `17657d2` (pull request 743)
+every check completed without a failure: `lint`, `prose`, `mcp`, `frontend-security` (which runs
+the inbox probe on 743), `images`, `suite-floor` and `suite`. Pull request 739 at `cab577e` passed
+the same set and Psalm. Earlier heads of 741 and 743 failed `WireContractTest` (the documented
+boolean list and the instant patterns of the new schemas) and the contract snapshot; both were
+fixed in `0a63015` and `2157bcb`.
+
+**Not run here.** Local runs did not cover PostgreSQL 15, PHP 8.4 or 8.5, the coverage run,
+Psalm, the whole `frontend-security` job or the full test suite; the CI evidence above covers
+them. The `contract` phase and six `WireContractTest` tests fail on this host in tests about
+numeric typing of `/api/objects/*` fields (`price`, `tare_weight`, `amount`), and they fail the
+same way on unmodified `master` at `7287b77`. The new snapshot entries were generated here and
+merged into the committed snapshot as additions; CI compared them on PHP 8.4 or later.
