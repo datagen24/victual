@@ -32,12 +32,15 @@ class ConsumptionEventServiceTest extends PgsqlSchemaTestCase
 	private static int $organizerA;
 	private static int $organizerB;
 	private static int $sequence = 0;
+	/** One instant for every request body of the class, so a repeated body is the same payload (the hash covers occurred_at). */
+	private static string $bodyTime;
 
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
 
 		self::$db = self::Pdo();
+		self::$bodyTime = (new \DateTimeImmutable('-1 hour', new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s\Z');
 		self::$events = ConsumptionEventService::GetInstance();
 		self::$mappings = ConsumptionMappingService::GetInstance();
 
@@ -108,7 +111,7 @@ class ConsumptionEventServiceTest extends PgsqlSchemaTestCase
 
 	private static function body(string $ref, array $extra = []): array
 	{
-		return $extra + ['status' => 'taken', 'medication_ref' => $ref, 'quantity' => 1, 'unit_label' => 'tablet', 'occurred_at' => self::ago('1 hour')];
+		return $extra + ['status' => 'taken', 'medication_ref' => $ref, 'quantity' => 1, 'unit_label' => 'tablet', 'occurred_at' => self::$bodyTime];
 	}
 
 	private function put(string $id, array $body, int $user = self::ME, string $system = 'healthkit'): array
@@ -161,7 +164,7 @@ class ConsumptionEventServiceTest extends PgsqlSchemaTestCase
 		$result = $this->put($id, self::body('hk:unmapped'));
 
 		self::assertTrue($result['created']);
-		self::assertSame(['needs_mapping', null, false], [$result['event']['state'], $result['event']['reason'], isset($result['event']['replayed'])]);
+		self::assertSame(['needs_mapping', null, false], [$result['event']['state'], $result['event']['reason'], $result['event']['replayed']]);
 		self::assertSame(5.0, self::onHand($product));
 	}
 
@@ -177,7 +180,7 @@ class ConsumptionEventServiceTest extends PgsqlSchemaTestCase
 
 		self::assertSame('booked', $booked['state']);
 		self::assertSame([10.0, 8.0], [self::onHand($product, self::$organizerA), self::onHand($product, self::$organizerB)]);
-		self::assertSame([['product_id' => $product, 'amount' => 2.0, 'location_id' => self::$organizerB, 'used_date' => substr(self::ago('1 hour'), 0, 10)]], $booked['lines']);
+		self::assertSame([['product_id' => $product, 'amount' => 2.0, 'location_id' => self::$organizerB, 'used_date' => substr(self::$bodyTime, 0, 10)]], $booked['lines']);
 
 		$this->expectRefusal(fn() => self::$events->Resolve(self::ME, 'healthkit', $id, 'retry'), 409, 'invalid_transition');
 		self::assertSame(8.0, self::onHand($product, self::$organizerB), 'a second retry booked nothing');
@@ -302,6 +305,35 @@ class ConsumptionEventServiceTest extends PgsqlSchemaTestCase
 		}
 
 		self::assertSame(10.0, self::onHand($product));
+	}
+
+	public function testAStatusOnlyRequestKeepsTheMedicationQuantityAndUnitOfTheStoredEvent(): void
+	{
+		$product = self::product('CE status only', 10);
+		$ref = self::map($product);
+		$id = self::uid();
+		$this->put($id, self::body($ref, ['quantity' => 2]));
+
+		// Outside the automatic-void window, so the event waits for a person and stays findable by medication.
+		self::$db->exec("UPDATE consumption_events SET occurred_at = now() - interval '30 days' WHERE source_event_id = '$id'");
+		$held = $this->put($id, ['status' => 'not_logged']);
+
+		self::assertSame(['needs_review', 'source_deleted'], [$held['event']['state'], $held['event']['reason']]);
+		$row = self::$db->query("SELECT medication_ref, quantity, unit_label, submitted_status FROM consumption_events WHERE source_event_id = '$id'")->fetch(PDO::FETCH_ASSOC);
+		self::assertSame([$ref, 2.0, 'tablet', 'not_logged'], [$row['medication_ref'], (float)$row['quantity'], $row['unit_label'], $row['submitted_status']]);
+
+		$bulk = self::$events->BulkResolve(self::ME, 'void', null, ['source_system' => 'healthkit', 'medication_ref' => $ref, 'state' => 'needs_review', 'reason' => 'source_deleted']);
+		self::assertCount(1, $bulk['results'], 'the filter still finds the event');
+		self::assertSame(10.0, self::onHand($product));
+	}
+
+	public function testANewRowAnswersReplayedFalseAndARepeatAnswersTrue(): void
+	{
+		$ref = self::map(self::product('CE replayed flag', 5));
+		$id = self::uid();
+
+		self::assertFalse($this->put($id, self::body($ref))['event']['replayed']);
+		self::assertTrue($this->put($id, self::body($ref))['event']['replayed']);
 	}
 
 	public function testANotLoggedStatusAfterBookingVoidsWithinTheWindowAndStaysVoided(): void

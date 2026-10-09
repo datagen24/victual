@@ -1,0 +1,25 @@
+{
+	"title": "Capabilities: a client tests for a feature instead of guessing from the server version",
+	"adr_sequence": "appendix (no table row)",
+	"description": "Not a row of the ADR-0041 acceptance table. The first call a client makes: GET /api/consumption/capabilities lists what this server implements, so a screen is gated on membership.",
+	"setup": {
+		"locations": [],
+		"products": {}
+	},
+	"steps": [
+		{
+			"note": "Read the capabilities",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/capabilities"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"contract_version": 1,
+					"features": ["events", "mappings", "batch", "bulk_resolve", "manual_consume", "deletion_reasons", "not_logged", "default_quantity", "unit_labels", "replaces"]
+				}
+			}
+		}
+	]
+}

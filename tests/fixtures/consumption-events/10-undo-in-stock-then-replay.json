@@ -1,0 +1,184 @@
+{
+	"title": "After the person undoes the booking in stock, a replay does not rebook",
+	"adr_sequence": "10",
+	"description": "The person undoes the transaction in the stock journal (POST /api/stock/transactions/{id}/undo). The event reads undone from then on; the client repeating the same request does not deduct again, however often. Only an explicit rebook returns it.",
+	"setup": {
+		"locations": ["organizer_a"],
+		"products": {
+			"tablet": {
+				"stock": {
+					"organizer_a": 10
+				}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "The person approves a mapping on the native approval screen",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/mappings/healthkit/hk:med:42",
+				"body": {
+					"product_id": "{{product.tablet}}",
+					"quantity_factor": 1,
+					"unit_labels": ["tablet"],
+					"default_quantity": null,
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					},
+					"effective_from": "{{time:-30d}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"medication_ref": "hk:med:42",
+					"unit_labels": ["tablet"],
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					}
+				}
+			}
+		},
+		{
+			"note": "Dose booked",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "tablet",
+					"occurred_at": "{{time:-90m}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "booked",
+					"reason": null,
+					"lines": [
+						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+					]
+				}
+			},
+			"save": {
+				"tx": "transaction_id"
+			},
+			"stock": {
+				"tablet": 9
+			}
+		},
+		{
+			"note": "The person undoes it in stock",
+			"request": {
+				"method": "POST",
+				"path": "/api/stock/transactions/{{saved.tx}}/undo"
+			},
+			"expect": {
+				"status": 204
+			},
+			"stock": {
+				"tablet": 10
+			}
+		},
+		{
+			"note": "The event now reads undone",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "undone",
+					"reason": null
+				}
+			}
+		},
+		{
+			"note": "The client replays the same event",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "tablet",
+					"occurred_at": "{{time:-90m}}"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "undone",
+					"replayed": true
+				}
+			},
+			"stock": {
+				"tablet": 10
+			}
+		},
+		{
+			"note": "And again",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "tablet",
+					"occurred_at": "{{time:-90m}}"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "undone",
+					"replayed": true
+				}
+			},
+			"stock": {
+				"tablet": 10
+			}
+		},
+		{
+			"note": "Only rebook books it again",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9/resolve",
+				"body": {
+					"action": "rebook"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"state": "booked",
+					"reason": null,
+					"lines": [
+						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+					],
+					"revision": 2
+				}
+			},
+			"stock": {
+				"tablet": 9
+			}
+		}
+	]
+}

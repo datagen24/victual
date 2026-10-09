@@ -23,12 +23,14 @@ class ConsumptionEventApiTest extends PgsqlSchemaTestCase
 	private static int $unit;
 	private static int $location;
 	private static int $sequence = 0;
+	private static string $bodyTime;
 
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
 
 		self::$db = self::Pdo();
+		self::$bodyTime = gmdate('Y-m-d\TH:i:s\Z', time() - 3600);
 		$accounts = ['alice' => ['STOCK_VIEW', 'STOCK_CONSUME', 'STOCK_EDIT'], 'alice2' => null, 'bob' => ['STOCK_VIEW', 'STOCK_CONSUME', 'STOCK_EDIT'], 'viewer' => ['STOCK_VIEW'], 'nobody' => []];
 		$next = 9501;
 		foreach ($accounts as $name => $grants)
@@ -122,7 +124,7 @@ class ConsumptionEventApiTest extends PgsqlSchemaTestCase
 
 	private static function event(string $ref, array $extra = []): array
 	{
-		return $extra + ['status' => 'taken', 'medication_ref' => $ref, 'quantity' => 1, 'unit_label' => 'tablet', 'occurred_at' => gmdate('Y-m-d\TH:i:s\Z', time() - 3600)];
+		return $extra + ['status' => 'taken', 'medication_ref' => $ref, 'quantity' => 1, 'unit_label' => 'tablet', 'occurred_at' => self::$bodyTime];
 	}
 
 	public function testEveryRouteNeedsAuthenticationAndTheRightPermissions(): void
