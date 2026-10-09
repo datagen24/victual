@@ -231,9 +231,9 @@ and checks each outcome on the page and through the API or the stock ledger:
 - a user without stock permissions gets the 403 page, and a user with `STOCK_VIEW` only sees the
   actions disabled with an explanation while the API refuses the same action
 - a manual consumption (recorded through the recipes page) and an external event for the same
-  product (sent with the user's API key) are listed as a possible duplicate; a transaction id
-  that cannot be linked shows the server's sentence and changes nothing; Link leaves the event
-  linked and exactly one deduction
+  product (sent with the user's API key) are listed as a possible duplicate
+- a transaction id that cannot be linked shows the server's sentence and changes nothing, and
+  Link leaves the event linked with exactly one deduction
 - an event booked, undone in the stock journal page, replayed (it stays undone), listed under
   the undone toggle with Book again, and booked once more by that action
 - a `needs_mapping` event, an action on a stale row that the server refuses with 409
