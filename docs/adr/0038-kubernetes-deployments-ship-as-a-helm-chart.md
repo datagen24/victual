@@ -1,13 +1,13 @@
 # ADR-0038: Kubernetes deployments ship as a Helm chart, and `deploy/k3s/` becomes its rendered output
 
-- **Status:** Proposed
+- **Status:** Accepted 2026-10-09
 - **Decider:** datagen24
 - **Recorded:** 2026-10-07. Answers to open questions 1, 2 and 3 recorded the same day,
   and decisions 2, 8, 9 and 10 reconciled with them. Prerequisites 1 to 3 met 2026-10-08,
   with two rulings that day reconciled into decision 6, and 4 and 7 met on kind the same
   day, as was 6's kind half (see "Prerequisite status")
 - **Referenced by:** [plan 20](../plans/20-container-infrastructure.md) (piece 4, the k3s
-  manifests), [deploy/](../../deploy/README.md); would supersede in part the answer to
+  manifests), [deploy/](../../deploy/README.md); supersedes in part the answer to
   [ADR-0010](0010-workload-standard.md) open question 1; extends
   [ADR-0030](0030-released-images-are-published-to-ghcr.md)'s release workflow
 
