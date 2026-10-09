@@ -1,0 +1,230 @@
+{
+	"title": "A deletion with no reason, or entered_in_error older than seven days, waits for a person",
+	"adr_sequence": "9b",
+	"description": "Nothing is restored automatically. Both events become needs_review/source_deleted. A person resolves one with void (stock comes back) and the other with keep (the booking stays). The event that is voided is the most recent booking from this stock, which is what lets the undo succeed (ADR-0036).",
+	"setup": {
+		"locations": ["organizer_a"],
+		"products": {
+			"tablet": {
+				"stock": {
+					"organizer_a": 10
+				}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "The person approves a mapping on the native approval screen",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/mappings/healthkit/hk:med:42",
+				"body": {
+					"product_id": "{{product.tablet}}",
+					"quantity_factor": 1,
+					"unit_labels": ["tablet"],
+					"default_quantity": null,
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					},
+					"effective_from": "{{time:-30d}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"medication_ref": "hk:med:42",
+					"unit_labels": ["tablet"],
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					}
+				}
+			}
+		},
+		{
+			"note": "Dose to keep, taken ten days ago",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "tablet",
+					"occurred_at": "{{time:-10d}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "booked",
+					"reason": null,
+					"lines": [
+						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+					]
+				}
+			}
+		},
+		{
+			"note": "Dose to void, taken ten days ago (booked last)",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "tablet",
+					"occurred_at": "{{time:-10d}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "booked",
+					"reason": null,
+					"lines": [
+						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+					]
+				}
+			},
+			"stock": {
+				"tablet": 8
+			}
+		},
+		{
+			"note": "Deleted with no reason: the client cannot say why",
+			"request": {
+				"method": "DELETE",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "needs_review",
+					"reason": "source_deleted"
+				}
+			},
+			"stock": {
+				"tablet": 8
+			}
+		},
+		{
+			"note": "Deleted as entered_in_error, but older than seven days",
+			"request": {
+				"method": "DELETE",
+				"path": "/api/consumption/events/healthkit/6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9?reason=entered_in_error"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "needs_review",
+					"reason": "source_deleted"
+				}
+			},
+			"stock": {
+				"tablet": 8
+			}
+		},
+		{
+			"note": "An unknown reason is refused",
+			"request": {
+				"method": "DELETE",
+				"path": "/api/consumption/events/healthkit/6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9?reason=bored"
+			},
+			"expect": {
+				"status": 400,
+				"body": {
+					"error": "invalid_request"
+				}
+			}
+		},
+		{
+			"note": "Both are in the inbox",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/events?state=needs_review"
+			},
+			"expect": {
+				"status": 200,
+				"body": [
+					{"state": "needs_review"}
+				],
+				"count": {
+					"": 2
+				}
+			}
+		},
+		{
+			"note": "void restores stock",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/events/healthkit/6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9/resolve",
+				"body": {
+					"action": "void"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"state": "voided"
+				}
+			},
+			"stock": {
+				"tablet": 9
+			}
+		},
+		{
+			"note": "keep leaves the booking",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9/resolve",
+				"body": {
+					"action": "keep"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"state": "booked",
+					"reason": null,
+					"lines": [
+						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+					]
+				}
+			},
+			"stock": {
+				"tablet": 9
+			}
+		},
+		{
+			"note": "A kept event cannot be voided afterwards",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9/resolve",
+				"body": {
+					"action": "void"
+				}
+			},
+			"expect": {
+				"status": 409,
+				"body": {
+					"error": "invalid_transition"
+				}
+			},
+			"stock": {
+				"tablet": 9
+			}
+		}
+	]
+}

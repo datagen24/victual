@@ -727,10 +727,10 @@ class ConsumptionEventService extends BaseService
 			// `received` is booked.
 			if ($row['state'] !== 'received')
 			{
-				return $this->Present($row);
+				return $this->Present($row, ['replayed' => false]);
 			}
 
-			return $this->Present($this->Dispatch($row, $payload, $replaced, 'first'), $this->ReplacesExtra($replaced, $payload));
+			return $this->Present($this->Dispatch($row, $payload, $replaced, 'first'), ['replayed' => false] + $this->ReplacesExtra($replaced, $payload));
 		}
 
 		if ($sameHash)
@@ -800,8 +800,11 @@ class ConsumptionEventService extends BaseService
 		if ($payload['status'] !== 'taken')
 		{
 			// not_logged, skipped, unanswered and scheduled on an existing row are a deletion with the
-			// reason entered_in_error (ADR-0041 rule 3).
-			$this->StorePayload($eventId, $payload, null);
+			// reason entered_in_error (ADR-0041 rule 3). Such a request may omit everything but the status, so
+			// it records the status and the version only: replacing medication_ref, quantity or unit_label with
+			// nothing would hide the event from a bulk filter and leave a later retry with nothing to book.
+			$this->Db()->prepare('UPDATE consumption_events SET submitted_status = ?, source_updated_at = COALESCE(?::timestamptz, source_updated_at), payload_hash = ?, updated_at = now() WHERE id = ?')
+				->execute([$payload['status'], $payload['source_updated_at'], $payload['hash'], $eventId]);
 
 			return $this->ApplyRemoval($this->RowById($eventId, true), 'entered_in_error');
 		}

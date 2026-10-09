@@ -1,0 +1,189 @@
+{
+	"title": "Mapping mode single with stock in two locations is ambiguous and deducts nothing",
+	"adr_sequence": "15",
+	"description": "single books only when exactly one location holds enough. Two organizers hold tablets, so the event is needs_review/ambiguous_location with candidate_location_ids. A product held in one place books directly. The person then switches the tablet mapping to a fixed location and retries.",
+	"setup": {
+		"locations": ["organizer_a", "organizer_b"],
+		"products": {
+			"tablet": {
+				"stock": {
+					"organizer_a": 5,
+					"organizer_b": 5
+				}
+			},
+			"capsule": {
+				"stock": {
+					"organizer_a": 5
+				}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "The person approves a mapping on the native approval screen",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/mappings/healthkit/hk:med:42",
+				"body": {
+					"product_id": "{{product.tablet}}",
+					"quantity_factor": 1,
+					"unit_labels": ["tablet"],
+					"default_quantity": null,
+					"location": {
+						"mode": "single"
+					},
+					"effective_from": "{{time:-30d}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"medication_ref": "hk:med:42",
+					"unit_labels": ["tablet"],
+					"location": {
+						"mode": "single"
+					}
+				}
+			}
+		},
+		{
+			"note": "A second medication whose product is held in one place only",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/mappings/healthkit/hk:med:43",
+				"body": {
+					"product_id": "{{product.capsule}}",
+					"quantity_factor": 1,
+					"unit_labels": ["capsule"],
+					"default_quantity": null,
+					"location": {
+						"mode": "single"
+					},
+					"effective_from": "{{time:-30d}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"medication_ref": "hk:med:43",
+					"unit_labels": ["capsule"],
+					"location": {
+						"mode": "single"
+					}
+				}
+			}
+		},
+		{
+			"note": "Tablet held in two organizers",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "tablet",
+					"occurred_at": "{{time:-90m}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "needs_review",
+					"reason": "ambiguous_location",
+					"candidate_location_ids": ["{{location.organizer_a}}", "{{location.organizer_b}}"],
+					"lines": []
+				}
+			},
+			"stock": {
+				"tablet@organizer_a": 5,
+				"tablet@organizer_b": 5
+			}
+		},
+		{
+			"note": "Capsule held in one organizer",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:43",
+					"quantity": 1,
+					"unit_label": "capsule",
+					"occurred_at": "{{time:-90m}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "booked",
+					"lines": [
+						{"product_id": "{{product.capsule}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+					]
+				}
+			},
+			"stock": {
+				"capsule": 4
+			}
+		},
+		{
+			"note": "The person switches the tablet mapping to organizer_b",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/mappings/healthkit/hk:med:42",
+				"body": {
+					"product_id": "{{product.tablet}}",
+					"quantity_factor": 1,
+					"unit_labels": ["tablet"],
+					"default_quantity": null,
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_b}}"
+					},
+					"effective_from": "{{time:-30d}}"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"source_system": "healthkit",
+					"medication_ref": "hk:med:42",
+					"unit_labels": ["tablet"],
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_b}}"
+					}
+				}
+			}
+		},
+		{
+			"note": "Retry books at organizer_b",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9/resolve",
+				"body": {
+					"action": "retry"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"state": "booked",
+					"lines": [
+						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_b}}"}
+					]
+				}
+			},
+			"stock": {
+				"tablet@organizer_a": 5,
+				"tablet@organizer_b": 4
+			}
+		}
+	]
+}
