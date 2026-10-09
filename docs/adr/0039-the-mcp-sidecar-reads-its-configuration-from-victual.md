@@ -93,7 +93,7 @@ one node, in the scratch namespaces `victual-adr39` and `victual-adr39-base`.
 
 | # | Status | Evidence |
 |---|---|---|
-| 1 | **Met, within what a Mac can run** | Runner coverage rose from 96.41% to 96.43% with no file lower and none under 75%. The PHP and sidecar checks pass. CI's own ratchet run, a PHP 8.4 leg and the other frontend probes were not run. See "Prerequisite 1" |
+| 1 | **Partly met** | Runner coverage rose from 96.41% to 96.43% with no file lower and none under 75%. The PHP and sidecar checks pass. CI's own ratchet run, a PHP 8.4 leg and the other frontend probes were not run. See "Prerequisite 1" |
 | 2 | **Met** | On kind, with the official SDK client, `tools/list` changed after a `PUT` with no restart, a just-disabled write tool was refused, and re-enabling it worked. A read-only key read the config. See "Prerequisite 2" |
 | 3 | **Met, with numbers that call for a decision** | `GET /api/mcp/config` has a p50 of about 12 ms. It adds about 2 ms to `tools/list` and about 13 ms to `tools/call`. See "Prerequisite 3" |
 | 4 | **Met** | A Victual without the route answered 404. The sidecar served `MCP_ENABLED_TOOLS` and logged the fallback once per process. See "Prerequisite 4" |
@@ -145,9 +145,11 @@ Also run on the spike:
 | `McpAuthTest` | 19 tests, 10 of them new |
 | `ContractTest` | `contract-admin.json` gains 16 lines and `contract-restricted.json` 8, all for the new routes |
 | `check-migrations.php` | exit 1; with `--allow-reserved-holes`, exit 0 and two warnings |
+| `python3 -m unittest discover -s .devtools/ci` | 80 tests pass |
+| Vale 3.22.0 on the staged prose | no new findings (the pinned binary was already installed in a sibling worktree, so nothing was downloaded) |
 
-Not run: a PHP 8.4 leg (the image is 8.5), the other `frontend-security` probes, and
-`python3 -m unittest discover -s .devtools/ci`. `s29-payload.js` does not visit
+Not run: a PHP 8.4 leg (the image is 8.5) and the other `frontend-security` probes.
+`s29-payload.js` does not visit
 `/mcpsettings`, so the new page was driven separately with Playwright against a demo
 instance. It showed nine rows with the three write tools labelled. A toggle sent `PUT
 /api/mcp/config` with `{"tools":{"consume_product":true}}` and got 200, and the state
@@ -208,8 +210,9 @@ gives a disabled one a handler that returns the error. Leaving it unregistered w
 
 Decision 6 says the sidecar logs once at startup that it ignores `MCP_ENABLED_TOOLS`. At
 startup it has no credential to ask Victual with, so it logs `Victual serves
-/api/mcp/config: MCP_ENABLED_TOOLS is ignored` once per process, at the first request. Each
-pod logged it once.
+/api/mcp/config: MCP_ENABLED_TOOLS is ignored` once per process, at the first request. The
+two pods that served the 300-request latency rerun each logged it once. The pods that served
+the demo above were replaced before their logs were read.
 
 To reproduce: `deploy/kind/up.sh` with `VICTUAL_NAMESPACE=victual-adr39` and
 `VICTUAL_IMAGE_TAG=0.3.2-adr39spike`; two rows inserted into `api_keys` the way
