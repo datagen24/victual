@@ -29,8 +29,9 @@ client proposes an inferred booking.
 **Proposed records:** [ADR-0015](../adr/0015-medication-records-never-advises.md) needs
 its boundary aligned with inventory and refill notices. [ADR-0016](../adr/0016-schedule-expansion-in-the-application.md)
 has no implementation consumer in this scope. Neither record's lifecycle status changes
-through this plan. New design records are needed for scoped sharing and external-event
-reconciliation; see [release readiness](#release-readiness).
+through this plan. [ADR-0040](../adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md)
+(Proposed) records the scoped-sharing design. A design record for external-event
+reconciliation is still needed; see [release readiness](#release-readiness).
 
 ## Current behavior
 
@@ -298,6 +299,9 @@ answers from the maintainer's inventory scope decision on 2026-10-09.
     > **Response, maintainer, 2026-10-09:** Specifically authorized members may access them.
     > The grant authority, individual action rights and account-administration interaction
     > remain technical design gates for a new ADR. Do not introduce an unchecked grant path.
+    > [ADR-0040](../adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md)
+    > (Proposed, 2026-10-09) answers these as a design; the maintainer's open questions on
+    > administrator access and account deletion remain.
 
 12. **What causes stock deduction?**
 

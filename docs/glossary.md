@@ -30,6 +30,13 @@ A recorded stock operation, such as a purchase, consumption, transfer, inventory
 correction, or opening. The stock journal records booking history and supports undo.
 See [Stock](manual/using-victual/stock.md).
 
+### Consumption recipe
+
+Proposed in [ADR-0040](adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md) (Proposed, not implemented).
+An owned list of product lines and quantities consumed together, such as a prescription.
+It is separate from the food `recipes` table and visible only to its owner and users it is
+shared with. See [plan 22](plans/22-medication-tracking.md).
+
 ### Contribution
 
 Proposed in [ADR-0036](adr/0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md) (Proposed, not implemented). The amount of one lot currently held by one
@@ -101,6 +108,12 @@ See [ADR-0023](adr/0023-taxonomy-is-groups-packaging-is-parent-product.md).
 A unit of measure in `quantity_units`, such as a bag or gram. A product's stock unit is
 identified by `qu_id_stock`; purchase units can differ through quantity-unit conversions.
 See [Stock](manual/using-victual/stock.md).
+
+### Share (consumption recipe)
+
+Proposed in [ADR-0040](adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md) (Proposed, not implemented).
+A row granting one user a set of rights (`read`, `consume`, `edit`, `undo`, `share`) on one
+consumption recipe. A share narrows which recipes a user sees and confers no permission.
 
 ### Shopping location
 

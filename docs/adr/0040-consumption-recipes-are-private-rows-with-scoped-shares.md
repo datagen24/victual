@@ -36,9 +36,10 @@ the same permission. Measured on `master` at `216af2b2` (source inspection, 2026
 - **`stock_log.recipe_id` is readable with `STOCK_VIEW`.** `GET /objects/stock_log`,
   `GET /stock/bookings/{id}` and `GET /stock/transactions/{id}` return it, so a booking
   that carried a private recipe's id would disclose it to every stock reader.
-- **Two paths skip the read policy.** `LabelIdentityService::ResolveTarget` selects a
-  recipe's name with a raw query, and `PUT /api/userfields/{entity}/{id}` checks only
-  `MASTER_DATA_EDIT` with no entity coverage check.
+- **One path skips the read policy.** `LabelIdentityService::ResolveTarget` selects a
+  recipe's name with a raw `SELECT id, name FROM recipes WHERE id = ?`, gated only by the
+  label kind's permission. `PUT /api/userfields/{entity}/{id}` checks `MASTER_DATA_EDIT`
+  and relies on `UserfieldsService::SetValues()` refusing an entity that is not exposed.
 - **ADR-0014 compares permission names.** `User::MayAdminister()` and
   `User::CheckMayGrant()` read `user_permissions_resolved` and `permission_tree`. A row in a
   sharing table is not a permission, so neither function sees it. The plan 22 draft of
@@ -96,9 +97,10 @@ five rights and the owner row cannot be revoked. Creating a recipe requires `STO
 `STOCK_CONSUME`, the permissions needed to use it.
 
 A holder of `STOCK_EDIT` can still undo any booking through the stock routes, including one a
-consumption recipe produced, because stock history is shared inventory (rule 10). The `undo`
-right governs only the recipe's own undo route, which also returns the recipe's event to
-its unconsumed state.
+consumption recipe produced, because stock history is shared inventory (rule 11). The `undo`
+right governs only the recipe's own undo route. The event row reads `stock_log.undone` for its
+bookings and does not copy it. [Issue 696](https://github.com/datagen24/victual/issues/696)
+owns how a stock-level undo is reconciled with an imported event.
 
 Because the global permission is checked at use time, a user whose `STOCK_CONSUME` is removed
 loses the ability to consume through every share at once, with no change to the share rows.
@@ -110,15 +112,18 @@ No new `permission_hierarchy` row, permission constant or role grant is introduc
 [ADR-0018](0018-role-grants-and-domain-reads.md)'s view-leaf set is unchanged, and the
 `RECIPES_VIEW` leaf plays no part: a consumption recipe is not a food recipe.
 
-### 3. Grants cannot confer more than the grantor holds, and cannot create dead rights
+### 3. Grants cannot confer more than the grantor holds
 
 A grantor may share only rights the grantor holds, mirroring ADR-0014's rule that a caller
-confers nothing it does not hold. The recipient must be an existing user who holds, at the
-moment of the grant, the global permission each granted right needs. A grant that would be
-inert (a `consume` share to a user without `STOCK_CONSUME`) is refused with 422 and names the
-missing permission, the same reasoning that made unknown permission ids an error in
-ADR-0014 (sweep S27). The use-time intersection in rule 2 still applies afterwards, because
-a permission can be removed later.
+confers nothing it does not hold. The recipient must be an existing, active user.
+
+A share is accepted whether or not the recipient currently holds the global permission the
+right needs. A refusal that depended on the recipient's permissions would tell a grantor
+who lacks `USERS_READ` what the recipient holds, which ADR-0014 avoids when it declines to
+name the missing permission for `CheckMayAdminister()`. The share is inert until the
+recipient holds the permission, because rule 2 evaluates both tests at use time. The share
+list shows the owner and any `share` holder the rights granted, not the recipient's
+permissions.
 
 ### 4. Who may grant and revoke
 
@@ -192,7 +197,30 @@ A removal of a global permission is read where the application reads permissions
 design does not add a lock on the permission tables; a consume that started before the
 permission change completes.
 
-### 9. Surface matrix
+### 9. Action matrix
+
+Paths belong to [issue 698](https://github.com/datagen24/victual/issues/698). Every action
+first needs an authenticated user. "Share right" is the right in rule 2; "Global" is the
+permission that must also hold. "None" means no share right is needed because the caller is
+creating a record they will own. A caller without `read` receives 404 for every action on an
+existing recipe; a caller with `read` but not the listed right receives 403.
+
+| Action | Share right | Global permission | Outcome without the right |
+|---|---|---|---|
+| List recipes | `read` (rows without it are omitted) | `STOCK_VIEW` | Empty or shorter list |
+| Get one recipe | `read` | `STOCK_VIEW` | 404 |
+| Create recipe | None | `STOCK_VIEW`, `STOCK_CONSUME` | 403 |
+| Edit name or lines | `edit` | `STOCK_VIEW` | 404 or 403 |
+| Delete recipe | Owner only | `STOCK_VIEW` | 404 or 403 |
+| Consume through the recipe | `consume` | `STOCK_CONSUME` | 404 or 403 |
+| Undo through the recipe | `undo` | `STOCK_EDIT` | 404 or 403 |
+| List shares | `share` (the owner sees all; a holder sees shares they may change) | `STOCK_VIEW` | 404 or 403 |
+| Add, change or remove a share | `share`, within rules 3 and 4 | `STOCK_VIEW` | 404 or 403 |
+| Remove own share | Any share | `STOCK_VIEW` | 404 |
+| Transfer ownership | Owner only | `STOCK_VIEW` | 404 or 403 |
+| Read event history | `read` | `STOCK_VIEW` | 404 |
+
+### 10. Surface matrix
 
 "Absent" means the recipe, its owner and its refill data do not appear, and the surface
 behaves as if the recipe did not exist.
@@ -201,7 +229,7 @@ behaves as if the recipe did not exist.
 |---|---|
 | `GET /objects/{entity}` and `/{id}` | The new tables are not in `ExposedEntity` or `EntityReadPolicy`: 400, as for any unexposed entity. |
 | `query[]`, counts, ordering | Not reachable through generic routes. Dedicated list routes filter before querying (rule 7). |
-| `GET/PUT /userfields/{entity}/{id}` | The new entities are refused explicitly on both routes. The `PUT` route gains a coverage check, since it does not call `EntityReadPolicy::Covers()` today. |
+| `GET/PUT /userfields/{entity}/{id}` | The new entities are not exposed, so `SetValues()` refuses a write and the `GET` route's coverage check refuses a read. A test pins both. |
 | `userobjects` and `userentity-*` | Not applicable; no user-defined entity may reference a consumption recipe. |
 | Food-recipe routes, `/recipes/fulfillment`, meal plan | Unaffected; consumption recipes are not rows in those tables and cannot be placed in the meal plan. |
 | Calendar and iCal feed | Never include a consumption recipe or refill date derived from one. |
@@ -212,7 +240,7 @@ behaves as if the recipe did not exist.
 | Backup, restore and `victual-db-import` | Whole-database operations. They carry the new tables and are not a sharing surface; [issue 698](https://github.com/datagen24/victual/issues/698) decides the import behavior. |
 | Dedicated routes | Owner or a share is required for each; the right needed is in rule 2. |
 
-### 10. Shared inventory is not private recipe data
+### 11. Shared inventory is not private recipe data
 
 Stock the household holds stays visible to every `STOCK_VIEW` holder: the product, quantity,
 location and expiry. A consumption booking is a stock booking and appears in the stock
@@ -266,9 +294,11 @@ membership alone grants no access. Sharing with every member is N shares.
   password can read the owner's recipes. The record states this rather than hiding it.
 - **Users learn the limits of privacy.** Stock history shows what left stock and when. The
   manual page for private recipes states this.
-- **The surface matrix is a checklist for [issue 698](https://github.com/datagen24/victual/issues/698).**
-  Each row is tested with an owner, an authorized member, an unrelated member and an account
-  manager fixture; the plan's verification list names those fixtures.
+- **Implementation obligation.** [Issue 698](https://github.com/datagen24/victual/issues/698)
+  states the table and column names and the route list, and names a test for each row of the
+  action and surface matrices in its pull request.
+- **Test fixtures.** The tests for those matrices use an owner, an authorized member, an
+  unrelated member and an account manager, the fixtures the plan's verification list names.
 - **Unlimited sharing breadth is not offered.** No group principal, no link sharing, no
   expiring share. Each would be a separate decision.
 
@@ -278,10 +308,6 @@ membership alone grants no access. Sharing with every member is N shares.
 2. The maintainer confirms that Option A needs no amendment to ADR-0014. The reading rests
    on this record leaving `MayAdminister()` and `CheckMayGrant()` unmodified and on no share
    write raising anyone's resolved permissions.
-3. [Issue 698](https://github.com/datagen24/victual/issues/698) states the table and column
-   names and the dedicated route list, and each matrix row in rule 9 has a test named in
-   that issue's pull request. This prerequisite is for the implementation pull request, not
-   for acceptance.
 
 ## Open questions
 
