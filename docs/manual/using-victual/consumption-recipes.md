@@ -77,6 +77,42 @@ page. The stock stays tracked, product by product, while it is in an organizer.
   millilitres or single items. A bottle or a box is a purchase unit converted to that unit by a
   conversion you enter.
 
+### Choosing the source from the API
+
+Both consume routes take a source location. `POST /api/stock/products/{productId}/consume` and
+`POST /api/consumption/recipes/{recipeId}/consume` accept `location_id`, and only stock at that
+location is used. The stock route also accepts `stock_entry_id`. A transfer keeps the entry id of
+the row it splits, so combine it with `location_id` to name the rows of one organizer.
+
+- A shortfall at the chosen location is refused and books nothing, even when other organizers hold
+  enough. The stock route answers `400`; the recipe route answers `409` with `stock_refused`.
+- A `location_id` that is not an integer, or that names no active location, is refused with `400`
+  and nothing is consumed. Earlier versions dropped such a value and consumed from any location.
+  `null` and `""` still mean that no location was sent.
+- With no location, the order is the one described under **Any location** above.
+
+The only default source that exists today is the product's default consume location. A source
+chosen for an external medication, for example one submitted by `victual-kit`, belongs to the
+source mappings of
+[issue 700](https://github.com/datagen24/victual/issues/700), which are not built yet.
+Until then, a client that must charge a particular organizer sends `location_id`.
+
+### Labels and scans
+
+The location, product and stock entry labels an organizer household prints carry the fields in the
+label field catalogue: names, dates, amounts and location names. A scan answers with the target's
+id, name and path. None of them includes a consumption recipe, its note, a consumption event or a
+refill date, whatever the stock has been through, and a reader with only `STOCK_VIEW` sees the
+same. `OrganizerLabelDisclosureTest` and `OrganizerApiTest` check this for captures, live and
+sample previews, print jobs, scans, context reads and the snapshot a retired label keeps.
+
+### Checking an installation
+
+`.devtools/pgsql/run-tests.sh consumption` runs the organizer tests against PostgreSQL. The
+browser flow is `node .devtools/frontend/organizers.js <url>`, run against a disposable demo
+instance as described in the
+[frontend checks](https://github.com/datagen24/victual/blob/master/.devtools/frontend/README.md#weekly-organizers).
+
 An undo reverses a booking using the purchase it came from. When a later booking has moved units
 of the same purchase, for example the return of another organizer, the earlier consumption can
 no longer be undone and the request is refused with a message saying so. Undo consumptions

@@ -545,10 +545,15 @@ class StockApiController extends BaseApiController
 				$specificStockEntryId = $requestBody['stock_entry_id'];
 			}
 
+			// Issue #699: a location_id that names no usable location is refused, as the add and
+			// edit routes do (issues #519/#544), instead of being dropped. Dropped, it turned
+			// "take from organizer B" into "take from any location", so a typo or a 0 consumed
+			// from whichever organizer the product default or due date picked. null and ""
+			// stay "not sent": the consume form's empty option posts "".
 			$locationId = null;
-			if (array_key_exists('location_id', $requestBody) && !empty($requestBody['location_id']) && is_numeric($requestBody['location_id']))
+			if (array_key_exists('location_id', $requestBody) && $requestBody['location_id'] !== null && $requestBody['location_id'] !== '')
 			{
-				$locationId = $requestBody['location_id'];
+				$locationId = $this->RequireExistingId($requestBody, 'location_id', 'locations', 'location');
 			}
 
 			$recipeId = null;

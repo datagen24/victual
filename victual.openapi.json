@@ -3002,7 +3002,7 @@
 									},
 									"location_id": {
 										"type": "integer",
-										"description": "A valid location id (if supplied, only stock at the given location is considered, if ommitted, stock of any location is considered)"
+										"description": "A valid location id (if supplied, only stock at the given location is considered, if ommitted, stock of any location is considered). A value that is not an integer, or names no active location, is refused with 400 and nothing is consumed; null and \"\" count as omitted."
 									},
 									"exact_amount": {
 										"type": "boolean",
@@ -3640,7 +3640,7 @@
 									},
 									"location_id": {
 										"type": "integer",
-										"description": "A valid location id (if supplied, only stock at the given location is considered, if ommitted, stock of any location is considered)"
+										"description": "A valid location id (if supplied, only stock at the given location is considered, if ommitted, stock of any location is considered). A value that is not an integer, or names no active location, is refused with 400 and nothing is consumed; null and \"\" count as omitted."
 									},
 									"exact_amount": {
 										"type": "boolean",
