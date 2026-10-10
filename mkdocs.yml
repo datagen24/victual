@@ -160,6 +160,7 @@ nav:
           - 0040 Consumption recipes are private rows with scoped shares: development/adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md
           - 0041 Consumption events have a source identity: development/adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md
           - 0042 Refill dates are calendar dates derived from fills: development/adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md
+          - 0043 Creating shared master data is a right below MASTER_DATA_EDIT: development/adr/0043-creating-shared-master-data-is-a-right-below-master-data-edit.md
       - Build and deployment:
           - Container images: development/images.md
           - Deployment: development/deployment.md
