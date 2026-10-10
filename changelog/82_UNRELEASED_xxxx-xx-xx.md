@@ -26,9 +26,11 @@
 
 > ⚠️ The old "tare weight handling" product setting no longer does anything: `enable_tare_weight_handling` and `tare_weight` stay on `/objects/products` at their current values, but it can no longer be newly enabled (`PUT`/`POST` answers `400`), and its purchase/consume/inventory arithmetic is gone - the amount you enter for such a product is now the net amount, not a gross scale reading with the container weight subtracted automatically. Weigh an opened container by recording a measurement on the stock entry when you open it, or when you re-measure it later
 
-### New Feature: xxxx
+### New Feature: Prescription refills
 
-- xxx
+- Migration 0307 adds the refill records of a private consumption recipe: the fill history, a reorder rule, an explicit reorder date, orders and per-user notice acknowledgements. The new page `/consumptionrefills` shows the estimated reorder date of each prescription you can see and where the date comes from, and lets you record a fill, set a rule, choose a date, set the advance warning, record, receive and cancel an order, and void a wrong fill. The default estimate is the fill date plus the days supplied, minus 14 days. It is an estimate, it is not clinical advice, and it does not say that a pharmacy or insurer will allow a refill. Only the recipe's owner and the users it is shared with can see any of it, and Victual sends no notification
+- API: `GET`/`PUT /api/consumption/recipes/{id}/refill`, `POST .../refill/fills`, `.../fills/{id}/void`, `.../orders`, `.../orders/{id}/receive`, `.../orders/{id}/cancel`, `GET /api/refills`, `GET /api/refills/notices` and `POST /api/refills/notices/ack`. Reads take `as_of=YYYY-MM-DD`, the client's local date; without it the server uses the UTC date and says so. `GET /api/consumption/capabilities` lists the features `refill` and `refill_notices`
+- The new user setting `refill_warning_lead_days` (default 7, range 0 to 60) is the number of days of advance warning; `PUT /api/user/settings/refill_warning_lead_days` refuses a value outside the range with `422`
 
 ### Stock
 
