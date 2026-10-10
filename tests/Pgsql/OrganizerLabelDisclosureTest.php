@@ -4,6 +4,7 @@ namespace Victual\Tests\Pgsql;
 
 use PDO;
 use Victual\Services\ConsumptionRecipeService;
+use Victual\Services\ConsumptionRefillService;
 use Victual\Services\Labels\DriverRegistryService;
 use Victual\Services\Labels\FieldCatalogue;
 use Victual\Services\Labels\LabelCaptureService;
@@ -41,6 +42,7 @@ class OrganizerLabelDisclosureTest extends PgsqlSchemaTestCase
 	private static int $recipeId;
 	private static string $recipeName;
 	private static string $recipeNote;
+	private static string $refillNote;
 	private static string $requestId;
 
 	public static function setUpBeforeClass(): void
@@ -91,6 +93,15 @@ class OrganizerLabelDisclosureTest extends PgsqlSchemaTestCase
 		$recipes = ConsumptionRecipeService::GetInstance();
 		self::$recipeId = $recipes->CreateRecipe(self::$recipeName, self::$recipeNote, [['product_id' => self::$product, 'amount' => 2, 'qu_id' => $unit]]);
 		$recipes->Consume(self::$recipeId, self::$requestId, self::$organizer);
+
+		// ADR-0042: refill records of the same recipe, so the absence of a refill date or note from a label is a
+		// finding about the label and not about an empty table.
+		self::$refillNote = 'Private refill note ' . bin2hex(random_bytes(4));
+		$refill = ConsumptionRefillService::GetInstance();
+		$refill->RecordFill(self::$recipeId, ['filled_on' => '2026-01-01', 'supplied_days' => 90, 'note' => self::$refillNote], '2026-03-01');
+		$refill->SetSettings(self::$recipeId, ['rule' => ['kind' => 'fixed_interval', 'parameter' => 70], 'explicit_reorder_date' => '2026-03-12'], '2026-03-01');
+		$refill->RecordOrder(self::$recipeId, ['ordered_on' => '2026-03-12'], '2026-03-12');
+		$refill->Acknowledge(self::$recipeId . ':approaching:2026-03-12');
 	}
 
 	/** Runs $work in the caller-owned transaction every label service requires. */
@@ -132,7 +143,7 @@ class OrganizerLabelDisclosureTest extends PgsqlSchemaTestCase
 	/** Every fragment that would show a private recipe, its note, an event or a refill date. */
 	private static function assertNoPrivateData(string $json, string $where): void
 	{
-		foreach ([self::$recipeName, self::$recipeNote, self::$requestId] as $private)
+		foreach ([self::$recipeName, self::$recipeNote, self::$requestId, self::$refillNote] as $private)
 		{
 			self::assertStringNotContainsString($private, $json, "$where carries private text");
 		}
@@ -166,6 +177,12 @@ class OrganizerLabelDisclosureTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString(self::$recipeName, $stored);
 		self::assertStringContainsString(self::$recipeNote, $stored);
 		self::assertStringContainsString(self::$requestId, $stored);
+
+		$refill = (string)self::$db->query('SELECT string_agg(row_to_json(f)::text, \'\') FROM consumption_refill_fills f WHERE f.recipe_id = ' . self::$recipeId)->fetchColumn()
+			. (string)self::$db->query('SELECT string_agg(row_to_json(d)::text, \'\') FROM consumption_refill_dates d WHERE d.recipe_id = ' . self::$recipeId)->fetchColumn()
+			. (string)self::$db->query('SELECT string_agg(row_to_json(o)::text, \'\') FROM consumption_refill_orders o WHERE o.recipe_id = ' . self::$recipeId)->fetchColumn();
+		self::assertStringContainsString(self::$refillNote, $refill);
+		self::assertStringContainsString('2026-03-12', $refill, 'the explicit reorder date and the order date are stored');
 	}
 
 	public function testPrintingEachKindTakesAReadersCaptureAndQueuesNothingPrivate(): void

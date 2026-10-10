@@ -358,6 +358,16 @@ class OrganizerApiTest extends PgsqlSchemaTestCase
 		self::assertSame(201, $consumed['status'], $consumed['raw']);
 		self::assertState('a recipe consumption from organizer A', $product, 10, 8, 0, 0);
 
+		// ADR-0042: the same recipe carries refill records, so the reads below are checked against a refill note
+		// and a reorder date that exist.
+		$refillNote = 'Private refill note ' . bin2hex(random_bytes(4));
+		$recipeId = (int)$recipe['body']['created_object_id'];
+		$fill = self::send('POST', "/api/consumption/recipes/$recipeId/refill/fills?as_of=2026-03-01", 'operator', ['filled_on' => '2026-01-01', 'supplied_days' => 90, 'note' => $refillNote]);
+		self::assertSame(201, $fill['status'], $fill['raw']);
+		self::assertSame('2026-03-18', $fill['body']['estimate']['reorder_date'], 'the refill date is stored and served to the owner');
+		self::assertSame(201, self::send('POST', "/api/consumption/recipes/$recipeId/refill/orders?as_of=2026-03-01", 'operator', ['ordered_on' => '2026-03-02'])['status']);
+		self::assertState('refill records add no stock and move none', $product, 10, 8, 0, 0);
+
 		$booking = (int)self::$db->query("SELECT max(id) FROM stock_log WHERE product_id = $product")->fetchColumn();
 		$entry = (int)self::$db->query("SELECT max(id) FROM stock WHERE product_id = $product AND location_id = " . self::$location['a'])->fetchColumn();
 		$reads = [
@@ -373,7 +383,8 @@ class OrganizerApiTest extends PgsqlSchemaTestCase
 			self::assertSame(200, $response['status'], "$path: " . $response['raw']);
 			self::assertStringNotContainsString($name, $response['raw'], "$path discloses the recipe name");
 			self::assertStringNotContainsString($note, $response['raw'], "$path discloses the recipe note");
-			self::assertDoesNotMatchRegularExpression('/consumption_(recipe|event)|"recipe_id":\s*[1-9]/i', $response['raw'], "$path discloses a consumption recipe or event reference");
+			self::assertStringNotContainsString($refillNote, $response['raw'], "$path discloses the refill note");
+			self::assertDoesNotMatchRegularExpression('/consumption_(recipe|event|refill)|"recipe_id":\s*[1-9]|"reorder_(date|on)"/i', $response['raw'], "$path discloses a consumption recipe, event or refill reference");
 		}
 
 		// A scan of each label kind an organizer household prints, over the scan route.
@@ -390,8 +401,11 @@ class OrganizerApiTest extends PgsqlSchemaTestCase
 			self::assertSame(['id', 'name', 'path'], array_keys($scan['body']['target']));
 			self::assertStringNotContainsString($name, $scan['raw']);
 			self::assertStringNotContainsString($note, $scan['raw']);
+			self::assertStringNotContainsString($refillNote, $scan['raw']);
 		}
 
 		self::assertSame(400, self::send('GET', '/api/objects/consumption_events', 'reader')['status'], 'the generic reader refuses the private tables');
+		self::assertSame(400, self::send('GET', '/api/objects/consumption_refill_fills', 'reader')['status'], 'and the refill tables');
+		self::assertSame(404, self::send('GET', "/api/consumption/recipes/$recipeId/refill", 'reader')['status'], 'a stock reader with no share gets 404 from the refill route');
 	}
 }
