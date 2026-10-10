@@ -211,13 +211,45 @@ class ConsumptionRefillService extends BaseService
 		return DatabaseService::GetInstance()->InTransaction(function () use ($userId, $date, $source)
 		{
 			$refills = [];
-			foreach ($this->Recipes()->ListRecipes($userId) as $recipe)
+			foreach ($this->Readable($userId) as $recipe)
 			{
 				$refills[] = $this->Summary($recipe['id'], $recipe['name'], $userId, $date, $source);
 			}
 
 			return ['as_of' => $date, 'as_of_source' => $source, 'refills' => $refills];
 		});
+	}
+
+	/**
+	 * The recipes the user can read, each re-authorised under the recipe lock (`FOR SHARE`) in this transaction.
+	 * The list query alone is a snapshot: a revoke that commits before the lock is taken drops the recipe here, so
+	 * refill data written after the revoke is never read for the former share holder (ADR-0040 rule 8).
+	 *
+	 * @return list<array{id: int, name: string}>
+	 */
+	private function Readable(int $userId): array
+	{
+		$readable = [];
+		foreach ($this->Recipes()->ListRecipes($userId) as $recipe)
+		{
+			try
+			{
+				[$locked] = $this->Recipes()->AuthoriseRefill($recipe['id'], $userId, null, false);
+			}
+			catch (ConsumptionException $exception)
+			{
+				if ($exception->status === 404)
+				{
+					continue;
+				}
+
+				throw $exception;
+			}
+
+			$readable[] = ['id' => (int)$locked['id'], 'name' => $locked['name']];
+		}
+
+		return $readable;
 	}
 
 	/** The facts the state is calculated from. */
@@ -632,7 +664,7 @@ class ConsumptionRefillService extends BaseService
 		return DatabaseService::GetInstance()->InTransaction(function () use ($userId, $date, $source)
 		{
 			$raised = [];
-			foreach ($this->Recipes()->ListRecipes($userId) as $recipe)
+			foreach ($this->Readable($userId) as $recipe)
 			{
 				$state = $this->Summary($recipe['id'], $recipe['name'], $userId, $date, $source);
 				if ($state['status'] === RefillEstimator::STATUS_APPROACHING || $state['status'] === RefillEstimator::STATUS_DUE)
