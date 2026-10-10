@@ -119,16 +119,34 @@ See [Stock](manual/using-victual/stock.md).
 
 ### Share (consumption recipe)
 
-Defined in [ADR-0040](adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md) (Accepted 2026-10-09, not implemented).
+Defined in [ADR-0040](adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md) (Accepted 2026-10-09, implemented by migration 0305).
 A row granting one user a set of rights (`read`, `consume`, `edit`, `undo`, `share`) on one
 consumption recipe. A share narrows which recipes a user sees and confers no permission.
 
+### Fill (prescription)
+
+Defined in [ADR-0042](adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md) (Accepted 2026-10-09, implemented by migration 0307).
+One supply of a prescription: the calendar date the pharmacy supplied it (`filled_on`) and the days it
+covers (`supplied_days`, 1 to 730, optional). A fill is history. It is never edited; a wrong fill is
+voided with a reason and a new one is recorded. The current fill is the unvoided fill with the greatest
+`filled_on`, then the greatest id. Recording a fill adds no stock.
+
 ### Refill estimate
 
-Defined in [ADR-0042](adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md) (Accepted 2026-10-09, not implemented).
+Defined in [ADR-0042](adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md) (Accepted 2026-10-09, implemented by migration 0307 and the `/api/consumption/recipes/{id}/refill` routes).
 The calendar date on which a prescription's reorder is estimated to be due, derived from the
-last recorded fill and a rule. It is approximate, carries the rule that produced it, and is
-separate from stock on hand. It does not state that an insurer will approve a refill.
+current fill. It comes from an explicit date, else a medication-specific rule, else the fill date plus
+the supplied days less 14, and it carries the source that produced it. It is approximate, is separate
+from stock on hand, and does not state that an insurer or a pharmacy will allow a refill. When no date
+can be calculated it is unknown and carries a reason.
+
+### Refill notice
+
+Defined in [ADR-0042](adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md) (Accepted 2026-10-09, implemented by migration 0307 and `GET /api/refills/notices`).
+A statement that a refill estimate is approaching or has been reached, identified by the key
+`<recipe_id>:<kind>:<reorder_date>`. Victual lists notices and records which user acknowledged which;
+it sends none, and a client delivers its own. A correction that changes the reorder date makes a new
+notice.
 
 ### Shopping location
 
