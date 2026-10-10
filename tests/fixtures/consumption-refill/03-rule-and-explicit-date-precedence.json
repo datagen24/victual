@@ -1,0 +1,223 @@
+{
+	"title": "Explicit date, then the medication-specific rule, then the fallback",
+	"adr_sequence": "precedence, section 2",
+	"description": "The estimate comes from the first that applies, and says which. A specific rule is never replaced by the fallback. Removing the explicit date reveals the rule; removing the rule reveals the fallback.",
+	"setup": {
+		"users": [
+			"alice"
+		],
+		"recipes": {
+			"main": {
+				"owner": "alice",
+				"shares": {}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "A 90-day fill",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills?as_of=2026-02-01",
+				"body": {
+					"filled_on": "2026-01-01",
+					"supplied_days": 90
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"status": "ok",
+					"estimate": {
+						"reorder_date": "2026-03-18",
+						"warning_date": "2026-03-11",
+						"source": "fallback",
+						"lead_days": 7,
+						"reason": null
+					}
+				}
+			}
+		},
+		{
+			"note": "A fixed 60-day interval",
+			"as": "alice",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-02-01",
+				"body": {
+					"rule": {
+						"kind": "fixed_interval",
+						"parameter": 60
+					}
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"estimate": {
+						"reorder_date": "2026-03-02",
+						"source": "rule:fixed_interval"
+					},
+					"settings": {
+						"rule": {
+							"kind": "fixed_interval",
+							"parameter": 60
+						}
+					}
+				}
+			}
+		},
+		{
+			"note": "21 days before the end of the supply",
+			"as": "alice",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-02-01",
+				"body": {
+					"rule": {
+						"kind": "days_before_end",
+						"parameter": 21
+					}
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"estimate": {
+						"reorder_date": "2026-03-11",
+						"source": "rule:days_before_end"
+					}
+				}
+			}
+		},
+		{
+			"note": "75 percent of the supply: 67 whole days",
+			"as": "alice",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-02-01",
+				"body": {
+					"rule": {
+						"kind": "fraction_elapsed",
+						"parameter": 75
+					}
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"estimate": {
+						"reorder_date": "2026-03-09",
+						"source": "rule:fraction_elapsed"
+					}
+				}
+			}
+		},
+		{
+			"note": "An explicit date for this fill beats the rule",
+			"as": "alice",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-02-01",
+				"body": {
+					"explicit_reorder_date": "2026-02-10"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"estimate": {
+						"reorder_date": "2026-02-10",
+						"source": "explicit"
+					},
+					"explicit_date": {
+						"reorder_on": "2026-02-10"
+					}
+				}
+			}
+		},
+		{
+			"note": "Clear the explicit date: the rule applies again",
+			"as": "alice",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-02-01",
+				"body": {
+					"explicit_reorder_date": null
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"estimate": {
+						"reorder_date": "2026-03-09",
+						"source": "rule:fraction_elapsed"
+					},
+					"explicit_date": null
+				}
+			}
+		},
+		{
+			"note": "Clear the rule: the fallback applies again",
+			"as": "alice",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-02-01",
+				"body": {
+					"rule": null
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"estimate": {
+						"reorder_date": "2026-03-18",
+						"source": "fallback"
+					},
+					"settings": {
+						"rule": null,
+						"warning_lead_days": null
+					}
+				}
+			}
+		},
+		{
+			"note": "An explicit date earlier than its fill is refused",
+			"as": "alice",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-02-01",
+				"body": {
+					"explicit_reorder_date": "2025-12-31"
+				}
+			},
+			"expect": {
+				"status": 422,
+				"body": {
+					"error": "date_before_fill"
+				}
+			}
+		},
+		{
+			"note": "A rule parameter out of range is refused",
+			"as": "alice",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-02-01",
+				"body": {
+					"rule": {
+						"kind": "fraction_elapsed",
+						"parameter": 100
+					}
+				}
+			},
+			"expect": {
+				"status": 422,
+				"body": {
+					"error": "invalid_rule"
+				}
+			}
+		}
+	]
+}

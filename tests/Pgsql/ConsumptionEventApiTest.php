@@ -155,7 +155,7 @@ class ConsumptionEventApiTest extends PgsqlSchemaTestCase
 
 		self::assertSame(200, $response['status']);
 		self::assertSame(1, $response['body']['contract_version']);
-		self::assertSame(['events', 'mappings', 'batch', 'bulk_resolve', 'manual_consume', 'deletion_reasons', 'not_logged', 'default_quantity', 'unit_labels', 'replaces'], $response['body']['features']);
+		self::assertSame(['events', 'mappings', 'batch', 'bulk_resolve', 'manual_consume', 'deletion_reasons', 'not_logged', 'default_quantity', 'unit_labels', 'replaces', 'refill', 'refill_notices'], $response['body']['features']);
 	}
 
 	public function testMappingThenEventThroughTheRoutesBooksOnceAndAttributesTheCaller(): void

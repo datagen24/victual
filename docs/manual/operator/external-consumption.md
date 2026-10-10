@@ -48,7 +48,7 @@ All routes are under `/api/consumption`. Reads need `STOCK_VIEW`. Writes need `S
 
 | Route | Purpose |
 |---|---|
-| `GET /capabilities` | The contract version and the features this server implements. A client tests membership of `features` instead of guessing from the server version. |
+| `GET /capabilities` | The contract version and the features this server implements. A client tests membership of `features` instead of guessing from the server version. The refill features `refill` and `refill_notices` are listed there too; see [Prescription refills](prescription-refills.md). |
 | `PUT /events/{source_system}/{source_event_id}` | Create or update an event. `201` for a new row, `200` otherwise. |
 | `GET /events/{source_system}/{source_event_id}` | Read one event. |
 | `DELETE /events/{source_system}/{source_event_id}?reason=` | The source no longer holds the event. |

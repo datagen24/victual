@@ -1,0 +1,195 @@
+{
+	"title": "Voiding and re-recording an identical fill keeps the notice key; a changed date makes a new one",
+	"adr_sequence": "section 5 and 6",
+	"description": "A wrong fill is voided with a reason and a new one is recorded; both stay in the history. The notice key is <recipe_id>:<kind>:<reorder_date>, so recording the same data again produces the same key (already acknowledged, no new notice) and recording different data produces a new key.",
+	"setup": {
+		"users": [
+			"alice"
+		],
+		"recipes": {
+			"main": {
+				"owner": "alice",
+				"shares": {}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "A 90-day fill",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills?as_of=2026-03-18",
+				"body": {
+					"filled_on": "2026-01-01",
+					"supplied_days": 90
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"status": "due"
+				}
+			},
+			"save": {
+				"fill": "current_fill.id"
+			}
+		},
+		{
+			"note": "Acknowledge the due notice",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/refills/notices/ack",
+				"body": {
+					"notice_key": "{{recipe.main}}:due:2026-03-18"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"notice_key": "{{recipe.main}}:due:2026-03-18"
+				}
+			}
+		},
+		{
+			"note": "Void the fill",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills/{{saved.fill}}/void?as_of=2026-03-18",
+				"body": {
+					"reason": "typed the wrong supply"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"status": "unknown",
+					"estimate": {
+						"reason": "no_fill"
+					},
+					"fills": {
+						"0": {
+							"voided_at": "{{any}}",
+							"void_reason": "typed the wrong supply"
+						}
+					}
+				}
+			}
+		},
+		{
+			"note": "Record the same data again",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills?as_of=2026-03-18",
+				"body": {
+					"filled_on": "2026-01-01",
+					"supplied_days": 90
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"status": "due",
+					"estimate": {
+						"reorder_date": "2026-03-18"
+					}
+				}
+			},
+			"save": {
+				"fill": "current_fill.id"
+			}
+		},
+		{
+			"note": "The same key: nothing new to notify",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/refills/notices?as_of=2026-03-18"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"notices": []
+				}
+			}
+		},
+		{
+			"note": "Void it again",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills/{{saved.fill}}/void?as_of=2026-03-18",
+				"body": {
+					"reason": "the supply was 60 days"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"status": "unknown"
+				}
+			}
+		},
+		{
+			"note": "Record it with a 60-day supply",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills?as_of=2026-03-18",
+				"body": {
+					"filled_on": "2026-01-01",
+					"supplied_days": 60
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"status": "due",
+					"estimate": {
+						"reorder_date": "2026-02-16"
+					}
+				}
+			}
+		},
+		{
+			"note": "A changed date is a new key",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/refills/notices?as_of=2026-03-18"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"notices": [
+						{
+							"key": "{{recipe.main}}:due:2026-02-16",
+							"kind": "due",
+							"reorder_date": "2026-02-16"
+						}
+					]
+				}
+			}
+		},
+		{
+			"note": "Voiding without a reason is refused",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills/{{saved.fill}}/void?as_of=2026-03-18",
+				"body": {
+					"reason": " "
+				}
+			},
+			"expect": {
+				"status": 422,
+				"body": {
+					"error": "reason_required"
+				}
+			}
+		}
+	]
+}

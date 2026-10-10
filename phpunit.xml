@@ -210,6 +210,12 @@
 			<file>tests/Pgsql/ConsumptionEventRaceTest.php</file>
 			<file>tests/Pgsql/ConsumptionEventApiTest.php</file>
 			<file>tests/Pgsql/ConsumptionEventFixtureTest.php</file>
+			<file>tests/Pgsql/RefillEstimatorTest.php</file>
+			<file>tests/Pgsql/ConsumptionRefillServiceTest.php</file>
+			<file>tests/Pgsql/ConsumptionRefillApiTest.php</file>
+			<file>tests/Pgsql/ConsumptionRefillRaceTest.php</file>
+			<file>tests/Pgsql/ConsumptionRefillFixtureTest.php</file>
+			<file>tests/Pgsql/ConsumptionRefillDisclosureTest.php</file>
 			<file>tests/Pgsql/OrganizerWorkflowTest.php</file>
 			<file>tests/Pgsql/OrganizerApiTest.php</file>
 			<file>tests/Pgsql/OrganizerLabelDisclosureTest.php</file>

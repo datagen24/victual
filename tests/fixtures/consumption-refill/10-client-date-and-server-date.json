@@ -1,0 +1,137 @@
+{
+	"title": "The client's calendar date decides the status; without one the server says it used the UTC date",
+	"adr_sequence": "section 4",
+	"description": "Fill, order and reorder dates are calendar dates (YYYY-MM-DD) and are never converted as midnight instants. Every read that depends on today takes as_of, the client's local date. The same stored dates give approaching for a client still on the 17th and due for one on the 18th. A request without as_of is answered with the UTC date and as_of_source server_utc.",
+	"setup": {
+		"users": [
+			"alice"
+		],
+		"recipes": {
+			"main": {
+				"owner": "alice",
+				"shares": {}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "A 90-day fill",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills?as_of=2026-03-17",
+				"body": {
+					"filled_on": "2026-01-01",
+					"supplied_days": 90
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"status": "approaching",
+					"as_of": "2026-03-17",
+					"as_of_source": "client"
+				}
+			}
+		},
+		{
+			"note": "A client on 2026-03-17",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-03-17"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"status": "approaching",
+					"as_of": "2026-03-17",
+					"estimate": {
+						"reorder_date": "2026-03-18"
+					}
+				}
+			}
+		},
+		{
+			"note": "A client on 2026-03-18, the same stored dates",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-03-18"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"status": "due",
+					"as_of": "2026-03-18",
+					"estimate": {
+						"reorder_date": "2026-03-18"
+					}
+				}
+			}
+		},
+		{
+			"note": "No as_of: the server's UTC date",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"as_of_source": "server_utc"
+				}
+			}
+		},
+		{
+			"note": "An as_of that is not a date is refused",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-02-30"
+			},
+			"expect": {
+				"status": 422,
+				"body": {
+					"error": "invalid_as_of"
+				}
+			}
+		},
+		{
+			"note": "so is a rendering that is not a date",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=tomorrow"
+			},
+			"expect": {
+				"status": 422,
+				"body": {
+					"error": "invalid_as_of"
+				}
+			}
+		},
+		{
+			"note": "The list takes the same parameter",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/refills?as_of=2026-03-18"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"as_of": "2026-03-18",
+					"as_of_source": "client",
+					"refills": [
+						{
+							"recipe_id": "{{recipe.main}}",
+							"status": "due"
+						}
+					]
+				}
+			}
+		}
+	]
+}
