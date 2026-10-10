@@ -10,8 +10,8 @@ Victual's scope.
 2026-10-09. Implemented: private consumption recipes and manual consumption (issue 698, merged),
 the external-event schema, service, API and reconciliation inbox (issue 700, merged), and the
 organizer inventory workflow's test evidence (issue 699, merged in pull requests 738 and 744).
-Issues 698 to 700 are closed. Not implemented: refill tracking (issue 701), native acceptance on
-a device (issue 702) and integrated verification (issue 703).
+Issues 698 to 700 are closed. Refill tracking (issue 701) is in review in pull requests 748, 749 and
+751. Not implemented: native acceptance on a device (issue 702) and integrated verification (issue 703).
 
 **Release target:** v0.5.0. The maintainer clarified this scope on 2026-10-09. The target
 is a schedule; the release record and signed tag follow verified implementation under
@@ -635,3 +635,79 @@ The run on `0b059a4f` (pull request 746, a documentation change) skipped the hea
 `changes` filter.
 
 These runs and the fixtures do not establish HealthKit behavior. Issue 702 owns that evidence.
+
+### Issue 701: refill history, reorder estimates and notices
+
+In review as a stack of three pull requests, each based on the one before:
+[748](https://github.com/datagen24/victual/pull/748) (migration 0307, pgTAP, import and migration
+metadata), [749](https://github.com/datagen24/victual/pull/749) (estimate, services, ten routes, OpenAPI,
+contract snapshots, capabilities, client fixtures, operator page) and
+[751](https://github.com/datagen24/victual/pull/751) (page, translations, browser probe, user manual,
+glossary). Nothing here is merged, issue 701 stays open, and no part of it is native-client evidence.
+
+**Divergences from ADR-0042** are listed in the description of pull request 749. In short: five tables,
+because the explicit date has its own history; `estimate` always carries five keys; extra fields
+(`recipe_name`, `age_days`, settings, history, notice `text`); writes answer with the state; the two
+list routes are objects so they can carry `as_of_source`; `supplied_days` is optional; dates are limited
+to 1900 to 2200.
+
+**Evidence.** Environment: PHP 8.5.10 and PostgreSQL 16 or 15.19 in podman on macOS, plus the CI runs below.
+
+| Check | Result |
+|---|---|
+| pgTAP `033-consumption-refill.sql` | 84 assertions; the whole `pgtap` phase 25 files, 419 tests, PASS on PostgreSQL 16 and 15 |
+| `RefillEstimatorTest` | 63 tests, no database |
+| `consumption` phase (service, API, race, fixture, disclosure and organizer classes) | OK on PostgreSQL 15.19: 353 tests, 9,539 assertions, at commit `4a448a23`; later commits re-ran the refill classes (85 tests OK on 16) |
+| `contract`, `wirecontract`, `rbac`, `dialectpolicy`, `migrate` | passed on PostgreSQL 16 and 15 at `4a448a23` |
+| Browser probe `consumption-refills.js` | `CONSUMPTION REFILLS BROWSER CHECKS PASSED (7 scenarios)` locally and in CI run 38065419551 |
+| CI, pull request 748 | every check passed, including `suite` (PostgreSQL 16, coverage ratchet) and `suite-floor` (PostgreSQL 15) |
+| CI, pull request 749, run 38065336808, head `76e135a0` | every check passed; merged coverage 14,014 of 14,489 lines (96.72%), 0 of 160 files below 75% |
+| CI, pull request 751, run 38065419551, head `0464bec3` | every check passed; merged coverage 14,017 of 14,492 lines (96.72%), 0 of 161 files below 75% |
+
+Coverage against the baseline in the CI log of master `f42ecbbd` (13,553 of 14,018, 96.68%): the aggregate
+rose by 0.04 points and the measured file count by 4. Runner figures for the new and touched files in run
+38065419551:
+
+| File | Lines covered | Before |
+|---|---|---|
+| `services/RefillEstimator.php` | 58 of 61 (95.08%) | new |
+| `services/ConsumptionRefillService.php` | 328 of 334 (98.20%) | new |
+| `controllers/Api/ConsumptionRefillsApiController.php` | 58 of 59 (98.31%) | new |
+| `controllers/ConsumptionRefillsController.php` | 2 of 2 (100%) | new |
+| `controllers/Api/UsersApiController.php` | 201 of 218 (92.20%) | 197 of 214 (92.06%) |
+| `services/ConsumptionRecipeService.php` | 357 of 366 (97.54%) | 355 of 364 (97.53%) |
+
+A local run of the full suite on the master baseline measured 13,500 of 14,018 lines from the runner alone
+(96.30%); compare the CI figures. That local run had two failing cases on unmodified master, `StorageFilesTest`
+(a host-mounted scratch directory) and `MqttCoverageTest::testABrokerThatHangsUpMidBatchIsNotRecordedAsDelivered`.
+Both passed in CI.
+
+**Issue 701 criteria.**
+
+| Criterion | Implementation and evidence |
+|---|---|
+| Fill history, supplied duration, rules and explicit dates, with the agreed precedence and correction semantics | Migration 0307 and its six triggers; `RefillEstimator::Estimate`; `ConsumptionRefillService` (record, void, settings). pgTAP 033; `RefillEstimatorTest`; `ConsumptionRefillServiceTest`; fixtures 03, 07, 08 |
+| Fallback only without a specific rule; unknown for missing inputs; provenance of every date | `estimate.source` and `estimate.reason`. `RefillEstimatorTest` (invalid rule, invalid supply, short supply, fixed interval without a supply); fixtures 01 to 04 |
+| Approaching, due, ordered and received; lead; repeat suppression; client-readable dates | Status boundaries in `RefillEstimator::Status`, notices and per-user acknowledgement in the service. Service, API and race tests; fixtures 05 to 10; the browser probe |
+| Transfers, consumption and a bare order do not reset fills or add stock | `testTransfersConsumptionAndUndoDoNotChangeAFillAnOrOrderOrAnEstimate`, `testNoRefillOperationWritesTheStockLedgerOrAnEvent`, `testRecordingAnOrderChangesNothingButTheStatus`; the probe reads the stock back after an order and a receipt |
+| Private routes, UI and notice payloads honor scoped access and revocation | Recipe lock and rights in `AuthoriseRefill`. Service and API tests (owner, read share, edit share, stranger, account manager, administrator, no `STOCK_VIEW`); `ConsumptionRefillRaceTest` (write and acknowledgement against a revoke); `ConsumptionRefillDisclosureTest`; the probe's revocation scenario |
+| API, OpenAPI, snapshots, UI, translations, operator documentation; native delivery stays in victual-kit | Pull requests 749 and 751. `victual.openapi.json`, contract snapshots (additions only), 113 strings in `strings.pot`, the operator and user manual pages, eleven client fixtures. No scheduler, push credential or HealthKit code |
+| Tests cover 30- and 90-day fills, overrides, explicit dates, invalid inputs, calendar boundaries, corrections, deduplication and receipt | The cases of ADR-0042's verification table are in `RefillEstimatorTest`, `ConsumptionRefillServiceTest`, the API and race tests and fixtures 01 to 11 |
+
+**Review findings fixed.** Two read-only reviews of the stack found these defects, all fixed:
+
+- A misspelled body field recorded a fill with no supply.
+- An `as_of` that was an array or empty was read as absent.
+- A path id above the integer range answered 400 instead of 404.
+- An acknowledgement echoed a non-canonical key.
+- On the page, a slower answer replaced the open prescription, a refused write reset the fields, and text a
+  number field could not read was read as empty.
+- On the page, a double click posted twice and counts of 1 read "1 days".
+
+**Remaining gates.**
+
+- The maintainer has not approved the user-facing wording (ADR-0015 prerequisite 1). The strings are listed
+  in the descriptions of pull requests 749 and 751.
+- Open question 17 (ADR-0041 row 7) awaits a decision.
+- Native acceptance on a real device (issue 702) and integrated verification (issue 703) have no evidence.
+- Pull requests 748, 749 and 751 are not merged. Plan 22 stays in progress and v0.5.0 is not claimed.
