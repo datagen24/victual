@@ -214,6 +214,7 @@
 			<file>tests/Pgsql/ConsumptionRefillServiceTest.php</file>
 			<file>tests/Pgsql/ConsumptionRefillApiTest.php</file>
 			<file>tests/Pgsql/ConsumptionRefillRaceTest.php</file>
+			<file>tests/Pgsql/ConsumptionRefillReadRaceTest.php</file>
 			<file>tests/Pgsql/ConsumptionRefillFixtureTest.php</file>
 			<file>tests/Pgsql/ConsumptionRefillDisclosureTest.php</file>
 			<file>tests/Pgsql/OrganizerWorkflowTest.php</file>
