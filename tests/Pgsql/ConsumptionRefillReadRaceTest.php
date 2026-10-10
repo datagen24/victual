@@ -3,6 +3,9 @@
 namespace Victual\Tests\Pgsql;
 
 use PDO;
+use ReflectionProperty;
+use Victual\Services\BaseService;
+use Victual\Services\ConsumptionException;
 use Victual\Services\ConsumptionRecipeService;
 use Victual\Services\ConsumptionRefillService;
 use Victual\Services\StockService;
@@ -236,6 +239,43 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 
 		self::assertTrue($result['ok'], json_encode($result));
 		self::assertNotContains($recipe, self::recipeIds($result['result'], 'notices'), 'the notice reflects the fill committed while the read was paused');
+	}
+
+	/** A refusal other than "not found" (the recipe lock cannot raise one on its own) is the caller's to see, not a reason to drop the recipe. */
+	public function testARefusalOtherThanNotFoundEscapesTheReadInsteadOfDroppingTheRecipe(): void
+	{
+		self::fixture();
+		$refusing = new class extends ConsumptionRecipeService
+		{
+			public function AuthoriseRefill(int $recipeId, int $userId, ?string $right, bool $forUpdate): array
+			{
+				throw new ConsumptionException(403, 'permission_missing', 'Permission missing: STOCK_VIEW');
+			}
+		};
+
+		$instances = new ReflectionProperty(BaseService::class, 'Instances');
+		$original = $instances->getValue();
+		$instances->setValue(null, [ConsumptionRecipeService::class => $refusing] + $original);
+
+		try
+		{
+			foreach (['ListRefills', 'Notices'] as $method)
+			{
+				try
+				{
+					self::$service->$method(self::AS_OF, self::READER);
+					self::fail("$method answered when a candidate's lock was refused with a 403");
+				}
+				catch (ConsumptionException $exception)
+				{
+					self::assertSame([403, 'permission_missing'], [$exception->status, $exception->errorCode], $method);
+				}
+			}
+		}
+		finally
+		{
+			$instances->setValue(null, $original);
+		}
 	}
 
 	public function testARevokeWaitsForAListRefillsThatHoldsTheRecipeLock(): void
