@@ -13,6 +13,7 @@ use Victual\Controllers\BatteriesController;
 use Victual\Controllers\CalendarController;
 use Victual\Controllers\ChoresController;
 use Victual\Controllers\ConsumptionInboxController;
+use Victual\Controllers\ConsumptionRefillsController;
 use Victual\Controllers\EquipmentController;
 use Victual\Controllers\GenericEntityController;
 use Victual\Controllers\LabelPrintJobsController;
@@ -78,6 +79,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 	private static LoginController $login;
 	private static CalendarController $calendar;
 	private static ConsumptionInboxController $inbox;
+	private static ConsumptionRefillsController $refills;
 
 	/** @var array<string, int> Fixture row ids by the name they were inserted under. */
 	private static array $ids = [];
@@ -114,6 +116,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::$login = new LoginController(self::$container);
 		self::$calendar = new CalendarController(self::$container);
 		self::$inbox = new ConsumptionInboxController(self::$container);
+		self::$refills = new ConsumptionRefillsController(self::$container);
 
 		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9000, 'household-caller', 'fixture')");
 		// A second user, so the user list and the permission page have somebody other than
@@ -671,6 +674,47 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::grant(['STOCK_VIEW']);
 		$response = $this->expectStatus(fn () => self::$inbox->Overview(self::request(), self::response(), []), 200, 'GET /consumptioninbox with STOCK_VIEW alone');
 		self::assertStringContainsString('inbox-rows', (string)$response->getBody(), 'STOCK_VIEW alone reaches the shell; resolving is gated by the API');
+	}
+
+	/**
+	 * The prescription refills page is a shell too (ADR-0042): the recipe's own access rules apply to the API it
+	 * reads, so the server renders no recipe name, fill note, date or notice, not even the caller's. Positive
+	 * control first: the strings are stored, so their absence from the page is the page leaving them out.
+	 */
+	public function testConsumptionRefillsRendersAShellThatEmbedsNoRefillData(): void
+	{
+		$name = 'Refill page recipe ' . bin2hex(random_bytes(3));
+		$note = '<script>alert("refill-xss")</script> refill note ' . bin2hex(random_bytes(3));
+		$unit = (int)self::$db->query("INSERT INTO quantity_units (name) VALUES ('refill page tablet') RETURNING id")->fetchColumn();
+		$location = (int)self::$db->query("INSERT INTO locations (name) VALUES ('refill page cabinet') RETURNING id")->fetchColumn();
+		$product = (int)self::$db->query("INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price) VALUES ('refill page pills', $location, $unit, $unit, $unit, $unit) RETURNING id")->fetchColumn();
+		$recipe = \Victual\Services\ConsumptionRecipeService::GetInstance()->CreateRecipe($name, null, [['product_id' => $product, 'amount' => 1, 'qu_id' => $unit]], 9000);
+		\Victual\Services\ConsumptionRefillService::GetInstance()->RecordFill($recipe, ['filled_on' => '2026-01-01', 'supplied_days' => 90, 'note' => $note], '2026-03-01', 9000);
+
+		$stored = (string)self::$db->query("SELECT string_agg(f.note, '') FROM consumption_refill_fills f WHERE f.recipe_id = $recipe")->fetchColumn() . (string)self::$db->query("SELECT name FROM consumption_recipes WHERE id = $recipe")->fetchColumn();
+		self::assertStringContainsString($note, $stored, 'the fixture stored the hostile note, so its absence below is the page leaving it out');
+		self::assertStringContainsString($name, $stored);
+
+		self::grant(['STOCK_VIEW']);
+		$html = self::render(fn () => self::$refills->Overview(self::request(), self::response(), []), 'GET /consumptionrefills');
+
+		self::assertStringContainsString('id="refill-table"', $html, 'the page renders the table the script fills in');
+		self::assertStringContainsString('<tbody id="refill-rows"></tbody>', $html, 'and its body is empty: every row is fetched later');
+		self::assertStringContainsString('id="refill-notices"', $html);
+		foreach ([$name, 'refill-xss', 'refill note', '2026-01-01', '2026-03-18'] as $marker)
+		{
+			self::assertStringNotContainsString($marker, $html, "the shell does not embed '$marker' from a stored recipe or fill");
+		}
+		self::assertStringContainsString('does not say that a pharmacy or an insurer will allow a refill', $html, 'the page says what an estimate is not');
+	}
+
+	public function testConsumptionRefillsRefusesACallerWithoutStockView(): void
+	{
+		self::grant([]);
+		$this->expectStatus(fn () => self::$refills->Overview(self::request(), self::response(), []), 403, 'GET /consumptionrefills without STOCK_VIEW');
+
+		self::grant(['STOCK_VIEW']);
+		$this->expectStatus(fn () => self::$refills->Overview(self::request(), self::response(), []), 200, 'GET /consumptionrefills with STOCK_VIEW alone');
 	}
 
 	// -------------------------------------------------------------------- batteries

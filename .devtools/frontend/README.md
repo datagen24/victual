@@ -263,6 +263,35 @@ and checks each outcome on the page and through the API or the stock ledger:
 CI boots the instance on 8093 in `frontend-security`, runs the probe after the consumption
 recipe checks and tears the instance down.
 
+## Prescription refills
+
+`node consumption-refills.js --url <url> --admin-password <password>` drives `/consumptionrefills`,
+the page for fills, reorder dates, orders and notices of a private consumption recipe (issue #701,
+ADR-0042, ADR-0015). Like the inbox probe it needs a disposable instance in `VICTUAL_MODE=production`
+with a fresh database and `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD` set before the first migration (or
+`VICTUAL_PROBE_ADMIN_PASSWORD` in the probe's environment). It signs in as an owner, a member with a
+read share, a member with an edit share and a user with no stock permission. It sets the browser clock to 2026-03-18T01:00Z in America/New_York and checks each outcome on the page and through
+the API or the stock ledger:
+
+- a user without stock permissions gets the 403 page, and a read share shows the dates with no forms
+  while the API refuses the write
+- every refill read carries `as_of=2026-03-17`, the device's date, so a reorder date of 2026-03-18 reads
+  as approaching although the server's own UTC date is later; moving the clock a day reads it as reached
+- the notice for the approaching date can be marked as seen, and the API agrees
+- a reorder rule is refused outside its range on the page and stores nothing, a date the person chooses
+  and its removal bring back the rule, and the advance warning is refused outside 0 to 60
+- an order sets the status to ordered, records no fill and moves no stock; cancelling it, ordering again and
+  receiving it records the fill, and the estimate is calculated from the new fill
+- voiding that fill with a reason keeps both fills in the history and makes the older one current
+- the recipe name, a fill note and a void reason seeded with an HTML payload are shown as text and never as
+  an element, and the page does not use the words ADR-0015 rules out
+- labels, live regions, column headers and the focus of the detail heading
+- after the owner removes a member's share, the member's next write is refused with the server's sentence and
+  the prescription leaves their list
+
+CI boots the instance on 8094 in `frontend-security`, runs the probe after the consumption inbox checks and
+tears the instance down.
+
 ## Nested locations
 
 `node nested-locations.js <url>` runs against a disposable demo instance. It builds plan 08's
