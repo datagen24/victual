@@ -77,6 +77,44 @@ page. The stock stays tracked, product by product, while it is in an organizer.
   millilitres or single items. A bottle or a box is a purchase unit converted to that unit by a
   conversion you enter.
 
+### Choosing the source from the API
+
+Both consume routes take a source location. `POST /api/stock/products/{productId}/consume` and
+`POST /api/consumption/recipes/{recipeId}/consume` accept `location_id`, and only stock at that
+location is used. The stock route also accepts `stock_entry_id`. A transfer keeps the entry id of
+the row it splits, so combine it with `location_id` to name the rows of one organizer.
+
+- A shortfall at the chosen location is refused and books nothing, even when other organizers hold
+  enough. The stock route answers `400`; the recipe route answers `409` with `stock_refused`.
+- A `location_id` that is not an integer, or that names no active location, is refused with `400`
+  and nothing is consumed. Earlier versions dropped such a value and consumed from any location.
+  `null` and `""` still mean that no location was sent.
+- With no location, the order is the one described under **Any location** above.
+
+Two kinds of configured source exist. For manual consumption with no location, the product's
+default consume location comes first. For an event an external client submits, a consumption
+mapping chooses the location: `fixed` is that location only, with no fallback, `single` is the one
+location that holds enough, and `explicit` is the location the event names. When a mapping cannot
+name one location, the event is not booked. See
+[consumption events](consumption-events.md#what-the-inbox-lists). A client that must charge a
+particular organizer through the stock route sends `location_id`.
+
+### Labels and scans
+
+The location, product and stock entry labels an organizer household prints carry the fields in the
+label field catalogue: names, dates, amounts and location names. A scan answers with the target's
+id, name and path. None of them includes a consumption recipe, its note, a consumption event or a
+refill date, whatever the stock has been through, and a reader with only `STOCK_VIEW` sees the
+same. `OrganizerLabelDisclosureTest` and `OrganizerApiTest` check this for captures, live and
+sample previews, print jobs, scans, context reads and the snapshot a retired label keeps.
+
+### Checking an installation
+
+`.devtools/pgsql/run-tests.sh consumption` runs the organizer tests against PostgreSQL. The
+browser flow is `node .devtools/frontend/organizers.js <url>`, run against a disposable demo
+instance as described in the
+[frontend checks](https://github.com/datagen24/victual/blob/master/.devtools/frontend/README.md#weekly-organizers).
+
 An undo reverses a booking using the purchase it came from. When a later booking has moved units
 of the same purchase, for example the return of another organizer, the earlier consumption can
 no longer be undone and the request is refused with a message saying so. Undo consumptions

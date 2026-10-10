@@ -5,8 +5,6 @@ namespace Victual\Tests\Pgsql;
 use PDO;
 use Victual\Services\ConsumptionException;
 use Victual\Services\ConsumptionRecipeService;
-use Victual\Services\Labels\FieldCatalogue;
-use Victual\Services\Labels\LabelIdentityService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
@@ -21,9 +19,11 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * comparisons are ADR-0032's tolerance and attribution is ADR-0036's lineage, checked through
  * `stock_lineage_violations()` after every step.
  *
- * A consumption with no location is earliest-due-first across every location, organizers included.
- * testAConsumptionWithNoLocationTakesTheEarliestRowEvenInTheCabinet pins that order so it is
- * documented behaviour and not an accident.
+ * A consumption with no location follows the product's default consume location, then the
+ * earliest due date, across every location, organizers included.
+ * testAConsumptionWithNoLocationFollowsTheProductDefaultThenTheEarliestDueDate pins that order so
+ * it is documented behaviour and not an accident. Labels and scans are pinned in
+ * OrganizerLabelDisclosureTest, the stock routes in OrganizerApiTest.
  */
 class OrganizerWorkflowTest extends PgsqlSchemaTestCase
 {
@@ -242,39 +242,5 @@ class OrganizerWorkflowTest extends PgsqlSchemaTestCase
 		self::$recipes->Consume(self::recipe($weak, 2), 'ow-strength', self::$a);
 		self::assertSame([8.0, 10.0], [self::at($weak, self::$a), self::at($strong, self::$a)], 'distinct strengths are distinct products and never merge');
 		self::assertLineageHolds('single-use and strengths');
-	}
-
-	public function testLabelsCarryNoRecipeOrConsumptionData(): void
-	{
-		foreach (['location', 'product', 'stock_entry'] as $kind)
-		{
-			foreach (array_keys(FieldCatalogue::For($kind)) as $field)
-			{
-				self::assertDoesNotMatchRegularExpression('/consumption|refill|recipe|prescription/i', $field, "$kind label field $field");
-			}
-		}
-
-		$product = self::product('OW labelled', self::$tablet);
-		self::$stock->AddProduct($product, 5, '2999-12-31', StockService::TRANSACTION_TYPE_PURCHASE, '2026-01-01', null, self::$a);
-		$recipeName = 'Private recipe name ' . bin2hex(random_bytes(3));
-		$recipeId = self::$recipes->CreateRecipe($recipeName, 'private note', [['product_id' => $product, 'amount' => 1, 'qu_id' => self::$tablet]]);
-		self::$recipes->Consume($recipeId, 'ow-label', self::$a);
-
-		$identity = new LabelIdentityService(self::$db);
-		$epoch = (int)self::$db->query('SELECT label_current_import_epoch()')->fetchColumn();
-		$row = (int)self::$db->query("SELECT max(id) FROM stock WHERE product_id = $product")->fetchColumn();
-		self::$db->beginTransaction();
-		$organizerUid = $identity->Issue('location', self::$a, $epoch);
-		$entryUid = $identity->Issue('stock_entry', $row, $epoch);
-		self::$db->commit();
-
-		foreach ([$organizerUid, $entryUid] as $uid)
-		{
-			$resolved = json_encode($identity->Resolve($uid, fn() => true));
-			self::assertStringNotContainsString($recipeName, $resolved);
-			self::assertStringNotContainsString('private note', $resolved);
-			self::assertDoesNotMatchRegularExpression('/consumption|recipe_id|prescription/i', $resolved, "scan of $uid");
-		}
-		self::assertStringContainsString('Organizer A', json_encode($identity->Resolve($organizerUid, fn() => true)), 'the organizer label still names the location');
 	}
 }

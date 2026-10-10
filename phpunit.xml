@@ -211,6 +211,8 @@
 			<file>tests/Pgsql/ConsumptionEventApiTest.php</file>
 			<file>tests/Pgsql/ConsumptionEventFixtureTest.php</file>
 			<file>tests/Pgsql/OrganizerWorkflowTest.php</file>
+			<file>tests/Pgsql/OrganizerApiTest.php</file>
+			<file>tests/Pgsql/OrganizerLabelDisclosureTest.php</file>
 		</testsuite>
 	</testsuites>
 </phpunit>
