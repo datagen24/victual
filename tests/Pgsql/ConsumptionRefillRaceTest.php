@@ -85,7 +85,7 @@ class ConsumptionRefillRaceTest extends PgsqlSchemaTestCase
 		$processes = [];
 		foreach ([[$first, 0], [$second, $delay]] as [$call, $wait])
 		{
-			$spec = ['method' => $call[0], 'args' => $call[1], 'service' => $call[2] ?? 'refill', 'delay_us' => $wait];
+			$spec = ['method' => $call[0], 'args' => $call[1], 'service' => $call[2] ?? 'refill', 'delay_us' => $wait, 'then' => $call[3] ?? []];
 			$process = proc_open([PHP_BINARY, __DIR__ . '/consumption-refill-race-subprocess-helper.php', base64_encode(json_encode($spec))],
 				[0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
 			$processes[] = [$process, $pipes];
@@ -311,6 +311,100 @@ class ConsumptionRefillRaceTest extends PgsqlSchemaTestCase
 		}
 
 		fwrite(STDERR, "write vs revoke: $wroteFirst wrote first, $refused refused (seed " . self::$seed . ")\n");
+	}
+
+	/**
+	 * A list or notice read races "revoke, then a new fill" by the owner. Whatever the interleaving, the former share
+	 * holder's answer holds either the recipe as it was before the revoke or nothing: the list re-authorises each
+	 * recipe under its lock, so it cannot see the fill recorded after the revoke.
+	 */
+	public function testAListAndNoticesRacingARevokeThenANewFillNeverShowTheLaterFillToTheFormerHolder(): void
+	{
+		foreach (['ListRefills', 'Notices'] as $method)
+		{
+			for ($round = 0; $round < self::ROUNDS; $round++)
+			{
+				$recipe = self::fixture();
+				self::$service->RecordFill($recipe, ['filled_on' => '2026-01-01', 'supplied_days' => 90], self::AS_OF, self::OWNER);
+				$revokeThenFill = ['RemoveShare', [$recipe, self::EDITOR, self::OWNER], 'recipe', [['service' => 'refill', 'method' => 'RecordFill', 'args' => [$recipe, ['filled_on' => '2026-03-01', 'supplied_days' => 30], self::AS_OF, self::OWNER]]]];
+				[$read, $write] = $this->race([$method, ['2026-03-12', self::EDITOR]], $revokeThenFill);
+
+				$this->assertNoDeadlock($read, $write);
+				self::assertTrue($write['ok'], 'seed ' . self::$seed . ': ' . json_encode($write));
+				self::assertTrue($read['ok'], 'seed ' . self::$seed . ': ' . json_encode($read));
+				$items = $method === 'ListRefills' ? $read['result']['refills'] : $read['result']['notices'];
+				foreach ($items as $item)
+				{
+					if ($item['recipe_id'] !== $recipe)
+					{
+						continue;
+					}
+					if ($method === 'ListRefills')
+					{
+						self::assertSame('2026-01-01', $item['current_fill']['filled_on'], "$method showed the former holder the fill recorded after the revoke (seed " . self::$seed . ')');
+					}
+					else
+					{
+						self::assertSame('2026-03-18', $item['reorder_date'], "$method showed the former holder the later fill (seed " . self::$seed . ')');
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * Deterministic form of the same property: a list or notice read takes the recipe lock, so it waits for a writer
+	 * that holds it. A second connection locks the recipe, a helper process starts the read, and the test waits until
+	 * PostgreSQL reports the helper blocked on a lock; only then does the writer revoke the share, record a fill and
+	 * commit. The read must then leave the recipe out. A read that took no lock would not block at all.
+	 */
+	public function testAListAndNoticesWaitForTheRecipeLockAndThenLeaveOutARevokedRecipe(): void
+	{
+		foreach (['ListRefills', 'Notices'] as $method)
+		{
+			$recipe = self::fixture();
+			self::$service->RecordFill($recipe, ['filled_on' => '2026-01-01', 'supplied_days' => 90], self::AS_OF, self::OWNER);
+
+			$writer = new PDO('pgsql:host=' . getenv('PGHOST') . ';port=' . getenv('PGPORT') . ';dbname=' . getenv('PHPUNIT_DB_NAME'), getenv('PGUSER'), getenv('PGPASSWORD'), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+			$writer->exec('SET search_path TO ' . self::Schema() . ', public');
+			$writer->beginTransaction();
+			$writer->exec("SELECT 1 FROM consumption_recipes WHERE id = $recipe FOR UPDATE");
+
+			$env = array_merge(array_filter(array_merge($_SERVER, $_ENV), 'is_scalar'), [
+				'RBAC_TEST_SCHEMA' => self::Schema(), 'PHPUNIT_DB_NAME' => getenv('PHPUNIT_DB_NAME'), 'VICTUAL_DATAPATH' => getenv('VICTUAL_DATAPATH'),
+				'PGHOST' => getenv('PGHOST'), 'PGPORT' => getenv('PGPORT'), 'PGUSER' => getenv('PGUSER'), 'PGPASSWORD' => getenv('PGPASSWORD'), 'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
+			]);
+			$spec = ['method' => $method, 'args' => ['2026-03-12', self::EDITOR], 'service' => 'refill', 'delay_us' => 0, 'then' => []];
+			$process = proc_open([PHP_BINARY, __DIR__ . '/consumption-refill-race-subprocess-helper.php', base64_encode(json_encode($spec))],
+				[0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
+			self::assertSame("ready\n", fgets($pipes[1]));
+			fwrite($pipes[0], "go\n");
+			fclose($pipes[0]);
+
+			$blocked = false;
+			for ($i = 0; $i < 200 && !$blocked; $i++)
+			{
+				$blocked = (int)self::$db->query("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database() AND query ILIKE '%consumption_recipes%'")->fetchColumn() > 0;
+				if (!$blocked)
+				{
+					usleep(50000);
+				}
+			}
+			self::assertTrue($blocked, "$method waits for the recipe lock (a read that takes none would not block)");
+
+			$writer->exec("DELETE FROM consumption_recipe_shares WHERE recipe_id = $recipe AND user_id = " . self::EDITOR);
+			$writer->exec("INSERT INTO consumption_refill_fills (recipe_id, filled_on, supplied_days) VALUES ($recipe, '2026-03-01', 30)");
+			$writer->commit();
+
+			$output = stream_get_contents($pipes[1]);
+			fclose($pipes[1]);
+			fclose($pipes[2]);
+			proc_close($process);
+			$result = json_decode($output, true);
+			self::assertTrue($result['ok'] ?? false, $output);
+			$items = $method === 'ListRefills' ? $result['result']['refills'] : $result['result']['notices'];
+			self::assertNotContains($recipe, array_column($items, 'recipe_id'), "$method left out the recipe whose share was revoked while it waited");
+		}
 	}
 
 	public function testAnAcknowledgementRacingARevokeStoresNothingAfterTheRevoke(): void

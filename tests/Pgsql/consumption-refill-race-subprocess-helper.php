@@ -53,6 +53,12 @@ try
 {
 	$service = ($spec['service'] ?? 'refill') === 'recipe' ? ConsumptionRecipeService::GetInstance() : ConsumptionRefillService::GetInstance();
 	$result = $service->{$spec['method']}(...$spec['args']);
+	// A second call in the same process, for a sequence such as "revoke, then record a fill".
+	foreach ($spec['then'] ?? [] as $next)
+	{
+		$step = $next['service'] === 'recipe' ? ConsumptionRecipeService::GetInstance() : ConsumptionRefillService::GetInstance();
+		$step->{$next['method']}(...$next['args']);
+	}
 	echo json_encode(['ok' => true, 'result' => $result]);
 }
 catch (ConsumptionException $exception)
