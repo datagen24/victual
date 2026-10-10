@@ -864,6 +864,61 @@ jobs:
           fi
           PGPASSWORD=$PGPASSWORD dropdb --if-exists -h $PGHOST -p $PGPORT -U $PGUSER victual_consumption_inbox || true
 
+      # Issue #701. The prescription refills page needs people who sign in with different rights on
+      # one recipe (an owner, a member who can only read, one who can edit, one with no stock
+      # permission), so it runs against its own production-mode instance on 8094 with a bootstrap
+      # administrator whose password is chosen here. The browser clock is fixed inside the probe: what
+      # only a browser can show is that the device's calendar date, not the server's, decides the
+      # status. The probe's header comment lists what it asserts on the page, the API and the ledger.
+      - name: Boot the consumption refills probe instance
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: victual
+          PGPASSWORD: victual
+        run: |
+          PGPASSWORD=$PGPASSWORD createdb -h $PGHOST -p $PGPORT -U $PGUSER victual_consumption_refills
+          RDATA=$(mktemp -d)
+          cat > "$RDATA/config.php" <<PHPCONFIG
+          <?php
+          Setting('DB_DRIVER', 'pgsql');
+          Setting('DB_HOST', getenv('PGHOST'));
+          Setting('DB_PORT', intval(getenv('PGPORT')));
+          Setting('DB_NAME', 'victual_consumption_refills');
+          Setting('DB_USER', getenv('PGUSER'));
+          Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+          Setting('FILE_STORAGE', 'database');
+          PHPCONFIG
+          VICTUAL_BOOTSTRAP_ADMIN_PASSWORD=probe-admin-password-only VICTUAL_MODE=production VICTUAL_DATAPATH="$RDATA" php bin/victual-migrate --quiet
+          VICTUAL_MODE=production VICTUAL_DATAPATH="$RDATA" \
+            php -S 127.0.0.1:8094 -t public > /tmp/php-consumption-refills.log 2>&1 &
+          echo $! > /tmp/consumption-refills-pid.txt
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8094/login || true)
+            if [ "$code" = "200" ]; then break; fi
+            sleep 1
+          done
+          curl -sS -o /dev/null -w 'consumption refills instance /login -> %{http_code}\n' http://127.0.0.1:8094/login
+
+      - name: Run consumption refills checks
+        working-directory: .devtools/frontend
+        env:
+          VICTUAL_PROBE_ADMIN_PASSWORD: probe-admin-password-only
+        run: node consumption-refills.js --url http://127.0.0.1:8094
+
+      - name: Tear down the consumption refills probe instance
+        if: always()
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: victual
+          PGPASSWORD: victual
+        run: |
+          if [ -f /tmp/consumption-refills-pid.txt ]; then
+            kill $(cat /tmp/consumption-refills-pid.txt) 2>/dev/null || true
+          fi
+          PGPASSWORD=$PGPASSWORD dropdb --if-exists -h $PGHOST -p $PGPORT -U $PGUSER victual_consumption_refills || true
+
       # Plan 30. Against the demo instance on 8085 for the same reason the nested location
       # checks are: the parent picker, the path shown in a group dropdown, and the delete
       # refusal reaching the page are all things the PostgreSQL phase structurally cannot see -

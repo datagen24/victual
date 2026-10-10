@@ -27,6 +27,7 @@ use Victual\Controllers\BatteriesController;
 use Victual\Controllers\CalendarController;
 use Victual\Controllers\ConsumptionInboxController;
 use Victual\Controllers\ConsumptionRecipesController;
+use Victual\Controllers\ConsumptionRefillsController;
 use Victual\Controllers\ChoresController;
 use Victual\Controllers\EquipmentController;
 use Victual\Controllers\GenericEntityController;
@@ -128,6 +129,8 @@ $app->group('', function (RouteCollectorProxy $group)
 	$group->get('/consumptionrecipes', [ConsumptionRecipesController::class, 'Overview']);
 	// External consumption events that need a decision (ADR-0041): a shell page over /api/consumption/events
 	$group->get('/consumptioninbox', [ConsumptionInboxController::class, 'Overview']);
+	// Refill dates, orders and notices of the private consumption recipes (ADR-0042): a shell page over /api/refills
+	$group->get('/consumptionrefills', [ConsumptionRefillsController::class, 'Overview']);
 
 	// Meal plan routes
 	$group->get('/mealplan', [RecipesController::class, 'MealPlan']);
