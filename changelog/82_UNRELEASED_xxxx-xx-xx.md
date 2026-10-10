@@ -30,6 +30,13 @@
 
 - xxx
 
+### Consumption refills
+
+- Added refill tracking for private consumption recipes (migration 0307, [ADR-0042](../docs/adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md)). A person records each fill with its date and, optionally, the days it supplies, sets one rule per recipe (`days_before_end`, `fixed_interval` or `fraction_elapsed`) or enters a reorder date, and records an order and its receipt. Victual derives a reorder date, a warning date and a status (`ok`, `approaching`, `due`, `ordered`, `unknown`) from those facts. It does not read stock to decide when a refill is needed
+- Added `GET /api/consumption/recipes/{recipeId}/refill` and its write routes (settings, fills, void, orders, receive, cancel), `GET /api/refills`, `GET /api/refills/notices` and `POST /api/refills/notices/ack`. Reads need `STOCK_VIEW` and a read share on the recipe; writes need `STOCK_VIEW` and the edit share. A recipe the caller cannot read answers `404`. Dates are calendar dates, and every read takes an optional `as_of` date and reports `as_of_source`
+- Notices are raised for `approaching` and `due` only while no order is open. Acknowledging one is stored per user, and a corrected reorder date raises a new notice. Victual does not send anything; a client polls the notices route. The capability list of `GET /api/consumption/capabilities` gains `refill` and `refill_notices`
+- Added the user setting `refill_warning_lead_days` (0 to 60, default 7) and the page `/consumptionrefills`
+
 ### Stock
 
 - Added measuring the contents of an opened container: opening a single unit can now record how much of it remains (net, or gross with a tare weight), in any quantity unit that converts to the product's stock unit; re-measure it later from the same control. The stock entry list shows what was last measured and when

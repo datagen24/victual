@@ -210,7 +210,8 @@ The design records are decided: ADR-0015 revised and accepted, ADR-0016 rejected
 ADR-0041 and ADR-0042 accepted, each in its own bookkeeping pull request. ADR-0040 leaves
 ADR-0014 and ADR-0018 unamended. The evidence is in `.devtools/adr0040/`, `.devtools/adr0041/` and
 `.devtools/adr0042/`. Implementation is tracked by issues 698 to 703. Issues 698 to 700 have
-merged; issues 701 to 703 have not.
+merged. The implementation of issue 701 merged on 2026-10-10 in pull requests 748, 749 and 751, and
+the issue stays open (see its Executed section). Issues 702 and 703 have not started.
 
 The API contract is developed in this repository. Native HealthKit implementation and
 platform-specific notices belong to `victual-kit`. Server verification can use representative
@@ -218,9 +219,9 @@ client fixtures, but an end-to-end Apple integration claim requires real client 
 The release record must distinguish those outcomes.
 
 [Migrations/RESERVATIONS.md](../../migrations/RESERVATIONS.md) claims 0305 to 0307 for this plan.
-As of 2026-10-10, 0305 (private consumption recipes, shares, events) and 0306 (source mappings and
-the external-source columns) are on disk in `master`. 0307 is the refill claim of issue 701 and
-is unwritten. An earlier reconciliation on 2026-10-09 gave refill 0306; issue 700's schema took
+As of 2026-10-10, 0305 (private consumption recipes, shares, events), 0306 (source mappings and
+the external-source columns) and 0307 (refill history, rules, orders and acknowledgements) are on
+disk in `master`. An earlier reconciliation on 2026-10-09 gave refill 0306; issue 700's schema took
 that slot, and refill yielded to 0307. The number can still move:
 [ADR-0039](../adr/0039-the-mcp-sidecar-reads-its-configuration-from-victual.md) implementation
 may claim a lower slot first. Re-read the table, claim the lowest free slot before writing a
@@ -394,7 +395,13 @@ answers from the maintainer's inventory scope decision on 2026-10-09.
     The maintainer's settled choice for bulk void (oldest first, refused items stay in
     `needs_review`) is not part of this question. No ADR or code is changed by this entry.
 
-    > **Response:** Pending. Not decided.
+    > **Response, maintainer, 2026-10-10:** Option A. Row 7 holds for create then delete only when
+    > the deleted event is the newest booking on every purchase it drew from; otherwise the delete
+    > answers `needs_review` / `undo_refused`. No ledger code and no accepted rule of ADR-0036
+    > changes. [Pull request 754](https://github.com/datagen24/victual/pull/754) recorded the
+    > erratum in ADR-0041. Option B (rebooking a later event under a new transaction id) remains a
+    > separate design decision that no one has requested. Approval:
+    > [issue 701 comment](https://github.com/datagen24/victual/issues/701#issuecomment-6099923433).
 
 ## Executed
 
@@ -638,12 +645,17 @@ These runs and the fixtures do not establish HealthKit behavior. Issue 702 owns 
 
 ### Issue 701: refill history, reorder estimates and notices
 
-In review as a stack of three pull requests, each based on the one before:
-[748](https://github.com/datagen24/victual/pull/748) (migration 0307, pgTAP, import and migration
-metadata), [749](https://github.com/datagen24/victual/pull/749) (estimate, services, ten routes, OpenAPI,
-contract snapshots, capabilities, client fixtures, operator page) and
-[751](https://github.com/datagen24/victual/pull/751) (page, translations, browser probe, user manual,
-glossary). Nothing here is merged, issue 701 stays open, and no part of it is native-client evidence.
+Merged on 2026-10-10 as a stack of three pull requests, each based on the one before:
+
+- [748](https://github.com/datagen24/victual/pull/748), merge commit `9e675444`: migration 0307, pgTAP,
+  import and migration metadata.
+- [749](https://github.com/datagen24/victual/pull/749), `a4ce1321`: estimate, services, ten routes,
+  OpenAPI, contract snapshots, capabilities, client fixtures and the operator page.
+- [751](https://github.com/datagen24/victual/pull/751), `1a76e4a8`: page, translations, browser probe,
+  user manual and glossary.
+
+Issue 701 stays open. The evidence below was taken on the pull request heads before the merge, and no part
+of it is native-client evidence.
 
 **Divergences from ADR-0042** are listed in the description of pull request 749. In short: five tables,
 because the explicit date has its own history; `estimate` always carries five keys; extra fields
@@ -704,10 +716,24 @@ Both passed in CI.
   number field could not read was read as empty.
 - On the page, a double click posted twice and counts of 1 read "1 days".
 
+**Maintainer approvals, 2026-10-10**
+([issue 701 comment](https://github.com/datagen24/victual/issues/701#issuecomment-6099923433)):
+
+- The user-facing wording of pull requests 749 and 751, including "Order recorded". This meets
+  ADR-0015 prerequisite 1 for those strings.
+- The conditional erratum to ADR-0041 verification row 7, with no ledger code change (open question 17,
+  merged in [pull request 754](https://github.com/datagen24/victual/pull/754)).
+- The implementation deviations from ADR-0042 listed above: five tables, a consistent five-key
+  estimate, state responses for writes, list envelopes carrying `as_of_source`, optional `supplied_days`,
+  and entered dates limited to 1900 to 2200.
+
+The approval does not declare verification complete.
+
 **Remaining gates.**
 
-- The maintainer has not approved the user-facing wording (ADR-0015 prerequisite 1). The strings are listed
-  in the descriptions of pull requests 749 and 751.
-- Open question 17 (ADR-0041 row 7) awaits a decision.
+- A review found that `ListRefills` and `Notices` chose candidate recipes without a lock and read refill
+  facts afterwards, so a share revoked in between could still be reported. The fix and its regression
+  tests are in [pull request 755](https://github.com/datagen24/victual/pull/755). The private-access
+  criterion above is not met until that pull request merges and its checks pass.
 - Native acceptance on a real device (issue 702) and integrated verification (issue 703) have no evidence.
-- Pull requests 748, 749 and 751 are not merged. Plan 22 stays in progress and v0.5.0 is not claimed.
+- Plan 22 stays in progress and v0.5.0 is not claimed.
