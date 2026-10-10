@@ -1,0 +1,98 @@
+{
+	"title": "Cancelling an order restores the status the fills and rules say",
+	"adr_sequence": "section 5",
+	"description": "A cancelled order restores the underlying status and records no fill. A new order can be recorded after a cancellation.",
+	"setup": {
+		"users": [
+			"alice"
+		],
+		"recipes": {
+			"main": {
+				"owner": "alice",
+				"shares": {}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "A 90-day fill",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills?as_of=2026-03-12",
+				"body": {
+					"filled_on": "2026-01-01",
+					"supplied_days": 90
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"status": "approaching"
+				}
+			}
+		},
+		{
+			"note": "Order",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/orders?as_of=2026-03-12",
+				"body": {
+					"ordered_on": "2026-03-12"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"status": "ordered"
+				}
+			},
+			"save": {
+				"order": "open_order.id"
+			}
+		},
+		{
+			"note": "Cancel",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/orders/{{saved.order}}/cancel?as_of=2026-03-12"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"status": "approaching",
+					"open_order": null,
+					"orders": [
+						{
+							"state": "cancelled"
+						}
+					],
+					"fills": {
+						"0": {
+							"filled_on": "2026-01-01"
+						}
+					}
+				}
+			}
+		},
+		{
+			"note": "Order again",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/orders?as_of=2026-03-13",
+				"body": {
+					"ordered_on": "2026-03-13"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"status": "ordered"
+				}
+			}
+		}
+	]
+}

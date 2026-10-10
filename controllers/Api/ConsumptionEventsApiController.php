@@ -26,7 +26,7 @@ class ConsumptionEventsApiController extends BaseApiController
 {
 	/** What this server implements. A name is added here when its behavior ships, never before. */
 	public const CONTRACT_VERSION = 1;
-	public const FEATURES = ['events', 'mappings', 'batch', 'bulk_resolve', 'manual_consume', 'deletion_reasons', 'not_logged', 'default_quantity', 'unit_labels', 'replaces'];
+	public const FEATURES = ['events', 'mappings', 'batch', 'bulk_resolve', 'manual_consume', 'deletion_reasons', 'not_logged', 'default_quantity', 'unit_labels', 'replaces', 'refill', 'refill_notices'];
 
 	private function Events(): ConsumptionEventService
 	{

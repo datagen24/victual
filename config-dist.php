@@ -426,6 +426,9 @@ DefaultUserSetting('batteries_due_soon_days', 5); // The "due soon" days
 // Tasks settings
 DefaultUserSetting('tasks_due_soon_days', 5); // The "due soon" days
 
+// Prescription refill settings (ADR-0042)
+DefaultUserSetting('refill_warning_lead_days', 7); // Days before an estimated reorder date at which a refill is flagged as approaching (0 to 60); a prescription can override it
+
 // Calendar settings
 DefaultUserSetting('calendar_color_products', '#007bff'); // The event color (hex code) for due products
 DefaultUserSetting('calendar_color_tasks', '#28a745'); // The event color (hex code) for due tasks

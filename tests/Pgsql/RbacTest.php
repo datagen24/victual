@@ -60,6 +60,8 @@ class RbacTest extends PgsqlSchemaTestCase
 		'ConsumptionRecipesApiController', 'ConsumptionRecipesController', 'ConsumptionEventsApiController',
 		// Issue #700: the reconciliation inbox is a shell page that needs STOCK_VIEW; its data comes from the events API above.
 		'ConsumptionInboxController',
+		// ADR-0042 (issue #701): every refill route needs STOCK_VIEW before the service is reached.
+		'ConsumptionRefillsApiController',
 		// ADR-0035 (2026-09-29): BATTERIES_VIEW/CALENDAR_VIEW/EQUIPMENT_VIEW now gate every
 		// GET method of these five, uniformly refusing without the grant, the same as every
 		// other entry above - closing the FINDINGs this class used to except them for.

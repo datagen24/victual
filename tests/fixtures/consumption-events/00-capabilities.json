@@ -17,7 +17,7 @@
 				"status": 200,
 				"body": {
 					"contract_version": 1,
-					"features": ["events", "mappings", "batch", "bulk_resolve", "manual_consume", "deletion_reasons", "not_logged", "default_quantity", "unit_labels", "replaces"]
+					"features": ["events", "mappings", "batch", "bulk_resolve", "manual_consume", "deletion_reasons", "not_logged", "default_quantity", "unit_labels", "replaces", "refill", "refill_notices"]
 				}
 			}
 		}

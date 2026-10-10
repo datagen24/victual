@@ -11,6 +11,7 @@ use Victual\Controllers\Api\BatteriesApiController;
 use Victual\Controllers\Api\CalendarApiController;
 use Victual\Controllers\Api\ChoresApiController;
 use Victual\Controllers\Api\ConsumptionRecipesApiController;
+use Victual\Controllers\Api\ConsumptionRefillsApiController;
 use Victual\Controllers\Api\FilesApiController;
 use Victual\Controllers\Api\GenericEntityApiController;
 use Victual\Controllers\Api\PrintApiController;
@@ -606,7 +607,37 @@ class ContractTest extends PgsqlSchemaTestCase
 		self::assertSame(1, (int)self::$db->query("SELECT count(*) FROM consumption_events WHERE source_event_id = 'event-1'")->fetchColumn(), 'Fixture event recorded');
 	}
 
+	/**
+	 * ADR-0042: the refill routes, called as the administrator on the recipe the earlier test made. The administrator
+	 * holds a share with every right after the transfer, so every write is allowed. as_of is sent on each read so the
+	 * snapshot records an approaching notice and a filled-in state, not the empty shapes.
+	 */
 	#[Depends('testConsumptionEventOperations')]
+	public function testConsumptionRefillOperations(): void
+	{
+		$refill = self::controller(ConsumptionRefillsApiController::class);
+		$recipeId = self::$ids['consumption_recipe'];
+		$args = ['recipeId' => $recipeId];
+		$asOf = ['as_of' => '2026-03-12'];
+
+		$fill = self::invokeAdmin('POST /api/consumption/recipes/{recipeId}/refill/fills', fn() => $refill->RecordFill(self::request('POST', ['filled_on' => '2026-01-01', 'supplied_days' => 90, 'note' => 'contract fill'], $asOf), new Response(), $args));
+		$fillId = (int)$fill['current_fill']['id'];
+		self::invokeAdmin('GET /api/consumption/recipes/{recipeId}/refill', fn() => $refill->GetRefill(self::request('GET', null, $asOf), new Response(), $args));
+		self::invokeAdmin('PUT /api/consumption/recipes/{recipeId}/refill', fn() => $refill->SetSettings(self::request('PUT', ['rule' => ['kind' => 'fixed_interval', 'parameter' => 70], 'warning_lead_days' => 5, 'explicit_reorder_date' => '2026-03-15'], $asOf), new Response(), $args));
+		self::invokeAdmin('GET /api/refills', fn() => $refill->ListRefills(self::request('GET', null, $asOf), new Response(), []));
+		$notices = self::invokeAdmin('GET /api/refills/notices', fn() => $refill->ListNotices(self::request('GET', null, $asOf), new Response(), []));
+		self::invokeAdmin('POST /api/refills/notices/ack', fn() => $refill->AcknowledgeNotice(self::request('POST', ['notice_key' => $notices['notices'][0]['key']]), new Response(), []));
+
+		$order = self::invokeAdmin('POST /api/consumption/recipes/{recipeId}/refill/orders', fn() => $refill->RecordOrder(self::request('POST', ['ordered_on' => '2026-03-12'], $asOf), new Response(), $args));
+		self::invokeAdmin('POST /api/consumption/recipes/{recipeId}/refill/orders/{orderId}/receive', fn() => $refill->ReceiveOrder(self::request('POST', ['filled_on' => '2026-03-13', 'supplied_days' => 30], $asOf), new Response(), $args + ['orderId' => (int)$order['open_order']['id']]));
+		$second = self::invokeAdmin('POST /api/consumption/recipes/{recipeId}/refill/orders (second)', fn() => $refill->RecordOrder(self::request('POST', ['ordered_on' => '2026-03-14'], $asOf), new Response(), $args));
+		self::invokeAdmin('POST /api/consumption/recipes/{recipeId}/refill/orders/{orderId}/cancel', fn() => $refill->CancelOrder(self::request('POST', null, $asOf), new Response(), $args + ['orderId' => (int)$second['open_order']['id']]));
+		self::invokeAdmin('POST /api/consumption/recipes/{recipeId}/refill/fills/{fillId}/void', fn() => $refill->VoidFill(self::request('POST', ['reason' => 'contract void'], $asOf), new Response(), $args + ['fillId' => $fillId]));
+
+		self::assertSame(2, (int)self::$db->query("SELECT count(*) FROM consumption_refill_fills WHERE recipe_id = $recipeId")->fetchColumn(), 'Fixture fills recorded');
+	}
+
+	#[Depends('testConsumptionRefillOperations')]
 	public function testChoresOperations(): void
 	{
 		$generic = self::controller(GenericEntityApiController::class);
@@ -876,6 +907,7 @@ class ContractTest extends PgsqlSchemaTestCase
 		$print = self::controller(PrintApiController::class);
 		$files = self::controller(FilesApiController::class);
 		$consumption = self::controller(ConsumptionRecipesApiController::class);
+		$refill = self::controller(ConsumptionRefillsApiController::class);
 
 		$productId = self::$ids['product'];
 
@@ -942,6 +974,10 @@ class ContractTest extends PgsqlSchemaTestCase
 			// ConsumptionRecipeServiceTest and ConsumptionRecipeApiTest (ADR-0040 rule 7).
 			$key === 'GET /api/consumption/recipes' => fn() => $consumption->ListRecipes(self::request(), new Response(), []),
 			$key === 'GET /api/consumption/recipes/{recipeId}' => fn() => $consumption->GetRecipe(self::request(), new Response(), ['recipeId' => self::$ids['consumption_recipe']]),
+			// ADR-0042: the same administrator-with-a-share replay as the recipe reads above.
+			$key === 'GET /api/consumption/recipes/{recipeId}/refill' => fn() => $refill->GetRefill(self::request('GET', null, ['as_of' => '2026-03-12']), new Response(), ['recipeId' => self::$ids['consumption_recipe']]),
+			$key === 'GET /api/refills' => fn() => $refill->ListRefills(self::request('GET', null, ['as_of' => '2026-03-12']), new Response(), []),
+			$key === 'GET /api/refills/notices' => fn() => $refill->ListNotices(self::request('GET', null, ['as_of' => '2026-03-12']), new Response(), []),
 			$key === 'GET /api/print/shoppinglist/thermal' => fn() => $print->PrintShoppingListThermal(self::request(), new Response(), []),
 			default => null,
 		};

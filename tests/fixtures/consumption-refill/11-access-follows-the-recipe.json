@@ -1,0 +1,224 @@
+{
+	"title": "Refill data follows the recipe's shares; a hidden recipe is absent, not forbidden",
+	"adr_sequence": "section 1 and ADR-0040",
+	"description": "The owner and a member with a read share may read the refill data. Recording or changing it needs the edit right (403 right_missing otherwise). A user with no share on the recipe gets 404 not_found, the same answer as for a recipe that does not exist, and the recipe is absent from every list.",
+	"setup": {
+		"users": [
+			"alice",
+			"bob",
+			"carol"
+		],
+		"recipes": {
+			"main": {
+				"owner": "alice",
+				"shares": {
+					"bob": {}
+				}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "alice records a fill",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills?as_of=2026-03-01",
+				"body": {
+					"filled_on": "2026-01-01",
+					"supplied_days": 90
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"status": "ok"
+				}
+			}
+		},
+		{
+			"note": "bob reads it through his read share",
+			"as": "bob",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-03-01"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"status": "ok"
+				}
+			}
+		},
+		{
+			"note": "bob cannot record",
+			"as": "bob",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills?as_of=2026-03-01",
+				"body": {
+					"filled_on": "2026-02-01",
+					"supplied_days": 30
+				}
+			},
+			"expect": {
+				"status": 403,
+				"body": {
+					"error": "right_missing"
+				}
+			}
+		},
+		{
+			"note": "or order",
+			"as": "bob",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/orders?as_of=2026-03-01",
+				"body": {
+					"ordered_on": "2026-03-01"
+				}
+			},
+			"expect": {
+				"status": 403,
+				"body": {
+					"error": "right_missing"
+				}
+			}
+		},
+		{
+			"note": "carol has no share: not found",
+			"as": "carol",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-03-01"
+			},
+			"expect": {
+				"status": 404,
+				"body": {
+					"error": "not_found"
+				}
+			}
+		},
+		{
+			"note": "exactly as for a recipe that does not exist",
+			"as": "carol",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/recipes/987654/refill?as_of=2026-03-01"
+			},
+			"expect": {
+				"status": 404,
+				"body": {
+					"error": "not_found"
+				}
+			}
+		},
+		{
+			"note": "carol cannot record either",
+			"as": "carol",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills?as_of=2026-03-01",
+				"body": {
+					"filled_on": "2026-02-01",
+					"supplied_days": 30
+				}
+			},
+			"expect": {
+				"status": 404,
+				"body": {
+					"error": "not_found"
+				}
+			}
+		},
+		{
+			"note": "carol's list is empty",
+			"as": "carol",
+			"request": {
+				"method": "GET",
+				"path": "/api/refills?as_of=2026-03-01"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"refills": []
+				}
+			}
+		},
+		{
+			"note": "bob's list holds the recipe",
+			"as": "bob",
+			"request": {
+				"method": "GET",
+				"path": "/api/refills?as_of=2026-03-01"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"refills": [
+						{
+							"recipe_id": "{{recipe.main}}"
+						}
+					]
+				}
+			}
+		},
+		{
+			"note": "alice may give bob the edit right",
+			"as": "alice",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/recipes/{{recipe.main}}/shares/{{user.bob}}",
+				"body": {
+					"edit": true
+				}
+			},
+			"expect": {
+				"status": 204
+			}
+		},
+		{
+			"note": "and bob can then record",
+			"as": "bob",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills?as_of=2026-02-01",
+				"body": {
+					"filled_on": "2026-02-01",
+					"supplied_days": 30
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"status": "ok"
+				}
+			}
+		},
+		{
+			"note": "alice removes bob's share",
+			"as": "alice",
+			"request": {
+				"method": "DELETE",
+				"path": "/api/consumption/recipes/{{recipe.main}}/shares/{{user.bob}}"
+			},
+			"expect": {
+				"status": 204
+			}
+		},
+		{
+			"note": "bob has lost the refill data at once",
+			"as": "bob",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-03-01"
+			},
+			"expect": {
+				"status": 404,
+				"body": {
+					"error": "not_found"
+				}
+			}
+		}
+	]
+}

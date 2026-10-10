@@ -5,6 +5,8 @@ namespace Victual\Controllers\Api;
 use Victual\Controllers\Users\User;
 use Victual\Middleware\Auth\SessionCookie;
 use Victual\Services\ApiKeyService;
+use Victual\Services\ConsumptionException;
+use Victual\Services\ConsumptionRefillService;
 use Victual\Services\UsersService;
 use Victual\Services\RolesService;
 use Victual\Services\DatabaseService;
@@ -703,6 +705,20 @@ class UsersApiController extends BaseApiController
 			// as null and silently storing NULL as the setting's new value (issue #498/#487
 			// H9 round 2).
 			$requestBody = $this->RequireRequestBody($this->GetParsedAndFilteredRequestBody($request));
+
+			// The one setting with a documented range is refused outside it (ADR-0042 section 4),
+			// so a stored value is always a lead and never silently becomes the default.
+			if ($args['settingKey'] === ConsumptionRefillService::SETTING_LEAD_DAYS)
+			{
+				try
+				{
+					$requestBody['value'] = ConsumptionRefillService::ValidatedLeadSetting($requestBody['value'] ?? null);
+				}
+				catch (ConsumptionException $exception)
+				{
+					return $this->ApiResponse($response->withStatus($exception->status), ['error_message' => $exception->getMessage(), 'error' => $exception->errorCode]);
+				}
+			}
 
 			$value = UsersService::GetInstance()->SetUserSetting(VICTUAL_USER_ID, $args['settingKey'], $requestBody['value']);
 			return $this->EmptyApiResponse($response);

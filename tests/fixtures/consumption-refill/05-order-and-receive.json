@@ -1,0 +1,174 @@
+{
+	"title": "An order changes the status; receiving it records the fill and closes the order",
+	"adr_sequence": "section 5",
+	"description": "Recording an order sets the status to ordered and changes nothing else: no fill, no estimate, no stock. Receiving it records the fill that arrived and closes the order in one request; the status is then calculated from the new fill. Stock arrives separately, through a normal purchase booking. A second open order is a conflict.",
+	"setup": {
+		"users": [
+			"alice"
+		],
+		"recipes": {
+			"main": {
+				"owner": "alice",
+				"shares": {}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "A 30-day fill that is due on 2026-01-17",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills?as_of=2026-01-18",
+				"body": {
+					"filled_on": "2026-01-01",
+					"supplied_days": 30
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"status": "due",
+					"days_overdue": 1
+				}
+			}
+		},
+		{
+			"note": "Order it",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/orders?as_of=2026-01-18",
+				"body": {
+					"ordered_on": "2026-01-18"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"status": "ordered",
+					"days_overdue": null,
+					"open_order": {
+						"ordered_on": "2026-01-18",
+						"age_days": 0
+					},
+					"estimate": {
+						"reorder_date": "2026-01-17"
+					},
+					"current_fill": {
+						"filled_on": "2026-01-01"
+					}
+				}
+			},
+			"save": {
+				"order": "open_order.id"
+			}
+		},
+		{
+			"note": "A second open order is a conflict",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/orders?as_of=2026-01-19",
+				"body": {
+					"ordered_on": "2026-01-19"
+				}
+			},
+			"expect": {
+				"status": 409,
+				"body": {
+					"error": "order_open"
+				}
+			}
+		},
+		{
+			"note": "Two days later the order shows its age",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-01-20"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"status": "ordered",
+					"open_order": {
+						"age_days": 2
+					}
+				}
+			}
+		},
+		{
+			"note": "Receive it with the fill that arrived",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/orders/{{saved.order}}/receive?as_of=2026-01-21",
+				"body": {
+					"filled_on": "2026-01-21",
+					"supplied_days": 90
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"status": "ok",
+					"open_order": null,
+					"current_fill": {
+						"filled_on": "2026-01-21",
+						"supplied_days": 90
+					},
+					"estimate": {
+						"reorder_date": "2026-04-07",
+						"source": "fallback"
+					},
+					"orders": [
+						{
+							"state": "received"
+						}
+					],
+					"fills": [
+						{
+							"is_current": true
+						},
+						{
+							"is_current": false
+						}
+					]
+				}
+			}
+		},
+		{
+			"note": "A closed order cannot be received again",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/orders/{{saved.order}}/receive?as_of=2026-01-22",
+				"body": {
+					"filled_on": "2026-01-22",
+					"supplied_days": 90
+				}
+			},
+			"expect": {
+				"status": 409,
+				"body": {
+					"error": "order_closed"
+				}
+			}
+		},
+		{
+			"note": "or cancelled",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/orders/{{saved.order}}/cancel?as_of=2026-01-22"
+			},
+			"expect": {
+				"status": 409,
+				"body": {
+					"error": "order_closed"
+				}
+			}
+		}
+	]
+}
