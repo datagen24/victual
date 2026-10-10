@@ -394,7 +394,10 @@ answers from the maintainer's inventory scope decision on 2026-10-09.
     The maintainer's settled choice for bulk void (oldest first, refused items stay in
     `needs_review`) is not part of this question. No ADR or code is changed by this entry.
 
-    > **Response:** Pending. Not decided.
+    > **Response, maintainer, 2026-10-10:** Option A, the conditional erratum. Document that
+    > shared-purchase lineage can produce `undo_refused`, leaving two deductions pending
+    > reconciliation. Rebooking under a new transaction id changes ledger behavior and needs its
+    > own design decision. Recorded as an erratum in [pull request 754](https://github.com/datagen24/victual/pull/754).
 
 ## Executed
 
@@ -706,8 +709,12 @@ Both passed in CI.
 
 **Remaining gates.**
 
-- The maintainer has not approved the user-facing wording (ADR-0015 prerequisite 1). The strings are listed
-  in the descriptions of pull requests 749 and 751.
-- Open question 17 (ADR-0041 row 7) awaits a decision.
+- Wording (ADR-0015 prerequisite 1): the maintainer approved the strings listed in pull requests 749
+  and 751 on 2026-10-10, with the status word "Order recorded" in place of "Order placed", which the pages now use.
+- The maintainer accepted the documented deviations from ADR-0042 (the table split, the response envelopes,
+  optional `supplied_days`, the date bounds, the consistent estimate fields) and keeping the capabilities
+  contract at version 1 with additive feature names on 2026-10-10.
+- The changelog entry is in pull request 751.
 - Native acceptance on a real device (issue 702) and integrated verification (issue 703) have no evidence.
+- The index cleanup is [pull request 753](https://github.com/datagen24/victual/pull/753).
 - Pull requests 748, 749 and 751 are not merged. Plan 22 stays in progress and v0.5.0 is not claimed.
