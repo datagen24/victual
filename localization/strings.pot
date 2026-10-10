@@ -3026,3 +3026,184 @@ msgstr ""
 
 msgid "Needs review"
 msgstr ""
+
+msgid "Consumption inbox"
+msgstr ""
+
+msgid "Consumption events that other apps sent and that need a decision. Only you can see them. An event is booked only when an action below is chosen or when its mapping allows it."
+msgstr ""
+
+msgid "You may view these events but not resolve them. Resolving needs the permission to record consumption."
+msgstr ""
+
+msgid "Also show undone events"
+msgstr ""
+
+msgid "Medication"
+msgstr ""
+
+msgid "Reload"
+msgstr ""
+
+msgid "Source"
+msgstr ""
+
+msgid "Details"
+msgstr ""
+
+msgid "No events need a decision."
+msgstr ""
+
+msgid "Resolve many at once"
+msgstr ""
+
+msgid "One action is applied to every event of one medication that is in the chosen state. The server handles up to 50 events per request."
+msgstr ""
+
+msgid "Medication reference"
+msgstr ""
+
+msgid "Apply to all matching"
+msgstr ""
+
+msgid "Linking says this event and an existing consumption are the same dose. If the event is booked, its own booking is undone, so one deduction remains."
+msgstr ""
+
+msgid "Another transaction id"
+msgstr ""
+
+msgid "Not booked: no mapping for this medication"
+msgstr ""
+
+msgid "Not booked yet: the event was received and booking was not attempted"
+msgstr ""
+
+msgid "Undone: the booking was reversed and stock was restored"
+msgstr ""
+
+msgid "Linked to an existing consumption"
+msgstr ""
+
+msgid "Voided: the booking was undone"
+msgstr ""
+
+msgid "Dismissed: nothing was booked"
+msgstr ""
+
+msgid "Not booked: the location is not clear"
+msgstr ""
+
+msgid "Not booked: not enough stock at the chosen location"
+msgstr ""
+
+msgid "Not booked: the unit has not been confirmed"
+msgstr ""
+
+msgid "Not booked: the event has no quantity and the mapping has no default quantity"
+msgstr ""
+
+msgid "Not booked: the mapped consumption recipe is not available"
+msgstr ""
+
+msgid "Some of the bookings were undone and some remain"
+msgstr ""
+
+msgid "The source changed this record after its booking was undone; nothing was booked"
+msgstr ""
+
+msgid "Not changed: the stock refused to undo the earlier booking"
+msgstr ""
+
+msgid "Not booked: the mapping does not fit this event"
+msgstr ""
+
+msgid "The source deleted this record; stock unchanged"
+msgstr ""
+
+msgid "Not booked: the stock refused the booking"
+msgstr ""
+
+msgid "entered in error"
+msgstr ""
+
+msgid "history cleared"
+msgstr ""
+
+msgid "medication archived"
+msgstr ""
+
+msgid "access revoked"
+msgstr ""
+
+msgid "no reason given"
+msgstr ""
+
+msgid "Try booking again"
+msgstr ""
+
+msgid "Book again"
+msgstr ""
+
+msgid "Confirm the unit and book"
+msgstr ""
+
+msgid "Undo the booking"
+msgstr ""
+
+msgid "Keep the booking"
+msgstr ""
+
+msgid "Dismiss"
+msgstr ""
+
+msgid "Link to an existing consumption"
+msgstr ""
+
+msgid "All medications"
+msgstr ""
+
+msgid "Locations that could supply this: %s"
+msgstr ""
+
+msgid "Unit sent by the source: \"%s\""
+msgstr ""
+
+msgid "Message from the stock: %s"
+msgstr ""
+
+msgid "Reason given by the source: %s"
+msgstr ""
+
+msgid "Possible duplicate: consumption %1$s, recorded at %2$s"
+msgstr ""
+
+msgid "Resolving needs the permission to record consumption."
+msgstr ""
+
+msgid "Booked; other consumptions of the same product were recorded near this time"
+msgstr ""
+
+msgid "Event %1$s is now: %2$s"
+msgstr ""
+
+msgid "Link %s to an existing consumption"
+msgstr ""
+
+msgid "Consumption %1$s, recorded at %2$s"
+msgstr ""
+
+msgid "Choose a consumption or enter a transaction id."
+msgstr ""
+
+msgid "Choose a source and enter a medication reference."
+msgstr ""
+
+msgid "Apply \"%1$s\" to every \"%2$s\" event of medication %3$s?"
+msgstr ""
+
+msgid "Handled %1$s events; %2$s refused; %3$s still match."
+msgstr ""
+
+msgid "The remaining events did not change, so the requests stopped."
+msgstr ""
+

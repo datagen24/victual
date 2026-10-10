@@ -120,7 +120,7 @@ guessing.
 | `API_KEY_MAX_LIFETIME_DAYS` | `365` | The longest lifetime a regular API key may be given at creation (issue #130). The manage-keys screen offers a lifetime up to this many days; a value beyond it is clamped rather than refused. |
 | `DEFAULT_PERMISSIONS` | `[]` | Permission constants (see [Roles and permissions](operator/roles-permissions.md)) granted to every newly created user. Empty by default and deliberately so — a nonempty default here grants every new account that set of permissions the moment it exists. |
 | `DEFAULT_ROLES` | `[]` | Immutable role codes assigned to new users, e.g. `['CHILD']`. |
-| `CONSUMPTION_AUTO_VOID_DAYS` | `7` | Days after a dose within which a source's report that it was not taken (entered in error, not logged, skipped) restores stock without a person. An older report waits for a person. |
+| `CONSUMPTION_AUTO_VOID_DAYS` | `7` | Days after a dose within which a source's report that it was not taken (entered in error, not logged, skipped) restores stock without a person. An older report waits for a person. See [External consumption events](operator/external-consumption.md). |
 | `CONSUMPTION_DUPLICATE_WINDOW_MINUTES` | `30` | Minutes either side of an imported dose within which a manual or direct consumption of the same product is listed as a possible duplicate. It is a suggestion only. |
 
 `API_KEY_MAX_LIFETIME_DAYS` applies to the default API key type only — the calendar

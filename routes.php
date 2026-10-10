@@ -24,6 +24,7 @@ use Victual\Controllers\Api\TasksApiController;
 use Victual\Controllers\Api\UsersApiController;
 use Victual\Controllers\BatteriesController;
 use Victual\Controllers\CalendarController;
+use Victual\Controllers\ConsumptionInboxController;
 use Victual\Controllers\ConsumptionRecipesController;
 use Victual\Controllers\ChoresController;
 use Victual\Controllers\EquipmentController;
@@ -124,6 +125,8 @@ $app->group('', function (RouteCollectorProxy $group)
 
 	// Private consumption recipes (ADR-0040): a shell page; the data comes from /api/consumption
 	$group->get('/consumptionrecipes', [ConsumptionRecipesController::class, 'Overview']);
+	// External consumption events that need a decision (ADR-0041): a shell page over /api/consumption/events
+	$group->get('/consumptioninbox', [ConsumptionInboxController::class, 'Overview']);
 
 	// Meal plan routes
 	$group->get('/mealplan', [RecipesController::class, 'MealPlan']);
