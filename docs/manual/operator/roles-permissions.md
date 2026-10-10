@@ -93,6 +93,39 @@ read or act on them, and another user's event answers `404`.
 The bookings an event makes are stock bookings made as the signed-in user, and anyone who can
 see the stock journal sees them.
 
+## Adding a product, unit or location
+
+Creating, changing and deleting master data needs `MASTER_DATA_EDIT`. The generic object routes
+(`/api/objects/{entity}`), which the web forms save through, and the barcode lookup that adds a
+product check it for products, quantity units and their conversions, locations, barcodes, stores,
+product groups, chores, batteries, tasks and userfields. The shopping list, recipes, meal plan and
+equipment have their own permissions. Nothing in a stock, consumption or recipe permission lets an
+account add a product.
+
+The seeded Adult, Child and Guest roles do not hold `MASTER_DATA_EDIT`, so on a household set up
+with those roles only an administrator can add a medication or vitamin. `ADMIN` is not required:
+an account that holds `MASTER_DATA_EDIT` and nothing else can add and edit master data. Such an
+account cannot record a dose or save a consumption mapping unless it also holds `STOCK_VIEW` and
+`STOCK_CONSUME`. Master data is shared by every account, and the permission covers every product,
+not only the ones its holder added. A consumption recipe's owner has no extra right to the
+products on it.
+
+To let a client map a new medication:
+
+1. An account that holds `MASTER_DATA_EDIT` adds the product in the web interface. Give it the
+   quantity unit the medication is counted in ("tablet", "mL") as its stock unit, because a
+   mapping in the stock unit needs no conversion.
+2. Add a quantity unit conversion for the product only if the client reports in another unit,
+   for example milligrams for a product counted in tablets. The conversion is the amount of the
+   product's stock unit in one of the other unit.
+3. Check the factor of any conversion Victual created when it saved the product. A purchase,
+   consume or price unit that differs from the stock unit gets a conversion of factor 1 unless a
+   default conversion already applies.
+4. The household member opens the client, approves the mapping and reviews the first dose.
+
+A client that cannot create master data names the missing product or conversion and stops. See
+[External consumption events](external-consumption.md#mappings).
+
 ## Permission reference
 
 `ADMIN` implies every other permission. The rest, by domain:
@@ -108,7 +141,7 @@ see the stock journal sees them.
 | Batteries | `BATTERIES`, `BATTERIES_TRACK_CHARGE_CYCLE`, `BATTERIES_UNDO_CHARGE_CYCLE` |
 | Equipment | `EQUIPMENT` |
 | Calendar | `CALENDAR` |
-| Master data | `MASTER_DATA_EDIT` (products, locations, quantity units, product groups, and — with the label subsystem — templates, printers and printing itself) |
+| Master data | `MASTER_DATA_EDIT` (products, locations, quantity units and conversions, barcodes, stores, product groups, chores, batteries, tasks and userfields, and — with the label subsystem — printing itself; see [Adding a product, unit or location](#adding-a-product-unit-or-location)) |
 | Users | `USERS`, `USERS_READ`, `USERS_CREATE`, `USERS_EDIT`, `USERS_EDIT_SELF` |
 | Everything | `ADMIN` |
 
