@@ -617,7 +617,7 @@ device. The two kinds of evidence are different and both are reported:
 | 4 | Event dated before `effective_from` | `dismissed`, no booking |
 | 5 | Late event (two days old) | `booked`, `used_date` is the event date |
 | 6 | Edit as new id with `replaces` | Old `voided`, new `booked`, net one deduction |
-| 7 | Edit as new id without `replaces`, delete then create, and create then delete | One deduction after both orders |
+| 7 | Edit as new id without `replaces`, delete then create, and create then delete | One deduction for delete then create. For create then delete, one deduction when the deleted event is the newest booking on every purchase it drew from; otherwise `needs_review` / `undo_refused` and two deductions until a person reconciles them (see Erratum) |
 | 8 | Source status changes to `skipped` or `not_logged` after booking, within 7 days | `voided`, stock restored |
 | 9 | Skipped or unanswered event with no row | `no_consumption`, no row |
 | 9a | `DELETE` with `access_revoked`, `history_cleared` or `medication_archived` on a booked event | Stock unchanged, event stays `booked` |
@@ -635,3 +635,17 @@ device. The two kinds of evidence are different and both are reported:
 | 15 | Mapping `single` with stock in two locations | `ambiguous_location`, nothing deducted |
 | 16 | Recipe share revoked before the event is processed | `needs_review` / `recipe_unavailable` |
 | 17 | Another user sends the same `source_event_id` | Separate event; neither can read the other's |
+
+## Erratum, 2026-10-10
+
+Verification row 7 originally expected one deduction after create then delete in every case. ADR-0036
+rule 7, step 3, refuses to undo a booking while a later live booking of the same product has an allocation
+on any purchase lot the first one drew from. When the old and the new event draw on the same purchase,
+deleting the old event therefore answers `needs_review` / `undo_refused` and both deductions remain until a
+person resolves the event. When they draw on different purchases the delete succeeds and one deduction
+remains. Fixture `07b-create-then-delete.json` shows the second case, and
+`ConsumptionEventServiceTest::testAVoidWhoseUndoIsRefusedBecauseALaterBookingDependsOnItNeedsReview` the first.
+
+The maintainer accepted this reading on 2026-10-10. Rebooking the later event under a new transaction id to
+avoid the refusal would change ledger behavior and needs its own design decision. The rules above this
+section are unchanged.
