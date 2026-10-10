@@ -172,9 +172,9 @@ the very booking its own guard exists to catch.
 `migrations` is not listed: `DatabaseMigrationService` creates it on every engine before
 the baseline loads, because it is what records that the baseline was applied.
 
-Migration 0305 (2026-10-09) adds five tables and migration 0306 (2026-10-09) a sixth, all listed
-under *Private consumption* below. The counts above were taken before them and are not
-re-measured here.
+Migration 0305 (2026-10-09) adds five tables, migration 0306 (2026-10-09) a sixth and migration
+0307 (2026-10-10) five refill tables, all listed under *Private consumption* below. The counts
+above were taken before them and are not re-measured here.
 
 **Stock & products (17)** — `products`, `product_groups`, `product_barcodes`,
 `product_substitutions`, `quantity_units`, `quantity_unit_conversions`, `locations`,
@@ -255,17 +255,18 @@ The three `cache__*` tables are maintained entirely by triggers, and are read by
 file storage ([plan 01](plans/landed/01-file-storage.md)); `outbox` carries MQTT and InfluxDB
 events out of the request transaction ([plan 18](plans/18-mqtt-state-publication.md)).
 
-**Private consumption (6)** — `consumption_recipes`, `consumption_recipe_lines`,
+**Private consumption (11)** — `consumption_recipes`, `consumption_recipe_lines`,
 `consumption_recipe_shares`, `consumption_events`, `consumption_event_lines`,
-`consumption_mappings`. Migrations 0305 and 0306
+`consumption_mappings`, `consumption_refill_settings`, `consumption_refill_fills`,
+`consumption_refill_dates`, `consumption_refill_orders`, `consumption_refill_acks`. Migrations 0305, 0306 and 0307
 ([ADR-0040](adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md),
 [ADR-0041](adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md)).
 A consumption recipe is an owned list of product quantities, separate from the food `recipes`
 table. A share names a user and the rights they hold; it confers no permission, and
 `trg_consumption_share_not_owner` keeps it from naming the owner. An event records one
 consumption and links it to its stock transaction by `transaction_id`, because
-`stock_log.recipe_id` is never set for these recipes. None of the five tables is an exposed
-entity. The importer clears all six, since no supported source can carry them.
+`stock_log.recipe_id` is never set for these recipes. None of these tables is an exposed
+entity. The importer clears all of them, since no supported source can carry them.
 
 Migration 0306 ([issue 700](https://github.com/datagen24/victual/issues/700)) adds
 `consumption_mappings` and extends the events and event lines instead of adding a second
@@ -284,6 +285,31 @@ ambiguous source, a private stock refusal message and `linked_transaction_id`. `
 is audit only: identity stays `(user, source_system, source_event_id)`. A line stores the
 `used_date` it was booked under. Deleting a mapping removes its `voided` and `dismissed`
 tombstones in the service; events that booked stock keep their rows.
+
+Migration 0307 ([issue 701](https://github.com/datagen24/victual/issues/701),
+[ADR-0042](adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md)) adds the refill
+records of a recipe. Every table references the recipe with `ON DELETE CASCADE`, so deleting a recipe
+or its owner removes them.
+
+- `consumption_refill_settings`: at most one row per recipe, holding the medication-specific rule
+  (`days_before_end`, `fixed_interval` or `fraction_elapsed`, with one integer parameter) and the
+  warning-lead override from 0 to 60 days. A fraction is an integer percent from 1 to 99.
+- `consumption_refill_fills`: the fill history. `filled_on` is a `DATE` the person entered and
+  `supplied_days` an optional integer from 1 to 730. A fill is never edited and never deleted by the
+  application; a void adds `voided_at` and a reason, once. The current fill is the unvoided fill with
+  the greatest `filled_on`, then the greatest id.
+- `consumption_refill_dates`: an explicit reorder date for one fill, with the `ended_at` and
+  `ended_reason` a newer fill, a void, a replacement or a clear sets. One live date exists per recipe,
+  and an ended date is never revived.
+- `consumption_refill_orders`: a request to the pharmacy, `open`, `received` or `cancelled`. One open
+  order exists per recipe. A received order names the fill that closed it. An order adds no stock.
+- `consumption_refill_acks`: one row per user, recipe, notice kind and reorder date.
+
+Six trigger functions keep the invariants a check constraint cannot express. The fill history is
+immutable apart from one void. A newer fill or a void ends the explicit date it supersedes. An
+explicit date is not earlier than its fill, and a closed order stays closed. No table uses
+`CURRENT_DATE` or a date default: "today" comes with the request. None is an exposed entity, and the
+importer clears all five.
 
 **Recipes & meal plan (5)** — `recipes`, `recipes_pos`, `recipes_nestings`, `meal_plan`,
 `meal_plan_sections`. `recipes_nestings` names a recipe twice; the functions behind

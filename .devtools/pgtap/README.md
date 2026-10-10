@@ -158,6 +158,12 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `stock_lineage_violations` | function | 0304 | `030-stock-lineage.sql` |
 | `trg_consumption_share_not_owner` (trigger `consumption_share_not_owner`) | function + trigger | 0305 | `031-consumption-recipes.sql` |
 | `trg_consumption_owner_not_sharee` (trigger `consumption_owner_not_sharee`) | function + trigger | 0305 | `031-consumption-recipes.sql` |
+| `trg_consumption_refill_fill_immutable` (trigger `consumption_refill_fill_immutable`) | function + trigger | 0307 | `033-consumption-refill.sql` |
+| `trg_consumption_refill_fill_supersedes_dates` (trigger `consumption_refill_fill_supersedes_dates`) | function + trigger | 0307 | `033-consumption-refill.sql` |
+| `trg_consumption_refill_void_ends_dates` (trigger `consumption_refill_void_ends_dates`) | function + trigger | 0307 | `033-consumption-refill.sql` |
+| `trg_consumption_refill_date_not_before_fill` (trigger `consumption_refill_date_not_before_fill`) | function + trigger | 0307 | `033-consumption-refill.sql` |
+| `trg_consumption_refill_date_ends_once` (trigger `consumption_refill_date_ends_once`) | function + trigger | 0307 | `033-consumption-refill.sql` |
+| `trg_consumption_refill_order_closed_final` (trigger `consumption_refill_order_closed_final`) | function + trigger | 0307 | `033-consumption-refill.sql` |
 
 ## Completeness
 

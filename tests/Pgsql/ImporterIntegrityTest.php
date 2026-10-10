@@ -626,7 +626,7 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 	/**
 	 * ADR-0040 and ADR-0041 (migration 0305): the private consumption tables are derived state no
 	 * supported source can carry. A non-forced import refuses a target that holds any of them, as it
-	 * does for every other derived table; a forced one clears all six.
+	 * does for every other derived table; a forced one clears all eleven.
 	 */
 	public function testImportRefusesThenClearsPrivateConsumptionData(): void
 	{
@@ -641,6 +641,11 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 		$db->exec("INSERT INTO consumption_event_lines (event_id, product_id, amount) VALUES ($event, $product, 1)");
 		$db->exec("INSERT INTO consumption_mappings (user_id, source_system, medication_ref, target_type, product_id, location_mode, effective_from)
 			VALUES ($user, 'healthkit', 'import-private-ref', 'product', $product, 'single', now())");
+		$db->exec("INSERT INTO consumption_refill_settings (recipe_id, rule_kind, rule_parameter, warning_lead_days) VALUES ($recipe, 'fixed_interval', 28, 5)");
+		$fill = (int)$db->query("INSERT INTO consumption_refill_fills (recipe_id, filled_on, supplied_days) VALUES ($recipe, '2026-01-01', 90) RETURNING id")->fetchColumn();
+		$db->exec("INSERT INTO consumption_refill_dates (recipe_id, fill_id, reorder_on) VALUES ($recipe, $fill, '2026-03-01')");
+		$db->exec("INSERT INTO consumption_refill_orders (recipe_id, ordered_on) VALUES ($recipe, '2026-03-02')");
+		$db->exec("INSERT INTO consumption_refill_acks (user_id, recipe_id, kind, reorder_date) VALUES ($user, $recipe, 'due', '2026-03-01')");
 
 		$source = $this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MAX);
 		try
@@ -660,7 +665,8 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 		{
 		})->Import(true);
 
-		foreach (['consumption_recipes', 'consumption_recipe_lines', 'consumption_recipe_shares', 'consumption_events', 'consumption_event_lines', 'consumption_mappings'] as $table)
+		foreach (['consumption_recipes', 'consumption_recipe_lines', 'consumption_recipe_shares', 'consumption_events', 'consumption_event_lines', 'consumption_mappings',
+			'consumption_refill_settings', 'consumption_refill_fills', 'consumption_refill_dates', 'consumption_refill_orders', 'consumption_refill_acks'] as $table)
 		{
 			self::assertSame(0, (int)$db->query("SELECT count(*) FROM $table")->fetchColumn(), "$table is empty after a forced import");
 		}
