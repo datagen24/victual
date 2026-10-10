@@ -3352,7 +3352,7 @@ msgstr ""
 msgid "Reorder date approaching"
 msgstr ""
 
-msgid "Order placed"
+msgid "Order recorded"
 msgstr ""
 
 msgid "No estimate"
@@ -3382,13 +3382,10 @@ msgstr ""
 msgid "Rule: days before the supply ends"
 msgstr ""
 
-msgid "Rule: %s days before the supply ends"
+msgid "Rule: %s"
 msgstr ""
 
 msgid "Rule: days after the fill date"
-msgstr ""
-
-msgid "Rule: %s days after the fill date"
 msgstr ""
 
 msgid "Rule: percent of the supply used"
@@ -3436,7 +3433,7 @@ msgstr ""
 msgid "Mark as seen"
 msgstr ""
 
-msgid "Mark the notice for %s as seen"
+msgid "Mark as seen: %s"
 msgstr ""
 
 msgid "Notice marked as seen."
@@ -3451,7 +3448,7 @@ msgstr ""
 msgid "Advance warning starts"
 msgstr ""
 
-msgid "%1$s (%2$s days before)"
+msgid "%1$s (%2$s)"
 msgstr ""
 
 msgid "Current fill"
@@ -3460,7 +3457,7 @@ msgstr ""
 msgid "Filled on %s, days supplied not entered"
 msgstr ""
 
-msgid "Filled on %1$s, %2$s days supplied"
+msgid "Filled on %1$s, %2$s"
 msgstr ""
 
 msgid "Compared with the date on this device"
@@ -3487,10 +3484,10 @@ msgstr ""
 msgid "Cancelled"
 msgstr ""
 
-msgid "Enter the date the pharmacy supplied the medication."
+msgid "Days supplied must be a whole number from 1 to 730, or empty."
 msgstr ""
 
-msgid "Days supplied must be a whole number from 1 to 730, or empty."
+msgid "Enter the date the pharmacy supplied the medication."
 msgstr ""
 
 msgid "Fill recorded."
@@ -3537,7 +3534,27 @@ msgid_plural "Reorder date reached, %s days ago"
 msgstr[0] ""
 msgstr[1] ""
 
+msgid "%s day before the supply ends"
+msgid_plural "%s days before the supply ends"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "%s day after the fill date"
+msgid_plural "%s days after the fill date"
+msgstr[0] ""
+msgstr[1] ""
+
 msgid "%s day ago"
 msgid_plural "%s days ago"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "%s day before"
+msgid_plural "%s days before"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "%s day supplied"
+msgid_plural "%s days supplied"
 msgstr[0] ""
 msgstr[1] ""
