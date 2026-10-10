@@ -470,7 +470,7 @@ merged into the committed snapshot as additions; CI compared them on PHP 8.4 or 
 
 ### Issue 699: organizer inventory workflow
 
-Measured 2026-10-10 against working copy `bf902bc60039eff44cda779398e293dfb12f0b6e` (branch
+Measured locally 2026-10-10 against working copy `bf902bc60039eff44cda779398e293dfb12f0b6e` (branch
 `claude/issue-699-household-organizer-yme490`, with master at `46eb1f7`, the merge of pull request
 743, merged in). Master has since moved to `e20b2cc` (pull request 745) and merged again; those
 commits change documentation only, so the results below were not repeated. Master already carries the organizer workflow test, browser probe and manual
@@ -533,20 +533,30 @@ Commands and results, all on PostgreSQL 16.15 and PHP 8.3.6:
   `check-cited-jobs.php` OK, `mkdocs build --strict` exit 0, Vale 0 new findings on the changed
   pages.
 
-Not run, and why:
+CI run on the pull request head, recorded 2026-10-10. Pull request 744 was merged at `bfb30d1`; its
+last head was `78393dba29025975b921e7cae97746a30452fd0b`. All 17 checks on that head passed,
+including these from workflow run 38013745516:
 
-- PostgreSQL 15: no package is available in this environment. The suite has not run on 15.
-- Coverage (`SUITE_COVERAGE=1`), the aggregate ratchet and per-file figures: no coverage driver is
-  installed, and `run-tests.sh` cannot start here because its SQLite pre-build needs PHP 8.4. The
-  controller change is five lines, and the new tests reach both its accepting and refusing paths.
-- `.devtools/frontend/organizers.js` and the rest of the `frontend-security` job: the application
-  refuses to serve requests on PHP below 8.4.1. The probe's last recorded run is pull request
-  738's, on PHP 8.5.10. No changed file is under `public/viewjs`.
-- Contract snapshots were not regenerated: no response shape changed. The `contract` and
-  `wirecontract` suites could not give a clean result here, as listed above.
-- Pull request 738 reports a run of `organizers.js` with a negative control. That run is not
-  repeated in this measurement.
+- `suite` ran `run-tests.sh` on PostgreSQL 16 with `SUITE_COVERAGE=1` and the aggregate ratchet
+  (`--min=96.31198844487241217394`). The default run includes the `consumption` phase, which holds
+  the new test classes.
+- `suite-floor` ran `run-tests.sh` on PostgreSQL 15, the minimum version the application enforces.
+- `frontend-security` ran `.devtools/frontend/organizers.js` against a booted demo instance.
+- `lint`, `images`, `prose`, `mcp`, Psalm and CodeQL also passed.
+
+These records are job conclusions. The job logs were not read, so the coverage figure, the
+per-file figures and the probe's own output are not quoted here. CI gates the aggregate figure
+only. The six suites that failed in the PHP 8.3 sandbox passed inside the `suite` job, which
+supports the reading that those failures came from the sandbox.
+
+Not covered:
+
+- Per-file coverage figures for the changed controller. The change is five lines, and the new tests
+  reach both its accepting and refusing paths.
+- Undo and shortfall steps in `organizers.js`. The API tests cover both.
+- Contract snapshots were not regenerated, because no response shape changed.
+- A real device or Apple client. This issue involves none.
 
 Remaining dependencies: issue 701 (refill tracking) and the later issues are untouched by this
-change. Issue 699 is not closed by this change: the browser run and the PostgreSQL 15 run listed
-above are outstanding.
+change. Every criterion of issue 699 now has the evidence listed above. Closing the issue is the
+maintainer's decision.
