@@ -621,14 +621,17 @@ written.
 
 CI gates the aggregate figure only, so the file below the floor did not fail the run. Only the
 permission refusal reached the controller; no test rendered the page. [Pull request
-747](https://github.com/datagen24/victual/pull/747) adds two `HouseholdPagesTest` cases that
-render the page and refuse a caller without `STOCK_VIEW`. Its `householdpages` run measured the
-controller at 2 of 2 lines. The `suite` job on that pull request carries the merged figure.
+747](https://github.com/datagen24/victual/pull/747) added two `HouseholdPagesTest` cases that render
+the page and refuse a caller without `STOCK_VIEW`, and merged at `f42ecbbd`.
 
-Master after the merges: the `tests` run 38058529109 on `bfb30d11adb6e853fbbc91b211c33adf385533ae`
-(pull request 744 merged) had `lint`, `changes`, `mcp` and `frontend-security` green and `images`,
-`suite` and `suite-floor` still running when this section was written. The run on `0b059a4f` (pull
-request 746, a documentation change) skipped those jobs through the `changes` filter. Neither run
-shows the result of `suite` on `master` yet; record it here when it completes.
+Master after the merges, read from the logs on 2026-10-10:
+
+| Run | Commit | Result |
+|---|---|---|
+| `tests` 38058529109 | `bfb30d11` (pull request 744 merged) | All seven jobs passed. `suite`: 13,503 of 14,018 lines from the runner (96.33%), 13,552 merged (96.68%), 1 of 157 files below 75% (`ConsumptionInboxController`). |
+| `tests` 38059717293 | `f42ecbbd` (pull request 747 merged) | All seven jobs passed. Inbox and organizer probes passed. `suite`: 13,504 lines from the runner (96.33%), 13,553 merged (96.68%), 0 of 157 files below 75%. |
+
+The run on `0b059a4f` (pull request 746, a documentation change) skipped the heavy jobs through the
+`changes` filter.
 
 These runs and the fixtures do not establish HealthKit behavior. Issue 702 owns that evidence.
