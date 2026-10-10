@@ -1287,7 +1287,32 @@ class ConsumptionEventService extends BaseService
 		$row = $this->RequireRow($userId, $sourceSystem, $sourceEventId);
 		$eventId = (int)$row['id'];
 
+		if ($action === 'approve_unit')
+		{
+			// The approval is the person's decision and must outlive a booking that then fails for another
+			// reason, so it commits first, in its own transaction; the booking below is an ordinary retry.
+			DatabaseService::GetInstance()->InTransaction(fn() => $this->ApproveUnitLabel($userId, $eventId));
+		}
+
 		return $this->RunBooking($userId, $eventId, null, fn() => $this->Present($this->ResolveLocked($userId, $eventId, $action, $transactionId)));
+	}
+
+	private function ApproveUnitLabel(int $userId, int $eventId): void
+	{
+		$row = $this->PersistDerived($this->RowById($eventId, true));
+		[$state, $reason] = $this->EffectiveState($row);
+		if ($state !== 'needs_review' || $reason !== 'unit_unconfirmed')
+		{
+			throw $this->Transition('approve_unit', $state, $reason);
+		}
+
+		$mapping = $this->Mappings()->FindForUser($userId, $row['source_system'], (string)$row['medication_ref']);
+		if ($mapping === null)
+		{
+			throw $this->Transition('approve_unit', 'a mapping that no longer exists', null);
+		}
+
+		$this->Mappings()->AddUnitLabel((int)$mapping['id'], (string)$row['unit_label']);
 	}
 
 	private function ResolveLocked(int $userId, int $eventId, string $action, ?string $transactionId): array
@@ -1319,14 +1344,6 @@ class ConsumptionEventService extends BaseService
 				{
 					throw $this->Transition($action, $state, $reason);
 				}
-
-				$mapping = $this->Mappings()->FindForUser($userId, $row['source_system'], (string)$row['medication_ref']);
-				if ($mapping === null)
-				{
-					throw $this->Transition($action, 'a mapping that no longer exists', null);
-				}
-
-				$this->Mappings()->AddUnitLabel((int)$mapping['id'], (string)$row['unit_label']);
 
 				return $this->BookOrRebook($row, $this->PayloadFromRow($row), null);
 

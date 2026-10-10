@@ -289,6 +289,21 @@ class ConsumptionEventServiceTest extends PgsqlSchemaTestCase
 		self::assertSame(8.0, self::onHand($product));
 	}
 
+	public function testAnApprovedUnitLabelSurvivesABookingThatThenFails(): void
+	{
+		$product = self::product('CE unit short', 1);
+		$ref = self::map($product, ['unit_labels' => []]);
+		$id = self::uid();
+
+		$held = $this->put($id, self::body($ref, ['unit_label' => 'tab', 'quantity' => 5]));
+		self::assertSame('unit_unconfirmed', $held['event']['reason']);
+
+		$after = self::$events->Resolve(self::ME, 'healthkit', $id, 'approve_unit');
+		self::assertSame(['needs_review', 'insufficient_stock'], [$after['state'], $after['reason']]);
+		self::assertSame(['tab'], self::$mappings->Get(self::ME, 'healthkit', $ref)['unit_labels'], 'the approval is kept although the booking was refused');
+		self::assertSame(1.0, self::onHand($product));
+	}
+
 	public function testSkippedUnansweredAndScheduledEventsWithNoRowCreateNoRow(): void
 	{
 		$product = self::product('CE skipped', 10);
@@ -432,7 +447,7 @@ class ConsumptionEventServiceTest extends PgsqlSchemaTestCase
 		$product = self::product('CE time of day', 10);
 		$ref = self::map($product);
 		$id = self::uid();
-		$base = (new \DateTimeImmutable('today 08:00:00', new \DateTimeZone('UTC')));
+		$base = (new \DateTimeImmutable('yesterday 08:00:00', new \DateTimeZone('UTC')));
 		$this->put($id, self::body($ref, ['occurred_at' => $base->format('Y-m-d\TH:i:s\Z')]));
 		$before = $this->event($id);
 

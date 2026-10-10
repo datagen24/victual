@@ -157,8 +157,6 @@ are about stock undo order, not about the event contract.
   (the normal order for a client that syncs history oldest first) would be voided oldest first and
   all but the last would answer `undo_refused`.
 * A `not_logged`, `skipped`, `unanswered` or `scheduled` request that omits `medication_ref` is
-  accepted for an existing row, and the fixtures always send it for that reason: the stored
-  `medication_ref` is replaced by the request's, so an event without one drops out of bulk
-  resolution by `filter` (which matches on it).
-* A first submission carries no `replayed` field; `replayed: true` appears on a replay. The ADR
-  example shows `"replayed": false` on the first response.
+  accepted for an existing row and keeps the stored `medication_ref`, `quantity` and
+  `unit_label`, so the event stays findable by bulk resolution by `filter`.
+* A first submission answers `replayed: false`; a replay answers `replayed: true`.

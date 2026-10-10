@@ -10340,7 +10340,7 @@
 				"summary": "The source no longer has this event",
 				"responses": {
 					"200": {
-						"description": "Voided or already voided",
+						"description": "The event after the removal: voided, or kept for a decision (needs_review), or left as it was",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -10349,8 +10349,8 @@
 							}
 						}
 					},
-					"404": {
-						"description": "Not found for this user",
+					"400": {
+						"description": "Invalid request",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -10364,6 +10364,16 @@
 					},
 					"403": {
 						"description": "Permission missing"
+					},
+					"404": {
+						"description": "Not found for this user",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
 					}
 				},
 				"parameters": [
@@ -10431,6 +10441,22 @@
 							}
 						}
 					},
+					"400": {
+						"description": "Invalid request",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated"
+					},
+					"403": {
+						"description": "Permission missing"
+					},
 					"404": {
 						"description": "Not found for this user",
 						"content": {
@@ -10460,12 +10486,6 @@
 								}
 							}
 						}
-					},
-					"401": {
-						"description": "Not authenticated"
-					},
-					"403": {
-						"description": "Permission missing"
 					}
 				},
 				"tags": [
@@ -10677,7 +10697,7 @@
 				},
 				"responses": {
 					"200": {
-						"description": "Stored",
+						"description": "Replaced",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -10685,6 +10705,32 @@
 								}
 							}
 						}
+					},
+					"201": {
+						"description": "Created",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionMapping"
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Invalid request",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated"
+					},
+					"403": {
+						"description": "Permission missing"
 					},
 					"404": {
 						"description": "Not found for this user",
@@ -10705,12 +10751,6 @@
 								}
 							}
 						}
-					},
-					"401": {
-						"description": "Not authenticated"
-					},
-					"403": {
-						"description": "Permission missing"
 					}
 				},
 				"tags": [
@@ -10936,16 +10976,6 @@
 					},
 					"403": {
 						"description": "Permission missing"
-					},
-					"422": {
-						"description": "invalid_link: the transaction cannot be linked",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
 					}
 				},
 				"tags": [
