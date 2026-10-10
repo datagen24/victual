@@ -12,6 +12,7 @@ use Victual\Services\Time\Instant;
 use Victual\Controllers\BatteriesController;
 use Victual\Controllers\CalendarController;
 use Victual\Controllers\ChoresController;
+use Victual\Controllers\ConsumptionInboxController;
 use Victual\Controllers\EquipmentController;
 use Victual\Controllers\GenericEntityController;
 use Victual\Controllers\LabelPrintJobsController;
@@ -76,6 +77,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 	private static EquipmentController $equipment;
 	private static LoginController $login;
 	private static CalendarController $calendar;
+	private static ConsumptionInboxController $inbox;
 
 	/** @var array<string, int> Fixture row ids by the name they were inserted under. */
 	private static array $ids = [];
@@ -111,6 +113,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::$equipment = new EquipmentController(self::$container);
 		self::$login = new LoginController(self::$container);
 		self::$calendar = new CalendarController(self::$container);
+		self::$inbox = new ConsumptionInboxController(self::$container);
 
 		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9000, 'household-caller', 'fixture')");
 		// A second user, so the user list and the permission page have somebody other than
@@ -617,6 +620,57 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 
 		$answer = self::sendThroughTheStack('GET', '/stockentry/' . $id . '/label', [], 'household-entry-admin');
 		self::assertSame(404, $answer['status'], 'GET /stockentry/{id}/label is not a route');
+	}
+
+	// ----------------------------------------------------------- consumption inbox
+
+	/**
+	 * The consumption inbox is a shell (issue 700, ADR-0041 rule 11): the server renders no event
+	 * data and the rows come from /api/consumption/events with the caller's session, so the owner-only
+	 * rule is enforced in one place. A page that quietly started to embed a row would bypass it.
+	 *
+	 * The positive control comes first: both rows exist, one of them is the caller's and carries
+	 * hostile text in the two free-text columns an event can hold, so a missing marker in the page
+	 * means the page left it out and not that the fixture never stored it.
+	 */
+	public function testConsumptionInboxRendersAShellThatEmbedsNoEventData(): void
+	{
+		$hostile = '<script>alert("inbox-xss")</script>';
+		$insert = self::$db->prepare("INSERT INTO consumption_events (user_id, source_system, source_event_id, state, reason, occurred_at, medication_ref, unit_label, stock_error_message)
+			VALUES (?, 'inbox-shell', ?, 'needs_review', 'stock_error', now(), ?, ?, ?)");
+		$insert->execute([9000, 'own-event', 'inbox-own-medication', $hostile, $hostile . ' own refusal text']);
+		$insert->execute([9001, 'other-event', 'inbox-other-medication', 'other-unit-label', 'other refusal text']);
+
+		$stored = self::$db->query("SELECT string_agg(medication_ref || '|' || unit_label || '|' || stock_error_message, ';' ORDER BY id) FROM consumption_events WHERE source_system = 'inbox-shell'")->fetchColumn();
+		self::assertStringContainsString($hostile, $stored, 'the fixture stored the hostile text, so its absence below is the page leaving it out');
+		self::assertStringContainsString('other refusal text', $stored, 'and stored the other user\'s row');
+
+		self::grant(['STOCK_VIEW']);
+		$before = self::stateSnapshot();
+		$eventsBefore = (int)self::$db->query('SELECT COUNT(*) FROM consumption_events')->fetchColumn();
+
+		$html = self::render(fn () => self::$inbox->Overview(self::request(), self::response(), []), 'GET /consumptioninbox');
+
+		self::assertStringContainsString('id="inbox-table"', $html, 'the page renders the table the script fills in');
+		self::assertStringContainsString('<tbody id="inbox-rows"></tbody>', $html, 'and the body of it is empty: every row is fetched later');
+		self::assertStringContainsString('id="inbox-empty"', $html, 'with the empty-state paragraph');
+		foreach (['inbox-own-medication', 'inbox-other-medication', 'inbox-shell', 'own-event', 'other-event', 'other-unit-label', 'refusal text', 'inbox-xss'] as $marker)
+		{
+			self::assertStringNotContainsString($marker, $html, "the shell does not embed '$marker' from a stored event");
+		}
+
+		self::assertSame($before, self::stateSnapshot(), 'rendering the inbox writes nothing the other pages write');
+		self::assertSame($eventsBefore, (int)self::$db->query('SELECT COUNT(*) FROM consumption_events')->fetchColumn(), 'and no event');
+	}
+
+	public function testConsumptionInboxRefusesACallerWithoutStockViewAndRendersForOneWhoHoldsIt(): void
+	{
+		self::grant([]);
+		$this->expectStatus(fn () => self::$inbox->Overview(self::request(), self::response(), []), 403, 'GET /consumptioninbox without STOCK_VIEW');
+
+		self::grant(['STOCK_VIEW']);
+		$response = $this->expectStatus(fn () => self::$inbox->Overview(self::request(), self::response(), []), 200, 'GET /consumptioninbox with STOCK_VIEW alone');
+		self::assertStringContainsString('inbox-rows', (string)$response->getBody(), 'STOCK_VIEW alone reaches the shell; resolving is gated by the API');
 	}
 
 	// -------------------------------------------------------------------- batteries
