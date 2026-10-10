@@ -18,6 +18,8 @@
 	var detail = null;
 	var voidingFill = null;
 	var loadSequence = 0;
+	var detailSequence = 0;
+	var busy = false;
 
 	function Pad(n) { return (n < 10 ? '0' : '') + n; }
 
@@ -75,7 +77,7 @@
 	{
 		if (status === 'ok') return __t('Reorder date not reached');
 		if (status === 'approaching') return __t('Reorder date approaching');
-		if (status === 'ordered') return __t('Order placed');
+		if (status === 'ordered') return __t('Order recorded');
 		if (status === 'unknown') return __t('No estimate');
 		if (status !== 'due') return status;
 		if (daysOverdue > 0) return __n(daysOverdue, 'Reorder date reached, %s day ago', 'Reorder date reached, %s days ago');
@@ -98,8 +100,8 @@
 		if (source === 'explicit') return __t('The date you entered');
 		if (source === 'fallback') return __t('Fill date plus days supplied, minus 14 days');
 		var value = rule ? rule.parameter : null;
-		if (source === 'rule:days_before_end') return value === null ? __t('Rule: days before the supply ends') : __t('Rule: %s days before the supply ends', value);
-		if (source === 'rule:fixed_interval') return value === null ? __t('Rule: days after the fill date') : __t('Rule: %s days after the fill date', value);
+		if (source === 'rule:days_before_end') return value === null ? __t('Rule: days before the supply ends') : __t('Rule: %s', __n(value, '%s day before the supply ends', '%s days before the supply ends'));
+		if (source === 'rule:fixed_interval') return value === null ? __t('Rule: days after the fill date') : __t('Rule: %s', __n(value, '%s day after the fill date', '%s days after the fill date'));
 		if (source === 'rule:fraction_elapsed') return value === null ? __t('Rule: percent of the supply used') : __t('Rule: after %s percent of the supply', value);
 		return '';
 	}
@@ -212,7 +214,7 @@
 			item.append(document.createTextNode(': '));
 			item.append($('<span class="refill-notice-text">').text(NoticeWords(notice)));
 			var seen = $('<button type="button" class="btn btn-sm btn-outline-secondary ml-2 refill-ack">').text(__t('Mark as seen'))
-				.attr('aria-label', __t('Mark the notice for %s as seen', notice.recipe_name));
+				.attr('aria-label', __t('Mark as seen: %s', notice.recipe_name));
 			seen.on('click', function () { Acknowledge(notice); });
 			var open = $('<button type="button" class="btn btn-sm btn-outline-primary ml-1 refill-notice-details">').text(__t('Details'))
 				.attr('aria-label', __t('Details of %s', notice.recipe_name));
@@ -260,11 +262,14 @@
 	function Select(id, focus, keepMessages)
 	{
 		selectedId = id;
+		var sequence = ++detailSequence;
 		if (!keepMessages) Clear();
 		Victual.Api.Get('consumption/recipes/' + encodeURIComponent(id) + '/refill?' + AsOf(), function (state)
 		{
+			// A slower answer for a prescription the person has since left must not replace the one on screen.
+			if (sequence !== detailSequence || selectedId !== id) return;
 			detail = state;
-			RenderDetail(focus);
+			RenderDetail(focus, !keepMessages);
 			RenderList();
 		}, function (xhr) { Failed(xhr); HideDetail(); LoadAll(); });
 	}
@@ -276,7 +281,7 @@
 		return [$('<dt class="col-sm-4">').text(label), $('<dd class="col-sm-8">').text(value)];
 	}
 
-	function RenderDetail(focus)
+	function RenderDetail(focus, resetForms)
 	{
 		var d = detail;
 		var section = $('#refill-detail').removeClass('d-none');
@@ -289,11 +294,11 @@
 			[__t('Status'), StatusWords(d.status, d.days_overdue)],
 			[__t('Estimated reorder date'), estimate.reorder_date || Dash()],
 			[__t('Where the date comes from'), estimate.reorder_date ? SourceWords(estimate.source, rule) : (estimate.reason ? ReasonWords(estimate.reason) : Dash())],
-			[__t('Advance warning starts'), estimate.warning_date ? __t('%1$s (%2$s days before)', estimate.warning_date, estimate.lead_days) : Dash()],
+			[__t('Advance warning starts'), estimate.warning_date ? __t('%1$s (%2$s)', estimate.warning_date, __n(estimate.lead_days, '%s day before', '%s days before')) : Dash()],
 			[__t('Current fill'), d.current_fill
 				? (d.current_fill.supplied_days === null
 					? __t('Filled on %s, days supplied not entered', d.current_fill.filled_on)
-					: __t('Filled on %1$s, %2$s days supplied', d.current_fill.filled_on, d.current_fill.supplied_days))
+					: __t('Filled on %1$s, %2$s', d.current_fill.filled_on, __n(d.current_fill.supplied_days, '%s day supplied', '%s days supplied')))
 				: Dash()],
 			[__t('Order'), d.open_order ? OrderWords(d.open_order) : Dash()],
 			[__t('Compared with the date on this device'), d.as_of]
@@ -305,16 +310,21 @@
 		$('#refill-read-only').toggleClass('d-none', editable);
 
 		var today = LocalToday();
-		$('#refill-fill-date').val(today);
-		$('#refill-fill-days').val('');
-		$('#refill-fill-note').val('');
+		// The fields are filled from the server's state when a prescription is opened or a write succeeded. A
+		// refused write or a background refresh leaves what the person typed.
+		if (resetForms)
+		{
+			$('#refill-fill-date').val(today);
+			$('#refill-fill-days').val('');
+			$('#refill-fill-note').val('');
+			$('#refill-rule-kind').val(rule ? rule.kind : '');
+			$('#refill-rule-parameter').val(rule ? rule.parameter : '');
+			UpdateRuleHelp();
+			$('#refill-date-input').val(d.explicit_date ? d.explicit_date.reorder_on : '');
+			$('#refill-lead-input').val(d.settings && d.settings.warning_lead_days !== null ? d.settings.warning_lead_days : '');
+			$('#refill-order-date').val(today);
+		}
 		$('#refill-fill-receive').toggleClass('d-none', !d.open_order);
-		$('#refill-rule-kind').val(rule ? rule.kind : '');
-		$('#refill-rule-parameter').val(rule ? rule.parameter : '');
-		UpdateRuleHelp();
-		$('#refill-date-input').val(d.explicit_date ? d.explicit_date.reorder_on : '');
-		$('#refill-lead-input').val(d.settings && d.settings.warning_lead_days !== null ? d.settings.warning_lead_days : '');
-		$('#refill-order-date').val(today);
 		$('#refill-order-record').prop('disabled', !!d.open_order);
 		$('#refill-order-cancel').toggleClass('d-none', !d.open_order);
 
@@ -366,9 +376,26 @@
 			detail = state;
 			Message(message);
 			ErrorMessage('');
-			RenderDetail(false);
+			RenderDetail(false, true);
 			LoadAll();
 		};
+	}
+
+	// One write at a time: a double click or a double Enter must not post twice.
+	function Write(verb, path, body, success, failure)
+	{
+		if (busy) return;
+		busy = true;
+		$('#refill-forms button, #refill-void-confirm').prop('disabled', true);
+		Victual.Api[verb](path, body, function (result) { Settled(); success(result); }, function (xhr) { Settled(); failure(xhr); });
+	}
+
+	function Settled()
+	{
+		busy = false;
+		$('#refill-forms button, #refill-void-confirm').prop('disabled', false);
+		if (detail) $('#refill-order-record').prop('disabled', !!detail.open_order);
+		UpdateRuleHelp();
 	}
 
 	function Base() { return 'consumption/recipes/' + encodeURIComponent(selectedId) + '/refill'; }
@@ -379,6 +406,8 @@
 	{
 		var date = String($('#refill-fill-date').val() || '').trim();
 		var days = String($('#refill-fill-days').val() || '').trim();
+		// A number field answers '' for text it cannot read ("1e", "-"); that is a mistake, not an empty field.
+		if ($('#refill-fill-days')[0].validity.badInput) { ErrorMessage(__t('Days supplied must be a whole number from 1 to 730, or empty.')); return null; }
 		var note = String($('#refill-fill-note').val() || '').trim();
 		if (date === '') { ErrorMessage(__t('Enter the date the pharmacy supplied the medication.')); return null; }
 		if (days !== '' && !IsWholeNumber(days, 1, 730)) { ErrorMessage(__t('Days supplied must be a whole number from 1 to 730, or empty.')); return null; }
@@ -394,7 +423,7 @@
 		Clear();
 		var body = FillBody();
 		if (body === null) return;
-		Victual.Api.Post(Base() + '/fills?' + AsOf(), body, Applied(__t('Fill recorded.')), Refused);
+		Write('Post', Base() + '/fills?' + AsOf(), body, Applied(__t('Fill recorded.')), Refused);
 	}
 
 	function ReceiveOrder()
@@ -402,7 +431,7 @@
 		Clear();
 		var body = FillBody();
 		if (body === null || !detail || !detail.open_order) return;
-		Victual.Api.Post(Base() + '/orders/' + detail.open_order.id + '/receive?' + AsOf(), body, Applied(__t('Order received and fill recorded.')), Refused);
+		Write('Post', Base() + '/orders/' + detail.open_order.id + '/receive?' + AsOf(), body, Applied(__t('Order received and fill recorded.')), Refused);
 	}
 
 	function SaveRule(event)
@@ -419,7 +448,7 @@
 			if (!IsWholeNumber(text, range[0], range[1])) { ErrorMessage(__t('The value must be a whole number from %1$s to %2$s.', range[0], range[1])); return; }
 			rule = { kind: kind, parameter: parseInt(text, 10) };
 		}
-		Victual.Api.Put(Base() + '?' + AsOf(), { rule: rule }, Applied(__t('Rule saved.')), Refused);
+		Write('Put', Base() + '?' + AsOf(), { rule: rule }, Applied(__t('Rule saved.')), Refused);
 	}
 
 	function SetDate(event)
@@ -428,13 +457,13 @@
 		Clear();
 		var date = String($('#refill-date-input').val() || '').trim();
 		if (date === '') { ErrorMessage(__t('Enter a reorder date.')); return; }
-		Victual.Api.Put(Base() + '?' + AsOf(), { explicit_reorder_date: date }, Applied(__t('Reorder date saved.')), Refused);
+		Write('Put', Base() + '?' + AsOf(), { explicit_reorder_date: date }, Applied(__t('Reorder date saved.')), Refused);
 	}
 
 	function ClearDate()
 	{
 		Clear();
-		Victual.Api.Put(Base() + '?' + AsOf(), { explicit_reorder_date: null }, Applied(__t('Reorder date removed.')), Refused);
+		Write('Put', Base() + '?' + AsOf(), { explicit_reorder_date: null }, Applied(__t('Reorder date removed.')), Refused);
 	}
 
 	function SaveLead(event)
@@ -443,13 +472,13 @@
 		Clear();
 		var text = String($('#refill-lead-input').val() || '').trim();
 		if (!IsWholeNumber(text, 0, 60)) { ErrorMessage(__t('Advance warning must be a whole number from 0 to 60.')); return; }
-		Victual.Api.Put(Base() + '?' + AsOf(), { warning_lead_days: parseInt(text, 10) }, Applied(__t('Advance warning saved.')), Refused);
+		Write('Put', Base() + '?' + AsOf(), { warning_lead_days: parseInt(text, 10) }, Applied(__t('Advance warning saved.')), Refused);
 	}
 
 	function ClearLead()
 	{
 		Clear();
-		Victual.Api.Put(Base() + '?' + AsOf(), { warning_lead_days: null }, Applied(__t('Advance warning saved.')), Refused);
+		Write('Put', Base() + '?' + AsOf(), { warning_lead_days: null }, Applied(__t('Advance warning saved.')), Refused);
 	}
 
 	function RecordOrder(event)
@@ -458,14 +487,14 @@
 		Clear();
 		var date = String($('#refill-order-date').val() || '').trim();
 		if (date === '') { ErrorMessage(__t('Enter the date of the order.')); return; }
-		Victual.Api.Post(Base() + '/orders?' + AsOf(), { ordered_on: date }, Applied(__t('Order recorded.')), Refused);
+		Write('Post', Base() + '/orders?' + AsOf(), { ordered_on: date }, Applied(__t('Order recorded.')), Refused);
 	}
 
 	function CancelOrder()
 	{
 		Clear();
 		if (!detail || !detail.open_order) return;
-		Victual.Api.Post(Base() + '/orders/' + detail.open_order.id + '/cancel?' + AsOf(), {}, Applied(__t('Order cancelled.')), Refused);
+		Write('Post', Base() + '/orders/' + detail.open_order.id + '/cancel?' + AsOf(), {}, Applied(__t('Order cancelled.')), Refused);
 	}
 
 	function UpdateRuleHelp()
@@ -499,11 +528,11 @@
 	{
 		var reason = String($('#refill-void-reason').val() || '').trim();
 		if (reason === '') { $('#refill-void-error').text(__t('Enter a reason.')); return; }
-		Victual.Api.Post(Base() + '/fills/' + voidingFill.id + '/void?' + AsOf(), { reason: reason }, function (state)
+		Write('Post', Base() + '/fills/' + voidingFill.id + '/void?' + AsOf(), { reason: reason }, function (state)
 		{
 			$('#refill-void-modal').modal('hide');
 			Applied(__t('Fill voided.'))(state);
-		}, function (xhr) { $('#refill-void-error').text(ErrorText(xhr)); });
+		}, function (xhr) { $('#refill-void-error').text(ErrorText(xhr)); LoadAll(ReloadDetail); });
 	}
 
 	// --- Wiring --------------------------------------------------------------------------------------

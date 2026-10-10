@@ -199,6 +199,7 @@ async function api(page, path, method = 'GET', body)
 		await page.locator('#refill-rule-save').click();
 		await page.locator('#refill-error').filter({ hasText: 'The value must be a whole number from 1 to 730.' }).waitFor();
 		await page.locator('#refill-rule-parameter').fill('731');
+		await page.evaluate(() => { document.getElementById('refill-error').textContent = ''; });
 		await page.locator('#refill-rule-save').click();
 		await page.locator('#refill-error').filter({ hasText: 'The value must be a whole number from 1 to 730.' }).waitFor();
 		assert.equal((await api(page, 'consumption/recipes/' + recipe + '/refill?as_of=2026-03-17')).settings.rule, null, 'a refused value stored nothing');
@@ -237,7 +238,7 @@ async function api(page, path, method = 'GET', body)
 		await page.locator('#refill-order-date').fill('2026-03-17');
 		await page.locator('#refill-order-record').click();
 		await page.locator('#refill-message').filter({ hasText: 'Order recorded.' }).waitFor();
-		assert.match(await page.locator('#refill-summary').innerText(), /Order placed/);
+		assert.match(await page.locator('#refill-summary').innerText(), /Order recorded/);
 		assert.equal(await page.locator('#refill-order-record').isDisabled(), true, 'a second open order is not offered');
 		assert.equal(await page.locator('#refill-fills-rows tr.refill-fill').count(), 1, 'the order recorded no fill');
 		assert.equal(await stock(), stockAtStart, 'and moved no stock');

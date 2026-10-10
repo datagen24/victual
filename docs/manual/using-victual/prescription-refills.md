@@ -56,7 +56,7 @@ With 0 there is no approaching period.
 
 ## Orders
 
-**Record order** notes that you asked the pharmacy. The prescription then shows **Order placed**, and no
+**Record order** notes that you asked the pharmacy. The prescription then shows **Order recorded**, and no
 notice is raised for it. An order adds no stock and does not change the fill history or the estimate.
 When the fill arrives, fill in its date and days and choose **Receive order**: the fill is recorded and the
 order is closed in one step. **Cancel order** returns the prescription to the status its fills and rules say.
