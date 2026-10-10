@@ -2198,9 +2198,14 @@ class StockService extends BaseService
 	 */
 	public function ScopedStockAmount(int $productId, ?int $locationId = null): float
 	{
+		if (!$this->ProductExists($productId))
+		{
+			throw new \Exception('Product does not exist or is inactive');
+		}
+
 		$entries = $locationId === null ? $this->GetProductStockEntries($productId, false, false) : $this->GetProductStockEntriesForLocation($productId, $locationId, false, false);
 
-		return $this->SumStockEntriesInProductUnit($entries, $productId, (int)$this->GetProductDetails($productId)['product']->qu_id_stock);
+		return $this->SumStockEntriesInProductUnit($entries, $productId, (int)$this->DB->products($productId)->qu_id_stock);
 	}
 
 	/**
