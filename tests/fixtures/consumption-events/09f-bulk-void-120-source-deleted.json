@@ -1,0 +1,605 @@
+{
+	"title": "Bulk void by filter handles 50, 50 and 20 events, reporting remaining 70, 20, 0",
+	"adr_sequence": "9f",
+	"description": "120 events are booked in three batches of 40 and then reported not_logged ten days after the dose, so each becomes needs_review/source_deleted. One bulk void by filter, repeated until remaining is 0, restores all 130 tablets. The events are given decreasing occurred_at in booking order because bulk resolution takes the oldest occurred_at first and an earlier booking cannot be undone under a later one (ADR-0036); see README, \"Known behaviour\".",
+	"setup": {
+		"locations": ["organizer_a"],
+		"products": {
+			"tablet": {
+				"stock": {
+					"organizer_a": 130
+				}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "The person approves a mapping on the native approval screen",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/mappings/healthkit/hk:med:42",
+				"body": {
+					"product_id": "{{product.tablet}}",
+					"quantity_factor": 1,
+					"unit_labels": ["tablet"],
+					"default_quantity": null,
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					},
+					"effective_from": "{{time:-30d}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"medication_ref": "hk:med:42",
+					"unit_labels": ["tablet"],
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					}
+				}
+			}
+		},
+		{
+			"note": "Batch 1: events 0 to 39, taken ten days ago",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/events/batch",
+				"body": {
+					"events": [
+						{"source_system": "healthkit", "source_event_id": "BULK-000", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14400m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-001", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14401m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-002", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14402m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-003", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14403m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-004", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14404m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-005", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14405m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-006", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14406m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-007", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14407m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-008", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14408m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-009", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14409m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-010", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14410m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-011", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14411m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-012", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14412m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-013", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14413m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-014", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14414m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-015", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14415m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-016", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14416m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-017", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14417m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-018", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14418m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-019", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14419m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-020", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14420m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-021", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14421m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-022", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14422m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-023", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14423m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-024", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14424m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-025", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14425m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-026", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14426m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-027", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14427m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-028", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14428m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-029", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14429m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-030", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14430m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-031", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14431m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-032", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14432m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-033", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14433m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-034", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14434m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-035", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14435m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-036", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14436m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-037", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14437m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-038", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14438m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-039", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14439m}}"}
+					]
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": [
+					{
+						"source_system": "healthkit",
+						"source_event_id": "BULK-000",
+						"http_status": 201,
+						"event": {
+							"state": "booked"
+						}
+					}
+				],
+				"count": {
+					"": 40
+				}
+			},
+			"stock": {
+				"tablet": 90
+			}
+		},
+		{
+			"note": "Batch 2: events 40 to 79, taken ten days ago",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/events/batch",
+				"body": {
+					"events": [
+						{"source_system": "healthkit", "source_event_id": "BULK-040", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14440m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-041", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14441m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-042", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14442m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-043", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14443m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-044", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14444m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-045", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14445m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-046", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14446m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-047", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14447m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-048", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14448m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-049", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14449m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-050", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14450m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-051", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14451m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-052", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14452m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-053", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14453m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-054", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14454m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-055", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14455m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-056", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14456m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-057", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14457m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-058", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14458m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-059", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14459m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-060", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14460m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-061", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14461m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-062", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14462m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-063", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14463m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-064", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14464m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-065", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14465m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-066", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14466m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-067", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14467m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-068", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14468m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-069", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14469m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-070", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14470m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-071", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14471m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-072", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14472m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-073", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14473m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-074", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14474m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-075", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14475m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-076", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14476m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-077", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14477m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-078", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14478m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-079", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14479m}}"}
+					]
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": [
+					{
+						"source_system": "healthkit",
+						"source_event_id": "BULK-040",
+						"http_status": 201,
+						"event": {
+							"state": "booked"
+						}
+					}
+				],
+				"count": {
+					"": 40
+				}
+			},
+			"stock": {
+				"tablet": 50
+			}
+		},
+		{
+			"note": "Batch 3: events 80 to 119, taken ten days ago",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/events/batch",
+				"body": {
+					"events": [
+						{"source_system": "healthkit", "source_event_id": "BULK-080", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14480m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-081", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14481m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-082", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14482m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-083", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14483m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-084", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14484m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-085", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14485m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-086", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14486m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-087", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14487m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-088", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14488m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-089", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14489m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-090", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14490m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-091", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14491m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-092", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14492m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-093", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14493m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-094", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14494m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-095", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14495m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-096", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14496m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-097", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14497m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-098", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14498m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-099", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14499m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-100", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14500m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-101", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14501m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-102", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14502m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-103", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14503m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-104", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14504m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-105", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14505m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-106", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14506m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-107", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14507m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-108", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14508m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-109", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14509m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-110", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14510m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-111", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14511m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-112", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14512m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-113", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14513m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-114", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14514m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-115", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14515m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-116", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14516m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-117", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14517m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-118", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14518m}}"},
+						{"source_system": "healthkit", "source_event_id": "BULK-119", "status": "taken", "medication_ref": "hk:med:42", "quantity": 1, "unit_label": "tablet", "occurred_at": "{{time:-14519m}}"}
+					]
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": [
+					{
+						"source_system": "healthkit",
+						"source_event_id": "BULK-080",
+						"http_status": 201,
+						"event": {
+							"state": "booked"
+						}
+					}
+				],
+				"count": {
+					"": 40
+				}
+			},
+			"stock": {
+				"tablet": 10
+			}
+		},
+		{
+			"note": "Batch 1: the source reports events 0 to 39 not_logged, older than seven days",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/events/batch",
+				"body": {
+					"events": [
+						{"source_system": "healthkit", "source_event_id": "BULK-000", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-001", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-002", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-003", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-004", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-005", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-006", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-007", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-008", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-009", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-010", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-011", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-012", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-013", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-014", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-015", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-016", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-017", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-018", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-019", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-020", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-021", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-022", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-023", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-024", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-025", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-026", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-027", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-028", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-029", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-030", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-031", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-032", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-033", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-034", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-035", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-036", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-037", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-038", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-039", "status": "not_logged", "medication_ref": "hk:med:42"}
+					]
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": [
+					{
+						"http_status": 200,
+						"event": {
+							"state": "needs_review",
+							"reason": "source_deleted"
+						}
+					}
+				],
+				"count": {
+					"": 40
+				}
+			},
+			"stock": {
+				"tablet": 10
+			}
+		},
+		{
+			"note": "Batch 2: the source reports events 40 to 79 not_logged, older than seven days",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/events/batch",
+				"body": {
+					"events": [
+						{"source_system": "healthkit", "source_event_id": "BULK-040", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-041", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-042", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-043", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-044", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-045", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-046", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-047", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-048", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-049", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-050", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-051", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-052", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-053", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-054", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-055", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-056", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-057", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-058", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-059", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-060", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-061", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-062", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-063", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-064", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-065", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-066", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-067", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-068", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-069", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-070", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-071", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-072", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-073", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-074", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-075", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-076", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-077", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-078", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-079", "status": "not_logged", "medication_ref": "hk:med:42"}
+					]
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": [
+					{
+						"http_status": 200,
+						"event": {
+							"state": "needs_review",
+							"reason": "source_deleted"
+						}
+					}
+				],
+				"count": {
+					"": 40
+				}
+			},
+			"stock": {
+				"tablet": 10
+			}
+		},
+		{
+			"note": "Batch 3: the source reports events 80 to 119 not_logged, older than seven days",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/events/batch",
+				"body": {
+					"events": [
+						{"source_system": "healthkit", "source_event_id": "BULK-080", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-081", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-082", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-083", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-084", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-085", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-086", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-087", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-088", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-089", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-090", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-091", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-092", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-093", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-094", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-095", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-096", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-097", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-098", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-099", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-100", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-101", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-102", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-103", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-104", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-105", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-106", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-107", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-108", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-109", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-110", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-111", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-112", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-113", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-114", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-115", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-116", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-117", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-118", "status": "not_logged", "medication_ref": "hk:med:42"},
+						{"source_system": "healthkit", "source_event_id": "BULK-119", "status": "not_logged", "medication_ref": "hk:med:42"}
+					]
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": [
+					{
+						"http_status": 200,
+						"event": {
+							"state": "needs_review",
+							"reason": "source_deleted"
+						}
+					}
+				],
+				"count": {
+					"": 40
+				}
+			},
+			"stock": {
+				"tablet": 10
+			}
+		},
+		{
+			"note": "Bulk void by filter, call 1",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/events/resolve",
+				"body": {
+					"action": "void",
+					"filter": {
+						"source_system": "healthkit",
+						"medication_ref": "hk:med:42",
+						"state": "needs_review",
+						"reason": "source_deleted"
+					}
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"remaining": 70,
+					"results": [
+						{
+							"http_status": 200,
+							"event": {
+								"state": "voided"
+							}
+						}
+					]
+				},
+				"count": {
+					"results": 50
+				}
+			},
+			"stock": {
+				"tablet": 60
+			}
+		},
+		{
+			"note": "Bulk void by filter, call 2",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/events/resolve",
+				"body": {
+					"action": "void",
+					"filter": {
+						"source_system": "healthkit",
+						"medication_ref": "hk:med:42",
+						"state": "needs_review",
+						"reason": "source_deleted"
+					}
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"remaining": 20,
+					"results": [
+						{
+							"http_status": 200,
+							"event": {
+								"state": "voided"
+							}
+						}
+					]
+				},
+				"count": {
+					"results": 50
+				}
+			},
+			"stock": {
+				"tablet": 110
+			}
+		},
+		{
+			"note": "Bulk void by filter, call 3",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/events/resolve",
+				"body": {
+					"action": "void",
+					"filter": {
+						"source_system": "healthkit",
+						"medication_ref": "hk:med:42",
+						"state": "needs_review",
+						"reason": "source_deleted"
+					}
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"remaining": 0,
+					"results": [
+						{
+							"http_status": 200,
+							"event": {
+								"state": "voided"
+							}
+						}
+					]
+				},
+				"count": {
+					"results": 20
+				}
+			},
+			"stock": {
+				"tablet": 130
+			}
+		},
+		{
+			"note": "Nothing is left to decide",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/events?state=needs_review&limit=500"
+			},
+			"expect": {
+				"status": 200,
+				"body": [],
+				"count": {
+					"": 0
+				}
+			}
+		},
+		{
+			"note": "All 120 ended voided",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/events?state=voided&limit=500"
+			},
+			"expect": {
+				"status": 200,
+				"body": [
+					{"state": "voided"}
+				],
+				"count": {
+					"": 120
+				}
+			},
+			"stock": {
+				"tablet": 130
+			}
+		}
+	]
+}

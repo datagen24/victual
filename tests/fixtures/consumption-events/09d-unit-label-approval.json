@@ -1,0 +1,167 @@
+{
+	"title": "An unseen unit label needs review; approve_unit books it and teaches the mapping",
+	"adr_sequence": "9d",
+	"description": "The mapping starts with no confirmed unit labels. The first event carries \"film-coated tablet\" and becomes needs_review/unit_unconfirmed, with the exact string in unit_label_seen. approve_unit adds the label and books. A later event with the same label books directly; a different label asks again.",
+	"setup": {
+		"locations": ["organizer_a"],
+		"products": {
+			"tablet": {
+				"stock": {
+					"organizer_a": 10
+				}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "The person approves a mapping on the native approval screen",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/mappings/healthkit/hk:med:42",
+				"body": {
+					"product_id": "{{product.tablet}}",
+					"quantity_factor": 1,
+					"unit_labels": [],
+					"default_quantity": null,
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					},
+					"effective_from": "{{time:-30d}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"medication_ref": "hk:med:42",
+					"unit_labels": [],
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					}
+				}
+			}
+		},
+		{
+			"note": "First event with an unseen label",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "film-coated tablet",
+					"occurred_at": "{{time:-90m}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "needs_review",
+					"reason": "unit_unconfirmed",
+					"unit_label_seen": "film-coated tablet",
+					"lines": []
+				}
+			},
+			"stock": {
+				"tablet": 10
+			}
+		},
+		{
+			"note": "The person approves the label",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9/resolve",
+				"body": {
+					"action": "approve_unit"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"state": "booked",
+					"reason": null,
+					"lines": [
+						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+					]
+				}
+			},
+			"stock": {
+				"tablet": 9
+			}
+		},
+		{
+			"note": "The mapping now lists the label",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/mappings/healthkit/hk:med:42"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"unit_labels": ["film-coated tablet"]
+				}
+			}
+		},
+		{
+			"note": "A later event with that label books directly",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "film-coated tablet",
+					"occurred_at": "{{time:-90m}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "booked",
+					"reason": null,
+					"lines": [
+						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+					]
+				}
+			},
+			"stock": {
+				"tablet": 8
+			}
+		},
+		{
+			"note": "A different label asks again",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0003-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "capsule",
+					"occurred_at": "{{time:-90m}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0003-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "needs_review",
+					"reason": "unit_unconfirmed",
+					"unit_label_seen": "capsule"
+				}
+			},
+			"stock": {
+				"tablet": 8
+			}
+		}
+	]
+}

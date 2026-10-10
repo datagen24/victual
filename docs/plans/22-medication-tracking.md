@@ -6,10 +6,11 @@ user-entered consumption recipe with access restricted to its owner and specific
 authorized members. Dosing schedules, adherence tracking and dose reminders are outside
 Victual's scope.
 
-**Status:** in progress for v0.5.0; product scope decided, design records accepted
-2026-10-09. Issue 698 (private consumption recipes and manual booking) is merged. Issue 699
-(organizer inventory workflow) has its test evidence in [Executed](#executed). Issues 700 to
-703 are not complete; see the Executed section for what each still needs.
+**Status:** in progress for v0.5.0; product scope decided and design records accepted
+2026-10-09. Implemented: private consumption recipes and manual consumption (issue 698, merged)
+the external-event schema, service, API and reconciliation inbox (issue 700, in review), and the
+organizer inventory workflow's test evidence (issue 699, in review).
+Not implemented: refill tracking (issue 701) and native acceptance on a device (issue 702).
 
 **Release target:** v0.5.0. The maintainer clarified this scope on 2026-10-09. The target
 is a schedule; the release record and signed tag follow verified implementation under
@@ -356,15 +357,112 @@ answers from the maintainer's inventory scope decision on 2026-10-09.
 
 ## Executed
 
-This section records what has shipped and what has been measured. The plan above keeps its
-original tense and decisions.
+This section records what shipped. The sections above keep the decisions as they were made.
+
+### Issue 698: private consumption recipes and manual consumption
+
+Merged to `master` in [pull request 735](https://github.com/datagen24/victual/pull/735) and
+[pull request 736](https://github.com/datagen24/victual/pull/736); issue 698 is closed.
+Migration 0305 created the recipe, line, share, event and event-line tables. The
+source-mapping table and the external-source event columns were left to issue 700, as the
+migration header says.
+
+### Issue 700: idempotent external consumption and reconciliation
+
+Delivered as a stack of three pull requests, each based on the one before it:
+[pull request 739](https://github.com/datagen24/victual/pull/739) (migration 0306),
+[pull request 741](https://github.com/datagen24/victual/pull/741) (service, routes, OpenAPI,
+fixtures, race tests) and
+[pull request 743](https://github.com/datagen24/victual/pull/743) (reconciliation inbox,
+browser probe, manual and operator pages), which carries this section. Issue 700 stays open until all three merge and the
+CI jobs listed under *Not run here* are green.
+
+**Migration claims.** `migrations/RESERVATIONS.md` gave 0306 to issue 700, the lowest free slot,
+and moved the unwritten refill claim of issue 701 to 0307. Migration 0306 adds
+`consumption_mappings` and extends the 0305 event tables. There is no second ledger.
+
+**What differs from the design records.**
+
+- A product mapping accepts an optional `qu_id`, the unit the event quantity is in. ADR-0041
+  names a unit but its contract fragment has none.
+- An explicit link is stored in `linked_transaction_id`, because a manual event already holds
+  the same transaction under 0305's unique index.
+- Event objects also carry `medication_ref`, `used_date` on lines, `recipe_id` for a manual
+  event and, for `stock_error`, a `message` that only the event's user receives. `invalid_link`
+  is a new `422` token. `replayed` is `false` on a new row.
+- Event routes read the JSON body as sent, because the shared body filter turns numbers into
+  strings.
+- A `dismissed` event is terminal: a changed payload is stored and never books.
+- A filter-based bulk resolve compares the state a person sees, so an event undone in the stock
+  journal is found.
+
+**Limits the records leave open.** Bulk void by filter takes the oldest dose first, which is
+the wrong order to undo bookings drawn from one purchase (ADR-0036), so a client that booked
+history in occurrence order ends with `undo_refused` for all but the last-booked event. ADR-0041
+row 7 ("create then delete leaves one deduction") holds only when the two events draw on
+different purchases. Both are documented in the
+[operator page](../manual/operator/external-consumption.md) and pinned by fixtures, and both
+need a decision in ADR-0041 or an issue.
+
+**Evidence.** Environment: PostgreSQL 16.15, PHP 8.3.6 with a local shim for the `PDO\Pgsql` and
+`PDO\Sqlite` classes that PHP 8.4 adds (CI runs PHP 8.5). Commands were run from the repository
+root.
+
+| Check | Commit | Result |
+|---|---|---|
+| `phpunit --testsuite consumption` with the `.devtools/pgsql/run-tests.sh` data path and configuration | `b368318` (inbox stage) | 182 tests, 4,212 assertions, OK |
+| Same suite, first two stages | `2157bcb` (service stage) | 182 tests, 4,218 assertions, OK |
+| `.devtools/pgsql/run-tests.sh rbac` | `b368318` | 54 tests, 574 assertions, OK |
+| `.devtools/pgsql/run-tests.sh pgtap` (includes `032-consumption-mappings.sql`, 44 assertions) | `b368318` | Result: PASS, coverage list OK |
+| `.devtools/pgsql/check-migrations.php`, `check-cited-jobs.php`, `check-path-id-validation.php` | `b368318` | all OK |
+| `node .devtools/frontend/consumption-inbox.js` on a production-mode instance | `b368318` | 6 scenarios passed |
+| `python3 .devtools/vale/audit.py --check` | `b368318` plus the frontend README edit in this commit | 0 new findings |
+| `mkdocs build --strict` after `.devtools/docs/stage.py --no-api` | `b368318` | exit 0 |
+| `ConsumptionEventRaceTest`, 8 consecutive runs | `30704bd` (the working tree it committed) | no failure after the created-row fix |
+
+The concurrency tests cover 12 identical requests at once, the same key from two users, two
+corrections over overlapping product sets, a correction racing a direct undo, a deletion racing
+a replay, and nine events racing for five tablets. The delays are seeded timing jitter, so a
+pass shows the absence of the failures in those rounds and not a proof.
+
+**Issue 700 criteria.**
+
+| Criterion | Evidence |
+|---|---|
+| Source identity, authorization, mappings, atomic stock writes, contract-defined correction, deletion and conflict behavior | `ConsumptionEventServiceTest`, `ConsumptionMappingServiceTest`, `ConsumptionEventApiTest`, pgTAP 032 |
+| Repeated and concurrent submissions deduct once; sources cannot collide into or inspect another owner's event | `ConsumptionEventRaceTest`, `testTwoUsersWithTheSameSourceIdsHave...`, fixture 17 |
+| Explicit manual and import reconciliation without fuzzy merging; unresolved records exposed to the owner | `link` and `possible_duplicates` in the service tests and fixtures 12 and 13; the inbox probe |
+| Direct stock undo is not reversed by replay; insufficient stock, invalid units and ambiguous location leave no partial booking | fixtures 10, 11, 14, 15; service tests for rollback and `undo_refused` |
+| Skipped and unanswered events cause no deduction; a scheduled dose never consumes | fixture 09; `testSkippedUnansweredAndScheduled...` |
+| OpenAPI, fixtures, snapshots, migration and permission metadata | `victual.openapi.json`, `tests/fixtures/consumption-events/`, contract snapshot entries, `RESERVATIONS.md`, importer and `migratedifftest.php` lists |
+| PHPUnit, pgTAP and concurrency tests; browser coverage of the reconciliation UI | the rows above |
+
+Server fixtures replay Victual's answers. They are not evidence that the Apple client has
+synchronized (issue 702).
+
+**CI evidence.** The pull request checks ran on GitHub Actions with PHP 8.4 or later and with
+both PostgreSQL versions: `suite-floor` uses PostgreSQL 15, `images` uses PostgreSQL 16 and `suite`
+runs the aggregate coverage ratchet. At `0a63015` (pull request 741) and `17657d2` (pull request 743)
+every check completed without a failure: `lint`, `prose`, `mcp`, `frontend-security` (which runs
+the inbox probe on 743), `images`, `suite-floor` and `suite`. Pull request 739 at `cab577e` passed
+the same set and Psalm. Earlier heads of 741 and 743 failed `WireContractTest` (the documented
+boolean list and the instant patterns of the new schemas) and the contract snapshot; both were
+fixed in `0a63015` and `2157bcb`.
+
+**Not run here.** Local runs did not cover PostgreSQL 15, PHP 8.4 or 8.5, the coverage run,
+Psalm, the whole `frontend-security` job or the full test suite; the CI evidence above covers
+them. The `contract` phase and six `WireContractTest` tests fail on this host in tests about
+numeric typing of `/api/objects/*` fields (`price`, `tare_weight`, `amount`), and they fail the
+same way on unmodified `master` at `7287b77`. The new snapshot entries were generated here and
+merged into the committed snapshot as additions; CI compared them on PHP 8.4 or later.
 
 ### Issue 699: organizer inventory workflow
 
-Measured 2026-10-09 against working copy `8d234d7a5d9ba2b97c7be20d1c8a36f2ef11c091` (branch
-`claude/issue-699-household-organizer-yme490`, based on master at `7287b77`, the merge of pull
-request 736). It carries commit `ebfc342`, the organizer test commit also open as pull request
-738, and one further commit of tests, one controller change and documentation.
+Measured 2026-10-10 against working copy `@@HASH@@` (branch
+`claude/issue-699-household-organizer-yme490`, with master at `46eb1f7`, the merge of pull request
+743, merged in). Master already carries the organizer workflow test, browser probe and manual
+section from [pull request 738](https://github.com/datagen24/victual/pull/738). This change adds
+tests, one controller change and documentation on top of them.
 
 Nothing was added to the schema, the label namespace or the services. An organizer is an
 ordinary location, filling it is `TransferProduct()`, and consuming from it is `ConsumeProduct()`
@@ -374,17 +472,21 @@ with `location_id`. The recipe path charges the location the same way.
 |---|---|
 | Each organizer is a unique tracked location with an existing location label | `OrganizerApiTest::testEachOrganizerIsAUniqueLocationAndKeepsItsLocationLabel` (a second top-level location with the same name is refused; the label context route answers for it). `OrganizerLabelDisclosureTest` issues and prints a location label. |
 | Filling three organizers keeps totals; consumption charges only the selected source; return is a transfer | `OrganizerApiTest::testThreeOrganizersAreFilledConsumedFromUndoneAndEmptiedBackWithTheTotalHeldAtEveryStep`: 90 tablets, 7 into each of three organizers, consume from B, undo, consume from A and C, return all three. Per-location quantities, the household total, the consume booking count and `stock_lineage_violations()` are asserted after every step. `OrganizerWorkflowTest` pins the same path through the recipe service. |
-| Explicit source selection; configured defaults; never another organizer | `location_id` and `stock_entry_id` on the stock consume route; `location_id` on the recipe route. `testAShortfallAtTheSelectedOrganizerRefusesAndChargesNoOtherOrganizer` and `testALocationIdThatNamesNothingUsableIsRefusedInsteadOfBecomingAnyLocation`. Configured sources: [the paragraph after the table](#issue-699-organizer-inventory-workflow). |
+| Explicit source selection; configured defaults; never another organizer | `location_id` and `stock_entry_id` on the stock consume route; `location_id` on the recipe route. `testAShortfallAtTheSelectedOrganizerRefusesAndChargesNoOtherOrganizer` and `testALocationIdThatNamesNothingUsableIsRefusedInsteadOfBecomingAnyLocation`. Configured sources: [the paragraphs after the table](#issue-699-organizer-inventory-workflow). |
 | Conversions for tablets, liquids and single-use units; strengths stay distinct | `testLiquidSingleUseAndStrengthsStayDistinctThroughTheRoutes`: a 250 mL bottle read back as a factor of 250, half a bottle as 125 mL, ampoules as unit stock, 5 mg and 10 mg as separate products. |
 | ADR-0036 lineage and ADR-0032 comparisons | `stock_lineage_violations()` is empty after every step of every test above. The earlier consumption of a purchase cannot be undone once a later booking moved units of the same purchase (`400`, "subsequent dependent bookings"), which ADR-0036 requires and the manual documents. `OrganizerWorkflowTest::testFractionalAmountsAcrossOrganizersCompareWithinTheSharedTolerance` empties a row with ten consumptions of 0.1. |
 | Labels, previews and scans disclose no private recipe or refill data | `OrganizerLabelDisclosureTest` and `OrganizerApiTest::testAnOrdinaryStockReaderSeesNoPrivateRecipeData`, both as a caller holding `STOCK_VIEW` only. Fields covered: [the paragraph after the table](#issue-699-organizer-inventory-workflow). |
 | API and Playwright evidence, operator documentation | API: `OrganizerApiTest`, `OrganizerLabelDisclosureTest`. Browser: `.devtools/frontend/organizers.js`, wired into the `frontend-security` job (not run in this measurement). Operator documentation: the manual's Weekly organizers section in `consumption-recipes.md`, with the source-selection, labels and checking subsections. |
 
 The shortfall test asks for 5 from an organizer holding 3 while the other organizers hold 7 and
-the cabinet 63. The request is refused, books nothing and moves nothing. The only configured
-default today is the product's `default_consume_location_id`, which `stock_next_use` orders first
-when no location is sent. A source chosen for an external medication belongs to issue 700's
-mappings and is not built.
+the cabinet 63. The request is refused, books nothing and moves nothing.
+
+Two configured sources exist, and neither is new in this change. For a manual consumption with no
+location, `stock_next_use` orders the product's `default_consume_location_id` first. For an event
+an external client submits, issue 700's consumption mapping chooses the location: `fixed` is that
+location with no fallback, `single` is the one location that holds enough, and `explicit` is the
+location the event names. Their behavior is pinned by `ConsumptionEventServiceTest`, including
+`testAFixedLocationNeverFallsBackToAnotherOrganizer`. This change adds no default policy.
 
 The label test covers the location, product and stock entry kinds. It reads every catalogued field
 of a live capture and of a sample preview. It also reads the print job, the outbox event, the
@@ -406,12 +508,12 @@ OpenAPI description and the changelog say so.
 
 Commands and results, all on PostgreSQL 16.15 and PHP 8.3.6:
 
-- `phpunit --configuration phpunit.xml --testsuite consumption`: 69 tests, 2,278 assertions, OK.
-  `rbac`: 54 tests, 568 assertions, OK.
+- `phpunit --configuration phpunit.xml --testsuite consumption`: 199 tests, 4,773 assertions, OK.
+  `rbac`: 54 tests, 574 assertions, OK.
 - `stockconcurrency` 23 tests OK; `labelapi` 124 OK; `labelservices` 293 OK; `chores` 20 OK;
-  `stocklocations` 59 OK; `labeltracking` 3 OK; `recipeoperations` 35 OK.
+  `stocklocations` 59 OK; `recipeoperations` 35 OK.
 - `wirecontract`, `contract`, `stockcoverage`, `stockmaintenance`, `stockpages` and `genericquery`
-  report failures (6, 1, 3, 1, 1 and 3). The same counts appear on untouched master at `7287b77`
+  report failures (6, 1, 3, 1, 1 and 3). The same counts appear on untouched master at `46eb1f7`
   in the same environment, so this change adds none. They appear to come from PHP 8.3 returning
   strings where PHP 8.4 returns numbers; that cause was not confirmed.
 - `check-migrations.php` OK (no migration added), `check_vendor_paths.py` 0 errors,
@@ -432,7 +534,6 @@ Not run, and why:
 - Pull request 738 reports a run of `organizers.js` with a negative control. That run is not
   repeated in this measurement.
 
-Remaining dependencies: issue 700 owns configured sources for external medications (pull request
-739 is open for its first part). Issue 701 and issue 703 are untouched by this change. Issue 699
-is not closed by this change: the browser run and the PostgreSQL 15 run listed above are
-outstanding.
+Remaining dependencies: issue 701 (refill tracking) and the later issues are untouched by this
+change. Issue 699 is not closed by this change: the browser run and the PostgreSQL 15 run listed
+above are outstanding.

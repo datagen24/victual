@@ -3,6 +3,7 @@
 use Victual\Controllers\Api\BatteriesApiController;
 use Victual\Controllers\Api\CalendarApiController;
 use Victual\Controllers\Api\ChoresApiController;
+use Victual\Controllers\Api\ConsumptionEventsApiController;
 use Victual\Controllers\Api\ConsumptionRecipesApiController;
 use Victual\Controllers\Api\FilesApiController;
 use Victual\Controllers\Api\GenericEntityApiController;
@@ -23,6 +24,7 @@ use Victual\Controllers\Api\TasksApiController;
 use Victual\Controllers\Api\UsersApiController;
 use Victual\Controllers\BatteriesController;
 use Victual\Controllers\CalendarController;
+use Victual\Controllers\ConsumptionInboxController;
 use Victual\Controllers\ConsumptionRecipesController;
 use Victual\Controllers\ChoresController;
 use Victual\Controllers\EquipmentController;
@@ -123,6 +125,8 @@ $app->group('', function (RouteCollectorProxy $group)
 
 	// Private consumption recipes (ADR-0040): a shell page; the data comes from /api/consumption
 	$group->get('/consumptionrecipes', [ConsumptionRecipesController::class, 'Overview']);
+	// External consumption events that need a decision (ADR-0041): a shell page over /api/consumption/events
+	$group->get('/consumptioninbox', [ConsumptionInboxController::class, 'Overview']);
 
 	// Meal plan routes
 	$group->get('/mealplan', [RecipesController::class, 'MealPlan']);
@@ -345,6 +349,21 @@ $app->group('/api', function (RouteCollectorProxy $group)
 	$group->put('/consumption/recipes/{recipeId}/shares/{userId}', [ConsumptionRecipesApiController::class, 'SetShareRights']);
 	$group->delete('/consumption/recipes/{recipeId}/shares/{userId}', [ConsumptionRecipesApiController::class, 'RemoveShare']);
 	$group->post('/consumption/recipes/{recipeId}/transfer', [ConsumptionRecipesApiController::class, 'TransferOwnership']);
+
+	// External consumption events and their mappings (ADR-0041). The two fixed-segment POST routes are
+	// declared before the identity routes so that `batch` and `resolve` are never read as a source system.
+	$group->get('/consumption/capabilities', [ConsumptionEventsApiController::class, 'Capabilities']);
+	$group->post('/consumption/events/batch', [ConsumptionEventsApiController::class, 'BatchEvents']);
+	$group->post('/consumption/events/resolve', [ConsumptionEventsApiController::class, 'BulkResolve']);
+	$group->get('/consumption/events', [ConsumptionEventsApiController::class, 'ListEvents']);
+	$group->put('/consumption/events/{source_system}/{source_event_id}', [ConsumptionEventsApiController::class, 'PutEvent']);
+	$group->get('/consumption/events/{source_system}/{source_event_id}', [ConsumptionEventsApiController::class, 'GetEvent']);
+	$group->delete('/consumption/events/{source_system}/{source_event_id}', [ConsumptionEventsApiController::class, 'DeleteEvent']);
+	$group->post('/consumption/events/{source_system}/{source_event_id}/resolve', [ConsumptionEventsApiController::class, 'ResolveEvent']);
+	$group->get('/consumption/mappings', [ConsumptionEventsApiController::class, 'ListMappings']);
+	$group->put('/consumption/mappings/{source_system}/{medication_ref}', [ConsumptionEventsApiController::class, 'PutMapping']);
+	$group->get('/consumption/mappings/{source_system}/{medication_ref}', [ConsumptionEventsApiController::class, 'GetMapping']);
+	$group->delete('/consumption/mappings/{source_system}/{medication_ref}', [ConsumptionEventsApiController::class, 'DeleteMapping']);
 
 
 	// Chores

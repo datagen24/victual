@@ -91,11 +91,13 @@ the row it splits, so combine it with `location_id` to name the rows of one orga
   `null` and `""` still mean that no location was sent.
 - With no location, the order is the one described under **Any location** above.
 
-The only default source that exists today is the product's default consume location. A source
-chosen for an external medication, for example one submitted by `victual-kit`, belongs to the
-source mappings of
-[issue 700](https://github.com/datagen24/victual/issues/700), which are not built yet.
-Until then, a client that must charge a particular organizer sends `location_id`.
+Two kinds of configured source exist. For manual consumption with no location, the product's
+default consume location comes first. For an event an external client submits, a consumption
+mapping chooses the location: `fixed` is that location only, with no fallback, `single` is the one
+location that holds enough, and `explicit` is the location the event names. When a mapping cannot
+name one location, the event is not booked. See
+[consumption events](consumption-events.md#what-the-inbox-lists). A client that must charge a
+particular organizer through the stock route sends `location_id`.
 
 ### Labels and scans
 
@@ -148,6 +150,11 @@ The owner can **Make owner** a user who already holds a share. The previous owne
 share with every right, which the new owner can remove. Only the owner deletes a recipe.
 Deleting it removes its lines and shares; the recorded consumptions stay in the stock history.
 Deleting a user's account deletes the recipes that user owns.
+
+## Events from other apps
+
+An app can report consumption on your behalf. Events that could not book wait in the
+[consumption inbox](consumption-events.md).
 
 ## The API
 

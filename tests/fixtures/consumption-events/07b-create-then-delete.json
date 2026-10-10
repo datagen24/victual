@@ -1,0 +1,141 @@
+{
+	"title": "Edit as create then delete, without replaces: one deduction",
+	"adr_sequence": "7 (create then delete)",
+	"description": "The new sample arrives first (two deductions for the moment), then the source deletes the old one as entered_in_error. A booking can be undone only while no later booking depends on the same purchase lot (ADR-0036), so this fixture holds the product as two purchases, 1 tablet and 9 tablets: the old event consumes the first lot, the new one the second, and the old one can be undone. With a single purchase the delete answers needs_review/undo_refused (see README, \"Known behaviour\").",
+	"setup": {
+		"locations": ["organizer_a"],
+		"products": {
+			"tablet": {
+				"stock": {
+					"organizer_a": [1, 9]
+				}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "The person approves a mapping on the native approval screen",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/mappings/healthkit/hk:med:42",
+				"body": {
+					"product_id": "{{product.tablet}}",
+					"quantity_factor": 1,
+					"unit_labels": ["tablet"],
+					"default_quantity": null,
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					},
+					"effective_from": "{{time:-30d}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"medication_ref": "hk:med:42",
+					"unit_labels": ["tablet"],
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					}
+				}
+			}
+		},
+		{
+			"note": "Original sample, consumes the 1-tablet purchase",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "tablet",
+					"occurred_at": "{{time:-90m}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "booked",
+					"reason": null,
+					"lines": [
+						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+					]
+				}
+			},
+			"stock": {
+				"tablet": 9
+			}
+		},
+		{
+			"note": "The recreated sample arrives first, new id",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "tablet",
+					"occurred_at": "{{time:-90m}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "booked",
+					"reason": null,
+					"lines": [
+						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+					]
+				}
+			},
+			"stock": {
+				"tablet": 8
+			}
+		},
+		{
+			"note": "Then the source deletes the original as entered in error",
+			"request": {
+				"method": "DELETE",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9?reason=entered_in_error"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "voided"
+				}
+			},
+			"stock": {
+				"tablet": 9
+			}
+		},
+		{
+			"note": "The recreated sample stays booked",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/events/healthkit/6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "booked"
+				}
+			},
+			"stock": {
+				"tablet": 9
+			}
+		}
+	]
+}

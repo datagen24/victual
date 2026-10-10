@@ -214,13 +214,14 @@ class DatabaseImporter
 	 *   ledger, inside the import transaction, and refuses the import if invariants I1 to I3
 	 *   do not hold afterwards.
 	 * - `consumption_recipes`, `consumption_recipe_lines`, `consumption_recipe_shares`,
-	 *   `consumption_events` and `consumption_event_lines` (0305, ADR-0040 and ADR-0041): private
+	 *   `consumption_events`, `consumption_event_lines` and `consumption_mappings` (0305 and 0306,
+	 *   ADR-0040 and ADR-0041): private
 	 *   recipes, their shares and the events that booked them, keyed to `users`, `products`,
 	 *   `locations` and `stock_log`, which this import replaces and renumbers. No supported
 	 *   source can carry them, and a recipe left behind would point at a different user or
 	 *   product than the one its owner chose, so they are always cleared and nothing rebuilds them.
 	 */
-	const DERIVED_STATE_TABLES = ['mqtt_product_entities', 'login_attempts', 'stock_entry_origins', 'stock_row_lots', 'stock_booking_lots', 'consumption_recipes', 'consumption_recipe_lines', 'consumption_recipe_shares', 'consumption_events', 'consumption_event_lines'];
+	const DERIVED_STATE_TABLES = ['mqtt_product_entities', 'login_attempts', 'stock_entry_origins', 'stock_row_lots', 'stock_booking_lots', 'consumption_recipes', 'consumption_recipe_lines', 'consumption_recipe_shares', 'consumption_events', 'consumption_event_lines', 'consumption_mappings'];
 
 	/**
 	 * The SQLite-dialect migration numbers above DatabaseMigrationService::BASELINE_MIGRATION_ID

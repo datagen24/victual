@@ -1,0 +1,160 @@
+{
+	"title": "A recipe share revoked before the event is processed leaves it needs_review/recipe_unavailable",
+	"adr_sequence": "16",
+	"description": "Bob owns a consumption recipe and shares consume with Alice, who maps a medication to it. Bob then revokes the share. Alice's event is stored but books nothing and reads recipe_unavailable; Alice cannot see why beyond that. When Bob shares again, Alice's retry books.",
+	"setup": {
+		"locations": ["organizer_a"],
+		"products": {
+			"tablet": {
+				"stock": {
+					"organizer_a": 10
+				}
+			}
+		},
+		"users": ["alice", "bob"]
+	},
+	"steps": [
+		{
+			"as": "bob",
+			"note": "Bob creates a recipe",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes",
+				"body": {
+					"name": "Bob's tablet",
+					"lines": [
+						{"product_id": "{{product.tablet}}", "amount": 1, "qu_id": "{{unit}}"}
+					]
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"created_object_id": "{{any}}"
+				}
+			},
+			"save": {
+				"recipe": "created_object_id"
+			}
+		},
+		{
+			"as": "bob",
+			"note": "Bob shares consume with Alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{saved.recipe}}/shares",
+				"body": {
+					"username": "{{username.alice}}",
+					"consume": true
+				}
+			},
+			"expect": {
+				"status": 204
+			}
+		},
+		{
+			"note": "Alice maps her medication to the shared recipe",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/mappings/healthkit/hk:med:42",
+				"body": {
+					"recipe_id": "{{saved.recipe}}",
+					"unit_labels": ["dose"],
+					"default_quantity": null,
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					},
+					"effective_from": "{{time:-30d}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"medication_ref": "hk:med:42",
+					"unit_labels": ["dose"],
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					}
+				}
+			}
+		},
+		{
+			"as": "bob",
+			"note": "Bob revokes the share",
+			"request": {
+				"method": "DELETE",
+				"path": "/api/consumption/recipes/{{saved.recipe}}/shares/{{user.alice}}"
+			},
+			"expect": {
+				"status": 204
+			}
+		},
+		{
+			"note": "Alice's event arrives after the revocation",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "dose",
+					"occurred_at": "{{time:-90m}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "needs_review",
+					"reason": "recipe_unavailable",
+					"lines": []
+				}
+			},
+			"stock": {
+				"tablet": 10
+			}
+		},
+		{
+			"as": "bob",
+			"note": "Bob shares again",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{saved.recipe}}/shares",
+				"body": {
+					"username": "{{username.alice}}",
+					"consume": true
+				}
+			},
+			"expect": {
+				"status": 204
+			}
+		},
+		{
+			"note": "Alice retries",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9/resolve",
+				"body": {
+					"action": "retry"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"state": "booked",
+					"lines": [
+						{"product_id": "{{product.tablet}}", "amount": 1}
+					]
+				}
+			},
+			"stock": {
+				"tablet": 9
+			}
+		}
+	]
+}

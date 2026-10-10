@@ -56,6 +56,16 @@ A consume request with a `request_id` is idempotent: a repeat answers `200` with
 true and books nothing. Send `occurred_at` with the client's own offset; the booked date is the
 date written in that offset, and a time sent as `Z` books the UTC date.
 
+## External consumption events
+
+The routes under `/api/consumption/events`, `/api/consumption/mappings` and
+`/api/consumption/capabilities` take dose events from a client such as `victual-kit`. Identity
+is the key's user plus a `source_system` and a `source_event_id`. A key rotation reaches the
+same events, and another user's event answers `404`. A body is strict JSON: a `quantity` is a
+number and a `location_id` an integer, and a numeric string is refused with `400`. See
+[External consumption events](external-consumption.md) for the states, the error tokens and
+what the server fixtures do and do not show.
+
 ## What a key can do
 
 An API key inherits exactly its owning user's permissions; it is not a separate,

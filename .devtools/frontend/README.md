@@ -234,6 +234,35 @@ product's stock locations before it selects one (see the nested locations sectio
 
 CI runs it in `frontend-security` after the consumption recipe checks.
 
+## Consumption inbox
+
+`node consumption-inbox.js --url <url> --admin-password <password>` drives `/consumptioninbox`,
+the private reconciliation page for external consumption events (issue #700, ADR-0041). It needs
+a disposable instance in `VICTUAL_MODE=production` with a fresh database and
+`VICTUAL_BOOTSTRAP_ADMIN_PASSWORD` set before the first migration (or `VICTUAL_PROBE_ADMIN_PASSWORD`
+in the probe's environment). It cannot use the demo instance: demo and dev mode have one identity
+for every request, and the probe needs users that sign in with different permissions and an API
+key for the external client. It creates its own users, products, a consumption recipe and mappings,
+and checks each outcome on the page and through the API or the stock ledger:
+
+- a user without stock permissions gets the 403 page, and a user with `STOCK_VIEW` only sees the
+  actions disabled with an explanation while the API refuses the same action
+- a manual consumption (recorded through the recipes page) and an external event for the same
+  product (sent with the user's API key) are listed as a possible duplicate
+- a transaction id that cannot be linked shows the server's sentence and changes nothing, and
+  Link leaves the event linked with exactly one deduction
+- an event booked, undone in the stock journal page, replayed (it stays undone), listed under
+  the undone toggle with Book again, and booked once more by that action
+- a `needs_mapping` event, an action on a stale row that the server refuses with 409
+  `invalid_transition`, and Dismiss
+- a unit label sent by the source (seeded with the S29 payload) shown as text and never as an
+  element, approve_unit, candidate locations shown by name, and a bulk dismiss of 55 events that
+  takes two requests and ends with none remaining
+- the medication filter, which groups rows by the `medication_ref` the API returns
+
+CI boots the instance on 8093 in `frontend-security`, runs the probe after the consumption
+recipe checks and tears the instance down.
+
 ## Nested locations
 
 `node nested-locations.js <url>` runs against a disposable demo instance. It builds plan 08's

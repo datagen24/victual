@@ -32,14 +32,14 @@ See [Stock](manual/using-victual/stock.md).
 
 ### Consumption recipe
 
-Defined in [ADR-0040](adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md) (Accepted 2026-10-09, not implemented).
+Defined in [ADR-0040](adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md) (Accepted 2026-10-09, implemented by issue 698).
 An owned list of product lines and quantities consumed together, such as a prescription.
 It is separate from the food `recipes` table and visible only to its owner and users it is
 shared with. See [plan 22](plans/22-medication-tracking.md).
 
 ### Consumption event
 
-Defined in [ADR-0041](adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md) (Accepted 2026-10-09, not implemented).
+Defined in [ADR-0041](adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md) (Accepted 2026-10-09, implemented by migration 0306 and the `/api/consumption/events` routes).
 A record that one consumption happened, identified by the owning user, a source system and a
 source event id. It books stock once through the stock write paths and has a state such as
 `booked`, `needs_review` or `undone`. A client such as `victual-kit` submits events for
