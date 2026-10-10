@@ -211,13 +211,67 @@ class ConsumptionRefillService extends BaseService
 		return DatabaseService::GetInstance()->InTransaction(function () use ($userId, $date, $source)
 		{
 			$refills = [];
-			foreach ($this->Recipes()->ListRecipes($userId) as $recipe)
+			foreach ($this->LockedCandidates($userId) as $recipe)
 			{
 				$refills[] = $this->Summary($recipe['id'], $recipe['name'], $userId, $date, $source);
 			}
 
 			return ['as_of' => $date, 'as_of_source' => $source, 'refills' => $refills];
 		});
+	}
+
+	/**
+	 * The recipes a list read may report, each locked and re-judged before any of its facts are read.
+	 *
+	 * ListRecipes() chooses candidates without a lock, so a share can be revoked, or the recipe deleted,
+	 * before the first fact is read. Each candidate therefore goes through AuthoriseRefill() inside the
+	 * caller's transaction, `FOR SHARE` on the recipe row, which is the lock a single-recipe read takes.
+	 * A candidate that is gone or no longer readable is dropped, exactly as that read answers it with a
+	 * 404, and nothing of it is read. The locks are taken in ascending recipe id, whatever order the
+	 * list is returned in, so two readers never wait on each other's recipes in opposite orders. The
+	 * locks are held to the end of the transaction, which is what makes a revoke wait for the read.
+	 * The recipe is returned from the locked row, so its name is the committed name and not the
+	 * candidate list's.
+	 *
+	 * @return list<array> the locked recipes, in the order ListRecipes() returned them
+	 */
+	private function LockedCandidates(int $userId): array
+	{
+		$candidates = $this->Recipes()->ListRecipes($userId);
+
+		$ids = array_column($candidates, 'id');
+		sort($ids);
+
+		$locked = [];
+		foreach ($ids as $id)
+		{
+			try
+			{
+				[$recipe] = $this->Recipes()->AuthoriseRefill($id, $userId, null, false);
+			}
+			catch (ConsumptionException $exception)
+			{
+				if ($exception->status !== 404)
+				{
+					throw $exception;
+				}
+
+				continue;
+			}
+
+			$locked[$id] = $recipe;
+		}
+
+		$ordered = [];
+		foreach ($candidates as $candidate)
+		{
+			if (isset($locked[$candidate['id']]))
+			{
+				$ordered[] = ['id' => (int)$candidate['id'], 'name' => $locked[$candidate['id']]['name']];
+			}
+		}
+
+		return $ordered;
 	}
 
 	/** The facts the state is calculated from. */
@@ -632,7 +686,7 @@ class ConsumptionRefillService extends BaseService
 		return DatabaseService::GetInstance()->InTransaction(function () use ($userId, $date, $source)
 		{
 			$raised = [];
-			foreach ($this->Recipes()->ListRecipes($userId) as $recipe)
+			foreach ($this->LockedCandidates($userId) as $recipe)
 			{
 				$state = $this->Summary($recipe['id'], $recipe['name'], $userId, $date, $source);
 				if ($state['status'] === RefillEstimator::STATUS_APPROACHING || $state['status'] === RefillEstimator::STATUS_DUE)
