@@ -94,9 +94,9 @@ class ConsumptionRefillService extends BaseService
 	 *
 	 * @return array{0: string, 1: string} the date and 'client' or 'server_utc'
 	 */
-	public static function ResolveAsOf(?string $asOf): array
+	public static function ResolveAsOf(mixed $asOf): array
 	{
-		if ($asOf === null || $asOf === '')
+		if ($asOf === null)
 		{
 			return [gmdate('Y-m-d'), self::AS_OF_SERVER_UTC];
 		}
@@ -127,6 +127,18 @@ class ConsumptionRefillService extends BaseService
 		}
 
 		return self::EntryDate($input[$field], $field);
+	}
+
+	/** A body may carry only the fields its route documents; a misspelled one (supplied_day) is refused, not dropped. */
+	private static function OnlyFields(array $input, array $allowed): void
+	{
+		foreach (array_keys($input) as $field)
+		{
+			if (!in_array($field, $allowed, true))
+			{
+				throw new ConsumptionException(422, 'unknown_field', 'Unknown field: ' . (string)$field);
+			}
+		}
 	}
 
 	private static function SuppliedDays(array $input): ?int
@@ -173,7 +185,7 @@ class ConsumptionRefillService extends BaseService
 	 *
 	 * @return array the state object of ADR-0042, plus `settings`, `explicit_date`, `fills` and `orders`
 	 */
-	public function GetRefill(int $recipeId, ?string $asOf = null, ?int $userId = null): array
+	public function GetRefill(int $recipeId, mixed $asOf = null, ?int $userId = null): array
 	{
 		$userId = self::Actor($userId);
 		[$date, $source] = self::ResolveAsOf($asOf);
@@ -191,7 +203,7 @@ class ConsumptionRefillService extends BaseService
 	 *
 	 * @return array{as_of: string, as_of_source: string, refills: list<array>}
 	 */
-	public function ListRefills(?string $asOf = null, ?int $userId = null): array
+	public function ListRefills(mixed $asOf = null, ?int $userId = null): array
 	{
 		$userId = self::Actor($userId);
 		[$date, $source] = self::ResolveAsOf($asOf);
@@ -353,7 +365,7 @@ class ConsumptionRefillService extends BaseService
 	 *
 	 * @param array $changes any of `rule` ({kind, parameter}), `warning_lead_days`, `explicit_reorder_date`
 	 */
-	public function SetSettings(int $recipeId, array $changes, ?string $asOf = null, ?int $userId = null): array
+	public function SetSettings(int $recipeId, array $changes, mixed $asOf = null, ?int $userId = null): array
 	{
 		$userId = self::Actor($userId);
 		[$date, $source] = self::ResolveAsOf($asOf);
@@ -459,10 +471,11 @@ class ConsumptionRefillService extends BaseService
 	}
 
 	/** @param array $input filled_on (required), supplied_days (optional), note (optional) */
-	public function RecordFill(int $recipeId, array $input, ?string $asOf = null, ?int $userId = null): array
+	public function RecordFill(int $recipeId, array $input, mixed $asOf = null, ?int $userId = null): array
 	{
 		$userId = self::Actor($userId);
 		[$date, $source] = self::ResolveAsOf($asOf);
+		self::OnlyFields($input, ['filled_on', 'supplied_days', 'note']);
 		$filledOn = self::RequiredDate($input, 'filled_on');
 		$days = self::SuppliedDays($input);
 		$note = self::Text($input['note'] ?? null, 'note', self::MAX_NOTE_LENGTH, false);
@@ -485,7 +498,7 @@ class ConsumptionRefillService extends BaseService
 	}
 
 	/** Voids a fill with a reason. The fill stays in the history; the previous unvoided fill becomes current. */
-	public function VoidFill(int $recipeId, int $fillId, mixed $reason, ?string $asOf = null, ?int $userId = null): array
+	public function VoidFill(int $recipeId, int $fillId, mixed $reason, mixed $asOf = null, ?int $userId = null): array
 	{
 		$userId = self::Actor($userId);
 		[$date, $source] = self::ResolveAsOf($asOf);
@@ -516,10 +529,11 @@ class ConsumptionRefillService extends BaseService
 	}
 
 	/** Records an order. It adds no stock and records no fill (ADR-0042 section 5). */
-	public function RecordOrder(int $recipeId, array $input, ?string $asOf = null, ?int $userId = null): array
+	public function RecordOrder(int $recipeId, array $input, mixed $asOf = null, ?int $userId = null): array
 	{
 		$userId = self::Actor($userId);
 		[$date, $source] = self::ResolveAsOf($asOf);
+		self::OnlyFields($input, ['ordered_on']);
 		$orderedOn = self::RequiredDate($input, 'ordered_on');
 
 		return $this->Transact(function () use ($recipeId, $userId, $orderedOn, $date, $source)
@@ -545,10 +559,11 @@ class ConsumptionRefillService extends BaseService
 	 *
 	 * @param array $input the fill: filled_on (required), supplied_days (optional), note (optional)
 	 */
-	public function ReceiveOrder(int $recipeId, int $orderId, array $input, ?string $asOf = null, ?int $userId = null): array
+	public function ReceiveOrder(int $recipeId, int $orderId, array $input, mixed $asOf = null, ?int $userId = null): array
 	{
 		$userId = self::Actor($userId);
 		[$date, $source] = self::ResolveAsOf($asOf);
+		self::OnlyFields($input, ['filled_on', 'supplied_days', 'note']);
 		$filledOn = self::RequiredDate($input, 'filled_on');
 		$days = self::SuppliedDays($input);
 		$note = self::Text($input['note'] ?? null, 'note', self::MAX_NOTE_LENGTH, false);
@@ -566,7 +581,7 @@ class ConsumptionRefillService extends BaseService
 	}
 
 	/** Cancels an open order. The status returns to what the fills and rules say. */
-	public function CancelOrder(int $recipeId, int $orderId, ?string $asOf = null, ?int $userId = null): array
+	public function CancelOrder(int $recipeId, int $orderId, mixed $asOf = null, ?int $userId = null): array
 	{
 		$userId = self::Actor($userId);
 		[$date, $source] = self::ResolveAsOf($asOf);
@@ -609,7 +624,7 @@ class ConsumptionRefillService extends BaseService
 	 *
 	 * @return array{as_of: string, as_of_source: string, notices: list<array>}
 	 */
-	public function Notices(?string $asOf = null, ?int $userId = null): array
+	public function Notices(mixed $asOf = null, ?int $userId = null): array
 	{
 		$userId = self::Actor($userId);
 		[$date, $source] = self::ResolveAsOf($asOf);
@@ -719,7 +734,7 @@ class ConsumptionRefillService extends BaseService
 				. ' FROM consumption_refill_acks WHERE user_id = ? AND recipe_id = ? AND kind = ? AND reorder_date = ?');
 			$statement->execute([$userId, $recipeId, $kind, $reorderDate]);
 
-			return ['notice_key' => $noticeKey, 'acknowledged_at' => $statement->fetchColumn()];
+			return ['notice_key' => $recipeId . ':' . $kind . ':' . $reorderDate, 'acknowledged_at' => $statement->fetchColumn()];
 		});
 	}
 

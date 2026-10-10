@@ -377,6 +377,36 @@ class ConsumptionRefillApiTest extends PgsqlSchemaTestCase
 		self::assertSame(7, self::send('GET', '/api/user/settings/refill_warning_lead_days', 'owner')['body']['value'], 'the configured default is listed');
 	}
 
+	public function testPathIdsBodyFieldsAndAsOfThatNameNothingAreRefusedInsteadOfBeingDropped(): void
+	{
+		$id = self::recipe();
+		self::fill($id);
+
+		foreach (["/api/consumption/recipes/99999999999/refill"] as $path)
+		{
+			$response = self::send('GET', $path, 'owner');
+			self::assertSame([404, 'not_found'], [$response['status'], $response['body']['error']], $path);
+		}
+		self::assertSame(404, self::send('POST', "/api/consumption/recipes/$id/refill/fills/99999999999/void", 'owner', ['reason' => 'x'])['status']);
+		self::assertSame(404, self::send('POST', "/api/consumption/recipes/$id/refill/orders/99999999999/cancel", 'owner')['status']);
+
+		$typo = self::send('POST', "/api/consumption/recipes/$id/refill/fills", 'owner', ['filled_on' => '2026-02-01', 'supplied_day' => 30]);
+		self::assertSame([422, 'unknown_field'], [$typo['status'], $typo['body']['error']], 'a misspelled field is not recorded as a fill with no supply');
+		self::assertSame(422, self::send('POST', "/api/consumption/recipes/$id/refill/orders", 'owner', ['ordered_on' => '2026-02-01', 'x' => 1])['status']);
+		self::assertSame(422, self::send('POST', "/api/consumption/recipes/$id/refill/fills/1/void", 'owner', ['reason' => 'x', 'y' => 1])['status']);
+		self::assertSame(422, self::send('POST', '/api/refills/notices/ack', 'owner', ['notice_key' => "$id:due:2026-03-18", 'z' => 1])['status']);
+		self::assertCount(1, self::send('GET', "/api/consumption/recipes/$id/refill?as_of=2026-03-01", 'owner')['body']['fills'], 'none of them recorded anything');
+
+		foreach (['as_of=', 'as_of[]=2026-03-01'] as $query)
+		{
+			$response = self::send('GET', "/api/consumption/recipes/$id/refill?$query", 'owner');
+			self::assertSame([422, 'invalid_as_of'], [$response['status'], $response['body']['error']], $query);
+		}
+
+		$ack = self::send('POST', '/api/refills/notices/ack', 'owner', ['notice_key' => "000$id:due:2026-03-18"]);
+		self::assertSame("$id:due:2026-03-18", $ack['body']['notice_key'], 'the answer is the canonical key');
+	}
+
 	public function testWithoutAsOfTheUtcDateIsUsedAndSaid(): void
 	{
 		$id = self::recipe();
