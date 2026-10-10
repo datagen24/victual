@@ -9,8 +9,9 @@ Victual's scope.
 **Status:** in progress for v0.5.0; product scope decided and design records accepted
 2026-10-09. Implemented: private consumption recipes and manual consumption (issue 698, merged),
 the external-event schema, service, API and reconciliation inbox (issue 700, merged), and the
-organizer inventory workflow's test evidence (issue 699, in review).
-Not implemented: refill tracking (issue 701) and native acceptance on a device (issue 702).
+organizer inventory workflow's test evidence (issue 699, merged in pull requests 738 and 744).
+Issues 698 to 700 are closed. Refill tracking (issue 701) is in review in pull requests 748, 749 and
+751. Not implemented: native acceptance on a device (issue 702) and integrated verification (issue 703).
 
 **Release target:** v0.5.0. The maintainer clarified this scope on 2026-10-09. The target
 is a schedule; the release record and signed tag follow verified implementation under
@@ -208,20 +209,22 @@ constrained to the old two-migration design.
 The design records are decided: ADR-0015 revised and accepted, ADR-0016 rejected, and ADR-0040,
 ADR-0041 and ADR-0042 accepted, each in its own bookkeeping pull request. ADR-0040 leaves
 ADR-0014 and ADR-0018 unamended. The evidence is in `.devtools/adr0040/`, `.devtools/adr0041/` and
-`.devtools/adr0042/`. Implementation is tracked by issues 698 to 703 and has not started.
+`.devtools/adr0042/`. Implementation is tracked by issues 698 to 703. Issues 698 to 700 have
+merged; issues 701 to 703 have not.
 
 The API contract is developed in this repository. Native HealthKit implementation and
 platform-specific notices belong to `victual-kit`. Server verification can use representative
 client fixtures, but an end-to-end Apple integration claim requires real client evidence.
 The release record must distinguish those outcomes.
 
-[Migrations/RESERVATIONS.md](../../migrations/RESERVATIONS.md) claims 0305 and 0306 for this plan.
-Reconciled 2026-10-09: 0305 covers private consumption recipes, shares, consumption events
-and source mappings; 0306 covers refill settings, fills, orders and notice acknowledgements.
-Both are unwritten, and the table descriptions replace the withdrawn regimen sketch. The
-numbers can still move: [ADR-0039](../adr/0039-the-mcp-sidecar-reads-its-configuration-from-victual.md)
-implementation may claim a lower slot first. Re-read the table, claim the lowest free slots
-before writing a file, and write PostgreSQL-only migrations.
+[Migrations/RESERVATIONS.md](../../migrations/RESERVATIONS.md) claims 0305 to 0307 for this plan.
+As of 2026-10-10, 0305 (private consumption recipes, shares, events) and 0306 (source mappings and
+the external-source columns) are on disk in `master`. 0307 is the refill claim of issue 701 and
+is unwritten. An earlier reconciliation on 2026-10-09 gave refill 0306; issue 700's schema took
+that slot, and refill yielded to 0307. The number can still move:
+[ADR-0039](../adr/0039-the-mcp-sidecar-reads-its-configuration-from-victual.md) implementation
+may claim a lower slot first. Re-read the table, claim the lowest free slot before writing a
+file, and write PostgreSQL-only migrations.
 
 ## Verification
 
@@ -355,6 +358,44 @@ answers from the maintainer's inventory scope decision on 2026-10-09.
     > per-prescription override; all three rule kinds kept; a short supply gives an unknown
     > estimate. Server push stays out of this release.
 
+17. **Does ADR-0041 row 7 ("create then delete leaves one deduction") hold for two events that
+    draw on the same purchase?**
+    Row 7 of the verification table lists "Edit as new id without `replaces`, delete then
+    create, and create then delete" with the expected result "One deduction after both orders".
+    ADR-0036 rule 7, step 3, refuses to undo a booking while a later live booking of the same
+    product has an allocation on any lot the first one drew from. Create-then-delete deletes the
+    older event after the newer one is booked, so the outcome depends on the lots:
+
+    | Case | Old event draws on | New event draws on | Delete of the old event | Result | Reproduction |
+    |---|---|---|---|---|---|
+    | Different purchases | lot of purchase 1 (1 tablet) | lot of purchase 2 (9 tablets) | undone | one deduction | fixture `07b-create-then-delete.json` |
+    | Same purchase | lot of purchase 1 (10 tablets) | the same lot | `needs_review` / `undo_refused` | two deductions, original booking kept | `ConsumptionEventServiceTest::testAVoidWhoseUndoIsRefusedBecauseALaterBookingDependsOnItNeedsReview`; the fixtures README, "Known behaviour" |
+
+    `ConsumptionEventServiceTest::testDeleteThenCreateAndCreateThenDeleteBothLeaveOneDeduction`
+    does not cover the second row. Its create-then-delete half deletes the newer of two events,
+    which is always undoable. ADR-0041 section 6 already says a refused undo "is a normal outcome",
+    and section 7 says an unmatched delete-and-recreate is two independent requests. Only the table
+    row states the outcome without a condition.
+
+    Proposed disposition, for the maintainer to accept, change or reject:
+
+    - **A (recommended).** Treat the row as imprecise and record an erratum in ADR-0041's
+      verification table. Row 7 holds "one deduction" for delete-then-create. It holds for
+      create-then-delete only when the deleted event is the newest booking on each lot it drew
+      from. Otherwise the delete answers `needs_review` / `undo_refused`, and the client sends
+      `replaces`. This changes no code and no accepted rule of ADR-0036. The operator page and
+      the fixtures already say this.
+    - **B.** Change the code so the delete undoes the later booking, undoes the older one and
+      rebooks the later event under a new transaction id, all in one transaction. The result is
+      one deduction for both cases. This changes the transaction id of an event that the delete
+      did not name, which the contract does not describe, and it moves lot allocations between
+      events without a person's request.
+
+    The maintainer's settled choice for bulk void (oldest first, refused items stay in
+    `needs_review`) is not part of this question. No ADR or code is changed by this entry.
+
+    > **Response:** Pending. Not decided.
+
 ## Executed
 
 This section records what shipped. The sections above keep the decisions as they were made.
@@ -375,7 +416,9 @@ Delivered as a stack of three pull requests, each based on the one before it:
 fixtures, race tests) and
 [pull request 743](https://github.com/datagen24/victual/pull/743) (reconciliation inbox,
 browser probe, manual and operator pages), which carries this section. All three are merged.
-Issue 700 stays open until the CI jobs listed under *Not run here* are green on `master`.
+Issue 700 was open until the CI jobs listed under *Not run here* were green on `master`; it is
+closed now. Closing it did not by itself show that each gate below was met. The CI addendum under
+issue 699 records the logs that were read afterwards.
 
 **Migration claims.** `migrations/RESERVATIONS.md` gave 0306 to issue 700, the lowest free slot,
 and moved the unwritten refill claim of issue 701 to 0307. Migration 0306 adds
@@ -560,3 +603,111 @@ Not covered:
 Remaining dependencies: issue 701 (refill tracking) and the later issues are untouched by this
 change. Every criterion of issue 699 now has the evidence listed above. Closing the issue is the
 maintainer's decision.
+
+### CI log addendum for issues 699 and 700, read 2026-10-10
+
+The sections above recorded job conclusions for pull request 744 and said the job logs were not
+read. The logs of workflow run 38013745516 (head `78393dba29025975b921e7cae97746a30452fd0b`, read
+with `gh run view 38013745516 --log` on 2026-10-10) say the following. The earlier text stays as
+written.
+
+| Check | Log line or figure |
+|---|---|
+| `frontend-security`, organizer probe | `ORGANIZER BROWSER CHECKS PASSED` |
+| `frontend-security`, inbox probe | `CONSUMPTION INBOX BROWSER CHECKS PASSED (6 scenarios)` |
+| `suite`, the runner's own report | 13,502 of 14,018 executable lines (96.32%) from 2,525 processes |
+| `suite`, merged with the separately measured steps | 13,551 of 14,018 executable lines (96.67%) from 2,540 processes; the ratchet `--min=96.31198844487241217394` was met |
+| `suite`, per-file inventory | 1 of 157 measured files below the 75% floor: `controllers/ConsumptionInboxController.php`, 1 of 2 lines (50.0%); 6 files have no executable lines |
+
+CI gates the aggregate figure only, so the file below the floor did not fail the run. Only the
+permission refusal reached the controller; no test rendered the page. [Pull request
+747](https://github.com/datagen24/victual/pull/747) added two `HouseholdPagesTest` cases that render
+the page and refuse a caller without `STOCK_VIEW`, and merged at `f42ecbbd`.
+
+Master after the merges, read from the logs on 2026-10-10:
+
+| Run | Commit | Result |
+|---|---|---|
+| `tests` 38058529109 | `bfb30d11` (pull request 744 merged) | All seven jobs passed. `suite`: 13,503 of 14,018 lines from the runner (96.33%), 13,552 merged (96.68%), 1 of 157 files below 75% (`ConsumptionInboxController`). |
+| `tests` 38059717293 | `f42ecbbd` (pull request 747 merged) | All seven jobs passed. Inbox and organizer probes passed. `suite`: 13,504 lines from the runner (96.33%), 13,553 merged (96.68%), 0 of 157 files below 75%. |
+
+The run on `0b059a4f` (pull request 746, a documentation change) skipped the heavy jobs through the
+`changes` filter.
+
+These runs and the fixtures do not establish HealthKit behavior. Issue 702 owns that evidence.
+
+### Issue 701: refill history, reorder estimates and notices
+
+In review as a stack of three pull requests, each based on the one before:
+[748](https://github.com/datagen24/victual/pull/748) (migration 0307, pgTAP, import and migration
+metadata), [749](https://github.com/datagen24/victual/pull/749) (estimate, services, ten routes, OpenAPI,
+contract snapshots, capabilities, client fixtures, operator page) and
+[751](https://github.com/datagen24/victual/pull/751) (page, translations, browser probe, user manual,
+glossary). Nothing here is merged, issue 701 stays open, and no part of it is native-client evidence.
+
+**Divergences from ADR-0042** are listed in the description of pull request 749. In short: five tables,
+because the explicit date has its own history; `estimate` always carries five keys; extra fields
+(`recipe_name`, `age_days`, settings, history, notice `text`); writes answer with the state; the two
+list routes are objects so they can carry `as_of_source`; `supplied_days` is optional; dates are limited
+to 1900 to 2200.
+
+**Evidence.** Environment: PHP 8.5.10 and PostgreSQL 16 or 15.19 in podman on macOS, plus the CI runs below.
+
+| Check | Result |
+|---|---|
+| pgTAP `033-consumption-refill.sql` | 84 assertions; the whole `pgtap` phase 25 files, 419 tests, PASS on PostgreSQL 16 and 15 |
+| `RefillEstimatorTest` | 63 tests, no database |
+| `consumption` phase (service, API, race, fixture, disclosure and organizer classes) | OK on PostgreSQL 15.19: 353 tests, 9,539 assertions, at commit `4a448a23`; later commits re-ran the refill classes (85 tests OK on 16) |
+| `contract`, `wirecontract`, `rbac`, `dialectpolicy`, `migrate` | passed on PostgreSQL 16 and 15 at `4a448a23` |
+| Browser probe `consumption-refills.js` | `CONSUMPTION REFILLS BROWSER CHECKS PASSED (7 scenarios)` locally and in CI run 38065419551 |
+| CI, pull request 748 | every check passed, including `suite` (PostgreSQL 16, coverage ratchet) and `suite-floor` (PostgreSQL 15) |
+| CI, pull request 749, run 38065336808, head `76e135a0` | every check passed; merged coverage 14,014 of 14,489 lines (96.72%), 0 of 160 files below 75% |
+| CI, pull request 751, run 38065419551, head `0464bec3` | every check passed; merged coverage 14,017 of 14,492 lines (96.72%), 0 of 161 files below 75% |
+
+Coverage against the baseline in the CI log of master `f42ecbbd` (13,553 of 14,018, 96.68%): the aggregate
+rose by 0.04 points and the measured file count by 4. Runner figures for the new and touched files in run
+38065419551:
+
+| File | Lines covered | Before |
+|---|---|---|
+| `services/RefillEstimator.php` | 58 of 61 (95.08%) | new |
+| `services/ConsumptionRefillService.php` | 328 of 334 (98.20%) | new |
+| `controllers/Api/ConsumptionRefillsApiController.php` | 58 of 59 (98.31%) | new |
+| `controllers/ConsumptionRefillsController.php` | 2 of 2 (100%) | new |
+| `controllers/Api/UsersApiController.php` | 201 of 218 (92.20%) | 197 of 214 (92.06%) |
+| `services/ConsumptionRecipeService.php` | 357 of 366 (97.54%) | 355 of 364 (97.53%) |
+
+A local run of the full suite on the master baseline measured 13,500 of 14,018 lines from the runner alone
+(96.30%); compare the CI figures. That local run had two failing cases on unmodified master, `StorageFilesTest`
+(a host-mounted scratch directory) and `MqttCoverageTest::testABrokerThatHangsUpMidBatchIsNotRecordedAsDelivered`.
+Both passed in CI.
+
+**Issue 701 criteria.**
+
+| Criterion | Implementation and evidence |
+|---|---|
+| Fill history, supplied duration, rules and explicit dates, with the agreed precedence and correction semantics | Migration 0307 and its six triggers; `RefillEstimator::Estimate`; `ConsumptionRefillService` (record, void, settings). pgTAP 033; `RefillEstimatorTest`; `ConsumptionRefillServiceTest`; fixtures 03, 07, 08 |
+| Fallback only without a specific rule; unknown for missing inputs; provenance of every date | `estimate.source` and `estimate.reason`. `RefillEstimatorTest` (invalid rule, invalid supply, short supply, fixed interval without a supply); fixtures 01 to 04 |
+| Approaching, due, ordered and received; lead; repeat suppression; client-readable dates | Status boundaries in `RefillEstimator::Status`, notices and per-user acknowledgement in the service. Service, API and race tests; fixtures 05 to 10; the browser probe |
+| Transfers, consumption and a bare order do not reset fills or add stock | `testTransfersConsumptionAndUndoDoNotChangeAFillAnOrOrderOrAnEstimate`, `testNoRefillOperationWritesTheStockLedgerOrAnEvent`, `testRecordingAnOrderChangesNothingButTheStatus`; the probe reads the stock back after an order and a receipt |
+| Private routes, UI and notice payloads honor scoped access and revocation | Recipe lock and rights in `AuthoriseRefill`. Service and API tests (owner, read share, edit share, stranger, account manager, administrator, no `STOCK_VIEW`); `ConsumptionRefillRaceTest` (write and acknowledgement against a revoke); `ConsumptionRefillDisclosureTest`; the probe's revocation scenario |
+| API, OpenAPI, snapshots, UI, translations, operator documentation; native delivery stays in victual-kit | Pull requests 749 and 751. `victual.openapi.json`, contract snapshots (additions only), 113 strings in `strings.pot`, the operator and user manual pages, eleven client fixtures. No scheduler, push credential or HealthKit code |
+| Tests cover 30- and 90-day fills, overrides, explicit dates, invalid inputs, calendar boundaries, corrections, deduplication and receipt | The cases of ADR-0042's verification table are in `RefillEstimatorTest`, `ConsumptionRefillServiceTest`, the API and race tests and fixtures 01 to 11 |
+
+**Review findings fixed.** Two read-only reviews of the stack found these defects, all fixed:
+
+- A misspelled body field recorded a fill with no supply.
+- An `as_of` that was an array or empty was read as absent.
+- A path id above the integer range answered 400 instead of 404.
+- An acknowledgement echoed a non-canonical key.
+- On the page, a slower answer replaced the open prescription, a refused write reset the fields, and text a
+  number field could not read was read as empty.
+- On the page, a double click posted twice and counts of 1 read "1 days".
+
+**Remaining gates.**
+
+- The maintainer has not approved the user-facing wording (ADR-0015 prerequisite 1). The strings are listed
+  in the descriptions of pull requests 749 and 751.
+- Open question 17 (ADR-0041 row 7) awaits a decision.
+- Native acceptance on a real device (issue 702) and integrated verification (issue 703) have no evidence.
+- Pull requests 748, 749 and 751 are not merged. Plan 22 stays in progress and v0.5.0 is not claimed.
