@@ -11,7 +11,8 @@ use Victual\Services\Database\DatabaseImporter;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
 /**
- * Migration 0305 (ADR-0040 and ADR-0041, issue #698): the five private consumption tables, and migration 0306 (issue #700) the sixth.
+ * Migration 0305 (ADR-0040 and ADR-0041, issue #698): the five private consumption tables, migration 0306 (issue #700) the sixth,
+ * and migration 0307 (ADR-0042, issue #701) the five refill tables.
  *
  * What this pins that the pgTAP file (031) cannot: that the tables stay out of every generic
  * surface (ADR-0040 rule 1), that the importer clears them, and that the migration reruns.
@@ -19,7 +20,8 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  */
 class ConsumptionSchemaTest extends PgsqlSchemaTestCase
 {
-	private const TABLES = ['consumption_recipes', 'consumption_recipe_lines', 'consumption_recipe_shares', 'consumption_events', 'consumption_event_lines', 'consumption_mappings'];
+	private const TABLES = ['consumption_recipes', 'consumption_recipe_lines', 'consumption_recipe_shares', 'consumption_events', 'consumption_event_lines', 'consumption_mappings',
+		'consumption_refill_settings', 'consumption_refill_fills', 'consumption_refill_dates', 'consumption_refill_orders', 'consumption_refill_acks'];
 
 	private static PDO $db;
 	private static GenericEntityApiController $generic;
@@ -39,7 +41,7 @@ class ConsumptionSchemaTest extends PgsqlSchemaTestCase
 		self::$db->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT 9000, id FROM permission_hierarchy WHERE name = 'ADMIN'");
 	}
 
-	public function testTheSixTablesExist(): void
+	public function testEveryTableExists(): void
 	{
 		foreach (self::TABLES as $table)
 		{
@@ -98,7 +100,7 @@ class ConsumptionSchemaTest extends PgsqlSchemaTestCase
 		self::assertStringNotContainsString('Page shell secret recipe', $html, 'the server renders no private recipe, not even its owner\'s');
 	}
 
-	public function testTheImporterClearsAllSixTables(): void
+	public function testTheImporterClearsEveryTable(): void
 	{
 		foreach (self::TABLES as $table)
 		{
@@ -113,9 +115,12 @@ class ConsumptionSchemaTest extends PgsqlSchemaTestCase
 		$before = self::$db->query("SELECT count(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name LIKE 'consumption\\_%'")->fetchColumn();
 		self::$db->exec(file_get_contents(VICTUAL_ROOT_PATH . '/migrations/0305.pgsql.sql'));
 		self::$db->exec(file_get_contents(VICTUAL_ROOT_PATH . '/migrations/0306.pgsql.sql'));
+		self::$db->exec(file_get_contents(VICTUAL_ROOT_PATH . '/migrations/0307.pgsql.sql'));
 		$after = self::$db->query("SELECT count(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name LIKE 'consumption\\_%'")->fetchColumn();
 		self::assertSame($before, $after);
 		self::assertSame(2, (int)self::$db->query("SELECT count(*) FROM pg_trigger WHERE tgname IN ('consumption_share_not_owner', 'consumption_owner_not_sharee')")->fetchColumn(), 'both triggers exist exactly once');
+		self::assertSame(6, (int)self::$db->query("SELECT count(*) FROM pg_trigger WHERE tgname LIKE 'consumption\_refill\_%' AND NOT tgisinternal")->fetchColumn(), 'the six refill triggers exist exactly once');
+		self::assertSame(5, (int)self::$db->query("SELECT count(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname IN ('ux_consumption_refill_orders_open', 'ux_consumption_refill_dates_live', 'ix_consumption_refill_fills_current', 'ix_consumption_refill_acks_recipe_id', 'ix_consumption_refill_orders_recipe_id')")->fetchColumn(), 'and the indexes');
 	}
 
 	public function testNoPermissionRowWasAdded(): void
