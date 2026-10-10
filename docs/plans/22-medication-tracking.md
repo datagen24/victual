@@ -458,7 +458,7 @@ merged into the committed snapshot as additions; CI compared them on PHP 8.4 or 
 
 ### Issue 699: organizer inventory workflow
 
-Measured 2026-10-10 against working copy `@@HASH@@` (branch
+Measured 2026-10-10 against working copy `bf902bc60039eff44cda779398e293dfb12f0b6e` (branch
 `claude/issue-699-household-organizer-yme490`, with master at `46eb1f7`, the merge of pull request
 743, merged in). Master already carries the organizer workflow test, browser probe and manual
 section from [pull request 738](https://github.com/datagen24/victual/pull/738). This change adds
