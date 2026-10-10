@@ -80,16 +80,25 @@ class ConsumptionRefillsApiController extends BaseApiController
 		return $body;
 	}
 
-	private static function AsOf(Request $request): ?string
+	/** The as_of parameter as sent: null only when it is absent, so a malformed one (an array, an empty value) is refused. */
+	private static function AsOf(Request $request): mixed
 	{
-		$asOf = $request->getQueryParams()['as_of'] ?? null;
+		$query = $request->getQueryParams();
 
-		return is_string($asOf) ? $asOf : null;
+		return array_key_exists('as_of', $query) ? $query['as_of'] : null;
+	}
+
+	/** A path id as an integer; one that is not digits or does not fit PostgreSQL's integer names nothing, so it is 0 and answers 404. */
+	private static function Id(array $args, string $name): int
+	{
+		$value = (string)($args[$name] ?? '');
+
+		return ctype_digit($value) && strlen($value) <= 10 && (int)$value <= 2147483647 ? (int)$value : 0;
 	}
 
 	private static function RecipeId(array $args): int
 	{
-		return (int)$args['recipeId'];
+		return self::Id($args, 'recipeId');
 	}
 
 	// --- One recipe --------------------------------------------------------------------------
@@ -124,8 +133,12 @@ class ConsumptionRefillsApiController extends BaseApiController
 		return $this->Run($request, $response, function () use ($request, $response, $args)
 		{
 			$body = $this->Body($request);
+			if (array_diff(array_keys($body), ['reason']) !== [])
+			{
+				throw new ConsumptionException(422, 'unknown_field', 'Unknown field: ' . (string)array_values(array_diff(array_keys($body), ['reason']))[0]);
+			}
 
-			return $this->ApiResponse($response, $this->Service()->VoidFill(self::RecipeId($args), (int)$args['fillId'], $body['reason'] ?? null, self::AsOf($request), (int)VICTUAL_USER_ID));
+			return $this->ApiResponse($response, $this->Service()->VoidFill(self::RecipeId($args), self::Id($args, 'fillId'), $body['reason'] ?? null, self::AsOf($request), (int)VICTUAL_USER_ID));
 		});
 	}
 
@@ -142,7 +155,7 @@ class ConsumptionRefillsApiController extends BaseApiController
 		self::Read($request);
 
 		return $this->Run($request, $response, fn() => $this->ApiResponse($response,
-			$this->Service()->ReceiveOrder(self::RecipeId($args), (int)$args['orderId'], $this->Body($request), self::AsOf($request), (int)VICTUAL_USER_ID)));
+			$this->Service()->ReceiveOrder(self::RecipeId($args), self::Id($args, 'orderId'), $this->Body($request), self::AsOf($request), (int)VICTUAL_USER_ID)));
 	}
 
 	public function CancelOrder(Request $request, Response $response, array $args)
@@ -150,7 +163,7 @@ class ConsumptionRefillsApiController extends BaseApiController
 		self::Read($request);
 
 		return $this->Run($request, $response, fn() => $this->ApiResponse($response,
-			$this->Service()->CancelOrder(self::RecipeId($args), (int)$args['orderId'], self::AsOf($request), (int)VICTUAL_USER_ID)));
+			$this->Service()->CancelOrder(self::RecipeId($args), self::Id($args, 'orderId'), self::AsOf($request), (int)VICTUAL_USER_ID)));
 	}
 
 	// --- Every recipe the caller can read ----------------------------------------------------
@@ -176,6 +189,10 @@ class ConsumptionRefillsApiController extends BaseApiController
 		return $this->Run($request, $response, function () use ($request, $response)
 		{
 			$body = $this->Body($request);
+			if (array_diff(array_keys($body), ['notice_key']) !== [])
+			{
+				throw new ConsumptionException(422, 'unknown_field', 'Unknown field: ' . (string)array_values(array_diff(array_keys($body), ['notice_key']))[0]);
+			}
 
 			return $this->ApiResponse($response, $this->Service()->Acknowledge($body['notice_key'] ?? null, (int)VICTUAL_USER_ID));
 		});
