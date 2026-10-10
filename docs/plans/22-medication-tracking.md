@@ -8,7 +8,7 @@ Victual's scope.
 
 **Status:** in progress for v0.5.0; product scope decided and design records accepted
 2026-10-09. Implemented: private consumption recipes and manual consumption (issue 698, merged)
-and the external-event schema, service, API and reconciliation inbox (issue 700, in review).
+and the external-event schema, service, API and reconciliation inbox (issue 700, merged).
 Not implemented: refill tracking (issue 701) and native acceptance on a device (issue 702).
 
 **Release target:** v0.5.0. The maintainer clarified this scope on 2026-10-09. The target
@@ -373,8 +373,8 @@ Delivered as a stack of three pull requests, each based on the one before it:
 [pull request 741](https://github.com/datagen24/victual/pull/741) (service, routes, OpenAPI,
 fixtures, race tests) and
 [pull request 743](https://github.com/datagen24/victual/pull/743) (reconciliation inbox,
-browser probe, manual and operator pages), which carries this section. Issue 700 stays open until all three merge and the
-CI jobs listed under *Not run here* are green.
+browser probe, manual and operator pages), which carries this section. All three are merged.
+Issue 700 stays open until the CI jobs listed under *Not run here* are green on `master`.
 
 **Migration claims.** `migrations/RESERVATIONS.md` gave 0306 to issue 700, the lowest free slot,
 and moved the unwritten refill claim of issue 701 to 0307. Migration 0306 adds
@@ -447,6 +447,11 @@ the inbox probe on 743), `images`, `suite-floor` and `suite`. Pull request 739 a
 the same set and Psalm. Earlier heads of 741 and 743 failed `WireContractTest` (the documented
 boolean list and the instant patterns of the new schemas) and the contract snapshot; both were
 fixed in `0a63015` and `2157bcb`.
+
+Pull request 741 merged at `525c5bff`, where all checks passed, including `suite`. Two review
+findings changed code there: the label of an `approve_unit` action now commits before the booking
+runs, and a time-of-day test anchors on the previous day. Anchored on the day itself, that test
+failed in the first hours after midnight UTC, and it failed in the CI runs of `32561bc`.
 
 **Not run here.** Local runs did not cover PostgreSQL 15, PHP 8.4 or 8.5, the coverage run,
 Psalm, the whole `frontend-security` job or the full test suite; the CI evidence above covers
