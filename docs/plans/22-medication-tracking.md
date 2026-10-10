@@ -9,8 +9,9 @@ Victual's scope.
 **Status:** in progress for v0.5.0; product scope decided and design records accepted
 2026-10-09. Implemented: private consumption recipes and manual consumption (issue 698, merged),
 the external-event schema, service, API and reconciliation inbox (issue 700, merged), and the
-organizer inventory workflow's test evidence (issue 699, in review).
-Not implemented: refill tracking (issue 701) and native acceptance on a device (issue 702).
+organizer inventory workflow's test evidence (issue 699, merged in pull requests 738 and 744).
+Issues 698 to 700 are closed. Not implemented: refill tracking (issue 701), native acceptance on
+a device (issue 702) and integrated verification (issue 703).
 
 **Release target:** v0.5.0. The maintainer clarified this scope on 2026-10-09. The target
 is a schedule; the release record and signed tag follow verified implementation under
@@ -208,20 +209,22 @@ constrained to the old two-migration design.
 The design records are decided: ADR-0015 revised and accepted, ADR-0016 rejected, and ADR-0040,
 ADR-0041 and ADR-0042 accepted, each in its own bookkeeping pull request. ADR-0040 leaves
 ADR-0014 and ADR-0018 unamended. The evidence is in `.devtools/adr0040/`, `.devtools/adr0041/` and
-`.devtools/adr0042/`. Implementation is tracked by issues 698 to 703 and has not started.
+`.devtools/adr0042/`. Implementation is tracked by issues 698 to 703. Issues 698 to 700 have
+merged; issues 701 to 703 have not.
 
 The API contract is developed in this repository. Native HealthKit implementation and
 platform-specific notices belong to `victual-kit`. Server verification can use representative
 client fixtures, but an end-to-end Apple integration claim requires real client evidence.
 The release record must distinguish those outcomes.
 
-[Migrations/RESERVATIONS.md](../../migrations/RESERVATIONS.md) claims 0305 and 0306 for this plan.
-Reconciled 2026-10-09: 0305 covers private consumption recipes, shares, consumption events
-and source mappings; 0306 covers refill settings, fills, orders and notice acknowledgements.
-Both are unwritten, and the table descriptions replace the withdrawn regimen sketch. The
-numbers can still move: [ADR-0039](../adr/0039-the-mcp-sidecar-reads-its-configuration-from-victual.md)
-implementation may claim a lower slot first. Re-read the table, claim the lowest free slots
-before writing a file, and write PostgreSQL-only migrations.
+[Migrations/RESERVATIONS.md](../../migrations/RESERVATIONS.md) claims 0305 to 0307 for this plan.
+As of 2026-10-10, 0305 (private consumption recipes, shares, events) and 0306 (source mappings and
+the external-source columns) are on disk in `master`. 0307 is the refill claim of issue 701 and
+is unwritten. An earlier reconciliation on 2026-10-09 gave refill 0306; issue 700's schema took
+that slot, and refill yielded to 0307. The number can still move:
+[ADR-0039](../adr/0039-the-mcp-sidecar-reads-its-configuration-from-victual.md) implementation
+may claim a lower slot first. Re-read the table, claim the lowest free slot before writing a
+file, and write PostgreSQL-only migrations.
 
 ## Verification
 
@@ -355,6 +358,44 @@ answers from the maintainer's inventory scope decision on 2026-10-09.
     > per-prescription override; all three rule kinds kept; a short supply gives an unknown
     > estimate. Server push stays out of this release.
 
+17. **Does ADR-0041 row 7 ("create then delete leaves one deduction") hold for two events that
+    draw on the same purchase?**
+    Row 7 of the verification table lists "Edit as new id without `replaces`, delete then
+    create, and create then delete" with the expected result "One deduction after both orders".
+    ADR-0036 rule 7, step 3, refuses to undo a booking while a later live booking of the same
+    product has an allocation on any lot the first one drew from. Create-then-delete deletes the
+    older event after the newer one is booked, so the outcome depends on the lots:
+
+    | Case | Old event draws on | New event draws on | Delete of the old event | Result | Reproduction |
+    |---|---|---|---|---|---|
+    | Different purchases | lot of purchase 1 (1 tablet) | lot of purchase 2 (9 tablets) | undone | one deduction | fixture `07b-create-then-delete.json` |
+    | Same purchase | lot of purchase 1 (10 tablets) | the same lot | `needs_review` / `undo_refused` | two deductions, original booking kept | `ConsumptionEventServiceTest::testAVoidWhoseUndoIsRefusedBecauseALaterBookingDependsOnItNeedsReview`; the fixtures README, "Known behaviour" |
+
+    `ConsumptionEventServiceTest::testDeleteThenCreateAndCreateThenDeleteBothLeaveOneDeduction`
+    does not cover the second row. Its create-then-delete half deletes the newer of two events,
+    which is always undoable. ADR-0041 section 6 already says a refused undo "is a normal outcome",
+    and section 7 says an unmatched delete-and-recreate is two independent requests. Only the table
+    row states the outcome without a condition.
+
+    Proposed disposition, for the maintainer to accept, change or reject:
+
+    - **A (recommended).** Treat the row as imprecise and record an erratum in ADR-0041's
+      verification table. Row 7 holds "one deduction" for delete-then-create. It holds for
+      create-then-delete only when the deleted event is the newest booking on each lot it drew
+      from. Otherwise the delete answers `needs_review` / `undo_refused`, and the client sends
+      `replaces`. This changes no code and no accepted rule of ADR-0036. The operator page and
+      the fixtures already say this.
+    - **B.** Change the code so the delete undoes the later booking, undoes the older one and
+      rebooks the later event under a new transaction id, all in one transaction. The result is
+      one deduction for both cases. This changes the transaction id of an event that the delete
+      did not name, which the contract does not describe, and it moves lot allocations between
+      events without a person's request.
+
+    The maintainer's settled choice for bulk void (oldest first, refused items stay in
+    `needs_review`) is not part of this question. No ADR or code is changed by this entry.
+
+    > **Response:** Pending. Not decided.
+
 ## Executed
 
 This section records what shipped. The sections above keep the decisions as they were made.
@@ -375,7 +416,9 @@ Delivered as a stack of three pull requests, each based on the one before it:
 fixtures, race tests) and
 [pull request 743](https://github.com/datagen24/victual/pull/743) (reconciliation inbox,
 browser probe, manual and operator pages), which carries this section. All three are merged.
-Issue 700 stays open until the CI jobs listed under *Not run here* are green on `master`.
+Issue 700 was open until the CI jobs listed under *Not run here* were green on `master`; it is
+closed now. Closing it did not by itself show that each gate below was met. The CI addendum under
+issue 699 records the logs that were read afterwards.
 
 **Migration claims.** `migrations/RESERVATIONS.md` gave 0306 to issue 700, the lowest free slot,
 and moved the unwritten refill claim of issue 701 to 0307. Migration 0306 adds
@@ -560,3 +603,32 @@ Not covered:
 Remaining dependencies: issue 701 (refill tracking) and the later issues are untouched by this
 change. Every criterion of issue 699 now has the evidence listed above. Closing the issue is the
 maintainer's decision.
+
+### CI log addendum for issues 699 and 700, read 2026-10-10
+
+The sections above recorded job conclusions for pull request 744 and said the job logs were not
+read. The logs of workflow run 38013745516 (head `78393dba29025975b921e7cae97746a30452fd0b`, read
+with `gh run view 38013745516 --log` on 2026-10-10) say the following. The earlier text stays as
+written.
+
+| Check | Log line or figure |
+|---|---|
+| `frontend-security`, organizer probe | `ORGANIZER BROWSER CHECKS PASSED` |
+| `frontend-security`, inbox probe | `CONSUMPTION INBOX BROWSER CHECKS PASSED (6 scenarios)` |
+| `suite`, the runner's own report | 13,502 of 14,018 executable lines (96.32%) from 2,525 processes |
+| `suite`, merged with the separately measured steps | 13,551 of 14,018 executable lines (96.67%) from 2,540 processes; the ratchet `--min=96.31198844487241217394` was met |
+| `suite`, per-file inventory | 1 of 157 measured files below the 75% floor: `controllers/ConsumptionInboxController.php`, 1 of 2 lines (50.0%); 6 files have no executable lines |
+
+CI gates the aggregate figure only, so the file below the floor did not fail the run. Only the
+permission refusal reached the controller; no test rendered the page. [Pull request
+747](https://github.com/datagen24/victual/pull/747) adds two `HouseholdPagesTest` cases that
+render the page and refuse a caller without `STOCK_VIEW`. Its `householdpages` run measured the
+controller at 2 of 2 lines. The `suite` job on that pull request carries the merged figure.
+
+Master after the merges: the `tests` run 38058529109 on `bfb30d11adb6e853fbbc91b211c33adf385533ae`
+(pull request 744 merged) had `lint`, `changes`, `mcp` and `frontend-security` green and `images`,
+`suite` and `suite-floor` still running when this section was written. The run on `0b059a4f` (pull
+request 746, a documentation change) skipped those jobs through the `changes` filter. Neither run
+shows the result of `suite` on `master` yet; record it here when it completes.
+
+These runs and the fixtures do not establish HealthKit behavior. Issue 702 owns that evidence.
