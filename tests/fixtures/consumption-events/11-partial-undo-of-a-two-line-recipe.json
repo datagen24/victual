@@ -1,0 +1,193 @@
+{
+	"title": "Undoing one line of a two-line recipe makes the event partially_undone and is not rebooked",
+	"adr_sequence": "11",
+	"description": "The mapping targets a consumption recipe with two lines. The person undoes the first booking only (POST /api/stock/bookings/{id}/undo). The event reads needs_review/partially_undone and replays do not rebook. rebook undoes the remainder first, then books every line once.",
+	"setup": {
+		"locations": ["organizer_a"],
+		"products": {
+			"tablet_a": {
+				"stock": {
+					"organizer_a": 10
+				}
+			},
+			"tablet_b": {
+				"stock": {
+					"organizer_a": 10
+				}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "The person has a two-line recipe",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes",
+				"body": {
+					"name": "Morning pair",
+					"lines": [
+						{"product_id": "{{product.tablet_a}}", "amount": 2, "qu_id": "{{unit}}"},
+						{"product_id": "{{product.tablet_b}}", "amount": 1, "qu_id": "{{unit}}"}
+					]
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"created_object_id": "{{any}}"
+				}
+			},
+			"save": {
+				"recipe": "created_object_id"
+			}
+		},
+		{
+			"note": "Mapping to the recipe",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/mappings/healthkit/hk:med:42",
+				"body": {
+					"recipe_id": "{{saved.recipe}}",
+					"unit_labels": ["dose"],
+					"default_quantity": null,
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					},
+					"effective_from": "{{time:-30d}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"medication_ref": "hk:med:42",
+					"unit_labels": ["dose"],
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					}
+				}
+			}
+		},
+		{
+			"note": "Dose booked: two lines",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "dose",
+					"occurred_at": "{{time:-90m}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "booked",
+					"lines": [
+						{"product_id": "{{product.tablet_a}}", "amount": 2},
+						{"product_id": "{{product.tablet_b}}", "amount": 1}
+					]
+				}
+			},
+			"save": {
+				"tx": "transaction_id"
+			},
+			"stock": {
+				"tablet_a": 8,
+				"tablet_b": 9
+			}
+		},
+		{
+			"note": "Read the two bookings of the transaction",
+			"request": {
+				"method": "GET",
+				"path": "/api/stock/transactions/{{saved.tx}}"
+			},
+			"expect": {
+				"status": 200,
+				"body": [
+					{"transaction_id": "{{saved.tx}}"}
+				],
+				"count": {
+					"": 2
+				}
+			},
+			"save": {
+				"line": "0.id"
+			}
+		},
+		{
+			"note": "The person undoes the first line only",
+			"request": {
+				"method": "POST",
+				"path": "/api/stock/bookings/{{saved.line}}/undo"
+			},
+			"expect": {
+				"status": 204
+			},
+			"stock": {
+				"tablet_a": 10,
+				"tablet_b": 9
+			}
+		},
+		{
+			"note": "The client replays the same event",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "dose",
+					"occurred_at": "{{time:-90m}}"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "needs_review",
+					"reason": "partially_undone",
+					"replayed": true
+				}
+			},
+			"stock": {
+				"tablet_a": 10,
+				"tablet_b": 9
+			}
+		},
+		{
+			"note": "rebook books the missing line once",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9/resolve",
+				"body": {
+					"action": "rebook"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"state": "booked",
+					"revision": 2,
+					"lines": [
+						{"product_id": "{{product.tablet_a}}", "amount": 2},
+						{"product_id": "{{product.tablet_b}}", "amount": 1}
+					]
+				}
+			},
+			"stock": {
+				"tablet_a": 8,
+				"tablet_b": 9
+			}
+		}
+	]
+}

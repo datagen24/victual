@@ -216,6 +216,15 @@ Setting('LOGIN_THROTTLE_WINDOW_MINUTES', 15);
 // rotation story (ADR-0019's paired rotation, for the label ones) and are untouched.
 Setting('API_KEY_MAX_LIFETIME_DAYS', 365);
 
+// External consumption events (ADR-0041, issue #700). The number of days after a dose within which a
+// source's report that it was not taken (entered in error, not logged, skipped) restores the stock
+// by itself. An older report waits for a person, so a client that deletes history in bulk restores nothing.
+Setting('CONSUMPTION_AUTO_VOID_DAYS', 7);
+
+// The window, in minutes either side of an imported dose, within which a manual or direct consumption of
+// the same product is offered as a possible duplicate. It is a suggestion only; nothing links by itself.
+Setting('CONSUMPTION_DUPLICATE_WINDOW_MINUTES', 30);
+
 // Default permissions for new users
 // the array needs to contain the technical/constant names
 // See the file controllers/Users/User.php for possible values

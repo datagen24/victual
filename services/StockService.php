@@ -2188,6 +2188,44 @@ class StockService extends BaseService
 	}
 
 	/**
+	 * The stock a consumption in this exact scope can draw on, in the product's stock unit: the sum of
+	 * the candidate entries ConsumeProduct() itself iterates when it is given the same location, with
+	 * no substitution. Summing the whole product instead disagreed with ConsumeProduct() in 154 of 300
+	 * cases in the ADR-0041 evidence, because a narrower scope can hold less than the product total.
+	 *
+	 * `$locationId` is an exact match: stock in a child location is not counted (ADR-0041 rule 4).
+	 * The caller holds the product lock when the answer is to be acted on.
+	 */
+	public function ScopedStockAmount(int $productId, ?int $locationId = null): float
+	{
+		if (!$this->ProductExists($productId))
+		{
+			throw new \Exception('Product does not exist or is inactive');
+		}
+
+		$entries = $locationId === null ? $this->GetProductStockEntries($productId, false, false) : $this->GetProductStockEntriesForLocation($productId, $locationId, false, false);
+
+		return $this->SumStockEntriesInProductUnit($entries, $productId, (int)$this->DB->products($productId)->qu_id_stock);
+	}
+
+	/**
+	 * Refuses a consumption the scope cannot cover before any booking is written, by comparing within
+	 * the shared tolerance (ADR-0032) and throwing a type a caller can branch on, where
+	 * ConsumeProduct() throws a plain \Exception whose text is the only way to tell its causes apart.
+	 *
+	 * @throws InsufficientStockException
+	 */
+	public function AssertScopedStockAvailable(int $productId, float $amount, ?int $locationId = null): void
+	{
+		$available = $this->ScopedStockAmount($productId, $locationId);
+
+		if (self::CompareAmounts($amount, $available) > 0)
+		{
+			throw new InsufficientStockException($productId, $amount, $available, $locationId);
+		}
+	}
+
+	/**
 	 * Returns the locations at which a product currently has stock
 	 * (rows of the stock_current_locations view).
 	 *

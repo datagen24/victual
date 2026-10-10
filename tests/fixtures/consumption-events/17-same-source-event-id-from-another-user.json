@@ -1,0 +1,238 @@
+{
+	"title": "Another user sending the same source_event_id gets a separate event; neither can read the other's",
+	"adr_sequence": "17",
+	"description": "The identity is (authenticated user, source_system, source_event_id). Bob has no mapping, so his event with Alice's id is a new row (201, needs_mapping) while Alice's stays booked. Each reads only their own; Alice's other ids are 404 for Bob, as is resolving them.",
+	"setup": {
+		"locations": ["organizer_a"],
+		"products": {
+			"tablet": {
+				"stock": {
+					"organizer_a": 10
+				}
+			}
+		},
+		"users": ["alice", "bob"]
+	},
+	"steps": [
+		{
+			"as": "alice",
+			"note": "The person approves a mapping on the native approval screen",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/mappings/healthkit/hk:med:42",
+				"body": {
+					"product_id": "{{product.tablet}}",
+					"quantity_factor": 1,
+					"unit_labels": ["tablet"],
+					"default_quantity": null,
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					},
+					"effective_from": "{{time:-30d}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"medication_ref": "hk:med:42",
+					"unit_labels": ["tablet"],
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					}
+				}
+			}
+		},
+		{
+			"as": "alice",
+			"note": "Alice sends an event",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "tablet",
+					"occurred_at": "{{time:-90m}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "booked",
+					"reason": null,
+					"lines": [
+						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+					]
+				}
+			},
+			"stock": {
+				"tablet": 9
+			}
+		},
+		{
+			"as": "bob",
+			"note": "Bob sends the same id",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "tablet",
+					"occurred_at": "{{time:-90m}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "needs_mapping",
+					"lines": []
+				}
+			},
+			"stock": {
+				"tablet": 9
+			}
+		},
+		{
+			"as": "alice",
+			"note": "Alice sends a second event Bob never sends",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "tablet",
+					"occurred_at": "{{time:-90m}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "booked",
+					"reason": null,
+					"lines": [
+						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+					]
+				}
+			},
+			"stock": {
+				"tablet": 8
+			}
+		},
+		{
+			"as": "alice",
+			"note": "Alice still reads hers as booked",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "booked",
+					"reason": null,
+					"lines": [
+						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+					]
+				}
+			}
+		},
+		{
+			"as": "bob",
+			"note": "Bob reads his own",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "needs_mapping"
+				}
+			}
+		},
+		{
+			"as": "bob",
+			"note": "Bob cannot read Alice's second event",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/events/healthkit/6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9"
+			},
+			"expect": {
+				"status": 404,
+				"body": {
+					"error": "not_found"
+				}
+			}
+		},
+		{
+			"as": "bob",
+			"note": "Bob cannot resolve it either",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/events/healthkit/6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9/resolve",
+				"body": {
+					"action": "dismiss"
+				}
+			},
+			"expect": {
+				"status": 404,
+				"body": {
+					"error": "not_found"
+				}
+			}
+		},
+		{
+			"as": "bob",
+			"note": "Bob's inbox holds only his event",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/events"
+			},
+			"expect": {
+				"status": 200,
+				"body": [
+					{"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9", "state": "needs_mapping"}
+				],
+				"count": {
+					"": 1
+				}
+			}
+		},
+		{
+			"as": "alice",
+			"note": "Alice's list holds only hers",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/events"
+			},
+			"expect": {
+				"status": 200,
+				"body": [
+					{"source_event_id": "6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9"},
+					{"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9"}
+				],
+				"count": {
+					"": 2
+				}
+			}
+		}
+	]
+}

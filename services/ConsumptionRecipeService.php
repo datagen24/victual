@@ -379,6 +379,49 @@ class ConsumptionRecipeService extends BaseService
 		return $amount * (float)$factor;
 	}
 
+	/**
+	 * Whether the user holds the `consume` right on a recipe. A recipe the user cannot read and one that
+	 * does not exist answer alike (false), so a mapping request cannot probe for a hidden recipe
+	 * (ADR-0040 rule 7). Takes a FOR SHARE lock, which a caller inside a transaction keeps.
+	 */
+	public function MayConsume(int $recipeId, int $userId): bool
+	{
+		$recipe = $this->LockRecipe($recipeId, false);
+		$rights = $recipe === null ? null : $this->RightsOf($recipe, $userId);
+
+		return $rights !== null && $rights['consume'];
+	}
+
+	/**
+	 * The recipe's lines in the product stock unit, for an external event that maps to the recipe
+	 * (ADR-0041 rule 4). Takes the recipe lock FOR SHARE before the caller locks products, which is the
+	 * order ADR-0040 rule 8 fixes, and requires the global permission the consumption needs.
+	 *
+	 * @return array<int, array{0: int, 1: float}>|null (product id, stock amount) per line, or null when
+	 *         the user holds no `consume` right or the recipe no longer exists (`recipe_unavailable`)
+	 * @throws ConsumptionException 422 when a line names a product or unit that no longer converts
+	 */
+	public function LinesForExternalConsumption(int $recipeId, int $userId): ?array
+	{
+		$this->RequireGlobal($userId, User::PERMISSION_STOCK_VIEW, User::PERMISSION_STOCK_CONSUME);
+
+		if (!$this->MayConsume($recipeId, $userId))
+		{
+			return null;
+		}
+
+		$rows = $this->Db()->prepare('SELECT product_id, amount, qu_id FROM consumption_recipe_lines WHERE recipe_id = ? ORDER BY position');
+		$rows->execute([$recipeId]);
+		$planned = [];
+
+		foreach ($rows->fetchAll(\PDO::FETCH_ASSOC) as $index => $line)
+		{
+			$planned[] = [(int)$line['product_id'], $this->StockAmount((int)$line['product_id'], (int)$line['qu_id'], (float)$line['amount'], $index + 1)];
+		}
+
+		return $planned;
+	}
+
 	// --- Consumption -------------------------------------------------------------------------
 
 	/**

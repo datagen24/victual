@@ -1,0 +1,150 @@
+{
+	"title": "Two similar doses that nobody links stay two deductions, with a suggestion",
+	"adr_sequence": "13",
+	"description": "There is no fuzzy automatic merge. The manual dose and the imported dose are both deducted; the imported event's possible_duplicates names the manual transaction so a person can decide.",
+	"setup": {
+		"locations": ["organizer_a"],
+		"products": {
+			"tablet": {
+				"stock": {
+					"organizer_a": 10
+				}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "The person has a one-line recipe for the same product",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes",
+				"body": {
+					"name": "One tablet",
+					"lines": [
+						{"product_id": "{{product.tablet}}", "amount": 1, "qu_id": "{{unit}}"}
+					]
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"created_object_id": "{{any}}"
+				}
+			},
+			"save": {
+				"recipe": "created_object_id"
+			}
+		},
+		{
+			"note": "The person approves a mapping on the native approval screen",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/mappings/healthkit/hk:med:42",
+				"body": {
+					"product_id": "{{product.tablet}}",
+					"quantity_factor": 1,
+					"unit_labels": ["tablet"],
+					"default_quantity": null,
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					},
+					"effective_from": "{{time:-30d}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"medication_ref": "hk:med:42",
+					"unit_labels": ["tablet"],
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					}
+				}
+			}
+		},
+		{
+			"note": "The person consumes the recipe by hand in Victual",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{saved.recipe}}/consume",
+				"body": {
+					"request_id": "manual-0001",
+					"occurred_at": "{{time:-10m}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"state": "booked",
+					"transaction_id": "{{any}}"
+				}
+			},
+			"save": {
+				"manual_tx": "transaction_id"
+			},
+			"stock": {
+				"tablet": 9
+			}
+		},
+		{
+			"note": "A device dose two minutes apart",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "tablet",
+					"occurred_at": "{{time:-8m}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "booked",
+					"reason": null,
+					"lines": [
+						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+					],
+					"possible_duplicates": [
+						{"transaction_id": "{{saved.manual_tx}}"}
+					]
+				}
+			},
+			"stock": {
+				"tablet": 8
+			}
+		},
+		{
+			"note": "The suggestion is still offered later",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "booked",
+					"reason": null,
+					"lines": [
+						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+					],
+					"possible_duplicates": [
+						{"transaction_id": "{{saved.manual_tx}}"}
+					]
+				}
+			},
+			"stock": {
+				"tablet": 8
+			}
+		}
+	]
+}

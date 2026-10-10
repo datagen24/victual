@@ -1,0 +1,154 @@
+{
+	"title": "A two-line recipe with too little stock for line 2 deducts nothing",
+	"adr_sequence": "14",
+	"description": "Line 1 needs 3 of product A (10 on hand), line 2 needs 2 of product B (1 on hand). The whole booking rolls back: A is not deducted either, and the event is needs_review/insufficient_stock. After the household adds stock, replaying the same request attempts the booking again. A line is one stock booking, so the 2 tablets of B appear as two lines of 1, one from each purchase.",
+	"setup": {
+		"locations": ["organizer_a"],
+		"products": {
+			"tablet_a": {
+				"stock": {
+					"organizer_a": 10
+				}
+			},
+			"tablet_b": {
+				"stock": {
+					"organizer_a": 1
+				}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "The person has a two-line recipe",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes",
+				"body": {
+					"name": "Pair",
+					"lines": [
+						{"product_id": "{{product.tablet_a}}", "amount": 3, "qu_id": "{{unit}}"},
+						{"product_id": "{{product.tablet_b}}", "amount": 2, "qu_id": "{{unit}}"}
+					]
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"created_object_id": "{{any}}"
+				}
+			},
+			"save": {
+				"recipe": "created_object_id"
+			}
+		},
+		{
+			"note": "Mapping to the recipe",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/mappings/healthkit/hk:med:42",
+				"body": {
+					"recipe_id": "{{saved.recipe}}",
+					"unit_labels": ["dose"],
+					"default_quantity": null,
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					},
+					"effective_from": "{{time:-30d}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"medication_ref": "hk:med:42",
+					"unit_labels": ["dose"],
+					"location": {
+						"mode": "fixed",
+						"location_id": "{{location.organizer_a}}"
+					}
+				}
+			}
+		},
+		{
+			"note": "Event arrives",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "dose",
+					"occurred_at": "{{time:-90m}}"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "needs_review",
+					"reason": "insufficient_stock",
+					"lines": []
+				}
+			},
+			"stock": {
+				"tablet_a": 10,
+				"tablet_b": 1
+			}
+		},
+		{
+			"note": "Stock is added for product B",
+			"request": {
+				"method": "POST",
+				"path": "/api/stock/products/{{product.tablet_b}}/add",
+				"body": {
+					"amount": 4,
+					"transaction_type": "purchase",
+					"best_before_date": "2999-12-31",
+					"location_id": "{{location.organizer_a}}"
+				}
+			},
+			"expect": {
+				"status": 200
+			},
+			"stock": {
+				"tablet_a": 10,
+				"tablet_b": 5
+			}
+		},
+		{
+			"note": "The same request again attempts the booking again",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+				"body": {
+					"status": "taken",
+					"medication_ref": "hk:med:42",
+					"quantity": 1,
+					"unit_label": "dose",
+					"occurred_at": "{{time:-90m}}"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"source_system": "healthkit",
+					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
+					"state": "booked",
+					"replayed": true,
+					"lines": [
+						{"product_id": "{{product.tablet_a}}", "amount": 3},
+						{"product_id": "{{product.tablet_b}}", "amount": 1},
+						{"product_id": "{{product.tablet_b}}", "amount": 1}
+					]
+				}
+			},
+			"stock": {
+				"tablet_a": 7,
+				"tablet_b": 3
+			}
+		}
+	]
+}
