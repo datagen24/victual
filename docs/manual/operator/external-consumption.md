@@ -177,6 +177,60 @@ event's mapping targets, must not be linked to another event, and must have been
 the caller or by someone while the caller holds `STOCK_EDIT`. When the event had booked
 itself, its own booking is undone in the same transaction, so one deduction remains.
 
+## Contract details beyond the ADR
+
+The fragment in ADR-0041 does not show five details of the API. A client developer needs each
+one, so this section gives a case for each. The values are illustrative.
+
+### A unit on a product mapping
+
+A product mapping can carry `qu_id`, the unit the event quantity is in. Without it, the quantity
+is in the product's stock unit. Victual computes `quantity × quantity_factor × conversion`, where
+the conversion is the household's entered conversion from `qu_id` to the stock unit.
+
+A product is held in tablets. A device reports 500 and the mapping names milligrams as `qu_id`,
+with a household conversion of 0.002 tablets per milligram. The booking is
+500 × 1 × 0.002 = 1 tablet. If the household entered no conversion, saving the mapping fails
+with `422 invalid_mapping`, and no event can book through it.
+
+### Fields on an event object
+
+An event answers with `medication_ref` when it has one, so a client can match the response to
+the medication it sent. Each booked line carries `used_date`, the calendar date in the offset
+the client sent in `occurred_at`.
+
+A dose at `2026-10-09T23:40:00-05:00` is booked under `2026-10-09`, although the same instant
+is 2026-10-10 in UTC. The date is stored, so a retry or a resolve that books days later uses the
+same date.
+
+### The message on a `stock_error` event
+
+An event ends `needs_review` with reason `stock_error` when the stock service refuses a booking
+for a cause Victual cannot classify in advance. The refusal text is in `message`, and only the
+event's owner receives it. Another user and the generic object endpoints never see it.
+
+For example, a product with a measured open container refuses a half-unit consumption. The owner
+sees `"message": "...measured container..."`, the stock is unchanged, and a later `retry` runs
+again after the household fixes the product.
+
+### `invalid_link` on `link`
+
+Every refusal of the `link` action is `422 invalid_link` with the same text. The text does not
+say which test failed, because a transaction the caller cannot see must not be probed.
+
+The refusals include a transaction that does not exist, one already reversed, one that is not a
+consumption, one linked to another event, one recorded by someone else when the caller lacks
+`STOCK_EDIT`, and one for a product the mapping does not target. Bulk resolution has no `link`
+action, so it never answers `invalid_link`.
+
+### `replayed` on every answer to a PUT
+
+A PUT answers `replayed: false` when it created the row and `replayed: true` when the identity
+already existed.
+
+Send the same request twice. The first answer is `201` with `replayed: false`, and the second is
+`200` with `replayed: true` and no second deduction.
+
 ## Settings
 
 | Setting | Default | Meaning |

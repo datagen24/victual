@@ -400,8 +400,15 @@ the wrong order to undo bookings drawn from one purchase (ADR-0036), so a client
 history in occurrence order ends with `undo_refused` for all but the last-booked event. ADR-0041
 row 7 ("create then delete leaves one deduction") holds only when the two events draw on
 different purchases. Both are documented in the
-[operator page](../manual/operator/external-consumption.md) and pinned by fixtures, and both
-need a decision in ADR-0041 or an issue.
+[operator page](../manual/operator/external-consumption.md) and pinned by fixtures.
+
+> **Response, maintainer, 2026-10-10:** For bulk void, keep the ADR order and leave an event
+> that cannot be undone in `needs_review`. Accepted: the optional `qu_id`, the extra fields on
+> event objects, the owner-only `message`, `invalid_link` and `replayed: false`, with a case for
+> each on the operator page. Accepted: the link stored in `linked_transaction_id`, and `dismissed`
+> as terminal. For ADR-0041 row 7 the maintainer asked for a second opinion. The implementation
+> reading is that the row holds only when the two events draw on different purchases, which
+> would be an erratum to the ADR and not a code change. It is not yet recorded as a decision.
 
 **Evidence.** Environment: PostgreSQL 16.15, PHP 8.3.6 with a local shim for the `PDO\Pgsql` and
 `PDO\Sqlite` classes that PHP 8.4 adds (CI runs PHP 8.5). Commands were run from the repository
