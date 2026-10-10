@@ -1,0 +1,242 @@
+{
+	"title": "A short or unknown supply gives an unknown estimate, never an invented date",
+	"adr_sequence": "section 3",
+	"description": "A 14-day supply with the fallback would land on the fill date, so the estimate is unknown with result_not_after_fill. A fill without supplied_days is unknown with invalid_supply, except under a fixed_interval rule or an explicit date, which do not use it. The person fixes a short supply with a rule or a date.",
+	"setup": {
+		"users": [
+			"alice"
+		],
+		"recipes": {
+			"main": {
+				"owner": "alice",
+				"shares": {}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "A 14-day supply",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills?as_of=2026-01-05",
+				"body": {
+					"filled_on": "2026-01-01",
+					"supplied_days": 14
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"status": "unknown",
+					"estimate": {
+						"reorder_date": null,
+						"source": null,
+						"reason": "result_not_after_fill"
+					}
+				}
+			}
+		},
+		{
+			"note": "A fixed 5-day interval fixes it",
+			"as": "alice",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-01-05",
+				"body": {
+					"rule": {
+						"kind": "fixed_interval",
+						"parameter": 5
+					}
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"status": "approaching",
+					"estimate": {
+						"reorder_date": "2026-01-06",
+						"source": "rule:fixed_interval",
+						"reason": null
+					}
+				}
+			}
+		},
+		{
+			"note": "Clear the rule",
+			"as": "alice",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-01-05",
+				"body": {
+					"rule": null
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"status": "unknown"
+				}
+			}
+		},
+		{
+			"note": "A fill with no supplied_days",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills?as_of=2026-02-01",
+				"body": {
+					"filled_on": "2026-02-01"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"status": "unknown",
+					"current_fill": {
+						"filled_on": "2026-02-01",
+						"supplied_days": null
+					},
+					"estimate": {
+						"reason": "invalid_supply"
+					}
+				}
+			}
+		},
+		{
+			"note": "days_before_end needs the supply too",
+			"as": "alice",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-02-01",
+				"body": {
+					"rule": {
+						"kind": "days_before_end",
+						"parameter": 7
+					}
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"estimate": {
+						"reason": "invalid_supply"
+					}
+				}
+			}
+		},
+		{
+			"note": "fixed_interval does not",
+			"as": "alice",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-02-01",
+				"body": {
+					"rule": {
+						"kind": "fixed_interval",
+						"parameter": 28
+					}
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"estimate": {
+						"reorder_date": "2026-03-01",
+						"source": "rule:fixed_interval",
+						"reason": null
+					}
+				}
+			}
+		},
+		{
+			"note": "supplied_days of 0 is refused",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills?as_of=2026-02-02",
+				"body": {
+					"filled_on": "2026-02-02",
+					"supplied_days": 0
+				}
+			},
+			"expect": {
+				"status": 422,
+				"body": {
+					"error": "invalid_supplied_days"
+				}
+			}
+		},
+		{
+			"note": "supplied_days of 731 is refused",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills?as_of=2026-02-02",
+				"body": {
+					"filled_on": "2026-02-02",
+					"supplied_days": 731
+				}
+			},
+			"expect": {
+				"status": 422,
+				"body": {
+					"error": "invalid_supplied_days"
+				}
+			}
+		},
+		{
+			"note": "supplied_days must be a number, not a string",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills",
+				"body": {
+					"filled_on": "2026-02-02",
+					"supplied_days": "30"
+				}
+			},
+			"expect": {
+				"status": 422,
+				"body": {
+					"error": "invalid_supplied_days"
+				}
+			}
+		},
+		{
+			"note": "A fill needs its date",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills",
+				"body": {
+					"supplied_days": 30
+				}
+			},
+			"expect": {
+				"status": 422,
+				"body": {
+					"error": "date_required"
+				}
+			}
+		},
+		{
+			"note": "A date that does not exist is refused",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills",
+				"body": {
+					"filled_on": "2026-02-30",
+					"supplied_days": 30
+				}
+			},
+			"expect": {
+				"status": 422,
+				"body": {
+					"error": "invalid_date"
+				}
+			}
+		}
+	]
+}

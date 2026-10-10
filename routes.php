@@ -5,6 +5,7 @@ use Victual\Controllers\Api\CalendarApiController;
 use Victual\Controllers\Api\ChoresApiController;
 use Victual\Controllers\Api\ConsumptionEventsApiController;
 use Victual\Controllers\Api\ConsumptionRecipesApiController;
+use Victual\Controllers\Api\ConsumptionRefillsApiController;
 use Victual\Controllers\Api\FilesApiController;
 use Victual\Controllers\Api\GenericEntityApiController;
 use Victual\Controllers\Api\OpenApiController;
@@ -349,6 +350,18 @@ $app->group('/api', function (RouteCollectorProxy $group)
 	$group->put('/consumption/recipes/{recipeId}/shares/{userId}', [ConsumptionRecipesApiController::class, 'SetShareRights']);
 	$group->delete('/consumption/recipes/{recipeId}/shares/{userId}', [ConsumptionRecipesApiController::class, 'RemoveShare']);
 	$group->post('/consumption/recipes/{recipeId}/transfer', [ConsumptionRecipesApiController::class, 'TransferOwnership']);
+
+	// Refill history, reorder estimates, orders and notices of a private consumption recipe (ADR-0042)
+	$group->get('/consumption/recipes/{recipeId}/refill', [ConsumptionRefillsApiController::class, 'GetRefill']);
+	$group->put('/consumption/recipes/{recipeId}/refill', [ConsumptionRefillsApiController::class, 'SetSettings']);
+	$group->post('/consumption/recipes/{recipeId}/refill/fills', [ConsumptionRefillsApiController::class, 'RecordFill']);
+	$group->post('/consumption/recipes/{recipeId}/refill/fills/{fillId}/void', [ConsumptionRefillsApiController::class, 'VoidFill']);
+	$group->post('/consumption/recipes/{recipeId}/refill/orders', [ConsumptionRefillsApiController::class, 'RecordOrder']);
+	$group->post('/consumption/recipes/{recipeId}/refill/orders/{orderId}/receive', [ConsumptionRefillsApiController::class, 'ReceiveOrder']);
+	$group->post('/consumption/recipes/{recipeId}/refill/orders/{orderId}/cancel', [ConsumptionRefillsApiController::class, 'CancelOrder']);
+	$group->get('/refills', [ConsumptionRefillsApiController::class, 'ListRefills']);
+	$group->get('/refills/notices', [ConsumptionRefillsApiController::class, 'ListNotices']);
+	$group->post('/refills/notices/ack', [ConsumptionRefillsApiController::class, 'AcknowledgeNotice']);
 
 	// External consumption events and their mappings (ADR-0041). The two fixed-segment POST routes are
 	// declared before the identity routes so that `batch` and `resolve` are never read as a source system.

@@ -134,6 +134,23 @@ class ConsumptionRecipeService extends BaseService
 		return [$recipe, $rights];
 	}
 
+	/**
+	 * Locks a recipe and requires a right on it, for the refill records that belong to it
+	 * (ADR-0042 section 1): `read` for reading a recipe's refill data, `edit` for recording or
+	 * changing it. The global permission both need is STOCK_VIEW. Called inside the caller's
+	 * transaction, so the share is judged under the same recipe lock as every other act on the
+	 * recipe (ADR-0040 rule 8), and a revoke that wins the lock leaves the caller with the 404.
+	 *
+	 * @param string|null $right null for read, or 'edit'
+	 * @return array{0: array, 1: array} the recipe row and the user's rights
+	 */
+	public function AuthoriseRefill(int $recipeId, int $userId, ?string $right, bool $forUpdate): array
+	{
+		$this->RequireGlobal($userId, User::PERMISSION_STOCK_VIEW);
+
+		return $this->Authorise($recipeId, $userId, $right, $forUpdate);
+	}
+
 	// --- Reads -------------------------------------------------------------------------------
 
 	/** Every recipe the user owns or holds a share on, by name. */

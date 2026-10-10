@@ -63,6 +63,10 @@
 		{
 			"name": "Consumption events",
 			"description": "Events a client reports for the authenticated user, the mappings the user approved for them, and the explicit reconciliation of those events with stock. Private to the user: another user's event or mapping answers 404."
+		},
+		{
+			"name": "Consumption refills",
+			"description": "Refill history, reorder estimates, orders and notices of a private consumption recipe (ADR-0042). Private to the owner and the members the recipe is shared with. Estimates are approximate and say nothing about insurance eligibility."
 		}
 	],
 	"paths": {
@@ -10914,7 +10918,9 @@
 													"not_logged",
 													"default_quantity",
 													"unit_labels",
-													"replaces"
+													"replaces",
+													"refill",
+													"refill_notices"
 												]
 											},
 											"description": "Names of the features this server implements; a client gates on membership, never on a version guess"
@@ -10982,6 +10988,941 @@
 					"Consumption events"
 				],
 				"description": "Requires STOCK_VIEW and STOCK_CONSUME. Scoped to the authenticated user."
+			}
+		},
+		"/consumption/recipes/{recipeId}/refill": {
+			"get": {
+				"tags": [
+					"Consumption refills"
+				],
+				"summary": "Read a prescription's refill state, settings and history",
+				"description": "Requires STOCK_VIEW and the read right on the recipe. Reorder estimates are approximate and unrelated to stock on hand. A recipe the caller holds no share on answers 404.",
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/RefillDetail"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "The request cannot be acted on",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "recipeId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					},
+					{
+						"name": "as_of",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "string",
+							"format": "date",
+							"pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+						},
+						"description": "The client's local calendar date, YYYY-MM-DD. Status is calculated from it and no stored value changes. Without it the server uses the UTC date and says so in as_of_source (server_utc)."
+					}
+				]
+			},
+			"put": {
+				"tags": [
+					"Consumption refills"
+				],
+				"summary": "Set the rule, the warning lead or the explicit reorder date",
+				"description": "Requires STOCK_VIEW and the edit right on the recipe. Any of rule, warning_lead_days and explicit_reorder_date; a null value clears that field. An explicit date belongs to the current fill, so a fill must exist, and it ends when a newer fill is recorded. Answers with the refill state.",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/RefillSettingsUpdate"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/RefillDetail"
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "The request cannot be acted on",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "recipeId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					},
+					{
+						"name": "as_of",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "string",
+							"format": "date",
+							"pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+						},
+						"description": "The client's local calendar date, YYYY-MM-DD. Status is calculated from it and no stored value changes. Without it the server uses the UTC date and says so in as_of_source (server_utc)."
+					}
+				]
+			}
+		},
+		"/consumption/recipes/{recipeId}/refill/fills": {
+			"post": {
+				"tags": [
+					"Consumption refills"
+				],
+				"summary": "Record a fill",
+				"description": "Requires STOCK_VIEW and the edit right on the recipe. filled_on is required and is never defaulted. A newer fill ends the explicit date entered for an older one. Records no stock. Answers with the refill state.",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/RefillFillWrite"
+							}
+						}
+					}
+				},
+				"responses": {
+					"201": {
+						"description": "Recorded",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/RefillDetail"
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "The request cannot be acted on",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "recipeId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					},
+					{
+						"name": "as_of",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "string",
+							"format": "date",
+							"pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+						},
+						"description": "The client's local calendar date, YYYY-MM-DD. Status is calculated from it and no stored value changes. Without it the server uses the UTC date and says so in as_of_source (server_utc)."
+					}
+				]
+			}
+		},
+		"/consumption/recipes/{recipeId}/refill/fills/{fillId}/void": {
+			"post": {
+				"tags": [
+					"Consumption refills"
+				],
+				"summary": "Void a fill with a reason",
+				"description": "Requires STOCK_VIEW and the edit right on the recipe. The fill stays in the history. The previous unvoided fill becomes current. Voiding a newer fill does not bring back an explicit date it ended. Answers with the refill state.",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/RefillVoidWrite"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/RefillDetail"
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"409": {
+						"description": "A state conflict",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "The request cannot be acted on",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "recipeId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					},
+					{
+						"name": "fillId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					},
+					{
+						"name": "as_of",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "string",
+							"format": "date",
+							"pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+						},
+						"description": "The client's local calendar date, YYYY-MM-DD. Status is calculated from it and no stored value changes. Without it the server uses the UTC date and says so in as_of_source (server_utc)."
+					}
+				]
+			}
+		},
+		"/consumption/recipes/{recipeId}/refill/orders": {
+			"post": {
+				"tags": [
+					"Consumption refills"
+				],
+				"summary": "Record an order",
+				"description": "Requires STOCK_VIEW and the edit right on the recipe. Sets the status to ordered. Adds no stock, records no fill and changes no estimate. A recipe has at most one open order; a second answers 409 order_open. Answers with the refill state.",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/RefillOrderWrite"
+							}
+						}
+					}
+				},
+				"responses": {
+					"201": {
+						"description": "Recorded",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/RefillDetail"
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"409": {
+						"description": "A state conflict",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "The request cannot be acted on",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "recipeId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					},
+					{
+						"name": "as_of",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "string",
+							"format": "date",
+							"pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+						},
+						"description": "The client's local calendar date, YYYY-MM-DD. Status is calculated from it and no stored value changes. Without it the server uses the UTC date and says so in as_of_source (server_utc)."
+					}
+				]
+			}
+		},
+		"/consumption/recipes/{recipeId}/refill/orders/{orderId}/receive": {
+			"post": {
+				"tags": [
+					"Consumption refills"
+				],
+				"summary": "Receive an open order by recording the fill that arrived",
+				"description": "Requires STOCK_VIEW and the edit right on the recipe. The body is the fill. The fill is recorded and the order is closed against it in one transaction. Stock arrives separately, through a normal purchase. Answers with the refill state.",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/RefillFillWrite"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/RefillDetail"
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"409": {
+						"description": "A state conflict",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "The request cannot be acted on",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "recipeId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					},
+					{
+						"name": "orderId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					},
+					{
+						"name": "as_of",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "string",
+							"format": "date",
+							"pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+						},
+						"description": "The client's local calendar date, YYYY-MM-DD. Status is calculated from it and no stored value changes. Without it the server uses the UTC date and says so in as_of_source (server_utc)."
+					}
+				]
+			}
+		},
+		"/consumption/recipes/{recipeId}/refill/orders/{orderId}/cancel": {
+			"post": {
+				"tags": [
+					"Consumption refills"
+				],
+				"summary": "Cancel an open order",
+				"description": "Requires STOCK_VIEW and the edit right on the recipe. The status returns to what the fills and rules say. Answers with the refill state.",
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/RefillDetail"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"409": {
+						"description": "A state conflict",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "The request cannot be acted on",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "recipeId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					},
+					{
+						"name": "orderId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					},
+					{
+						"name": "as_of",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "string",
+							"format": "date",
+							"pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+						},
+						"description": "The client's local calendar date, YYYY-MM-DD. Status is calculated from it and no stored value changes. Without it the server uses the UTC date and says so in as_of_source (server_utc)."
+					}
+				]
+			}
+		},
+		"/refills": {
+			"get": {
+				"tags": [
+					"Consumption refills"
+				],
+				"summary": "The refill state of every prescription the caller can read",
+				"description": "Requires STOCK_VIEW. A recipe the caller holds no share on is absent.",
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/RefillList"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "The request cannot be acted on",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "as_of",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "string",
+							"format": "date",
+							"pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+						},
+						"description": "The client's local calendar date, YYYY-MM-DD. Status is calculated from it and no stored value changes. Without it the server uses the UTC date and says so in as_of_source (server_utc)."
+					}
+				]
+			}
+		},
+		"/refills/notices": {
+			"get": {
+				"tags": [
+					"Consumption refills"
+				],
+				"summary": "The caller's unacknowledged refill notices",
+				"description": "Requires STOCK_VIEW. approaching is raised from the warning date until the day before the reorder date, due from the reorder date. An open order raises neither. Victual sends nothing: a client schedules its own notification from these dates.",
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/RefillNoticeList"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "The request cannot be acted on",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				},
+				"parameters": [
+					{
+						"name": "as_of",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "string",
+							"format": "date",
+							"pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+						},
+						"description": "The client's local calendar date, YYYY-MM-DD. Status is calculated from it and no stored value changes. Without it the server uses the UTC date and says so in as_of_source (server_utc)."
+					}
+				]
+			}
+		},
+		"/refills/notices/ack": {
+			"post": {
+				"tags": [
+					"Consumption refills"
+				],
+				"summary": "Acknowledge one notice for the caller",
+				"description": "Requires STOCK_VIEW and the read right on the notice's recipe. The key must be <recipe_id>:<approaching|due>:<YYYY-MM-DD> (400 otherwise). Repeating the call returns the same answer and stores one row. Acknowledgement is per user.",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/RefillAckRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/RefillAck"
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Not authenticated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Permission or right missing",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							}
+						}
+					}
+				}
 			}
 		}
 	},
@@ -14613,6 +15554,670 @@
 						"type": "string",
 						"format": "date",
 						"description": "The calendar date the line was booked under, in the offset the client sent"
+					}
+				}
+			},
+			"RefillCurrentFill": {
+				"type": "object",
+				"description": "The current fill: the unvoided fill with the greatest filled_on, then the greatest id.",
+				"properties": {
+					"id": {
+						"type": "integer"
+					},
+					"filled_on": {
+						"type": "string",
+						"format": "date",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+						"description": "A calendar date written YYYY-MM-DD, with no time and no offset (ADR-0027, ADR-0042 section 4)."
+					},
+					"supplied_days": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"minimum": 1,
+						"maximum": 730,
+						"description": "Days the pharmacy supplied, as entered for this fill; null when it was not entered."
+					}
+				}
+			},
+			"RefillEstimate": {
+				"type": "object",
+				"description": "The estimated reorder date and where it came from. An estimate, not a statement that an insurer or a pharmacy will allow a refill on that date. All five keys are always present; when no date can be calculated the date fields and source are null and reason says why.",
+				"properties": {
+					"reorder_date": {
+						"type": [
+							"string",
+							"null"
+						],
+						"format": "date",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+						"description": "A calendar date written YYYY-MM-DD, with no time and no offset, or null."
+					},
+					"warning_date": {
+						"type": [
+							"string",
+							"null"
+						],
+						"format": "date",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+						"description": "A calendar date written YYYY-MM-DD, with no time and no offset, or null."
+					},
+					"source": {
+						"type": [
+							"string",
+							"null"
+						],
+						"enum": [
+							"explicit",
+							"rule:days_before_end",
+							"rule:fixed_interval",
+							"rule:fraction_elapsed",
+							"fallback",
+							null
+						],
+						"description": "explicit: a date the person entered for the current fill. rule:*: the medication-specific rule. fallback: the fill date plus the supplied days less 14."
+					},
+					"lead_days": {
+						"type": "integer",
+						"minimum": 0,
+						"maximum": 60,
+						"description": "The warning lead in effect for the caller: the recipe's override, else the caller's refill_warning_lead_days setting, else 7."
+					},
+					"reason": {
+						"type": [
+							"string",
+							"null"
+						],
+						"enum": [
+							"no_fill",
+							"invalid_rule",
+							"invalid_supply",
+							"result_not_after_fill",
+							null
+						],
+						"description": "Why the date is null, by the first failing check; null when a date was calculated."
+					}
+				}
+			},
+			"RefillOpenOrder": {
+				"type": "object",
+				"description": "The open order, if any. Recording an order adds no stock and records no fill.",
+				"properties": {
+					"id": {
+						"type": "integer"
+					},
+					"ordered_on": {
+						"type": "string",
+						"format": "date",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+						"description": "A calendar date written YYYY-MM-DD, with no time and no offset (ADR-0027, ADR-0042 section 4)."
+					},
+					"age_days": {
+						"type": "integer",
+						"minimum": 0,
+						"description": "Days from ordered_on to the as_of date, never negative."
+					}
+				}
+			},
+			"RefillState": {
+				"type": "object",
+				"description": "The refill state of one recipe on the as_of date. status is ok, approaching (from the warning date), due (from the reorder date), ordered (an order is open) or unknown (see estimate.reason).",
+				"properties": {
+					"recipe_id": {
+						"type": "integer"
+					},
+					"recipe_name": {
+						"type": "string"
+					},
+					"as_of": {
+						"type": "string",
+						"format": "date",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+						"description": "A calendar date written YYYY-MM-DD, with no time and no offset (ADR-0027, ADR-0042 section 4)."
+					},
+					"as_of_source": {
+						"type": "string",
+						"enum": [
+							"client",
+							"server_utc"
+						],
+						"description": "client: the date came from the as_of parameter. server_utc: the request sent none and the server used the UTC date."
+					},
+					"status": {
+						"type": "string",
+						"enum": [
+							"ok",
+							"approaching",
+							"due",
+							"ordered",
+							"unknown"
+						]
+					},
+					"days_overdue": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "Days from the reorder date to as_of when status is due; otherwise null."
+					},
+					"current_fill": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/RefillCurrentFill"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"estimate": {
+						"$ref": "#/components/schemas/RefillEstimate"
+					},
+					"open_order": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/RefillOpenOrder"
+							},
+							{
+								"type": "null"
+							}
+						]
+					}
+				}
+			},
+			"RefillRule": {
+				"type": "object",
+				"required": [
+					"kind",
+					"parameter"
+				],
+				"description": "A medication-specific rule. days_before_end N (0 to 730): filled_on + supplied_days - N. fixed_interval D (1 to 730): filled_on + D, whatever supplied_days is. fraction_elapsed P (integer percent 1 to 99): filled_on + floor(supplied_days * P / 100) in integer arithmetic.",
+				"properties": {
+					"kind": {
+						"type": "string",
+						"enum": [
+							"days_before_end",
+							"fixed_interval",
+							"fraction_elapsed"
+						]
+					},
+					"parameter": {
+						"type": "integer",
+						"minimum": 0,
+						"maximum": 730
+					}
+				}
+			},
+			"RefillSettings": {
+				"type": "object",
+				"properties": {
+					"rule": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/RefillRule"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"warning_lead_days": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"minimum": 0,
+						"maximum": 60,
+						"description": "This recipe's override of the warning lead; null when the caller's setting applies."
+					}
+				}
+			},
+			"RefillExplicitDate": {
+				"type": "object",
+				"description": "The live explicit reorder date. It belongs to the current fill and ends, permanently, when a newer fill is recorded.",
+				"properties": {
+					"id": {
+						"type": "integer"
+					},
+					"fill_id": {
+						"type": "integer"
+					},
+					"reorder_on": {
+						"type": "string",
+						"format": "date",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+						"description": "A calendar date written YYYY-MM-DD, with no time and no offset (ADR-0027, ADR-0042 section 4)."
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits (ADR-0027 decision 2)."
+					}
+				}
+			},
+			"RefillFill": {
+				"type": "object",
+				"description": "One fill in the history. Fills are never edited or deleted; a wrong fill is voided with a reason.",
+				"properties": {
+					"id": {
+						"type": "integer"
+					},
+					"filled_on": {
+						"type": "string",
+						"format": "date",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+						"description": "A calendar date written YYYY-MM-DD, with no time and no offset (ADR-0027, ADR-0042 section 4)."
+					},
+					"supplied_days": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"minimum": 1,
+						"maximum": 730
+					},
+					"note": {
+						"type": [
+							"string",
+							"null"
+						],
+						"maxLength": 2000,
+						"description": "Text the person typed. Show it as text."
+					},
+					"is_current": {
+						"type": "boolean"
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits (ADR-0027 decision 2)."
+					},
+					"voided_at": {
+						"type": [
+							"string",
+							"null"
+						],
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits (ADR-0027 decision 2)."
+					},
+					"void_reason": {
+						"type": [
+							"string",
+							"null"
+						],
+						"maxLength": 500,
+						"description": "Text the person typed. Show it as text."
+					}
+				}
+			},
+			"RefillOrder": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "integer"
+					},
+					"ordered_on": {
+						"type": "string",
+						"format": "date",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+						"description": "A calendar date written YYYY-MM-DD, with no time and no offset (ADR-0027, ADR-0042 section 4)."
+					},
+					"state": {
+						"type": "string",
+						"enum": [
+							"open",
+							"received",
+							"cancelled"
+						]
+					},
+					"received_fill_id": {
+						"type": [
+							"integer",
+							"null"
+						]
+					},
+					"age_days": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "For an open order, days from ordered_on to as_of; otherwise null."
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits (ADR-0027 decision 2)."
+					},
+					"closed_at": {
+						"type": [
+							"string",
+							"null"
+						],
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits (ADR-0027 decision 2)."
+					}
+				}
+			},
+			"RefillDetail": {
+				"type": "object",
+				"description": "The refill state with the recipe's settings and history. Every refill write answers with this object.",
+				"properties": {
+					"recipe_id": {
+						"type": "integer"
+					},
+					"recipe_name": {
+						"type": "string"
+					},
+					"as_of": {
+						"type": "string",
+						"format": "date",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+						"description": "A calendar date written YYYY-MM-DD, with no time and no offset (ADR-0027, ADR-0042 section 4)."
+					},
+					"as_of_source": {
+						"type": "string",
+						"enum": [
+							"client",
+							"server_utc"
+						],
+						"description": "client: the date came from the as_of parameter. server_utc: the request sent none and the server used the UTC date."
+					},
+					"status": {
+						"type": "string",
+						"enum": [
+							"ok",
+							"approaching",
+							"due",
+							"ordered",
+							"unknown"
+						]
+					},
+					"days_overdue": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "Days from the reorder date to as_of when status is due; otherwise null."
+					},
+					"current_fill": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/RefillCurrentFill"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"estimate": {
+						"$ref": "#/components/schemas/RefillEstimate"
+					},
+					"open_order": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/RefillOpenOrder"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"settings": {
+						"$ref": "#/components/schemas/RefillSettings"
+					},
+					"explicit_date": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/RefillExplicitDate"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"fills": {
+						"type": "array",
+						"items": {
+							"$ref": "#/components/schemas/RefillFill"
+						},
+						"description": "Newest first, voided fills included."
+					},
+					"orders": {
+						"type": "array",
+						"items": {
+							"$ref": "#/components/schemas/RefillOrder"
+						},
+						"description": "Newest first."
+					}
+				}
+			},
+			"RefillList": {
+				"type": "object",
+				"properties": {
+					"as_of": {
+						"type": "string",
+						"format": "date",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+						"description": "A calendar date written YYYY-MM-DD, with no time and no offset (ADR-0027, ADR-0042 section 4)."
+					},
+					"as_of_source": {
+						"type": "string",
+						"enum": [
+							"client",
+							"server_utc"
+						]
+					},
+					"refills": {
+						"type": "array",
+						"items": {
+							"$ref": "#/components/schemas/RefillState"
+						}
+					}
+				}
+			},
+			"RefillNotice": {
+				"type": "object",
+				"description": "A raised notice. Victual sends none: a client reads this list and delivers its own notification. text states a recorded date and where it came from, names no medicine and gives no instruction.",
+				"properties": {
+					"key": {
+						"type": "string",
+						"pattern": "^\\d+:(approaching|due):\\d{4}-\\d{2}-\\d{2}$",
+						"description": "<recipe_id>:<kind>:<reorder_date>. A correction that changes the date yields a new key; one that does not keeps it."
+					},
+					"kind": {
+						"type": "string",
+						"enum": [
+							"approaching",
+							"due"
+						]
+					},
+					"recipe_id": {
+						"type": "integer"
+					},
+					"recipe_name": {
+						"type": "string"
+					},
+					"reorder_date": {
+						"type": "string",
+						"format": "date",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+						"description": "A calendar date written YYYY-MM-DD, with no time and no offset (ADR-0027, ADR-0042 section 4)."
+					},
+					"warning_date": {
+						"type": "string",
+						"format": "date",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+						"description": "A calendar date written YYYY-MM-DD, with no time and no offset (ADR-0027, ADR-0042 section 4)."
+					},
+					"days_overdue": {
+						"type": [
+							"integer",
+							"null"
+						]
+					},
+					"source": {
+						"type": "string",
+						"enum": [
+							"explicit",
+							"rule:days_before_end",
+							"rule:fixed_interval",
+							"rule:fraction_elapsed",
+							"fallback"
+						]
+					},
+					"text": {
+						"type": "string"
+					}
+				}
+			},
+			"RefillNoticeList": {
+				"type": "object",
+				"properties": {
+					"as_of": {
+						"type": "string",
+						"format": "date",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+						"description": "A calendar date written YYYY-MM-DD, with no time and no offset (ADR-0027, ADR-0042 section 4)."
+					},
+					"as_of_source": {
+						"type": "string",
+						"enum": [
+							"client",
+							"server_utc"
+						]
+					},
+					"notices": {
+						"type": "array",
+						"items": {
+							"$ref": "#/components/schemas/RefillNotice"
+						},
+						"description": "The caller's unacknowledged notices, oldest reorder date first. An open order raises none."
+					}
+				}
+			},
+			"RefillAckRequest": {
+				"type": "object",
+				"required": [
+					"notice_key"
+				],
+				"properties": {
+					"notice_key": {
+						"type": "string",
+						"pattern": "^\\d+:(approaching|due):\\d{4}-\\d{2}-\\d{2}$"
+					}
+				}
+			},
+			"RefillAck": {
+				"type": "object",
+				"properties": {
+					"notice_key": {
+						"type": "string"
+					},
+					"acknowledged_at": {
+						"type": "string",
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits (ADR-0027 decision 2)."
+					}
+				}
+			},
+			"RefillSettingsUpdate": {
+				"type": "object",
+				"additionalProperties": false,
+				"description": "Any of the three fields. A field that is absent stays as it was; a field that is null is cleared.",
+				"properties": {
+					"rule": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/RefillRule"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"warning_lead_days": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"minimum": 0,
+						"maximum": 60
+					},
+					"explicit_reorder_date": {
+						"type": [
+							"string",
+							"null"
+						],
+						"format": "date",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+						"description": "An explicit reorder date for the current fill, not earlier than that fill's date. It replaces any live explicit date."
+					}
+				}
+			},
+			"RefillFillWrite": {
+				"type": "object",
+				"required": [
+					"filled_on"
+				],
+				"additionalProperties": false,
+				"properties": {
+					"filled_on": {
+						"type": "string",
+						"format": "date",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+						"description": "The calendar date the pharmacy supplied the medication, from the person's local calendar. Required: the server never fills it in."
+					},
+					"supplied_days": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"minimum": 1,
+						"maximum": 730,
+						"description": "An integer. A string is refused."
+					},
+					"note": {
+						"type": [
+							"string",
+							"null"
+						],
+						"maxLength": 2000
+					}
+				}
+			},
+			"RefillVoidWrite": {
+				"type": "object",
+				"required": [
+					"reason"
+				],
+				"additionalProperties": false,
+				"properties": {
+					"reason": {
+						"type": "string",
+						"minLength": 1,
+						"maxLength": 500
+					}
+				}
+			},
+			"RefillOrderWrite": {
+				"type": "object",
+				"required": [
+					"ordered_on"
+				],
+				"additionalProperties": false,
+				"properties": {
+					"ordered_on": {
+						"type": "string",
+						"format": "date",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+						"description": "The calendar date the order was placed, from the person's local calendar. Required."
 					}
 				}
 			}

@@ -1,0 +1,267 @@
+{
+	"title": "Notices: approaching, then due; per-user acknowledgement; an open order raises none",
+	"adr_sequence": "section 6",
+	"description": "Victual sends no notification; a client reads GET /api/refills/notices and delivers its own. approaching is raised from the warning date, due from the reorder date, never both on the same day. Acknowledgement is per user and idempotent. The text states a date and where it came from and names no medicine.",
+	"setup": {
+		"users": [
+			"alice",
+			"bob",
+			"carol"
+		],
+		"recipes": {
+			"main": {
+				"owner": "alice",
+				"shares": {
+					"bob": {}
+				}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "A 90-day fill",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills?as_of=2026-03-01",
+				"body": {
+					"filled_on": "2026-01-01",
+					"supplied_days": 90
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"status": "ok"
+				}
+			}
+		},
+		{
+			"note": "Before the warning date there is nothing",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/refills/notices?as_of=2026-03-10"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"notices": []
+				}
+			}
+		},
+		{
+			"note": "On the warning date: approaching",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/refills/notices?as_of=2026-03-11"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"as_of_source": "client",
+					"notices": [
+						{
+							"key": "{{recipe.main}}:approaching:2026-03-18",
+							"kind": "approaching",
+							"reorder_date": "2026-03-18",
+							"warning_date": "2026-03-11",
+							"days_overdue": null,
+							"source": "fallback",
+							"text": "Estimated reorder date 2026-03-18 (from your last fill)"
+						}
+					]
+				}
+			}
+		},
+		{
+			"note": "alice acknowledges it",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/refills/notices/ack",
+				"body": {
+					"notice_key": "{{recipe.main}}:approaching:2026-03-18"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"notice_key": "{{recipe.main}}:approaching:2026-03-18",
+					"acknowledged_at": "{{any}}"
+				}
+			}
+		},
+		{
+			"note": "and again: the same answer",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/refills/notices/ack",
+				"body": {
+					"notice_key": "{{recipe.main}}:approaching:2026-03-18"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"notice_key": "{{recipe.main}}:approaching:2026-03-18"
+				}
+			}
+		},
+		{
+			"note": "alice has nothing left",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/refills/notices?as_of=2026-03-12"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"notices": []
+				}
+			}
+		},
+		{
+			"note": "bob, who may read the recipe, still has his own notice",
+			"as": "bob",
+			"request": {
+				"method": "GET",
+				"path": "/api/refills/notices?as_of=2026-03-12"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"notices": [
+						{
+							"kind": "approaching"
+						}
+					]
+				}
+			}
+		},
+		{
+			"note": "On the reorder date the notice is due, and only due",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/refills/notices?as_of=2026-03-18"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"notices": [
+						{
+							"key": "{{recipe.main}}:due:2026-03-18",
+							"kind": "due",
+							"days_overdue": 0,
+							"text": "Reorder date reached: estimated 2026-03-18 (from your last fill)"
+						}
+					]
+				}
+			}
+		},
+		{
+			"note": "An order is a request already made: no notice",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/orders?as_of=2026-03-18",
+				"body": {
+					"ordered_on": "2026-03-18"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"status": "ordered"
+				}
+			},
+			"save": {
+				"order": "open_order.id"
+			}
+		},
+		{
+			"note": "so the list is empty",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/refills/notices?as_of=2026-03-18"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"notices": []
+				}
+			}
+		},
+		{
+			"note": "Cancel the order",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/orders/{{saved.order}}/cancel?as_of=2026-03-18"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"status": "due"
+				}
+			}
+		},
+		{
+			"note": "and the due notice is back",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/refills/notices?as_of=2026-03-18"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"notices": [
+						{
+							"kind": "due"
+						}
+					]
+				}
+			}
+		},
+		{
+			"note": "A malformed key is refused",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/refills/notices/ack",
+				"body": {
+					"notice_key": "not-a-real-key"
+				}
+			},
+			"expect": {
+				"status": 400,
+				"body": {
+					"error": "invalid_notice_key"
+				}
+			}
+		},
+		{
+			"note": "bob cannot acknowledge a notice for a recipe he cannot read",
+			"as": "bob",
+			"request": {
+				"method": "POST",
+				"path": "/api/refills/notices/ack",
+				"body": {
+					"notice_key": "987654:due:2026-03-18"
+				}
+			},
+			"expect": {
+				"status": 404,
+				"body": {
+					"error": "not_found"
+				}
+			}
+		}
+	]
+}

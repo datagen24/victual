@@ -1,0 +1,143 @@
+{
+	"title": "A 30-day fill: the estimate is 16 days after the fill, with its warning and due days",
+	"adr_sequence": "30-day fill, section 2 and 4",
+	"description": "No fill: unknown with reason no_fill. After a fill of 30 days on 2026-01-01 the fallback gives 2026-01-17 (fill date + 30 - 14), and the warning date is 2026-01-10 (seven days before). The client sends its own calendar date as as_of; the stored values never change, only the status does. The reorder date itself is due.",
+	"setup": {
+		"users": [
+			"alice"
+		],
+		"recipes": {
+			"main": {
+				"owner": "alice",
+				"shares": {}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "Nothing recorded yet",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-01-01"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"status": "unknown",
+					"as_of_source": "client",
+					"current_fill": null,
+					"estimate": {
+						"reorder_date": null,
+						"warning_date": null,
+						"source": null,
+						"reason": "no_fill"
+					}
+				}
+			}
+		},
+		{
+			"note": "Record the fill the pharmacy supplied",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills?as_of=2026-01-01",
+				"body": {
+					"filled_on": "2026-01-01",
+					"supplied_days": 30
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"status": "ok",
+					"days_overdue": null,
+					"current_fill": {
+						"filled_on": "2026-01-01",
+						"supplied_days": 30
+					},
+					"estimate": {
+						"reorder_date": "2026-01-17",
+						"warning_date": "2026-01-10",
+						"source": "fallback",
+						"lead_days": 7,
+						"reason": null
+					}
+				}
+			}
+		},
+		{
+			"note": "The day before the warning date",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-01-09"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"status": "ok",
+					"days_overdue": null
+				}
+			}
+		},
+		{
+			"note": "The warning date is the first approaching day",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-01-10"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"status": "approaching"
+				}
+			}
+		},
+		{
+			"note": "The day before the reorder date",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-01-16"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"status": "approaching"
+				}
+			}
+		},
+		{
+			"note": "The reorder date is due",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-01-17"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"status": "due",
+					"days_overdue": 0
+				}
+			}
+		},
+		{
+			"note": "Three days later",
+			"as": "alice",
+			"request": {
+				"method": "GET",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-01-20"
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"status": "due",
+					"days_overdue": 3
+				}
+			}
+		}
+	]
+}

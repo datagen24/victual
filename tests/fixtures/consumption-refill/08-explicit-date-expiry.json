@@ -1,0 +1,105 @@
+{
+	"title": "A newer fill ends an explicit date for good; voiding the newer fill does not bring it back",
+	"adr_sequence": "section 2, rule 1",
+	"description": "An explicit reorder date applies only to the fill it was entered for. Recording a newer fill ends it permanently. If the newer fill is later voided, the older fill becomes current again, but its explicit date does not: the estimate is calculated by the rule or the fallback.",
+	"setup": {
+		"users": [
+			"alice"
+		],
+		"recipes": {
+			"main": {
+				"owner": "alice",
+				"shares": {}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "A 90-day fill",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills?as_of=2026-02-01",
+				"body": {
+					"filled_on": "2026-01-01",
+					"supplied_days": 90
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"status": "ok"
+				}
+			}
+		},
+		{
+			"note": "Enter an explicit date",
+			"as": "alice",
+			"request": {
+				"method": "PUT",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill?as_of=2026-02-01",
+				"body": {
+					"explicit_reorder_date": "2026-02-10"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"estimate": {
+						"reorder_date": "2026-02-10",
+						"source": "explicit"
+					}
+				}
+			}
+		},
+		{
+			"note": "A newer fill",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills?as_of=2026-02-12",
+				"body": {
+					"filled_on": "2026-02-12",
+					"supplied_days": 30
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"explicit_date": null,
+					"estimate": {
+						"reorder_date": "2026-02-28",
+						"source": "fallback"
+					}
+				}
+			},
+			"save": {
+				"newer": "current_fill.id"
+			}
+		},
+		{
+			"note": "Void the newer fill",
+			"as": "alice",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{recipe.main}}/refill/fills/{{saved.newer}}/void?as_of=2026-02-12",
+				"body": {
+					"reason": "entered by mistake"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"explicit_date": null,
+					"current_fill": {
+						"filled_on": "2026-01-01"
+					},
+					"estimate": {
+						"reorder_date": "2026-03-18",
+						"source": "fallback"
+					}
+				}
+			}
+		}
+	]
+}

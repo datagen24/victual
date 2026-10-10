@@ -133,6 +133,61 @@
             "row_updated_timestamp": "string(date-time)"
         }
     },
+    "GET /api/consumption/recipes/{recipeId}/refill": {
+        "status": 200,
+        "shape": {
+            "as_of": "string(date)",
+            "as_of_source": "string",
+            "current_fill": {
+                "filled_on": "string(date)",
+                "id": "integer",
+                "supplied_days": "integer"
+            },
+            "days_overdue": "null",
+            "estimate": {
+                "lead_days": "integer",
+                "reason": "null",
+                "reorder_date": "string(date)",
+                "source": "string",
+                "warning_date": "string(date)"
+            },
+            "explicit_date": "null",
+            "fills": [
+                {
+                    "created_at": "string(date-time)",
+                    "filled_on": "string(date)",
+                    "id": "integer",
+                    "is_current": "boolean",
+                    "note": "null|string",
+                    "supplied_days": "integer",
+                    "void_reason": "null|string",
+                    "voided_at": "null|string(date-time)"
+                }
+            ],
+            "open_order": "null",
+            "orders": [
+                {
+                    "age_days": "null",
+                    "closed_at": "string(date-time)",
+                    "created_at": "string(date-time)",
+                    "id": "integer",
+                    "ordered_on": "string(date)",
+                    "received_fill_id": "integer|null",
+                    "state": "string"
+                }
+            ],
+            "recipe_id": "integer",
+            "recipe_name": "string",
+            "settings": {
+                "rule": {
+                    "kind": "string",
+                    "parameter": "integer"
+                },
+                "warning_lead_days": "integer"
+            },
+            "status": "string"
+        }
+    },
     "GET /api/objects/{entity} (api_keys)": {
         "status": 400,
         "shape": {
@@ -1094,6 +1149,46 @@
             "recipe_id": "integer"
         }
     },
+    "GET /api/refills": {
+        "status": 200,
+        "shape": {
+            "as_of": "string(date)",
+            "as_of_source": "string",
+            "refills": [
+                {
+                    "as_of": "string(date)",
+                    "as_of_source": "string",
+                    "current_fill": {
+                        "filled_on": "string(date)",
+                        "id": "integer",
+                        "supplied_days": "integer"
+                    },
+                    "days_overdue": "null",
+                    "estimate": {
+                        "lead_days": "integer",
+                        "reason": "null",
+                        "reorder_date": "string(date)",
+                        "source": "string",
+                        "warning_date": "string(date)"
+                    },
+                    "open_order": "null",
+                    "recipe_id": "integer",
+                    "recipe_name": "string",
+                    "status": "string"
+                }
+            ]
+        }
+    },
+    "GET /api/refills/notices": {
+        "status": 200,
+        "shape": {
+            "as_of": "string(date)",
+            "as_of_source": "string",
+            "notices": {
+                "__empty_list__": true
+            }
+        }
+    },
     "GET /api/roles": {
         "status": 403,
         "shape": {
@@ -2013,6 +2108,7 @@
             "recipe_ingredients_group_by_product_group": "boolean",
             "recipes_show_ingredient_checkbox": "boolean",
             "recipes_show_list_side_by_side": "boolean",
+            "refill_warning_lead_days": "integer",
             "scan_mode_consume_enabled": "boolean",
             "scan_mode_purchase_enabled": "boolean",
             "shopping_list_auto_add_below_min_stock_amount": "boolean",

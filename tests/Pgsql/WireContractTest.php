@@ -425,6 +425,8 @@ class WireContractTest extends PgsqlSchemaTestCase
 		'ConsumptionRecipeSummary.read' => 'php',
 		'ConsumptionRecipeSummary.share' => 'php',
 		'ConsumptionRecipeSummary.undo' => 'php',
+		// ADR-0042: ConsumptionRefillService builds the history of a prescription's fills in PHP.
+		'RefillFill.is_current' => 'php',
 		'ConsumptionShare.consume' => 'php',
 		'ConsumptionShare.edit' => 'php',
 		'ConsumptionShare.read' => 'php',
