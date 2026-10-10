@@ -46,6 +46,7 @@
 /recipes
 /consumptionrecipes
 /consumptioninbox
+/consumptionrefills
 /recipe/{recipeId}
 /recipe/{recipeId}/pos/{recipePosId}
 /recipessettings

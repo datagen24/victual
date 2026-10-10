@@ -3207,3 +3207,337 @@ msgstr ""
 msgid "The remaining events did not change, so the requests stopped."
 msgstr ""
 
+
+msgid "Prescription refills"
+msgstr ""
+
+msgid "Estimated reorder dates calculated from the fills you record. An estimate is a date worked out from what you entered. It does not say that a pharmacy or an insurer will allow a refill on that date, and it is separate from the stock you hold. Only you and the users you share a prescription with can see it."
+msgstr ""
+
+msgid "Notices"
+msgstr ""
+
+msgid "No notices."
+msgstr ""
+
+msgid "Days of advance warning"
+msgstr ""
+
+msgid "Used for every prescription that has no value of its own (0 to 60, 7 if you set none)."
+msgstr ""
+
+msgid "Prescriptions and their estimated reorder dates"
+msgstr ""
+
+msgid "Prescription"
+msgstr ""
+
+msgid "Estimated reorder date"
+msgstr ""
+
+msgid "Where the date comes from"
+msgstr ""
+
+msgid "You have no prescriptions. Create one on the consumption recipes page."
+msgstr ""
+
+msgid "You may read these dates but not change them. Changing them needs the edit right on this prescription."
+msgstr ""
+
+msgid "Record a fill"
+msgstr ""
+
+msgid "Filled on"
+msgstr ""
+
+msgid "Days supplied"
+msgstr ""
+
+msgid "Record fill"
+msgstr ""
+
+msgid "Receive order"
+msgstr ""
+
+msgid "Enter the date the pharmacy supplied the medication and the number of days it covers. Recording a fill does not change your stock; record the purchase on the purchase page."
+msgstr ""
+
+msgid "Reorder rule"
+msgstr ""
+
+msgid "Rule for this prescription"
+msgstr ""
+
+msgid "None: supply end minus 14 days"
+msgstr ""
+
+msgid "Days before the supply ends"
+msgstr ""
+
+msgid "Days after the fill date"
+msgstr ""
+
+msgid "Percent of the supply used"
+msgstr ""
+
+msgid "Save rule"
+msgstr ""
+
+msgid "Reorder date you choose"
+msgstr ""
+
+msgid "Reorder date"
+msgstr ""
+
+msgid "Set date"
+msgstr ""
+
+msgid "Remove date"
+msgstr ""
+
+msgid "This date belongs to the current fill. It stops applying when a newer fill is recorded and does not apply again if that fill is voided."
+msgstr ""
+
+msgid "Advance warning for this prescription"
+msgstr ""
+
+msgid "Use my setting"
+msgstr ""
+
+msgid "Order"
+msgstr ""
+
+msgid "Ordered on"
+msgstr ""
+
+msgid "Record order"
+msgstr ""
+
+msgid "Cancel order"
+msgstr ""
+
+msgid "An order records that you asked the pharmacy. It adds no stock and does not change the fill history."
+msgstr ""
+
+msgid "Fills"
+msgstr ""
+
+msgid "Recorded fills, newest first"
+msgstr ""
+
+msgid "No fills recorded."
+msgstr ""
+
+msgid "Orders"
+msgstr ""
+
+msgid "Recorded orders, newest first"
+msgstr ""
+
+msgid "No orders recorded."
+msgstr ""
+
+msgid "A voided fill stays in the history. The previous fill becomes the current one and the estimate is calculated again."
+msgstr ""
+
+msgid "Reason"
+msgstr ""
+
+msgid "Void this fill"
+msgstr ""
+
+msgid "Reorder date not reached"
+msgstr ""
+
+msgid "Reorder date approaching"
+msgstr ""
+
+msgid "Order placed"
+msgstr ""
+
+msgid "No estimate"
+msgstr ""
+
+msgid "Reorder date reached"
+msgstr ""
+
+msgid "No fill recorded"
+msgstr ""
+
+msgid "The rule is not valid"
+msgstr ""
+
+msgid "Days supplied is needed for this estimate"
+msgstr ""
+
+msgid "The calculated date is not after the fill date. Choose a rule or enter a date."
+msgstr ""
+
+msgid "The date you entered"
+msgstr ""
+
+msgid "Fill date plus days supplied, minus 14 days"
+msgstr ""
+
+msgid "Rule: days before the supply ends"
+msgstr ""
+
+msgid "Rule: %s days before the supply ends"
+msgstr ""
+
+msgid "Rule: days after the fill date"
+msgstr ""
+
+msgid "Rule: %s days after the fill date"
+msgstr ""
+
+msgid "Rule: percent of the supply used"
+msgstr ""
+
+msgid "Rule: after %s percent of the supply"
+msgstr ""
+
+msgid "from the date you entered"
+msgstr ""
+
+msgid "from your last fill"
+msgstr ""
+
+msgid "from the rule you set for this prescription"
+msgstr ""
+
+msgid "Reorder date reached: estimated %1$s (%2$s)"
+msgstr ""
+
+msgid "Estimated reorder date %1$s (%2$s)"
+msgstr ""
+
+msgid "The estimate falls this many days before the supply ends (0 to 730)."
+msgstr ""
+
+msgid "The estimate falls this many days after the fill date, whatever the days supplied (1 to 730)."
+msgstr ""
+
+msgid "The estimate falls after this percent of the days supplied (1 to 99)."
+msgstr ""
+
+msgid "Without a rule the estimate is the fill date plus the days supplied, minus 14 days."
+msgstr ""
+
+msgid "today"
+msgstr ""
+
+msgid "Ordered on %1$s (%2$s)"
+msgstr ""
+
+msgid "Details of %s"
+msgstr ""
+
+msgid "Mark as seen"
+msgstr ""
+
+msgid "Mark the notice for %s as seen"
+msgstr ""
+
+msgid "Notice marked as seen."
+msgstr ""
+
+msgid "Advance warning must be a whole number from 0 to 60."
+msgstr ""
+
+msgid "Advance warning saved."
+msgstr ""
+
+msgid "Advance warning starts"
+msgstr ""
+
+msgid "%1$s (%2$s days before)"
+msgstr ""
+
+msgid "Current fill"
+msgstr ""
+
+msgid "Filled on %s, days supplied not entered"
+msgstr ""
+
+msgid "Filled on %1$s, %2$s days supplied"
+msgstr ""
+
+msgid "Compared with the date on this device"
+msgstr ""
+
+msgid "Voided: %s"
+msgstr ""
+
+msgid "Earlier fill"
+msgstr ""
+
+msgid "Void"
+msgstr ""
+
+msgid "Void the fill of %s"
+msgstr ""
+
+msgid "Open"
+msgstr ""
+
+msgid "Received"
+msgstr ""
+
+msgid "Cancelled"
+msgstr ""
+
+msgid "Enter the date the pharmacy supplied the medication."
+msgstr ""
+
+msgid "Days supplied must be a whole number from 1 to 730, or empty."
+msgstr ""
+
+msgid "Fill recorded."
+msgstr ""
+
+msgid "Order received and fill recorded."
+msgstr ""
+
+msgid "Enter a value for the rule."
+msgstr ""
+
+msgid "The value must be a whole number from %1$s to %2$s."
+msgstr ""
+
+msgid "Rule saved."
+msgstr ""
+
+msgid "Enter a reorder date."
+msgstr ""
+
+msgid "Reorder date saved."
+msgstr ""
+
+msgid "Reorder date removed."
+msgstr ""
+
+msgid "Enter the date of the order."
+msgstr ""
+
+msgid "Order recorded."
+msgstr ""
+
+msgid "Order cancelled."
+msgstr ""
+
+msgid "Enter a reason."
+msgstr ""
+
+msgid "Fill voided."
+msgstr ""
+
+msgid "Reorder date reached, %s day ago"
+msgid_plural "Reorder date reached, %s days ago"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "%s day ago"
+msgid_plural "%s days ago"
+msgstr[0] ""
+msgstr[1] ""
