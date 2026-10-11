@@ -1,0 +1,36 @@
+# Spike config for Ory Hydra v26.2.0 (issue #770). Throwaway: --dev, in-memory store.
+dsn: memory
+serve:
+  public: { port: 4444 }
+  admin: { port: 4445 }
+urls:
+  self:
+    issuer: http://localhost:4444
+  login: http://localhost:3000/login
+  consent: http://localhost:3000/consent
+  logout: http://localhost:3000/logout
+  device:
+    verification: http://localhost:3000/device
+    success: http://localhost:3000/device/success
+secrets:
+  system: ["spike-only-system-secret-0123456789abcdef"]
+strategies:
+  access_token: jwt
+oidc:
+  # Hydra's own /oauth2/register is off: it is unauthenticated and its response (client_uri "",
+  # contacts null) fails the MCP SDK's schema. Registration goes through idp-stub /register.
+  dynamic_client_registration:
+    enabled: false
+oauth2:
+  pkce:
+    enforced_for_public_clients: true
+  grant:
+    refresh_token:
+      rotation_grace_period: 0s
+ttl:
+  access_token: 15m
+  refresh_token: 720h
+webfinger:
+  oidc_discovery:
+    client_registration_url: http://localhost:3000/register
+    supported_scope: [openid, offline_access, victual.read, victual.write]
