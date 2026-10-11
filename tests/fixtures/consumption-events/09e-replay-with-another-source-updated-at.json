@@ -1,9 +1,11 @@
 {
 	"title": "A replay with a different or no source_updated_at is a replay, not a conflict",
 	"adr_sequence": "9e",
-	"description": "The payload hash excludes source_updated_at, so an identical payload with any version (newer, older or absent) answers 200 replayed true. Versions matter only when the payload differs; the last three steps show the other rows of ADR-0041 rule 5: equal version with a different payload is 409, an older one is stale, a newer one is a correction.",
+	"description": "The payload hash excludes source_updated_at, so an identical payload with any version (newer, older or absent) answers 200 replayed true. Versions matter only when the payload differs; the last three steps show the other rows of ADR-0041 rule 5: equal version with a different payload is 409, an older one is stale, a newer one is a correction. Response lines are stock-log allocations; the corrected amount is checked as a product/location total.",
 	"setup": {
-		"locations": ["organizer_a"],
+		"locations": [
+			"organizer_a"
+		],
 		"products": {
 			"tablet": {
 				"stock": {
@@ -21,7 +23,9 @@
 				"body": {
 					"product_id": "{{product.tablet}}",
 					"quantity_factor": 1,
-					"unit_labels": ["tablet"],
+					"unit_labels": [
+						"tablet"
+					],
 					"default_quantity": null,
 					"location": {
 						"mode": "fixed",
@@ -35,7 +39,9 @@
 				"body": {
 					"source_system": "healthkit",
 					"medication_ref": "hk:med:42",
-					"unit_labels": ["tablet"],
+					"unit_labels": [
+						"tablet"
+					],
 					"location": {
 						"mode": "fixed",
 						"location_id": "{{location.organizer_a}}"
@@ -65,7 +71,11 @@
 					"state": "booked",
 					"reason": null,
 					"lines": [
-						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+						{
+							"product_id": "{{product.tablet}}",
+							"amount": 1,
+							"location_id": "{{location.organizer_a}}"
+						}
 					]
 				}
 			},
@@ -95,7 +105,11 @@
 					"state": "booked",
 					"reason": null,
 					"lines": [
-						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+						{
+							"product_id": "{{product.tablet}}",
+							"amount": 1,
+							"location_id": "{{location.organizer_a}}"
+						}
 					],
 					"replayed": true
 				}
@@ -126,7 +140,11 @@
 					"state": "booked",
 					"reason": null,
 					"lines": [
-						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+						{
+							"product_id": "{{product.tablet}}",
+							"amount": 1,
+							"location_id": "{{location.organizer_a}}"
+						}
 					],
 					"replayed": true
 				}
@@ -156,7 +174,11 @@
 					"state": "booked",
 					"reason": null,
 					"lines": [
-						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+						{
+							"product_id": "{{product.tablet}}",
+							"amount": 1,
+							"location_id": "{{location.organizer_a}}"
+						}
 					],
 					"replayed": true
 				}
@@ -211,7 +233,11 @@
 					"state": "booked",
 					"reason": null,
 					"lines": [
-						{"product_id": "{{product.tablet}}", "amount": 1, "location_id": "{{location.organizer_a}}"}
+						{
+							"product_id": "{{product.tablet}}",
+							"amount": 1,
+							"location_id": "{{location.organizer_a}}"
+						}
 					],
 					"stale": true
 				}
@@ -240,11 +266,15 @@
 					"source_system": "healthkit",
 					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
 					"state": "booked",
-					"revision": 2,
-					"lines": [
-						{"amount": 2}
-					]
-				}
+					"revision": 2
+				},
+				"line_totals": [
+					{
+						"product_id": "{{product.tablet}}",
+						"location_id": "{{location.organizer_a}}",
+						"amount": 2
+					}
+				]
 			},
 			"stock": {
 				"tablet": 8

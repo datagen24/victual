@@ -217,6 +217,13 @@ may omit it. The payload hash excludes it. Ordering and conflicts then work as f
 Payload hash covers `status`, `medication_ref`, `quantity`, `unit_label`, `occurred_at` and
 `location_id`.
 
+Response `lines` represent stock-log allocations, one per stock-log entry, in the product's
+stock unit. A product can appear more than once, including after an undo revives a stock row
+and a correction draws from several rows. Clients sum amounts by product and location for
+display; line count is not a count of doses or consumption events. Each stored line retains its
+`stock_log_id` for booking lineage; the external response does not expose that internal reference. This clarification was approved by the maintainer for
+issue #763; it changes neither allocation nor the response shape.
+
 Multi-product consumption (a recipe target, or a product target with several lines) is booked
 in transaction 2 with one `$transactionId` passed by reference to every `ConsumeProduct()`
 call. Any failure, including permission, an inactive product or insufficient stock, rolls back

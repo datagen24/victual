@@ -98,6 +98,23 @@ class ConsumptionEventFixtureTest extends PgsqlSchemaTestCase
 			{
 				$this->matchSubset($this->resolve($expect['body'], $world, true), $response['body'], 'body', $errors);
 			}
+			if (array_key_exists('line_totals', $expect))
+			{
+				$totals = [];
+				foreach ($response['body']['lines'] ?? [] as $line)
+				{
+					$key = $line['product_id'] . ':' . ($line['location_id'] ?? 'null');
+					$totals[$key] = ($totals[$key] ?? 0) + $line['amount'];
+				}
+				$expectedTotals = $this->resolve($expect['line_totals'], $world, true);
+				self::assertCount(count($expectedTotals), $totals, "$where: every product/location total is accounted for");
+				foreach ($expectedTotals as $line)
+				{
+					$key = $line['product_id'] . ':' . ($line['location_id'] ?? 'null');
+					self::assertArrayHasKey($key, $totals, $where);
+					self::assertEqualsWithDelta($line['amount'], $totals[$key], 0.000001, "$where: total for $key");
+				}
+			}
 			foreach ($expect['count'] ?? [] as $dotted => $count)
 			{
 				$found = self::dig($response['body'], $dotted);

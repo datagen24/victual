@@ -442,6 +442,31 @@ class ConsumptionEventServiceTest extends PgsqlSchemaTestCase
 		self::assertSame(3.0, array_sum(array_column($second['event']['lines'], 'amount')));
 	}
 
+	public function testACorrectionKeepsSeparateStockLogAllocations(): void
+	{
+		$product = self::product('CE split correction', 2);
+		StockService::GetInstance()->AddProduct($product, 3, '2999-12-31', StockService::TRANSACTION_TYPE_PURCHASE, '2026-01-02', null, self::$organizerA);
+		$ref = self::map($product);
+		$id = self::uid();
+		$this->put($id, self::body($ref));
+		$event = $this->put($id, self::body($ref, ['quantity' => 4]))['event'];
+		self::assertSame('booked', $event['state']);
+		self::assertGreaterThan(1, count($event['lines']), 'four tablets cannot come from either purchase alone');
+		self::assertSame(4.0, array_sum(array_column($event['lines'], 'amount')));
+		self::assertSame(1.0, self::onHand($product));
+		$statement = self::$db->prepare('SELECT l.amount, l.location_id, l.transaction_id FROM consumption_event_lines el JOIN consumption_events e ON e.id = el.event_id JOIN stock_log l ON l.id = el.stock_log_id WHERE e.user_id = ? AND e.source_system = ? AND e.source_event_id = ? ORDER BY el.id');
+		$statement->execute([self::ME, 'healthkit', $id]);
+		$logs = $statement->fetchAll(PDO::FETCH_ASSOC);
+		self::assertCount(count($event['lines']), $logs);
+		foreach ($event['lines'] as $index => $line)
+		{
+			self::assertSame($event['transaction_id'], $logs[$index]['transaction_id']);
+			self::assertSame(abs((float)$logs[$index]['amount']), $line['amount']);
+			self::assertSame((int)$logs[$index]['location_id'], $line['location_id']);
+		}
+		self::assertSame($event['lines'], self::$events->Get(self::ME, 'healthkit', $id)['lines']);
+	}
+
 	public function testOnlyTheTimeOfDayChangingLeavesTheBookingAlone(): void
 	{
 		$product = self::product('CE time of day', 10);

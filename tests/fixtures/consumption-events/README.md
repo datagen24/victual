@@ -160,3 +160,15 @@ are about stock undo order, not about the event contract.
   accepted for an existing row and keeps the stored `medication_ref`, `quantity` and
   `unit_label`, so the event stays findable by bulk resolution by `filter`.
 * A first submission answers `replayed: false`; a replay answers `replayed: true`.
+
+## Allocation totals
+
+Event `lines` correspond to stock-log entries. A correction can revive a stock row and allocate
+from it and other rows, so line count does not count consumption events or products.
+Clients display quantities by summing amounts for each product and location.
+
+`expect.line_totals` is a list of `{product_id, location_id, amount}` objects. A replay runner
+must group every response line by product and location, sum the stock-unit amounts, and compare
+all groups against this list. It must not ignore this assertion or require a particular split.
+Fixtures 06 and 09e use this assertion for corrected quantities.
+`19-correction-split-lines.json` corrects across two purchases and checks the persisted GET result.
