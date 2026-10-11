@@ -30,6 +30,10 @@
 
 - xxx
 
+### Manual consumption retries
+
+- Reusing a manual consumption request id with a different recipe, location or submitted time now returns `409 request_id_conflict` without changing stock ([#761](https://github.com/datagen24/victual/issues/761)). Identical retries still return the original event. Older events without an input fingerprint return `409 request_id_unverifiable`; inspect the recorded event before making another booking
+
 ### Consumption refills
 
 - Added refill tracking for private consumption recipes (migration 0307, [ADR-0042](../docs/adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md)). A person records each fill with its date and, optionally, the days it supplies, sets one rule per recipe (`days_before_end`, `fixed_interval` or `fraction_elapsed`) or enters a reorder date, and records an order and its receipt. Victual derives a reorder date, a warning date and a status (`ok`, `approaching`, `due`, `ordered`, `unknown`) from those facts. It does not read stock to decide when a refill is needed
