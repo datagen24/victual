@@ -54,7 +54,10 @@ for a write gets `403`. Errors carry `error_message` and a stable `error` token,
 
 A consume request with a `request_id` is idempotent: a repeat answers `200` with `replayed`
 true and books nothing. Send `occurred_at` with the client's own offset; the booked date is the
-date written in that offset, and a time sent as `Z` books the UTC date.
+date written in that offset, and a time sent as `Z` books the UTC date. A repeat with a different
+recipe, source location or time answers `409 request_id_conflict` and books nothing. A request id
+recorded before release 0.4.0 has no stored fingerprint, and a repeat of it answers
+`409 request_id_unverifiable`: read the recorded event instead of creating a new id.
 
 ## External consumption events
 
@@ -65,6 +68,15 @@ same events, and another user's event answers `404`. A body is strict JSON: a `q
 number and a `location_id` an integer, and a numeric string is refused with `400`. See
 [External consumption events](external-consumption.md) for the states, the error tokens and
 what the server fixtures do and do not show.
+
+## Prescription refills
+
+The routes under `/api/consumption/recipes/{recipeId}/refill`, `/api/refills`,
+`/api/refills/notices` and `/api/refills/notices/ack` hold fills, orders, reorder rules and
+notices for a consumption recipe. A recipe the key's user cannot read answers `404`. Reads need
+`STOCK_VIEW` and a read share, and writes need the edit share. Every read takes an optional
+`as_of` calendar date. See [Prescription refills](prescription-refills.md) for the routes, the
+estimate and the notices. Victual sends nothing; a client polls the notices route.
 
 ## What a key can do
 

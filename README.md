@@ -42,14 +42,14 @@ that was verified working. As of the release:
 
 | Area | State |
 |---|---|
-| PostgreSQL and database file storage | Implemented; the only runtime engine. Import from grocy and Victual SQLite databases, migrations 0256–0304, and an engine comparison suite. |
+| PostgreSQL and database file storage | Implemented; the only runtime engine. Import from grocy and Victual SQLite databases, migrations 0256–0307, and an engine comparison suite. |
 | Stateless runtime | Implemented: explicit migration command, database-backed state, and read-only application filesystem. |
 | MQTT and InfluxDB | State publication and event delivery implemented. Three Home Assistant checks remain and need a running Home Assistant. |
-| Production containers | Six Nix-built images (application, web, migrate, label renderer, label worker, MCP sidecar), a podman pod serving since 2026-09-04, a Helm chart installed and upgraded on kind on 2026-10-08, and the household's Talos cluster applied 2026-10-06 with no live data yet. |
+| Production containers | Six Nix-built images (application, web, migrate, label renderer, label worker, MCP sidecar), a podman pod serving since 2026-09-04, a Helm chart installed and upgraded on kind on 2026-10-08, and the household's Talos cluster running the chart through `deploy/talos/up.sh` with test data and no household data yet. |
 | Hardening | API error contract, hashed and expiring API keys, write transactions, frontend sink discipline, a response-contract snapshot, and a generated first-administrator password. Line coverage is below the 75% floor and ratcheted in CI. |
-| Household features | Category minimums, nested locations and product groups, storage classes, open-container measurement, working-container replenishment, directed product substitution, and store-aware shopping lists are implemented. Barcode sources and medication tracking are planned. |
+| Household features | Category minimums, nested locations and product groups, storage classes, open-container measurement, working-container replenishment, directed product substitution, and store-aware shopping lists are implemented. Medication tracking (private consumption recipes with shares, manual and external consumption events, a reconciliation inbox, and refill tracking) is implemented through `/api/consumption/*`, `/api/refills*` and the consumption pages; native device acceptance is not. Barcode sources are planned. |
 | Labels | Opaque `vctl:` label identities, print jobs, printer configuration, a browser template designer, a headless renderer, and a delivery worker; all six label kinds print through it and the legacy webhook is gone. A worker image reaching the printer from the cluster remains. |
-| Assistants and clients | A read-only MCP sidecar with its own key type is built and deployed to kind; write tools wait on real use. First-party clients are planned. |
+| Assistants and clients | An MCP sidecar with its own key type, six read tools and three opt-in write tools, is built and deployed to kind. First-party clients are planned. |
 
 PostgreSQL is the only runtime engine under
 [ADR-0008](docs/adr/0008-postgresql-only-runtime-engine.md), and since that record's

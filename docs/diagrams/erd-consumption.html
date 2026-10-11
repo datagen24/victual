@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Consumption recipes & events</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:  #f2e7d3;
+      --color-ink:    #174b3a;
+      --color-muted:  #4a6459;
+      --color-accent: #c85a3d;
+      --font-sans:    'Geist', sans-serif;
+      --font-serif:   'Instrument Serif', serif;
+      --font-mono:    'Geist Mono', monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1280px; width: 100%; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+    .scroll { overflow-x: auto; }
+    svg { width: 100%; min-width: 1100px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">ER · VICTUAL</p>
+    <h1>Consumption recipes & events</h1>
+    <div class="scroll">
+    <svg viewBox="0 0 1200 810" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="erd-consumption-title erd-consumption-desc">
+      <title id="erd-consumption-title">Victual consumption recipes and events data model</title>
+      <desc id="erd-consumption-desc">A consumption recipe is a private list of product quantities owned by one user. Its lines name products and units, its shares grant named users the right to consume, edit, undo or share it, and its events record each consumption, booked once under the key of user, source system and source event id. A mapping binds an external client's medication reference to a recipe or a product. A booked event line names the stock log entry it consumed. Every reference drawn here is a declared foreign key.</desc>
+      <rect width="100%" height="100%" fill="#f2e7d3"/>
+    <path d="M 450,160 H 340" fill="none" stroke="#4a6459" stroke-width="1"/>
+    <rect x="426" y="140" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="434" y="150" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <rect x="348" y="140" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="356" y="150" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <path d="M 750,160 H 860" fill="none" stroke="#4a6459" stroke-width="1"/>
+    <rect x="758" y="140" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="766" y="150" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <rect x="836" y="140" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="844" y="150" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <path d="M 600,244 V 380" fill="none" stroke="#4a6459" stroke-width="1"/>
+    <rect x="608" y="256" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="616" y="266" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <rect x="608" y="360" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="616" y="370" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <path d="M 500,244 V 312 Q 500,320 492,320 H 198 Q 190,320 190,328 V 380" fill="none" stroke="#4a6459" stroke-width="1"/>
+    <rect x="508" y="256" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="516" y="266" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <rect x="198" y="360" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="206" y="370" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <path d="M 340,470 H 450" fill="none" stroke="#4a6459" stroke-width="1"/>
+    <rect x="348" y="450" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="356" y="460" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <rect x="426" y="450" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="434" y="460" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <path d="M 750,470 H 860" fill="none" stroke="#4a6459" stroke-width="1"/>
+    <rect x="758" y="450" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="766" y="460" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <rect x="836" y="450" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="844" y="460" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <rect x="40" y="80" width="300" height="224" rx="6" fill="#f2e7d3"/>
+    <rect x="40" y="80" width="300" height="224" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="40" y="80" width="300" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="40" y="116" width="300" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="40" y1="124" x2="340" y2="124" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="56" y="96" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">SHARE</text>
+    <text x="56" y="114" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">consumption_recipe_shares</text>
+    <text x="56" y="144" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ # recipe_id</text>
+    <text x="324" y="144" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="56" y="164" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ # user_id ↗</text>
+    <text x="324" y="164" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">users</text>
+    <text x="56" y="184" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">can_consume</text>
+    <text x="324" y="184" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">0/1</text>
+    <text x="56" y="204" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">can_edit</text>
+    <text x="324" y="204" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">0/1</text>
+    <text x="56" y="224" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">can_undo</text>
+    <text x="324" y="224" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">0/1</text>
+    <text x="56" y="244" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">can_share</text>
+    <text x="324" y="244" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">0/1</text>
+    <text x="56" y="264" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ granted_by_user_id ↗</text>
+    <text x="324" y="264" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">users</text>
+    <text x="56" y="284" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">granted_at</text>
+    <text x="324" y="284" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">timestamptz</text>
+    <rect x="450" y="80" width="300" height="164" rx="6" fill="#f2e7d3"/>
+    <rect x="450" y="80" width="300" height="164" rx="6" fill="rgba(200,90,61,0.04)" stroke="#c85a3d" stroke-width="1"/>
+    <rect x="450" y="80" width="300" height="44" rx="6" fill="rgba(200,90,61,0.10)" stroke="none"/>
+    <rect x="450" y="116" width="300" height="8" fill="rgba(200,90,61,0.10)"/>
+    <line x1="450" y1="124" x2="750" y2="124" stroke="rgba(200,90,61,0.40)" stroke-width="1"/>
+    <text x="466" y="96" fill="#c85a3d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">ENTITY · HUB</text>
+    <text x="466" y="114" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">consumption_recipes</text>
+    <text x="466" y="144" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="734" y="144" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="466" y="164" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ owner_user_id ↗</text>
+    <text x="734" y="164" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">users</text>
+    <text x="466" y="184" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">name</text>
+    <text x="734" y="184" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="466" y="204" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">note</text>
+    <text x="734" y="204" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="466" y="224" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">row_updated_timestamp</text>
+    <text x="734" y="224" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">timestamptz</text>
+    <rect x="860" y="80" width="300" height="184" rx="6" fill="#f2e7d3"/>
+    <rect x="860" y="80" width="300" height="184" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="860" y="80" width="300" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="860" y="116" width="300" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="860" y1="124" x2="1160" y2="124" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="876" y="96" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LINE ITEM</text>
+    <text x="876" y="114" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">consumption_recipe_lines</text>
+    <text x="876" y="144" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="1144" y="144" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="876" y="164" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ recipe_id</text>
+    <text x="1144" y="164" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="876" y="184" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">position</text>
+    <text x="1144" y="184" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="876" y="204" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ product_id ↗</text>
+    <text x="1144" y="204" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">products</text>
+    <text x="876" y="224" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">amount</text>
+    <text x="1144" y="224" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">double</text>
+    <text x="876" y="244" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ qu_id ↗</text>
+    <text x="1144" y="244" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">quantity_units</text>
+    <rect x="40" y="380" width="300" height="264" rx="6" fill="#f2e7d3"/>
+    <rect x="40" y="380" width="300" height="264" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="40" y="380" width="300" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="40" y="416" width="300" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="40" y1="424" x2="340" y2="424" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="56" y="396" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">MAPPING</text>
+    <text x="56" y="414" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">consumption_mappings</text>
+    <text x="56" y="444" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="324" y="444" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="56" y="464" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ user_id ↗</text>
+    <text x="324" y="464" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">users</text>
+    <text x="56" y="484" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">source_system</text>
+    <text x="324" y="484" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="56" y="504" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">medication_ref</text>
+    <text x="324" y="504" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="56" y="524" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">target_type</text>
+    <text x="324" y="524" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">recipe|product</text>
+    <text x="56" y="544" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ recipe_id</text>
+    <text x="324" y="544" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="56" y="564" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ product_id ↗</text>
+    <text x="324" y="564" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">products</text>
+    <text x="56" y="584" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ qu_id ↗</text>
+    <text x="324" y="584" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">quantity_units</text>
+    <text x="56" y="604" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">location_mode</text>
+    <text x="324" y="604" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="56" y="624" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">effective_from</text>
+    <text x="324" y="624" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">timestamptz</text>
+    <rect x="450" y="380" width="300" height="304" rx="6" fill="#f2e7d3"/>
+    <rect x="450" y="380" width="300" height="304" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="450" y="380" width="300" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="450" y="416" width="300" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="450" y1="424" x2="750" y2="424" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="466" y="396" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">EVENT</text>
+    <text x="466" y="414" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">consumption_events</text>
+    <text x="466" y="444" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="734" y="444" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="466" y="464" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ user_id ↗</text>
+    <text x="734" y="464" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">users</text>
+    <text x="466" y="484" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">source_system</text>
+    <text x="734" y="484" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="466" y="504" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">source_event_id</text>
+    <text x="734" y="504" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="466" y="524" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">state</text>
+    <text x="734" y="524" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="466" y="544" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ recipe_id</text>
+    <text x="734" y="544" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="466" y="564" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ mapping_id</text>
+    <text x="734" y="564" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="466" y="584" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ replaces_event_id</text>
+    <text x="734" y="584" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">self</text>
+    <text x="466" y="604" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">transaction_id</text>
+    <text x="734" y="604" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="466" y="624" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">payload_hash</text>
+    <text x="734" y="624" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="466" y="644" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">occurred_at</text>
+    <text x="734" y="644" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">timestamptz</text>
+    <text x="466" y="664" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">…</text>
+    <text x="734" y="664" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">16 more columns</text>
+    <rect x="860" y="380" width="300" height="204" rx="6" fill="#f2e7d3"/>
+    <rect x="860" y="380" width="300" height="204" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="860" y="380" width="300" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="860" y="416" width="300" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="860" y1="424" x2="1160" y2="424" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="876" y="396" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">BOOKED LINE</text>
+    <text x="876" y="414" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">consumption_event_lines</text>
+    <text x="876" y="444" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="1144" y="444" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="876" y="464" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ event_id</text>
+    <text x="1144" y="464" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="876" y="484" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ product_id ↗</text>
+    <text x="1144" y="484" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">products</text>
+    <text x="876" y="504" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">amount</text>
+    <text x="1144" y="504" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">double</text>
+    <text x="876" y="524" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ location_id ↗</text>
+    <text x="1144" y="524" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">locations</text>
+    <text x="876" y="544" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ stock_log_id ↗</text>
+    <text x="1144" y="544" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">stock_log</text>
+    <text x="876" y="564" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">used_date</text>
+    <text x="1144" y="564" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">date</text>
+    <line x1="40" y1="736" x2="1160" y2="736" stroke="rgba(23,75,58,0.12)" stroke-width="0.8"/>
+    <text x="40" y="752" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+    <rect x="40" y="770" width="16" height="12" rx="2" fill="rgba(200,90,61,0.04)" stroke="#c85a3d" stroke-width="1"/>
+    <text x="64" y="780" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Hub entity</text>
+    <text x="146" y="780" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace" font-weight="600">→</text>
+    <text x="166" y="780" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Reference column</text>
+    <text x="275" y="780" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace" font-weight="600">↗</text>
+    <text x="295" y="780" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Target lives in another diagram</text>
+    <line x1="473" y1="776" x2="497" y2="776" stroke="#4a6459" stroke-width="1"/>
+    <text x="505" y="780" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Declared FOREIGN KEY</text>
+    </svg>
+    </div>
+  </div>
+</body>
+</html>

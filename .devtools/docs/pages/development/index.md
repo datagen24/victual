@@ -17,14 +17,15 @@ Documentation for someone changing Victual. Read in this order: the
 
 ## The data model
 
-- **[Data model](data-model.md)** — 71 tables by cluster, and the path from a request to
+- **[Data model](data-model.md)** — 85 tables by cluster, and the path from a request to
   the engine.
 - **Diagrams** — [data access](diagrams/orm-stack.md), the
-  [schema map](diagrams/schema-map.md), and eight entity-relationship models:
+  [schema map](diagrams/schema-map.md), and ten entity-relationship models:
   [stock](diagrams/erd-stock.md), [places](diagrams/erd-locations.md),
   [recipes](diagrams/erd-recipes.md), [identity](diagrams/erd-identity.md),
   [access](diagrams/erd-access.md), [household](diagrams/erd-household.md),
-  [labels](diagrams/erd-labels.md), [printing](diagrams/erd-printing.md).
+  [labels](diagrams/erd-labels.md), [printing](diagrams/erd-printing.md),
+  [consumption](diagrams/erd-consumption.md), [refills](diagrams/erd-refills.md).
 - **[PostgreSQL](postgresql.md)** — the baseline schema, the two halves an installation
   needs, the porting rules, and eighteen hazards found while porting.
 

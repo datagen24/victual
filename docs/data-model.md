@@ -3,20 +3,25 @@
 Victual stores everything in one PostgreSQL database: tables defined in DDL, views layered
 on top of them, and triggers that stand in for the constraints the schema does not declare.
 
-The DDL files define 72 tables and 50 views, with 67 triggers. A migrated database holds two
+The DDL files define 85 tables and 50 views, with 75 triggers, counted 2026-10-11 at commit
+`41fae4a2` with the file-based script in the
+[diagram generator's README](../.devtools/diagrams/README.md).
+
+A migrated database holds two
 more base tables, which are created at run time and appear on no diagram: `migrations`
 (by `DatabaseMigrationService`) and `system_db_changed_time` (by `PostgresDialect`).
-Counted 2026-10-06 against PostgreSQL 16.15 after `bin/victual-migrate` on branch `claude/opus5_stock-entry-label-revival-53a24c` (74 base tables, 50 views, 67 triggers in the catalogue); the query and the
-matching file-based count are in the [diagram generator's README](../.devtools/diagrams/README.md).
+The catalogue was last read on 2026-10-06 against PostgreSQL 16.15 after `bin/victual-migrate` on branch `claude/opus5_stock-entry-label-revival-53a24c`, at migration 0304 and before migrations 0305 to 0307: 74 base tables, 50 views, 67 triggers. It has not been read since, so the live count for the current schema is not measured here; the query is in the diagram generator's README.
 
-This document names what is where; the ten diagrams listed below show how the pieces
+This document names what is where; the twelve diagrams listed below show how the pieces
 connect.
 
 Two facts shape every diagram below:
 
-- **Few foreign keys are declared outside the label subsystem.** Of the 46 declared in
-  the schema, 36 belong to the label tables (plans [25](plans/25-label-infrastructure.md)
-  and [27](plans/landed/27-label-templates-and-rendering.md)). The other ten are
+- **Few foreign keys are declared outside the label and consumption subsystems.** Of the 76
+  declared in the schema, 36 belong to the label tables (plans [25](plans/25-label-infrastructure.md)
+  and [27](plans/landed/27-label-templates-and-rendering.md)) and 30 to the consumption tables
+  (migrations 0305 to 0307, counted as `REFERENCES` clauses outside comments on 2026-10-11; the
+  other 46 were read from `pg_constraint` on 2026-10-06). The other ten are
   `api_keys.rotated_from_id`, `locations.storage_class_id`, `locations.tare_qu_id`,
   `permission_fields.permission_name`, two on `product_location_min_stock`, and the four
   role join keys in [`db/pgsql/roles-schema.sql`](../db/pgsql/roles-schema.sql) —
@@ -39,7 +44,7 @@ step. They render at 1100px or wider and scroll horizontally below that.
 | Diagram | Shows |
 |---|---|
 | [Data access · from request to engine](diagrams/orm-stack.html) | How a request reaches the database: controllers and services, LessQL, `DatabaseService`, the dialect, and the work deferred to commit. |
-| [Schema map](diagrams/schema-map.html) | All 72 tables as seven clusters, and the columns by which one cluster names another's rows. |
+| [Schema map](diagrams/schema-map.html) | All 85 tables as eight clusters, and the columns by which one cluster names another's rows. |
 | [Stock & products](diagrams/erd-stock.html) | The hub cluster: `products` and the seven tables around it, including `product_substitutions`. |
 | [Places](diagrams/erd-locations.html) | Locations and their tree, storage classes, stores, shopping lists, and per-location minimums. |
 | [Recipes & meal plan](diagrams/erd-recipes.html) | Recipes, their line items, recipe nesting, and the meal plan. |
@@ -48,9 +53,11 @@ step. They render at 1100px or wider and scroll horizontally below that.
 | [Household](diagrams/erd-household.html) | Chores, tasks, batteries, and the userfields pair that can attach to any of them. |
 | [Labels](diagrams/erd-labels.html) | Label identity, templates and their versions, media profiles, captures, render requests and artifacts. |
 | [Printing](diagrams/erd-printing.html) | Workers, drivers, printers, print jobs, attempts, and evidence. |
+| [Consumption](diagrams/erd-consumption.html) | Private consumption recipes, their lines and shares, source mappings, and the events that book them. |
+| [Refills](diagrams/erd-refills.html) | Refill rules, fills, reorder dates, orders, and notice acknowledgements for a consumption recipe. |
 
 An entity-relationship diagram holds at most eight entities before it stops being
-readable, which is why the schema is split across eight of them rather than drawn once.
+readable, which is why the schema is split across ten of them rather than drawn once.
 Where a diagram references an entity that another diagram owns, the field is marked `↗`.
 
 ## Data access
@@ -173,8 +180,7 @@ the very booking its own guard exists to catch.
 the baseline loads, because it is what records that the baseline was applied.
 
 Migration 0305 (2026-10-09) adds five tables, migration 0306 (2026-10-09) a sixth and migration
-0307 (2026-10-10) five refill tables, all listed under *Private consumption* below. The counts
-above were taken before them and are not re-measured here.
+0307 (2026-10-10) five refill tables, all listed under *Private consumption* below.
 
 **Stock & products (17)** — `products`, `product_groups`, `product_barcodes`,
 `product_substitutions`, `quantity_units`, `quantity_unit_conversions`, `locations`,
