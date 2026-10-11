@@ -1112,6 +1112,33 @@ class AuthStackTest extends PgsqlSchemaTestCase
 	}
 
 	/**
+	 * Behind a reverse proxy the container listens on 8080 and the client never sees that
+	 * port: the URI PHP builds carries 8080 (from SERVER_PORT) while the Host header, and so
+	 * the browser's Origin, carry none. The client-facing authority is what counts, so the
+	 * browser's own same-origin write is accepted, and one from another port is still not.
+	 */
+	public function testTheOriginIsComparedWithTheHostHeaderNotTheListeningPort(): void
+	{
+		$proxied = self::send('POST', '/api/objects/locations', [
+			'authority' => 'localhost:8080',
+			'cookie' => self::$sessionKey,
+			'headers' => ['Host' => 'localhost', 'Origin' => 'http://localhost'],
+			'body' => ['name' => 'authstack-proxied-origin']
+		]);
+
+		self::assertSame(200, $proxied['status'], $proxied['body']);
+
+		$otherPort = self::send('POST', '/api/objects/locations', [
+			'authority' => 'localhost:8080',
+			'cookie' => self::$sessionKey,
+			'headers' => ['Host' => 'localhost', 'Origin' => 'http://localhost:8080'],
+			'body' => ['name' => 'authstack-proxied-other-port']
+		]);
+
+		self::assertSame(403, $otherPort['status'], $otherPort['body']);
+	}
+
+	/**
 	 * Issue #208's exception list: a read-only key may GET, except for the inherited GET
 	 * routes that change something. The sharing-link route creates the caller's calendar key
 	 * the first time it is asked for, so it is a write wearing a GET.
