@@ -10341,6 +10341,23 @@
 			},
 			"delete": {
 				"operationId": "deleteConsumptionEvent",
+				"requestBody": {
+					"required": false,
+					"description": "Optional deletion reason. A reason in the query parameter takes precedence.",
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"reason": {
+										"type": "string",
+										"enum": ["entered_in_error", "history_cleared", "medication_archived", "access_revoked", "unknown"]
+									}
+								}
+							}
+						}
+					}
+				},
 				"summary": "The source no longer has this event",
 				"responses": {
 					"200": {

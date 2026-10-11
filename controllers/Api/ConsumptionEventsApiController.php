@@ -135,7 +135,8 @@ class ConsumptionEventsApiController extends BaseApiController
 		self::Write($request);
 		return $this->Run($request, $response, function () use ($request, $response, $args)
 		{
-			$body = $request->getBody()->getSize() ? $this->Body($request) : [];
+			// php://input may have an unknown size even after middleware parsed its JSON.
+			$body = $this->Body($request);
 			$reason = $request->getQueryParams()['reason'] ?? $body['reason'] ?? null;
 
 			if ($reason !== null && !is_string($reason))
