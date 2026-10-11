@@ -157,7 +157,7 @@ spec:
             secretName: victual-label-credentials
       containers:
         - name: renderer
-          image: localhost/victual-label-renderer:0.3.2
+          image: localhost/victual-label-renderer:0.4.0
           imagePullPolicy: Never
           args:
             - "--api"
@@ -234,7 +234,7 @@ spec:
             secretName: victual-label-credentials
       containers:
         - name: worker
-          image: localhost/victual-label-worker:0.3.2
+          image: localhost/victual-label-worker:0.4.0
           imagePullPolicy: Never
           args:
             - "--api"
