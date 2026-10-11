@@ -314,7 +314,26 @@ against `claude/adr38-chart-publish`.
 | 3 | **Met, with a different message** | `helm install victual deploy/helm/victual -f deploy/helm/victual/values.example.yaml --dry-run=client` exits non-zero and lists `at '/database/host'`, `at '/ingress/host'` and `at '/secrets/onepassword/vault'`, the example's three `CHANGE-ME` fields. Helm's validator words the refusal as `'not' failed` rather than `render.py`'s `still 'CHANGE-ME…'; fill it in`. Its regular-expression engine has no lookahead, so the schema can say "not this pattern" only through `not`. The example's header says what the refusal means |
 | 4 | **Met** | On kind, install at 0.2.0-MVP and upgrade to the hook Jobs' build both reached a ready Deployment. `helm rollback` across the migration exited 1: the older pod never became ready and the newer pod kept serving. See [Prerequisite 4 on kind](#prerequisite-4-on-kind) |
 | 5 | **Met** | The [0.3.1 release workflow](https://github.com/datagen24/victual/actions/runs/37816437055) passed. The maintainer confirmed a successful anonymous Helm pull on 2026-10-09. See [Prerequisite 5's workflow](#prerequisite-5s-workflow). |
-| 6 | **Met** | Kind installation evidence is recorded below. On 2026-10-09, datagen24 confirmed that anonymous Helm pull worked as expected.
+| 6 | **Met** | The maintainer confirmed Talos operation through v0.4.0 on 2026-10-11, including repeated upgrades with test data retained. Kind evidence and the Talos confirmation are in [Prerequisite 6](#prerequisite-6-kind-and-talos-through-the-chart). |
+| 7 | **Met** | On kind, a preflight refusal (exit 2) failed `helm upgrade` before any pod was replaced, and clients kept getting 200. The `post-upgrade` Job published nine retained topics to a local broker. See [Prerequisite 7 on kind](#prerequisite-7-on-kind) |
+
+### Prerequisite 5's workflow
+
+`release.yml`'s `identity` job refuses a tag whose version differs from `Chart.yaml`'s
+`version` or `appVersion`. The `publish` job, which already holds `packages: write`,
+installs Helm v4.3.0 with the `lint` job's checksum, runs `helm package`, logs in to GHCR
+with `GITHUB_TOKEN` and pushes to `oci://ghcr.io/datagen24/charts`. The only tag is the
+chart's version. The release notes carry `helm install victual
+oci://ghcr.io/datagen24/charts/victual:<Version>@sha256:…`, and Helm refuses that
+reference when the digest differs.
+
+The step's own script ran locally against a throwaway `registry:2`, with the GHCR login
+stubbed. It pushed `charts/victual:0.3.0`, the registry listed that as the only tag, and
+`helm pull` of the reference it wrote returned the packaged bytes. With `VERSION=0.3.1` it
+stopped before pushing, because the package was `victual-0.3.0.tgz`.
+
+The [release workflow for `v0.3.1`](https://github.com/datagen24/victual/actions/runs/37816437055)
+succeeded. On 2026-10-09, datagen24 confirmed that anonymous Helm pull worked as expected.
 This is maintainer-reported operational evidence, completing prerequisite 5; no local
 pull was repeated for this update. The confirmation did not specify the chart version.
 To reproduce the gate for the first published chart, use an empty Helm registry
@@ -399,26 +418,7 @@ session). Images were built from `b930242f` and tagged `0.3.0-helmkind`.
    an install runs no `pre-upgrade` hook: the preflight has to be run by hand first. Neither
    the adoption nor that upgrade had been observed on the cluster on 2026-10-08.
 
-On 2026-10-11, datagen24 confirmed all-day Talos test-server operation, repeated upgrades using builds from master, and an upgrade to v0.4.0 with application test data retained. See [Prerequisite 6](#prerequisite-6-kind-and-talos-through-the-chart). |
-| 7 | **Met** | On kind, a preflight refusal (exit 2) failed `helm upgrade` before any pod was replaced, and clients kept getting 200. The `post-upgrade` Job published nine retained topics to a local broker. See [Prerequisite 7 on kind](#prerequisite-7-on-kind) |
-
-### Prerequisite 5's workflow
-
-`release.yml`'s `identity` job refuses a tag whose version differs from `Chart.yaml`'s
-`version` or `appVersion`. The `publish` job, which already holds `packages: write`,
-installs Helm v4.3.0 with the `lint` job's checksum, runs `helm package`, logs in to GHCR
-with `GITHUB_TOKEN` and pushes to `oci://ghcr.io/datagen24/charts`. The only tag is the
-chart's version. The release notes carry `helm install victual
-oci://ghcr.io/datagen24/charts/victual:<Version>@sha256:…`, and Helm refuses that
-reference when the digest differs.
-
-The step's own script ran locally against a throwaway `registry:2`, with the GHCR login
-stubbed. It pushed `charts/victual:0.3.0`, the registry listed that as the only tag, and
-`helm pull` of the reference it wrote returned the packaged bytes. With `VERSION=0.3.1` it
-stopped before pushing, because the package was `victual-0.3.0.tgz`.
-
-The [release workflow for `v0.3.1`](https://github.com/datagen24/victual/actions/runs/37816437055)
-succeeded. On 2026-10-11, datagen24 confirmed that the Talos test server had run all day,
+On 2026-10-11, datagen24 confirmed that the Talos test server had run all day,
 including builds from master, multiple upgrades and an upgrade to v0.4.0.
 Application test data remained intact through those upgrades. The maintainer supplied
 this operational evidence in response to the outstanding Talos acceptance gate;
