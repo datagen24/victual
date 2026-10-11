@@ -265,3 +265,24 @@ merged only when you run the command yourself. Nothing depends on merging: unmer
 the normal state, and the research behind ADR-0033 and ADR-0036 found no measurement that
 shows merging is needed.
 
+
+## Migrations 0305 to 0307: consumption recipes, external events and refills
+
+Release 0.4.0 adds three migrations for [plan 22](../../plans/22-medication-tracking.md). They
+create new tables and one set of columns on a table the first of them creates. None rewrites
+`stock`, `stock_log` or any other table that existed before, and none refuses an upgrade over
+existing data, so the upgrade preflight has nothing to refuse and there is nothing to repair first.
+
+| Migration | What it adds |
+|---|---|
+| 0305 | Private consumption recipes, their lines and shares, and consumption events with their lines, plus two triggers that stop a share from naming the recipe's owner. |
+| 0306 | Source mappings, and the columns on `consumption_events` that record an event reported by an external client. |
+| 0307 | Refill history, reorder rules, orders and notice acknowledgements for a consumption recipe, with the triggers that keep a fill immutable and a closed order final. |
+
+After the upgrade the pages `/consumptionrecipes`, `/consumptioninbox` and `/consumptionrefills`
+appear for a user with `STOCK_VIEW`, and the routes under `/api/consumption` and `/api/refills`
+answer. An instance that never creates a recipe holds empty tables.
+
+A `helm rollback` to a release before 0.4.0 is not a recovery once these migrations have run;
+see [Rolling back a Helm release](#rolling-back-a-helm-release). Restore from a backup taken
+before the upgrade instead ([backup and restore](backup-restore.md)).

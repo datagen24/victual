@@ -35,10 +35,10 @@ and commented where they bit. See [plan 20](../docs/plans/20-container-infrastru
 | [`podman/victual.yaml`](podman/victual.yaml) | The pod: a migrate initContainer, php-fpm, nginx |
 | [`k3s/victual.yaml`](k3s/victual.yaml) | The same pod as a `Deployment`, with its `Service`, `ConfigMap` and its `Secret`s, one per credential (see ["One Secret per credential"](#one-secret-per-credential)). Applied to kind on 2026-09-19 (see ["What this deployment does not yet do"](#what-this-deployment-does-not-yet-do)). `.devtools/ci/test_deploy_pod_parity.py` keeps it the same pod as the one above |
 | [`k3s/victual-mcp.yaml`](k3s/victual-mcp.yaml) | The read-only MCP sidecar ([docs/mcp-interface-spec.md](../docs/mcp-interface-spec.md)): its own `Deployment` (two replicas), `Service` and `ConfigMap`. It holds no database credential and no API key |
-| [`helm/victual/`](helm/victual/) | The Helm chart the three `k3s/` manifests are rendered from, and the way to deploy your own instance: copy [`values.example.yaml`](helm/victual/values.example.yaml), fill in every `CHANGE-ME` and follow its header. The schema refuses a missing value or a placeholder by field name. Checked in CI; not yet installed on a cluster |
+| [`helm/victual/`](helm/victual/) | The Helm chart the three `k3s/` manifests are rendered from, and the way to deploy your own instance: copy [`values.example.yaml`](helm/victual/values.example.yaml), fill in every `CHANGE-ME` and follow its header. The schema refuses a missing value or a placeholder by field name. Checked in CI, installed on kind and on the Talos cluster |
 | [`k3s/kustomization.yaml`](k3s/kustomization.yaml) | The workloads above as one kustomize base — Victual, the MCP sidecar and the label workloads — for an operator's overlay to patch |
 | [`kind/`](kind/) | A test harness, not a deployment: the chart with [`kind/values.yaml`](kind/values.yaml) (the working tree's `localhost/` images) plus a throwaway PostgreSQL, driven by `kind/up.sh`, which generates local-only passwords into a gitignored `kind/.secrets/` and creates the Secrets from them |
-| [`talos/`](talos/) | One operator's deployment, kept as a worked example: the maintainer's Talos Raspberry Pi cluster, the published chart and images with [`talos/values.yaml`](talos/values.yaml) — a Traefik Ingress, Secrets from 1Password Connect, no label workers — and PostgreSQL on an NFS claim from the small overlay in [`talos/postgres/`](talos/postgres/kustomization.yaml). `talos/seed-1password.sh` seeds the vault once; `talos/up.sh` installs it. Applied through a kustomize overlay 2026-10-06; not yet through the chart |
+| [`talos/`](talos/) | One operator's deployment, kept as a worked example: the maintainer's Talos Raspberry Pi cluster, the published chart and images with [`talos/values.yaml`](talos/values.yaml) — a Traefik Ingress, Secrets from 1Password Connect, no label workers — and PostgreSQL on an NFS claim from the small overlay in [`talos/postgres/`](talos/postgres/kustomization.yaml). `talos/seed-1password.sh` seeds the vault once; `talos/up.sh` installs it. Installed through the chart by `up.sh` on 2026-10-10, with `VICTUAL_IMAGE_TAG` for unreleased builds |
 | [`postgres/roles.sql`](postgres/roles.sql) | The two database roles, and what each may do |
 | [`k3s/label-workers.yaml`](k3s/label-workers.yaml) | The label renderer and the label worker as `CronJob`s, in the kustomize base above. Neither holds a database credential |
 | [`podman/label-workers.yaml`](podman/label-workers.yaml) | The same two workloads as `Job`s, for `podman kube play --replace` on a systemd timer |
@@ -296,15 +296,12 @@ PostgreSQL and roles Job, patched onto the NFS claim and uid 3000, and the super
 those, so `up.sh` waits for it and for the rollouts after the install rather than with
 `--wait`.
 
-The cluster was deployed through a kustomize overlay on 2026-10-06; the first
-install adopts those resources (`--take-ownership`). Rendered against that overlay's
-output, the chart and `talos/postgres/` give the same objects with the same pod templates,
-less the Namespace (which `up.sh` creates) and plus the pre-upgrade preflight Job.
-
-That comparison is with the overlay as committed, at 0.3.0. The 2026-10-06 apply ran the
-`0.2.0-MVP` images, so if the cluster still runs them, the first install is also the upgrade
-to 0.3.0 and its migrations. **Helm runs no `pre-upgrade` hook on an install,** so the
-preflight does not run then: run it by hand first
+The cluster's first deployment, on 2026-10-06, went through a kustomize overlay. That namespace
+was torn down, and the chart's first install there on 2026-10-10 was a clean install with
+`VICTUAL_IMAGE_TAG` set to a `master-<sha>` build. The first install of the chart over resources a
+`kubectl apply` created adopts them (`--take-ownership`), and `up.sh` passes the flag on a first
+install only. **Helm runs no `pre-upgrade` hook on an install,** so the preflight does not run
+then: run it by hand first
 ([updating-migrations.md](../docs/manual/operator/updating-migrations.md)), or a refusing
 migration shows as a `migrate` initContainer in a restart loop, as under `kubectl apply`.
 

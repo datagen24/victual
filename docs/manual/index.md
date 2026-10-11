@@ -17,8 +17,13 @@ section that matches what you are trying to do.
   [equipment](using-victual/equipment.md), [the calendar](using-victual/calendar.md),
   [administration](using-victual/administration.md) (users, roles and API keys), and
   [tips](using-victual/tips.md) (date shortcuts, keyboard shortcuts, installing as an app).
+- **Medication and consumption** — [consumption recipes](using-victual/consumption-recipes.md),
+  [the consumption inbox](using-victual/consumption-events.md), and
+  [prescription refills](using-victual/prescription-refills.md).
 - **Operator reference** — [the REST API](operator/rest-api.md),
   [barcodes and scanning](operator/barcodes-scanning.md), [label printing](operator/label-printing.md),
+  [external consumption events](operator/external-consumption.md),
+  [prescription refills](operator/prescription-refills.md),
   [Home Assistant and MQTT](operator/home-assistant-mqtt.md),
   [roles and permissions](operator/roles-permissions.md),
   [updating and migrations](operator/updating-migrations.md), and

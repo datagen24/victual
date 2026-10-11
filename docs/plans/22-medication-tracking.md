@@ -10,10 +10,10 @@ Victual's scope.
 2026-10-09. Implemented: private consumption recipes and manual consumption (issue 698, merged),
 the external-event schema, service, API and reconciliation inbox (issue 700, merged), and the
 organizer inventory workflow's test evidence (issue 699, merged in pull requests 738 and 744).
-Issues 698 to 700 are closed. Refill tracking (issue 701) is in review in pull requests 748, 749 and
-751. Not implemented: native acceptance on a device (issue 702) and integrated verification (issue 703).
+Issues 698 to 700 are closed. Refill tracking (issue 701) merged in pull requests 748, 749 and 751, and
+its read-authorization fix in pull request 755. Not implemented: native acceptance on a device (issue 702) and integrated verification (issue 703).
 
-**Release target:** v0.5.0. The maintainer clarified this scope on 2026-10-09. The target
+**Release target:** v0.5.0. [Release 0.4.0](../releases/0.4.0.md) ships issues 698 to 701. The maintainer clarified this scope on 2026-10-09. The target
 is a schedule; the release record and signed tag follow verified implementation under
 [the release procedure](../releases/README.md).
 
@@ -733,7 +733,7 @@ The approval does not declare verification complete.
 
 - A review found that `ListRefills` and `Notices` chose candidate recipes without a lock and read refill
   facts afterwards, so a share revoked in between could still be reported. The fix and its regression
-  tests are in [pull request 755](https://github.com/datagen24/victual/pull/755). The private-access
-  criterion above is not met until that pull request merges and its checks pass.
+  tests are in [pull request 755](https://github.com/datagen24/victual/pull/755). The pull request merged on
+  2026-10-10, which meets the private-access criterion above.
 - Native acceptance on a real device (issue 702) and integrated verification (issue 703) have no evidence.
-- Plan 22 stays in progress and v0.5.0 is not claimed.
+- Plan 22 stays in progress and v0.5.0 is not claimed. Release 0.4.0 ships issues 698 to 701 only.

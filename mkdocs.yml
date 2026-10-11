@@ -116,6 +116,8 @@ nav:
           - ER · household: development/diagrams/erd-household.md
           - ER · labels: development/diagrams/erd-labels.md
           - ER · printing: development/diagrams/erd-printing.md
+          - ER · consumption: development/diagrams/erd-consumption.md
+          - ER · refills: development/diagrams/erd-refills.md
       - Decisions:
           - Index: development/adr/README.md
           - 0001 PostgreSQL alongside SQLite: development/adr/0001-postgresql-alongside-sqlite.md

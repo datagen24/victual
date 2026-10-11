@@ -2,7 +2,7 @@
 
 **Status:** v1 specification, written 2026-08-29. Companion to
 [plan 02](plans/02-mcp-endpoint.md), whose Open-question responses this document takes as
-settled: separate container (02-Q6), read-only v1 (02-Q2), bearer API key behind a
+settled: separate container (02-Q6), read-only v1 (02-Q2; section 6 later added opt-in writes), bearer API key behind a
 credential→user seam (02-Q1/Q3), local network only (02-Q4), narrow tools with compact
 responses (02-Q5).
 **Gated by:** per the roadmap's Wave 5 — [11](plans/11-api-error-handling.md),
@@ -150,7 +150,7 @@ and it is small:
    creation from the key-management screen. Enforcement is one rule in the same
    middleware: a request authenticated by a `read_only` key that is not `GET`, `HEAD`,
    or `OPTIONS` is answered `403`. This is deliberately server-side — the sidecar also
-   gates (write tools are not registered in v1 at all), but the boundary that matters
+   gates (write tools are not registered unless an operator enables them by name), but the boundary that matters
    is enforced where the key is validated, so a compromised or buggy sidecar cannot
    exceed it. The migration is a portable dual-engine `NNNN.sql` per the roadmap's
    ground rules.

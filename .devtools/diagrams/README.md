@@ -1,6 +1,6 @@
 # Diagram generator
 
-Emits the ten HTML diagrams linked from [docs/data-model.md](../../docs/data-model.md).
+Emits the twelve HTML diagrams linked from [docs/data-model.md](../../docs/data-model.md).
 The entity lists, box coordinates, and connector routes are a Python spec in `build.py`;
 the output files are self-contained HTML with inline SVG and no build step of their own.
 
@@ -16,7 +16,7 @@ what a diagram says means editing the spec.
 
 A migration that adds or removes a table, changes a reference column, or moves a table
 between clusters needs the spec updated. The counts printed on the diagrams
-(`72 tables · 50 views · 67 triggers` on the ORM diagram, the per-cluster counts on the
+(`85 tables · 50 views · 75 triggers` on the ORM diagram, the per-cluster counts on the
 schema map) come from this, run against a tree with the migrations applied. Statements are
 matched in file order, so a `DROP VIEW` followed by a `CREATE VIEW` of the same name (0261
 does this twice) leaves the view in place, and the `.php` migrations are read too, because
@@ -60,12 +60,14 @@ SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
 The live catalogue holds two more base tables than the DDL files define, because two are
 created at run time: `migrations` (by `DatabaseMigrationService`, before the baseline loads)
 and `system_db_changed_time` (by `PostgresDialect`). Neither is on a diagram, so the
-diagrams print the file count (71) and the live count is 73.
+diagrams print the file count (85, counted 2026-10-11 at `41fae4a2`). The live count was 74 on
+2026-10-06 at migration 0304 and is expected to be 87 now; it has not been re-read.
 
 The ORM diagram's controller and service counts are `controllers/Api/*ApiController.php`
 less `BaseApiController` (18), and the files under `services/` that `extends BaseService` (23).
 The declared-foreign-key claims on the ER diagrams come from `pg_constraint` on the same
-database (`contype = 'f'`; 46 today, 36 of them in the label subsystem).
+database (`contype = 'f'`; 46 on 2026-10-06, 36 of them in the label subsystem). Migrations 0305 to 0307
+declare 30 more, counted from the DDL.
 
 Migrations 0001-0255 are excluded because PostgreSQL loads `db/pgsql/baseline/` instead of
 replaying them, and the `.sqlite.sql` files are excluded because the SQLite line is frozen

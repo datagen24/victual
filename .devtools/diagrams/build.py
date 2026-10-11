@@ -278,7 +278,7 @@ def orm():
     b.append(node(70, 336, 200, 64, "DIALECT", "PostgresDialect", "quoting · locks · changed-time"))
     b.append(node(730, 336, 220, 64, "ASYNC", "Outbox · MQTT · Influx", "outbox in tx · publish at request end", kind="optional"))
     b.append(node(750, 464, 200, 80, "LABELS", "Label services", "raw SQL · in transactions"))
-    b.append(node(350, 464, 300, 80, "ENGINE", "PostgreSQL 16", "72 tables · 50 views · 67 triggers", kind="store"))
+    b.append(node(350, 464, 300, 80, "ENGINE", "PostgreSQL 16", "85 tables · 50 views · 75 triggers", kind="store"))
     b.append(legend(572, 1000, [
         ("swatch", (ACC_04, ACCENT, "Single point of access")),
         ("swatch", (WHITE, INK, "PHP class")),
@@ -323,14 +323,17 @@ def schema_map():
     b.append(label(806, 444, "TARGET_ID"))
     b.append(rel("M 980,496 V 392", dashed=False, marker="arrow"))
     b.append(label(1016, 436, "OUTBOX_ID"))
+    b.append(rel("M 280,548 H 302 Q 310,548 310,540 V 388 Q 310,380 318,380 H 340", dashed=False, marker="arrow"))
+    b.append(label(310, 440, "PRODUCT_ID"))
     b.append(node(80, 80, 280, 88, "5 TABLES", "Recipes & meal plan", "recipes · recipes_pos · meal_plan"))
     b.append(node(460, 80, 280, 88, "7 TABLES", "Household", "chores · tasks · batteries · equipment"))
     b.append(node(840, 80, 280, 88, "12 TABLES", "Identity & access", "users · roles · permissions · sessions"))
     b.append(node(80, 288, 200, 104, "4 TABLES", "Extensibility", "userfields · userentities", kind="optional"))
-    b.append(node(340, 288, 400, 104, "15 TABLES", "Stock & products", "products · stock · stock_log · locations · storage_classes", kind="focal"))
+    b.append(node(340, 288, 400, 104, "17 TABLES", "Stock & products", "products · stock · stock_log · locations · storage_classes", kind="focal"))
     b.append(node(840, 288, 280, 104, "7 TABLES", "Caches & infrastructure", "cache__* · outbox · files · mqtt_*", kind="store"))
     b.append(node(340, 496, 400, 88, "DERIVED", "Read layer", "50 views · 3 of them materialised as cache__*", kind="store"))
     b.append(node(840, 496, 280, 104, "22 TABLES", "Labels & printing", "labels · label_templates · print_jobs"))
+    b.append(node(80, 496, 200, 104, "11 TABLES", "Consumption", "recipes · events · refills"))
     b.append(legend(624, 1200, [
         ("swatch", (ACC_04, ACCENT, "Hub domain")),
         ("swatch", (WHITE, INK, "Table cluster")),
@@ -339,11 +342,11 @@ def schema_map():
         ("line", ("solid", "Column named for its target")),
     ]))
     write("schema-map.html", page(
-        "schema-map", "ARCHITECTURE · VICTUAL", "Schema map · 72 tables in seven clusters",
+        "schema-map", "ARCHITECTURE · VICTUAL", "Schema map · 85 tables in eight clusters",
         "0 0 1200 700",
         "Victual schema map",
-        "Seven table clusters around a stock and products hub: recipes, household chores and tasks, "
-        "identity and access, extensibility, label printing, and caches. Arrows are the columns that "
+        "Eight table clusters around a stock and products hub: recipes, household chores and tasks, "
+        "identity and access, extensibility, label printing, caches, and consumption recipes. Arrows are the columns that "
         "name another cluster's rows; a read layer of 50 views sits below the hub.",
         "\n".join(b), min_width=1100))
 
@@ -918,6 +921,137 @@ def erd_printing():
         "\n".join(b), min_width=1100))
 
 
+# ===================================================== 11. ERD consumption
+def erd_consumption():
+    b = []
+    # recipes (1) to shares, lines, events and mappings (N): all declared foreign keys
+    b.append(rel("M 450,160 H 340", dashed=False))
+    b.append(card(434, 140, "1"))
+    b.append(card(356, 140, "N"))
+    b.append(rel("M 750,160 H 860", dashed=False))
+    b.append(card(766, 140, "1"))
+    b.append(card(844, 140, "N"))
+    b.append(rel("M 600,244 V 380", dashed=False))
+    b.append(card(616, 256, "1"))
+    b.append(card(616, 360, "N"))
+    b.append(rel("M 500,244 V 312 Q 500,320 492,320 H 198 Q 190,320 190,328 V 380", dashed=False))
+    b.append(card(516, 256, "1"))
+    b.append(card(206, 360, "N"))
+    # a mapping (1) names the events it booked (N); an event (1) has its booked lines (N)
+    b.append(rel("M 340,470 H 450", dashed=False))
+    b.append(card(356, 450, "1"))
+    b.append(card(434, 450, "N"))
+    b.append(rel("M 750,470 H 860", dashed=False))
+    b.append(card(766, 450, "1"))
+    b.append(card(844, 450, "N"))
+    b.append(entity(40, 80, 300, "consumption_recipe_shares", [
+        ("→ # recipe_id", "int"), ("→ # user_id ↗", "users"), ("can_consume", "0/1"),
+        ("can_edit", "0/1"), ("can_undo", "0/1"), ("can_share", "0/1"),
+        ("→ granted_by_user_id ↗", "users"), ("granted_at", "timestamptz")], tag="SHARE"))
+    b.append(entity(450, 80, 300, "consumption_recipes", [
+        ("# id", "int"), ("→ owner_user_id ↗", "users"), ("name", "text"), ("note", "text"),
+        ("row_updated_timestamp", "timestamptz")], tag="ENTITY · HUB", focal=True))
+    b.append(entity(860, 80, 300, "consumption_recipe_lines", [
+        ("# id", "int"), ("→ recipe_id", "int"), ("position", "int"),
+        ("→ product_id ↗", "products"), ("amount", "double"),
+        ("→ qu_id ↗", "quantity_units")], tag="LINE ITEM"))
+    b.append(entity(40, 380, 300, "consumption_mappings", [
+        ("# id", "int"), ("→ user_id ↗", "users"), ("source_system", "text"),
+        ("medication_ref", "text"), ("target_type", "recipe|product"), ("→ recipe_id", "int"),
+        ("→ product_id ↗", "products"), ("→ qu_id ↗", "quantity_units"),
+        ("location_mode", "text"), ("effective_from", "timestamptz")], tag="MAPPING"))
+    b.append(entity(450, 380, 300, "consumption_events", [
+        ("# id", "int"), ("→ user_id ↗", "users"), ("source_system", "text"),
+        ("source_event_id", "text"), ("state", "text"), ("→ recipe_id", "int"),
+        ("→ mapping_id", "int"), ("→ replaces_event_id", "self"), ("transaction_id", "text"),
+        ("payload_hash", "text"), ("occurred_at", "timestamptz"),
+        ("…", "16 more columns")], tag="EVENT"))
+    b.append(entity(860, 380, 300, "consumption_event_lines", [
+        ("# id", "int"), ("→ event_id", "int"), ("→ product_id ↗", "products"),
+        ("amount", "double"), ("→ location_id ↗", "locations"),
+        ("→ stock_log_id ↗", "stock_log"), ("used_date", "date")], tag="BOOKED LINE"))
+    b.append(legend(736, 1200, [
+        ("swatch", (ACC_04, ACCENT, "Hub entity")),
+        ("glyph", ("→", "Reference column")),
+        ("glyph", ("↗", "Target lives in another diagram")),
+        ("line", ("solid", "Declared FOREIGN KEY")),
+    ]))
+    write("erd-consumption.html", page(
+        "erd-consumption", "ER · VICTUAL", "Consumption recipes & events",
+        "0 0 1200 810",
+        "Victual consumption recipes and events data model",
+        "A consumption recipe is a private list of product quantities owned by one user. Its lines "
+        "name products and units, its shares grant named users the right to consume, edit, undo or "
+        "share it, and its events record each consumption, booked once under the key of user, source "
+        "system and source event id. A mapping binds an external client's medication reference to a "
+        "recipe or a product. A booked event line names the stock log entry it consumed. Every "
+        "reference drawn here is a declared foreign key.",
+        "\n".join(b), min_width=1100))
+
+
+# ======================================================== 12. ERD refills
+def erd_refills():
+    b = []
+    b.append(rel("M 450,150 H 340", dashed=False))
+    b.append(card(434, 130, "1"))
+    b.append(card(356, 130, "N"))
+    b.append(rel("M 500,224 V 262 Q 500,270 492,270 H 198 Q 190,270 190,278 V 300", dashed=False))
+    b.append(card(516, 232, "1"))
+    b.append(card(206, 284, "1"))
+    b.append(rel("M 600,224 V 300", dashed=False))
+    b.append(card(616, 234, "1"))
+    b.append(card(616, 282, "N"))
+    b.append(rel("M 700,224 V 262 Q 700,270 708,270 H 1002 Q 1010,270 1010,278 V 300", dashed=False))
+    b.append(card(716, 232, "1"))
+    b.append(card(1026, 284, "N"))
+    b.append(rel("M 600,524 V 600", dashed=False))
+    b.append(card(616, 534, "1"))
+    b.append(card(616, 582, "N"))
+    b.append(rel("M 750,420 H 860", dashed=False))
+    b.append(card(766, 400, "1"))
+    b.append(card(844, 400, "N"))
+    b.append(entity(40, 80, 300, "consumption_refill_acks", [
+        ("→ # user_id ↗", "users"), ("→ # recipe_id", "int"), ("# kind", "text"),
+        ("# reorder_date", "date"), ("acknowledged_at", "timestamptz")], tag="ACKNOWLEDGEMENT"))
+    b.append(entity(450, 80, 300, "consumption_recipes", [
+        ("# id", "int"), ("→ owner_user_id ↗", "users"), ("name", "text"),
+        ("…", "see erd-consumption")], tag="REFERENCE", ref=True))
+    b.append(entity(40, 300, 300, "consumption_refill_settings", [
+        ("→ # recipe_id", "int"), ("rule_kind", "text"), ("rule_parameter", "int"),
+        ("warning_lead_days", "int"), ("updated_at", "timestamptz")], tag="RULE"))
+    b.append(entity(450, 300, 300, "consumption_refill_fills", [
+        ("# id", "int"), ("→ recipe_id", "int"), ("filled_on", "date"),
+        ("supplied_days", "int"), ("note", "text"), ("created_at", "timestamptz"),
+        ("voided_at", "timestamptz"), ("void_reason", "text")],
+        tag="ENTITY · HUB", focal=True))
+    b.append(entity(860, 300, 300, "consumption_refill_orders", [
+        ("# id", "int"), ("→ recipe_id", "int"), ("ordered_on", "date"), ("state", "text"),
+        ("→ received_fill_id", "int"), ("created_at", "timestamptz"),
+        ("closed_at", "timestamptz")], tag="ORDER"))
+    b.append(entity(450, 600, 300, "consumption_refill_dates", [
+        ("# id", "int"), ("→ recipe_id", "int"), ("→ fill_id", "int"), ("reorder_on", "date"),
+        ("created_at", "timestamptz"), ("ended_at", "timestamptz"),
+        ("ended_reason", "text")], tag="REORDER DATE"))
+    b.append(legend(856, 1200, [
+        ("swatch", (ACC_04, ACCENT, "Hub entity")),
+        ("swatch-dashed", ("rgba(23,75,58,0.03)", "rgba(23,75,58,0.30)", "Entity owned by another diagram")),
+        ("glyph", ("→", "Reference column")),
+        ("glyph", ("↗", "Target lives in another diagram")),
+        ("glyph", ("#", "Part of the primary key")),
+        ("line", ("solid", "Declared FOREIGN KEY")),
+    ]))
+    write("erd-refills.html", page(
+        "erd-refills", "ER · VICTUAL", "Prescription refills",
+        "0 0 1200 930",
+        "Victual prescription refills data model",
+        "Each consumption recipe holds at most one refill rule. A fill records a date and the days it "
+        "supplies; Victual derives a reorder date from it and keeps the dates it superseded. An order "
+        "is open until a fill receives it or it is cancelled. A user's acknowledgement of a notice is "
+        "stored per recipe, notice kind and reorder date. Every reference drawn here is a declared "
+        "foreign key, and the date and order tables name a fill together with its recipe.",
+        "\n".join(b), min_width=1100))
+
+
 if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
     orm()
@@ -930,3 +1064,5 @@ if __name__ == "__main__":
     erd_household()
     erd_labels()
     erd_printing()
+    erd_consumption()
+    erd_refills()

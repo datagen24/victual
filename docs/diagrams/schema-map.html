@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Schema map · 72 tables in seven clusters</title>
+  <title>Schema map · 85 tables in eight clusters</title>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -51,11 +51,11 @@
 <body>
   <div class="frame">
     <p class="eyebrow">ARCHITECTURE · VICTUAL</p>
-    <h1>Schema map · 72 tables in seven clusters</h1>
+    <h1>Schema map · 85 tables in eight clusters</h1>
     <div class="scroll">
     <svg viewBox="0 0 1200 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="schema-map-title schema-map-desc">
       <title id="schema-map-title">Victual schema map</title>
-      <desc id="schema-map-desc">Seven table clusters around a stock and products hub: recipes, household chores and tasks, identity and access, extensibility, label printing, and caches. Arrows are the columns that name another cluster's rows; a read layer of 50 views sits below the hub.</desc>
+      <desc id="schema-map-desc">Eight table clusters around a stock and products hub: recipes, household chores and tasks, identity and access, extensibility, label printing, caches, and consumption recipes. Arrows are the columns that name another cluster's rows; a read layer of 50 views sits below the hub.</desc>
       <rect width="100%" height="100%" fill="#f2e7d3"/>
       <defs>
         <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4a6459"/></marker>
@@ -89,6 +89,9 @@
     <path d="M 980,496 V 392" fill="none" stroke="#4a6459" stroke-width="1" marker-end="url(#arrow)"/>
     <rect x="988" y="436" width="56" height="12" rx="2" fill="#f2e7d3"/>
     <text x="1016" y="445" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">OUTBOX_ID</text>
+    <path d="M 280,548 H 302 Q 310,548 310,540 V 388 Q 310,380 318,380 H 340" fill="none" stroke="#4a6459" stroke-width="1" marker-end="url(#arrow)"/>
+    <rect x="280" y="440" width="60" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="310" y="449" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">PRODUCT_ID</text>
     <rect x="80" y="80" width="280" height="88" rx="6" fill="#f2e7d3"/>
     <rect x="80" y="80" width="280" height="88" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
     <rect x="92" y="90" width="52" height="12" rx="2" fill="none" stroke="#4a6459" stroke-opacity="0.45" stroke-width="0.8"/>
@@ -116,7 +119,7 @@
     <rect x="340" y="288" width="400" height="104" rx="6" fill="#f2e7d3"/>
     <rect x="340" y="288" width="400" height="104" rx="6" fill="rgba(200,90,61,0.04)" stroke="#c85a3d" stroke-width="1"/>
     <rect x="352" y="298" width="60" height="12" rx="2" fill="none" stroke="#c85a3d" stroke-opacity="0.45" stroke-width="0.8"/>
-    <text x="382" y="307" fill="#c85a3d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">15 TABLES</text>
+    <text x="382" y="307" fill="#c85a3d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">17 TABLES</text>
     <text x="540" y="364" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Stock &amp; products</text>
     <text x="540" y="380" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">products · stock · stock_log · locations · storage_classes</text>
     <rect x="840" y="288" width="280" height="104" rx="6" fill="#f2e7d3"/>
@@ -137,6 +140,12 @@
     <text x="882" y="515" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">22 TABLES</text>
     <text x="980" y="572" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Labels &amp; printing</text>
     <text x="980" y="588" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">labels · label_templates · print_jobs</text>
+    <rect x="80" y="496" width="200" height="104" rx="6" fill="#f2e7d3"/>
+    <rect x="80" y="496" width="200" height="104" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="92" y="506" width="60" height="12" rx="2" fill="none" stroke="#4a6459" stroke-opacity="0.45" stroke-width="0.8"/>
+    <text x="122" y="515" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">11 TABLES</text>
+    <text x="180" y="572" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Consumption</text>
+    <text x="180" y="588" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">recipes · events · refills</text>
     <line x1="40" y1="624" x2="1160" y2="624" stroke="rgba(23,75,58,0.12)" stroke-width="0.8"/>
     <text x="40" y="640" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
     <rect x="40" y="658" width="16" height="12" rx="2" fill="rgba(200,90,61,0.04)" stroke="#c85a3d" stroke-width="1"/>

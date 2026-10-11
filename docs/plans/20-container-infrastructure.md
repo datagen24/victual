@@ -10,7 +10,7 @@ else.
 plan used to have to work around.
 
 **Status:** **piece 1 complete, 2026-09-04; pieces 2, 3 and the credential split done and
-piece 4 written 2026-09-18 and applied to a real cluster 2026-10-06.** The flake under
+piece 4 written 2026-09-18 and applied to a real cluster 2026-10-06 and installed there through the Helm chart 2026-10-10.** The flake under
 [`nix/`](../../nix/README.md) builds and the manifest under [`deploy/`](../../deploy/README.md)
 serves; the Executed sections below record what each round found. **Still open:** the half
 of plan 25's verification 12 that reaches the printer (and therefore
