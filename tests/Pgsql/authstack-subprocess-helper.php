@@ -59,11 +59,12 @@ $queryString = $parts[1] ?? '';
 
 // The authority the request is addressed to, which is what BaseAuthMiddleware compares an
 // Origin header against. Defaults to the same "localhost" every other helper uses; a test
-// that is about the port being part of an origin sets its own.
+// that is about the port being part of an origin sets its own. "host" is the Host the
+// client sent when that differs from the URI's authority, as behind a reverse proxy.
 $authority = $spec['authority'] ?? 'localhost';
 
 $_SERVER['REQUEST_URI'] = $spec['path'];
-$_SERVER['HTTP_HOST'] = $authority;
+$_SERVER['HTTP_HOST'] = $spec['host'] ?? $authority;
 
 use DI\Container;
 use Slim\Factory\AppFactory;

@@ -185,7 +185,7 @@ class AuthStackTest extends PgsqlSchemaTestCase
 	{
 		$spec = ['method' => $method, 'path' => $path];
 
-		foreach (['headers', 'cookie', 'body', 'server', 'authority'] as $key)
+		foreach (['headers', 'cookie', 'body', 'server', 'authority', 'host'] as $key)
 		{
 			if (isset($options[$key]))
 			{
@@ -1122,7 +1122,8 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		$proxied = self::send('POST', '/api/objects/locations', [
 			'authority' => 'localhost:8080',
 			'cookie' => self::$sessionKey,
-			'headers' => ['Host' => 'localhost', 'Origin' => 'http://localhost'],
+			'host' => 'localhost',
+			'headers' => ['Origin' => 'http://localhost'],
 			'body' => ['name' => 'authstack-proxied-origin']
 		]);
 
@@ -1131,7 +1132,8 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		$otherPort = self::send('POST', '/api/objects/locations', [
 			'authority' => 'localhost:8080',
 			'cookie' => self::$sessionKey,
-			'headers' => ['Host' => 'localhost', 'Origin' => 'http://localhost:8080'],
+			'host' => 'localhost',
+			'headers' => ['Origin' => 'http://localhost:8080'],
 			'body' => ['name' => 'authstack-proxied-other-port']
 		]);
 
