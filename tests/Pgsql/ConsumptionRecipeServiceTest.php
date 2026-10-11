@@ -267,6 +267,25 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::assertSame(8.0, self::onHand($product), 'two bookings, not three');
 	}
 
+	public function testARequestIdCannotReplayDifferentConsumptionInputs(): void
+	{
+		$product = self::product('CR conflicting replay', 10);
+		$id = self::recipe([self::line($product, 1)]);
+		$other = self::recipe([self::line($product, 2)]);
+		$time = '2026-01-01T12:00:00Z';
+		self::$service->Consume($id, 'conflicting-id', null, $time, self::OWNER);
+		foreach ([[$other, null, $time], [$id, self::$organizerA, $time], [$id, null, '2026-01-01T13:00:00Z'], [$id, null, null]] as [$recipe, $location, $occurred])
+		{
+			$this->expectRefusal(fn() => self::$service->Consume($recipe, 'conflicting-id', $location, $occurred, self::OWNER), 409, 'request_id_conflict');
+		}
+		self::assertSame(9.0, self::onHand($product));
+		self::$service->UpdateRecipe($id, ['lines' => [self::line($product, 3)]], self::OWNER);
+		self::assertTrue(self::$service->Consume($id, 'conflicting-id', null, $time, self::OWNER)['replayed'], 'a recipe edit must not change the original intent');
+		self::$db->exec("UPDATE consumption_events SET payload_hash = NULL WHERE source_system = 'manual' AND source_event_id = 'conflicting-id'");
+		$this->expectRefusal(fn() => self::$service->Consume($id, 'conflicting-id', null, $time, self::OWNER), 409, 'request_id_unverifiable');
+		self::assertSame(9.0, self::onHand($product), 'legacy conflicts must not book again');
+	}
+
 	public function testALocationIsNeverSilentlySwappedForAnother(): void
 	{
 		$product = self::product('CR organizers', 5, 20);

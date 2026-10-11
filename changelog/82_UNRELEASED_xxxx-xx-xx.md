@@ -30,6 +30,9 @@
 
 - xxx
 
+### Manual consumption retries
+
+- Reusing a manual consumption request id with a different recipe, location or submitted time now returns `409 request_id_conflict` without changing stock ([#761](https://github.com/datagen24/victual/issues/761)). Identical retries still return the original event. Older events without an input fingerprint return `409 request_id_unverifiable`; inspect the recorded event before making another booking
 ### Consumption event fixes
 
 - Fixed JSON-body deletion reasons being ignored on real HTTP requests when the input stream has no reported size ([#760](https://github.com/datagen24/victual/issues/760)). Query parameters still take precedence; clearing or archiving source history leaves stock unchanged
