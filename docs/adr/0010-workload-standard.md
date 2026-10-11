@@ -8,7 +8,7 @@
   section already names, per plan 20 verification check 8, not as a blocker to
   acceptance.
 - **Partly superseded:** [ADR-0038](0038-kubernetes-deployments-ship-as-a-helm-chart.md),
-  2026-10-09, replaces open question 1's Kubernetes deployment boundary.
+  2026-10-11, replaces open question 1's Kubernetes deployment boundary.
 
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
