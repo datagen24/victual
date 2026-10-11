@@ -363,8 +363,28 @@ abstract class BaseAuthMiddleware extends BaseMiddleware
 	{
 		$uri = $request->getUri();
 		$scheme = SessionCookie::IsHttpsRequest() ? 'https' : strtolower($uri->getScheme());
-		$origin = $scheme . '://' . strtolower($uri->getHost());
-		$port = $uri->getPort();
+
+		// The Host the client sent is what the browser put in Origin. Slim's URI falls back to
+		// SERVER_PORT when Host carries no port, which behind a reverse proxy is the port the
+		// container listens on (8080), not the one the client used, and the PSR-7 Host header
+		// is rebuilt from the URI without any port - so the raw server variable is the only
+		// faithful source, and comparing against $uri->getPort() refused every write on a
+		// correctly deployed instance.
+		$hostHeader = trim((string)($request->getServerParams()['HTTP_HOST'] ?? $_SERVER['HTTP_HOST'] ?? ''));
+		$parts = $hostHeader === '' ? false : parse_url('//' . $hostHeader);
+
+		if ($parts !== false && !empty($parts['host']))
+		{
+			$host = strtolower($parts['host']);
+			$port = $parts['port'] ?? null;
+		}
+		else
+		{
+			$host = strtolower($uri->getHost());
+			$port = $uri->getPort();
+		}
+
+		$origin = $scheme . '://' . $host;
 
 		if ($port !== null && !(($scheme === 'https' && $port === 443) || ($scheme === 'http' && $port === 80)))
 		{

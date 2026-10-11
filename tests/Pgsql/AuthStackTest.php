@@ -185,7 +185,7 @@ class AuthStackTest extends PgsqlSchemaTestCase
 	{
 		$spec = ['method' => $method, 'path' => $path];
 
-		foreach (['headers', 'cookie', 'body', 'server', 'authority'] as $key)
+		foreach (['headers', 'cookie', 'body', 'server', 'authority', 'host'] as $key)
 		{
 			if (isset($options[$key]))
 			{
@@ -1109,6 +1109,35 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		]);
 
 		self::assertSame(200, $matching['status'], $matching['body']);
+	}
+
+	/**
+	 * Behind a reverse proxy the container listens on 8080 and the client never sees that
+	 * port: the URI PHP builds carries 8080 (from SERVER_PORT) while the Host header, and so
+	 * the browser's Origin, carry none. The client-facing authority is what counts, so the
+	 * browser's own same-origin write is accepted, and one from another port is still not.
+	 */
+	public function testTheOriginIsComparedWithTheHostHeaderNotTheListeningPort(): void
+	{
+		$proxied = self::send('POST', '/api/objects/locations', [
+			'authority' => 'localhost:8080',
+			'cookie' => self::$sessionKey,
+			'host' => 'localhost',
+			'headers' => ['Origin' => 'http://localhost'],
+			'body' => ['name' => 'authstack-proxied-origin']
+		]);
+
+		self::assertSame(200, $proxied['status'], $proxied['body']);
+
+		$otherPort = self::send('POST', '/api/objects/locations', [
+			'authority' => 'localhost:8080',
+			'cookie' => self::$sessionKey,
+			'host' => 'localhost',
+			'headers' => ['Origin' => 'http://localhost:8080'],
+			'body' => ['name' => 'authstack-proxied-other-port']
+		]);
+
+		self::assertSame(403, $otherPort['status'], $otherPort['body']);
 	}
 
 	/**
