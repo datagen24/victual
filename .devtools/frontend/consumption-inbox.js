@@ -384,6 +384,28 @@ const takenEvent = (ref, extra = {}) => ({ status: 'taken', medication_ref: ref,
 		assert.equal(await page.locator('#inbox-rows tr[data-event-key="' + SYSTEM + '/group-b-' + token + '"]').count(), 1);
 		step('f. medication filter groups rows by the medication_ref the API returns');
 
+		// DELETE bodies arrive through php://input, whose stream size may be unknown (#760).
+		for (const contentType of ['application/json', 'application/json; charset=utf-8'])
+		{
+			const id = 'delete-body-' + token + '-' + (contentType.includes(';') ? 'charset' : 'plain');
+			const created = await client.put(id, takenEvent('unit-' + token));
+			assert.equal(created.body.state, 'booked');
+			const beforeDelete = await stock(product);
+			const deleted = await page.evaluate(async ({ id, contentType }) =>
+			{
+				const response = await fetch('/api/consumption/events/healthkit/' + id, {
+					method: 'DELETE', headers: { 'Content-Type': contentType },
+					body: JSON.stringify({ reason: 'medication_archived' })
+				});
+				return { status: response.status, body: await response.json() };
+			}, { id, contentType });
+			assert.equal(deleted.status, 200);
+			assert.equal(deleted.body.source_removed_reason, 'medication_archived', contentType + ' preserves the DELETE reason');
+			assert.equal(deleted.body.state, 'booked');
+			assert.equal(await stock(product), beforeDelete, 'archiving history does not restore stock');
+		}
+		step('g. DELETE JSON bodies preserve reasons with plain and charset media types');
+
 		assert.deepEqual(errors, [], 'no page error');
 		assert.equal(await page.evaluate(() => window.__xss), undefined);
 		await context.close();

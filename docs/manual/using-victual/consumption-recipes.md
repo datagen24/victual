@@ -162,3 +162,14 @@ The routes are under `/api/consumption/recipes`; see [The REST API](../operator/
 and `victual.openapi.json`. A consumption request that carries a `request_id` is idempotent: a
 repeat answers `200` with `replayed` true and books nothing. Without a `request_id` a retry
 books again.
+
+## Retrying a manual consumption
+
+Reuse a `request_id` only for the same recipe, source location and submitted time.
+The server returns the recorded event for an identical retry, even if the recipe has since changed.
+Reusing the id with different inputs returns `409 request_id_conflict` and changes no stock.
+If the first request omitted `occurred_at`, omit it again on a retry.
+
+Events recorded before input fingerprints were stored return `409 request_id_unverifiable` on retry.
+Inspect the existing event before recording anything else. Automatically assigning a new id could
+book the same consumption twice.

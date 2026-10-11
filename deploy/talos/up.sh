@@ -6,6 +6,9 @@
 #
 #   KUBE_CONTEXT=<ctx> deploy/talos/up.sh            install or upgrade, wait for Ready
 #   KUBE_CONTEXT=<ctx> deploy/talos/up.sh --local    the same from deploy/helm/victual/
+#   VICTUAL_IMAGE_TAG=<tag> KUBE_CONTEXT=<ctx> deploy/talos/up.sh [--local]
+#                                                    run the images at <tag> instead of the
+#                                                    chart's appVersion (an unreleased build)
 #   KUBE_CONTEXT=<ctx> deploy/talos/up.sh down       delete the namespace; the database's
 #                                                    claim goes with it, and nfs-csi's Delete
 #                                                    reclaim policy removes its data
@@ -14,6 +17,9 @@
 # maintainer's machine may be any cluster. The chart comes from
 # oci://ghcr.io/datagen24/charts/victual at CHART_VERSION (version.json's Version unless set);
 # --local installs the working tree's chart instead, still with the published images.
+# VICTUAL_IMAGE_TAG sets image.tag for the whole release. Helm resets any value a run leaves out, so
+# a deployment running an unreleased build needs VICTUAL_IMAGE_TAG on every upgrade, or the next run
+# falls back to the appVersion images.
 # The first published chart is 0.3.1: no earlier chart exists.
 #
 # The passwords come from 1Password through the cluster's Connect operator: run
@@ -29,6 +35,8 @@ KUBECTL=(kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE")
 CHART="oci://ghcr.io/datagen24/charts/victual"
 CHART_VERSION="${CHART_VERSION:-$(sed -n 's/.*"Version": *"\([^"]*\)".*/\1/p' version.json)}"
 CHART_ARGS=("$CHART" --version "$CHART_VERSION")
+IMAGE_ARGS=()
+[ -z "${VICTUAL_IMAGE_TAG:-}" ] || IMAGE_ARGS=(--set "image.tag=$VICTUAL_IMAGE_TAG")
 
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 
@@ -62,7 +70,7 @@ kubectl --context "$KUBE_CONTEXT" kustomize --load-restrictor LoadRestrictionsNo
 wait_for_secret victual-postgres-superuser
 "${KUBECTL[@]}" rollout status deployment/victual-postgres --timeout=300s
 
-log "helm upgrade --install $RELEASE, chart $CHART_VERSION"
+log "helm upgrade --install $RELEASE, chart $CHART_VERSION, images ${VICTUAL_IMAGE_TAG:-from appVersion}"
 # The namespace was `kubectl apply`'d through a kustomize overlay until ADR-0038. On the
 # first install --take-ownership adopts what that apply created (Helm would otherwise refuse
 # it), and --force-conflicts lets its server-side apply overwrite the fields kubectl owned.
@@ -77,7 +85,7 @@ helm history "$RELEASE" --kube-context "$KUBE_CONTEXT" -n "$NAMESPACE" -o json 2
 # the migrate initContainer cannot log in until the roles Job has run, and that Job needs
 # the two role Secrets this install's OnePasswordItems create; the waits below follow it.
 helm upgrade --install "$RELEASE" "${CHART_ARGS[@]}" -f deploy/talos/values.yaml \
-	${FIRST[@]+"${FIRST[@]}"} \
+	${FIRST[@]+"${FIRST[@]}"} ${IMAGE_ARGS[@]+"${IMAGE_ARGS[@]}"} \
 	--kube-context "$KUBE_CONTEXT" --namespace "$NAMESPACE" --wait=hookOnly --timeout 10m
 
 log "waiting for the Connect operator to write the chart's three Secrets"

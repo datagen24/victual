@@ -161,6 +161,8 @@ are about stock undo order, not about the event contract.
   `unit_label`, so the event stays findable by bulk resolution by `filter`.
 * A first submission answers `replayed: false`; a replay answers `replayed: true`.
 
+`18-manual-request-conflict.json` checks an identical manual retry and a conflicting recipe with the same request id.
+
 ## Allocation totals
 
 Event `lines` correspond to stock-log entries. A correction can revive a stock row and allocate

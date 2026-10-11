@@ -460,21 +460,23 @@ class ConsumptionRecipeService extends BaseService
 			throw new ConsumptionException(422, 'invalid_request_id', 'A request id is 1 to 128 characters of letters, digits and . _ : -');
 		}
 		[$occurred, $usedDate] = $this->ParseOccurredAt($occurredAt);
+		// Bind the key to the submitted intent, not the recipe's mutable lines or a generated time.
+		$payloadHash = hash('sha256', json_encode([$recipeId, $locationId, $occurredAt === null ? null : $occurred], JSON_THROW_ON_ERROR));
 
 		try
 		{
-			return DatabaseService::GetInstance()->InTransaction(function () use ($recipeId, $requestId, $locationId, $occurred, $usedDate, $userId)
+			return DatabaseService::GetInstance()->InTransaction(function () use ($recipeId, $requestId, $locationId, $occurred, $usedDate, $userId, $payloadHash)
 			{
 				$this->RequireGlobal($userId, User::PERMISSION_STOCK_VIEW, User::PERMISSION_STOCK_CONSUME);
 
-				$statement = $this->Db()->prepare("INSERT INTO consumption_events (user_id, source_system, source_event_id, recipe_id, state, occurred_at)
-					VALUES (?, 'manual', ?, NULL, 'received', ?) ON CONFLICT (user_id, source_system, source_event_id) DO NOTHING RETURNING id");
-				$statement->execute([$userId, $requestId, $occurred]);
+				$statement = $this->Db()->prepare("INSERT INTO consumption_events (user_id, source_system, source_event_id, recipe_id, state, occurred_at, payload_hash)
+					VALUES (?, 'manual', ?, NULL, 'received', ?, ?) ON CONFLICT (user_id, source_system, source_event_id) DO NOTHING RETURNING id");
+				$statement->execute([$userId, $requestId, $occurred, $payloadHash]);
 				$eventId = $statement->fetchColumn();
 
 				if ($eventId === false)
 				{
-					return $this->StoredManualEvent($userId, $requestId) + ['replayed' => true];
+					return $this->StoredManualEvent($userId, $requestId, $payloadHash) + ['replayed' => true];
 				}
 
 				// The recipe id is written only after the caller's right is proved. Inserting it with the
@@ -580,12 +582,22 @@ class ConsumptionRecipeService extends BaseService
 		}
 	}
 
-	private function StoredManualEvent(int $userId, string $requestId): array
+	private function StoredManualEvent(int $userId, string $requestId, string $payloadHash): array
 	{
-		$statement = $this->Db()->prepare("SELECT id FROM consumption_events WHERE user_id = ? AND source_system = 'manual' AND source_event_id = ?");
+		$statement = $this->Db()->prepare("SELECT id, payload_hash FROM consumption_events WHERE user_id = ? AND source_system = 'manual' AND source_event_id = ?");
 		$statement->execute([$userId, $requestId]);
 
-		return $this->EventById((int)$statement->fetchColumn());
+		$stored = $statement->fetch(\PDO::FETCH_ASSOC);
+		if ($stored['payload_hash'] === null)
+		{
+			throw new ConsumptionException(409, 'request_id_unverifiable', 'This request predates payload verification; inspect its recorded event before retrying');
+		}
+		if (!hash_equals($stored['payload_hash'], $payloadHash))
+		{
+			throw new ConsumptionException(409, 'request_id_conflict', 'This request id was already used with different consumption inputs');
+		}
+
+		return $this->EventById((int)$stored['id']);
 	}
 
 	private function EventById(int $eventId): array

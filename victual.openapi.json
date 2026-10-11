@@ -9539,7 +9539,7 @@
 					"Consumption recipes"
 				],
 				"summary": "Consume every line of a consumption recipe",
-				"description": "Requires STOCK_VIEW, STOCK_CONSUME and the consume right. Every line is booked in one transaction or none is: a missing conversion, a missing right or too little stock books nothing and records no event. The call is idempotent only when request_id is sent; a repeat answers 200 with replayed true. A location_id limits consumption to that location, and a shortfall there is a refusal, never a charge to another location. occurred_at, with an offset, sets the booked date to the date written in that offset.",
+				"description": "Requires STOCK_VIEW, STOCK_CONSUME and the consume right. Every line is booked in one transaction or none is: a missing conversion, a missing right or too little stock books nothing and records no event. The call is idempotent only when request_id is sent. An identical recipe_id, location_id and occurred_at submission answers 200 with replayed true. A changed input answers 409 request_id_conflict without booking. An older event with no stored input fingerprint answers 409 request_id_unverifiable; inspect the existing event before deciding whether a new booking is intended. Omitting occurred_at remains stable across retries; changing recipe lines does not change the original request. A location_id limits consumption to that location, and a shortfall there is a refusal, never a charge to another location. occurred_at, with an offset, sets the booked date to the date written in that offset.",
 				"requestBody": {
 					"required": false,
 					"content": {
@@ -10341,6 +10341,23 @@
 			},
 			"delete": {
 				"operationId": "deleteConsumptionEvent",
+				"requestBody": {
+					"required": false,
+					"description": "Optional deletion reason. A reason in the query parameter takes precedence.",
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"reason": {
+										"type": "string",
+										"enum": ["entered_in_error", "history_cleared", "medication_archived", "access_revoked", "unknown"]
+									}
+								}
+							}
+						}
+					}
+				},
 				"summary": "The source no longer has this event",
 				"responses": {
 					"200": {

@@ -1,0 +1,129 @@
+{
+	"title": "A manual request id identifies one submitted intent",
+	"adr_sequence": "manual-idempotency",
+	"description": "Identical retries return the original event; a different recipe with the same id is a conflict and deducts nothing.",
+	"setup": {
+		"locations": [
+			"organizer_a"
+		],
+		"products": {
+			"tablet": {
+				"stock": {
+					"organizer_a": 10
+				}
+			}
+		}
+	},
+	"steps": [
+		{
+			"note": "The person has a one-line recipe for the same product",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes",
+				"body": {
+					"name": "One tablet",
+					"lines": [
+						{
+							"product_id": "{{product.tablet}}",
+							"amount": 1,
+							"qu_id": "{{unit}}"
+						}
+					]
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"created_object_id": "{{any}}"
+				}
+			},
+			"save": {
+				"recipe": "created_object_id"
+			}
+		},
+		{
+			"note": "The person has a one-line recipe for the same product",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes",
+				"body": {
+					"name": "Second recipe",
+					"lines": [
+						{
+							"product_id": "{{product.tablet}}",
+							"amount": 2,
+							"qu_id": "{{unit}}"
+						}
+					]
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"created_object_id": "{{any}}"
+				}
+			},
+			"save": {
+				"other_recipe": "created_object_id"
+			}
+		},
+		{
+			"note": "The person consumes the recipe by hand in Victual",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{saved.recipe}}/consume",
+				"body": {
+					"request_id": "manual-conflict-18"
+				}
+			},
+			"expect": {
+				"status": 201,
+				"body": {
+					"state": "booked",
+					"transaction_id": "{{any}}"
+				}
+			},
+			"stock": {
+				"tablet": 9
+			}
+		},
+		{
+			"note": "An identical retry does not book again",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{saved.recipe}}/consume",
+				"body": {
+					"request_id": "manual-conflict-18"
+				}
+			},
+			"expect": {
+				"status": 200,
+				"body": {
+					"replayed": true
+				}
+			},
+			"stock": {
+				"tablet": 9
+			}
+		},
+		{
+			"note": "The same id cannot claim a different recipe was booked",
+			"request": {
+				"method": "POST",
+				"path": "/api/consumption/recipes/{{saved.other_recipe}}/consume",
+				"body": {
+					"request_id": "manual-conflict-18"
+				}
+			},
+			"expect": {
+				"status": 409,
+				"body": {
+					"error": "request_id_conflict"
+				}
+			},
+			"stock": {
+				"tablet": 9
+			}
+		}
+	]
+}
