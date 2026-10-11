@@ -1,7 +1,7 @@
 {
-	"title": "An edit seen as delete and insert, sent with replaces, nets one deduction",
-	"adr_sequence": "6",
-	"description": "The client saw the deletion and the insertion together for the same medication and dose time, so it names the old id in replaces. The server voids the old event and books the new one in one transaction: 1 tablet, then 2 tablets, net 2 tablets and never 3. Response lines are stock-log allocations; the corrected amount is checked as a product/location total.",
+	"title": "A correction spans revived stock and multiple purchase rows",
+	"adr_sequence": "6-split-lines",
+	"description": "Correct one tablet to four across purchases of two and three tablets. Line totals remain four, independent of allocation splits; GET preserves the result.",
 	"setup": {
 		"locations": [
 			"organizer_a"
@@ -9,7 +9,10 @@
 		"products": {
 			"tablet": {
 				"stock": {
-					"organizer_a": 10
+					"organizer_a": [
+						2,
+						3
+					]
 				}
 			}
 		}
@@ -79,18 +82,18 @@
 				}
 			},
 			"stock": {
-				"tablet": 9
+				"tablet": 4
 			}
 		},
 		{
-			"note": "Replacement sample with a new id, 2 tablets",
+			"note": "Replace with four tablets across purchase rows",
 			"request": {
 				"method": "PUT",
 				"path": "/api/consumption/events/healthkit/6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9",
 				"body": {
 					"status": "taken",
 					"medication_ref": "hk:med:42",
-					"quantity": 2,
+					"quantity": 4,
 					"unit_label": "tablet",
 					"occurred_at": "{{time:-90m}}",
 					"replaces": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9"
@@ -111,34 +114,16 @@
 					{
 						"product_id": "{{product.tablet}}",
 						"location_id": "{{location.organizer_a}}",
-						"amount": 2
+						"amount": 4
 					}
 				]
 			},
 			"stock": {
-				"tablet": 8
+				"tablet": 1
 			}
 		},
 		{
-			"note": "The old event is a voided tombstone",
-			"request": {
-				"method": "GET",
-				"path": "/api/consumption/events/healthkit/6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9"
-			},
-			"expect": {
-				"status": 200,
-				"body": {
-					"source_system": "healthkit",
-					"source_event_id": "6F1C0001-9B6E-4F3A-8A1D-2B7C5E90A1A9",
-					"state": "voided"
-				}
-			},
-			"stock": {
-				"tablet": 8
-			}
-		},
-		{
-			"note": "The new event is booked",
+			"note": "Read the persisted correction",
 			"request": {
 				"method": "GET",
 				"path": "/api/consumption/events/healthkit/6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9"
@@ -146,10 +131,18 @@
 			"expect": {
 				"status": 200,
 				"body": {
-					"source_system": "healthkit",
-					"source_event_id": "6F1C0002-9B6E-4F3A-8A1D-2B7C5E90A1A9",
 					"state": "booked"
-				}
+				},
+				"line_totals": [
+					{
+						"product_id": "{{product.tablet}}",
+						"location_id": "{{location.organizer_a}}",
+						"amount": 4
+					}
+				]
+			},
+			"stock": {
+				"tablet": 1
 			}
 		}
 	]

@@ -275,3 +275,10 @@ them.
     journal. [ADR-0041](../../adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md)
     fixes the filter order, and a different order is a decision for that record.
 
+
+## Quantities on event lines
+
+Each event line represents a stock-log allocation. Several lines can name the same product,
+particularly after correcting a booking that revives stock. Sum amounts by product and source
+location to display the booked quantity. Do not count lines as doses. The server retains internal stock-log references for
+booking lineage and does not merge the stored allocations for presentation.

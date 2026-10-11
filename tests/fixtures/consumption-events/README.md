@@ -162,3 +162,15 @@ are about stock undo order, not about the event contract.
 * A first submission answers `replayed: false`; a replay answers `replayed: true`.
 
 `18-manual-request-conflict.json` checks an identical manual retry and a conflicting recipe with the same request id.
+
+## Allocation totals
+
+Event `lines` correspond to stock-log entries. A correction can revive a stock row and allocate
+from it and other rows, so line count does not count consumption events or products.
+Clients display quantities by summing amounts for each product and location.
+
+`expect.line_totals` is a list of `{product_id, location_id, amount}` objects. A replay runner
+must group every response line by product and location, sum the stock-unit amounts, and compare
+all groups against this list. It must not ignore this assertion or require a particular split.
+Fixtures 06 and 09e use this assertion for corrected quantities.
+`19-correction-split-lines.json` corrects across two purchases and checks the persisted GET result.

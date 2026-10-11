@@ -15471,6 +15471,7 @@
 					},
 					"lines": {
 						"type": "array",
+						"description": "One line per stock-log allocation. Products may repeat after corrections or multi-row bookings. Sum amounts by product and location; line count is not a dose count.",
 						"items": {
 							"$ref": "#/components/schemas/ConsumptionExternalEventLine"
 						}
