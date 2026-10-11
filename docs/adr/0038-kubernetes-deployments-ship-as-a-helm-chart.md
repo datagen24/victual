@@ -1,6 +1,6 @@
 # ADR-0038: Kubernetes deployments ship as a Helm chart, and `deploy/k3s/` becomes its rendered output
 
-- **Status:** Accepted 2026-10-09
+- **Status:** Accepted 2026-10-11
 - **Decider:** datagen24
 - **Recorded:** 2026-10-07. Answers to open questions 1, 2 and 3 recorded the same day,
   and decisions 2, 8, 9 and 10 reconciled with them. Prerequisites 1 to 3 met 2026-10-08,
@@ -314,7 +314,7 @@ against `claude/adr38-chart-publish`.
 | 3 | **Met, with a different message** | `helm install victual deploy/helm/victual -f deploy/helm/victual/values.example.yaml --dry-run=client` exits non-zero and lists `at '/database/host'`, `at '/ingress/host'` and `at '/secrets/onepassword/vault'`, the example's three `CHANGE-ME` fields. Helm's validator words the refusal as `'not' failed` rather than `render.py`'s `still 'CHANGE-ME…'; fill it in`. Its regular-expression engine has no lookahead, so the schema can say "not this pattern" only through `not`. The example's header says what the refusal means |
 | 4 | **Met** | On kind, install at 0.2.0-MVP and upgrade to the hook Jobs' build both reached a ready Deployment. `helm rollback` across the migration exited 1: the older pod never became ready and the newer pod kept serving. See [Prerequisite 4 on kind](#prerequisite-4-on-kind) |
 | 5 | **Met** | The [0.3.1 release workflow](https://github.com/datagen24/victual/actions/runs/37816437055) passed. The maintainer confirmed a successful anonymous Helm pull on 2026-10-09. See [Prerequisite 5's workflow](#prerequisite-5s-workflow). |
-| 6 | **Half met: kind** | `deploy/kind/up.sh` installs the chart with `deploy/kind/values.yaml`: from scratch, again over its own release, and over a namespace the old kustomize overlay had applied, each to a ready Deployment that logs in. `deploy/talos/up.sh` installs `oci://ghcr.io/datagen24/charts/victual` by version, or the local chart with `--local`; its rendering passes `validate()` and `kubectl apply --dry-run=client`, and has not been applied, so the talos cluster has not served `/login` from the published chart. See [Prerequisite 6](#prerequisite-6-kind-and-talos-through-the-chart) |
+| 6 | **Met** | Kind installation evidence is recorded below. On 2026-10-11, datagen24 confirmed all-day Talos test-server operation, repeated upgrades using builds from master, and an upgrade to v0.4.0 with application test data retained. See [Prerequisite 6](#prerequisite-6-kind-and-talos-through-the-chart). |
 | 7 | **Met** | On kind, a preflight refusal (exit 2) failed `helm upgrade` before any pod was replaced, and clients kept getting 200. The `post-upgrade` Job published nine retained topics to a local broker. See [Prerequisite 7 on kind](#prerequisite-7-on-kind) |
 
 ### Prerequisite 5's workflow
@@ -333,97 +333,18 @@ stubbed. It pushed `charts/victual:0.3.0`, the registry listed that as the only 
 stopped before pushing, because the package was `victual-0.3.0.tgz`.
 
 The [release workflow for `v0.3.1`](https://github.com/datagen24/victual/actions/runs/37816437055)
-succeeded. On 2026-10-09, datagen24 confirmed that anonymous Helm pull worked as expected.
-This is maintainer-reported operational evidence, completing prerequisite 5; no local
-pull was repeated for this update. The confirmation did not specify the chart version.
-To reproduce the gate for the first published chart, use an empty Helm registry
-configuration and run:
+succeeded. On 2026-10-11, datagen24 confirmed that the Talos test server had run all day,
+including builds from master, multiple upgrades and an upgrade to v0.4.0.
+Application test data remained intact through those upgrades. The maintainer supplied
+this operational evidence in response to the outstanding Talos acceptance gate;
+prerequisite 6 is met. Exact intermediate commits and command logs were not supplied,
+and this documentation update does not repeat the deployment tests.
 
-```sh
-helm pull oci://ghcr.io/datagen24/charts/victual --version 0.3.1
-```
-
-Prerequisite 6 remains unmet on Talos; see the deployment status below.
-
-### Prerequisite 4 on kind
-
-The release ran in namespace `adr38` with Helm v4.3.0 and `secrets.source: existing`.
-PostgreSQL and the roles came from `deploy/kind/`. An in-cluster client requested `/login`
-once a second throughout.
-
-1. **Install.** Revision 1, `helm install --wait` of the published `0.2.0-MVP` images, was
-   ready in 3 seconds with the schema at migration 288.
-2. **Upgrade.** Revision 3, `helm upgrade --wait` to images built from
-   `claude/adr38-helm-hooks` as `0.3.0-adr38`, exited 0. The new pod's `migrate` initContainer converted 317 timestamps
-   and reported the schema at migration 304. During the rollout the client got 503 three
-   times from the old pod, then one connection failure while the Service switched pods.
-3. **Rollback.** `helm rollback victual 1 --wait --timeout 3m` exited 1 with `context
-   deadline exceeded`, and revision 4 is `failed`.
-   - The older `migrate` initContainer exited 0 and logged `Schema is up to date at
-     migration 304`. Its own migrations stop at 288, so it neither ran nor refused
-     anything.
-   - The older pod never became ready. Its readiness probe failed 25 times with `GET
-     /login answered 503`. A request sent to that pod directly returned 503 with `Victual
-     cannot serve requests: the database schema does not match this code.`
-   - The newer pod stayed ready and answered all 177 of the client's requests with 200.
-   - The rollback restored revision 1's ConfigMap, so the newer pod would start with MQTT
-     off if it restarted.
-4. **Recovery.** `helm rollback victual 3 --wait` exited 0.
-
-This is the first outcome Consequences predicts. Rollback is a recovery only for releases
-that add no migration.
-
-### Prerequisite 6: kind and talos through the chart
-
-Recorded 2026-10-08 against `claude/adr38-kind-talos-values`, with Helm v4.3.0 on the same
-kind cluster, in scratch namespaces (the cluster's `victual` namespace belonged to another
-session). Images were built from `b930242f` and tagged `0.3.0-helmkind`.
-
-1. **From scratch** (namespace `helmkind`). `up.sh` exited 0 in 23 seconds: namespace,
-   Secrets, PostgreSQL, the roles Job, then `helm upgrade --install --wait` installed
-   revision 1. The Deployment was 1/1 and the MCP sidecar 2/2. The migrate initContainer
-   reported the schema at migration 304. Through a port-forward, `GET /login` answered 200; a
-   `POST /login` with the generated bootstrap password answered 302 to `/`, which answered 302
-   to `/stockoverview`, which answered 200. A wrong password answered 302 to
-   `/login?invalid=true`.
-2. **Again over its own release.** `up.sh` exited 0 in 6 seconds with revision 2. The
-   pre-upgrade preflight Job completed and logged `No TIMESTAMP column is left to convert`.
-   The Victual pod kept its name, because nothing in its template changed. The same login
-   sequence gave the same codes.
-3. **Over the kustomize overlay** (namespace `helmadopt`). The old `deploy/kind` overlay,
-   rendered from `b930242f`, was applied with `kubectl apply`, and `up.sh` was then run
-   over it. The first attempt, without adoption, failed: Helm 4's server-side apply
-   conflicted with the fields `kubectl-client-side-apply` owned. With `--take-ownership
-   --force-conflicts` on the first install, which `up.sh` now passes only when no release
-   exists, it exited 0 with revision 1. The PostgreSQL pod was not replaced. The admin row's
-   `row_created_timestamp` was the same before and after, and the login sequence gave the
-   same codes. The overlay's two label CronJobs, which `values.yaml` leaves out, stayed in
-   place until deleted by hand. In a third namespace, an install with `--take-ownership`
-   alone over the same overlay failed on those conflicts and left revision 1 `failed`.
-   `up.sh` treats a release with no deployed revision as new, so its retry passed both flags
-   and upgraded it to a deployed revision 2 that logs in.
-4. **talos, not applied.** `up.sh` installs the chart at `version.json`'s version. The first
-   published chart will be 0.3.1, the tag after the gate pull requests merge, and that
-   release moves `version.json` to 0.3.1; no 0.3.0 chart exists.
-   `helm template` with `deploy/talos/values.yaml` (11 documents, the preflight hook among them) and `kubectl kustomize deploy/talos/postgres` (6) pass
-   `validate()`. Without the `OnePasswordItem`s, which kind has no CRD for, both pass
-   `kubectl apply --dry-run=client` against kind. Compared by kind and name with the old
-   overlay's rendering from `b930242f`, every object is the same, except three:
-   - The Namespace is gone, because `up.sh` creates it.
-   - The preflight Job is new.
-   - The chart's three `OnePasswordItem`s gain the label `app.kubernetes.io/name: victual`.
-
-   The comparison is with the overlay as committed, at 0.3.0. The cluster was last applied
-   at `0.2.0-MVP`, so if it still runs those images the first install also upgrades it, and
-   an install runs no `pre-upgrade` hook: the preflight has to be run by hand first. Neither
-   the adoption nor that upgrade has been observed on the cluster.
-
-On 2026-10-09, datagen24 confirmed that the published chart had not been deployed
-on Talos. The production configuration uses Home Assistant's InfluxDB 1.x server,
-but Victual's writer supported the 2.x API. [Release 0.3.2](../releases/0.3.2.md)
-adds 1.x support and the chart settings it needs. The maintainer has not tested that
-fix against the deployment. Prerequisite 6 remains unmet until the chart is deployed
-and the Talos cluster serves `/login`.
+InfluxDB integration testing remains outstanding. The earlier deployment delay involved
+Home Assistant's InfluxDB 1.x server and a writer supporting only the 2.x API.
+[Release 0.3.2](../releases/0.3.2.md) added 1.x support and chart settings.
+That integration check is separate from prerequisite 6's application deployment check
+and does not hold ADR-0038 acceptance open.
 
 ### Prerequisite 7 on kind
 
