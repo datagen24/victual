@@ -30,6 +30,10 @@
 
 - xxx
 
+### Consumption event fixes
+
+- Fixed JSON-body deletion reasons being ignored on real HTTP requests when the input stream has no reported size ([#760](https://github.com/datagen24/victual/issues/760)). Query parameters still take precedence; clearing or archiving source history leaves stock unchanged
+
 ### Consumption refills
 
 - Added refill tracking for private consumption recipes (migration 0307, [ADR-0042](../docs/adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md)). A person records each fill with its date and, optionally, the days it supplies, sets one rule per recipe (`days_before_end`, `fixed_interval` or `fraction_elapsed`) or enters a reorder date, and records an order and its receipt. Victual derives a reorder date, a warning date and a status (`ok`, `approaching`, `due`, `ordered`, `unknown`) from those facts. It does not read stock to decide when a refill is needed
