@@ -6,7 +6,9 @@
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-10, against `master` at `0639a23d`. Design work only: it changes no
-  code, reserves no migration number and amends no accepted record.
+  code, reserves no migration number and amends no accepted record. Revised 2026-10-11
+  against `master` at `d4960138` to add source evidence (section "Evidence added
+  2026-10-11"); the decision is unchanged.
 - **Referenced by:** [issue 742](https://github.com/datagen24/victual/issues/742) and its
   evidence, [`.devtools/issue742/RESULTS.md`](../../.devtools/issue742/RESULTS.md).
 - **Relationship:** compatible with accepted
@@ -175,7 +177,9 @@ no household has asked for. Open question 3 keeps it available.
 - Migration compatibility: one PostgreSQL-only migration inserts the `permission_hierarchy`
   row. Installations upgrading keep every existing grant, and `MASTER_DATA_EDIT` and `ADMIN`
   holders resolve the new permission with no update to `user_permissions`. The migration
-  number is claimed in `migrations/RESERVATIONS.md` when the work starts, not now.
+  number is claimed in `migrations/RESERVATIONS.md` when the work starts, not now. A fresh
+  install and a legacy import need more than the migration; see "Permission rows on each
+  install path" below.
 - Also changed at implementation: the contract snapshots that list `permission_hierarchy`, the
   `permission-<NAME>` classes that hide "new" buttons in the views, the translations, the
   [permission reference](../manual/operator/roles-permissions.md#permission-reference), and the
@@ -183,10 +187,89 @@ no household has asked for. Open question 3 keeps it available.
 - Native clients gain create without a new route. A client still has to handle 403.
 - Not decided here: when this ships. The record assigns no release.
 
+## Evidence added 2026-10-11
+
+Read from source on `master` at `d4960138`; nothing here was exercised. The decision above is
+unchanged.
+
+### Permission rows on each install path
+
+The `*_VIEW` leaves are not in `InitialDataSeeder::PERMISSION_HIERARCHY`
+(`services/Database/InitialDataSeeder.php`, 41-72). That constant holds the 30 rows of
+migration 0110 in that migration's order, so each permission keeps its id, and it ends at
+`MASTER_DATA_EDIT`. The leaves come from later files:
+
+- `db/pgsql/roles-seed.sql` (lines 1-6) creates `STOCK_VIEW`, `SHOPPINGLIST_VIEW`,
+  `CHORES_VIEW`, `TASKS_VIEW`, `RECIPES_VIEW` and `MEALPLAN_VIEW`, and the four built-in roles.
+  Migration 0266 runs it (`migrations/0266.pgsql.php`, line 10).
+- `STOCK_PRICES_VIEW` comes from migration 0281 and from `db/pgsql/prices-seed.sql`.
+- `BATTERIES_VIEW`, `CALENDAR_VIEW` and `EQUIPMENT_VIEW` come from migration 0299 alone.
+
+The three install paths take these sources in different combinations:
+
+| Path | How `permission_hierarchy` is filled |
+|---|---|
+| Fresh install | `DatabaseMigrationService::ApplyBaselineSchemaWhenNeeded` loads `db/pgsql/baseline/`, runs the seeder, and records migrations 1 to 255 as applied (lines 452-481; `BASELINE_MIGRATION_ID` at line 45). Migrations 256 onward then run, so 0266, 0281 and 0299 insert their rows. |
+| Upgrade | The method returns at once when any migration is recorded (line 452). Only migrations the installation has not yet run are applied. |
+| Legacy import | `bin/victual-db-import` migrates the schema without seeding (`bin/victual-db-import`, line 120), then the import truncates `permission_hierarchy` with its foreign-key dependants. `DatabaseImporter` replays `roles-seed.sql` and `prices-seed.sql` afterwards (lines 853 and 866) and nothing else. |
+
+An implementation of the new right has to change two places so that all three paths agree:
+
+1. A new PostgreSQL-only migration inserts the row with the existence guard the other
+   migrations use. This is the only change that reaches both a fresh install, which runs
+   migrations after 255, and an upgrade. Adding the row to `PERMISSION_HIERARCHY` would not
+   reach an upgrade, and the constant's docblock ties its order to the ids that migration 0110
+   gave (lines 31-33), so a fresh install would diverge from an upgraded one.
+2. The same idempotent insert goes into a seed file the importer replays, as
+   `prices-seed.sql` did for 0281 (its header explains why), or into a new file the importer
+   also replays. Without it, a legacy import deletes the row. The leaves of migration 0299
+   appear in no file the importer replays; whether an imported database lacks them was not
+   tested, and it is outside this record.
+
+The upgrade rehearsal in the acceptance prerequisites then needs a counterpart for the other
+two paths: a fresh install, an upgraded installation and an imported database resolve the
+permission for the same accounts.
+
+### Where external lookup stores a picture
+
+`GET /api/stock/barcodes/external-lookup/{barcode}?add=true` can store a product picture.
+`StockService::ExternalBarcodeLookup` (lines 1368-1553) fetches the plugin's `__image_url`
+(1387-1481), names the file `<barcode>.<extension>` (1472) and, after the product commits,
+calls `FileStorage::Write('productpictures', ...)` (1539). `Write` replaces a file of the same
+name (`services/Storage/FileStorage.php`, 103-109).
+
+Uploading a product picture through `PUT /api/files/productpictures/{fileName}` needs
+`MASTER_DATA_EDIT` (`FilesApiController::GROUP_WRITE_PERMISSIONS`, line 43; checked at line
+342) and uses `FileStorage::Create`, which refuses an existing name (line 348).
+
+If the route accepts the new right as decision 2 states, an account that holds the new right
+and not `MASTER_DATA_EDIT` can cause a `productpictures` file to be written, and replaced if
+one of that name exists, which the upload route does not allow it to do. The caller does not
+choose the bytes; they come from the configured lookup source, under the extension allow-list
+and the outbound host policy. The same call is open to `MASTER_DATA_EDIT` holders today. Open
+question 5 asks whether that is acceptable.
+
+The controller checks `MASTER_DATA_EDIT` before it reads `add`
+(`StockApiController.php`, 853-859), so a lookup without `add` also needs it today. Decision 2
+names `add=true`. If it means that call only, the check moves after `add` is read; if it means
+the whole lookup route, it does not.
+
+### Inventory and a separate finding
+
+[`.devtools/issue742/RESULTS.md`](../../.devtools/issue742/RESULTS.md), section "Static
+completion, 2026-10-11", lists the gate of each route the first probe could not resolve, the
+minimum permissions to set up a medication today, and three findings.
+
+Finding F1 there is separate from this record. `POST /api/stock/products/{keep}/merge/{remove}`
+checks `STOCK_EDIT` and ends in `DELETE FROM products`, so an account that holds `STOCK`, such
+as the seeded Adult role, can delete a product through merge. Decision 2 leaves merges on
+their current gates, which keeps that behavior. This record does not decide whether merge
+should move to `MASTER_DATA_EDIT`; that needs its own decision.
+
 ## Acceptance prerequisites
 
 1. The maintainer decides the feature is needed and in which release it ships.
-2. Open questions 1 to 3 are answered.
+2. Open questions 1 to 3 and 5 are answered.
 3. Tests, each named in the accepting pull request:
    - an account holding only the new permission can create each entity in the set and gets 403
      on edit, delete, conversion create, and every entity outside the set;
@@ -194,7 +277,9 @@ no household has asked for. Open question 3 keeps it available.
      migration with no change to their grants;
    - `CheckMayGrant` refuses a grant of the permission by an account that does not hold it;
    - an upgrade rehearsal shows no existing account gains or loses an effective permission
-     except by holding `MASTER_DATA_EDIT` or `ADMIN`.
+     except by holding `MASTER_DATA_EDIT` or `ADMIN`;
+   - a fresh install and a legacy import hold the permission row with the same parent as an
+     upgraded installation (see "Permission rows on each install path").
 4. The contract snapshots and `check-migrations.php` pass with the migration.
 
 ## Open questions
@@ -217,3 +302,9 @@ no household has asked for. Open question 3 keeps it available.
 3. **One permission or one per entity?** *Lean: one.*
 4. **Name.** `MASTER_DATA_CREATE` follows the existing `STOCK_*` suffix style. `MASTER_DATA_ADD`
    matches `SHOPPINGLIST_ITEMS_ADD`. *Lean: `MASTER_DATA_ADD`, to match the nearest sibling.*
+5. **Does `external-lookup?add=true` store a picture for a holder of the new right?** The
+   route writes a `productpictures` file, and replaces one of the same name, while uploading
+   to that group needs `MASTER_DATA_EDIT` (see "Where external lookup stores a picture").
+   The options are to keep the picture step, to skip it for an account that lacks
+   `MASTER_DATA_EDIT`, or to refuse `add=true` to such an account. The record does not
+   decide.
