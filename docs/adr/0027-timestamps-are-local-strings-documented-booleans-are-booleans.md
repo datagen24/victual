@@ -346,6 +346,38 @@ tenth of the scale, and is where this would be decided.
   all fifty-seven listable entities against all ten members — off real responses where the
   fixture gives an entity a row, and off the relation's columns where it does not, with the
   two checked against each other. It pins the result, so a fourth cannot appear unnoticed.
+
+    **Correction, 2026-10-12.** The paragraph above is kept as written on 2026-10-04. Two
+    of its claims do not hold when re-measured against `master` at `7b486823`.
+
+    - **Two of the three need only `required` properties.** `stock_log` is separated from
+      `StockEntry` by `open`. That column is NOT NULL on `stock` and absent from
+      `stock_log`. `product_barcodes_view` is separated from `ProductBarcode` by
+      `row_created_timestamp`, which every `product_barcodes` row carries and the view does
+      not select.
+    - **One still needs option E or D.** `uihelper_shopping_list` selects `sl.*`, so it is a
+      strict superset of `shopping_list`. No `required` property keeps its rows from
+      satisfying `ShoppingListItem`. The same holds in reverse for a member of its own: a
+      `product_barcodes` row satisfies anything a `product_barcodes_view` row satisfies.
+
+    **`swift-openapi-generator` accepts more than the paragraph says.** Version 1.14.0 emits
+    a required but nullable property as an optional and accepts the key being absent, not
+    only an explicit `null`. It also ignores keys a member does not declare. Under `oneOf`
+    it takes the first member that decodes, so on `master` it decodes `quantity_units` as
+    `Location`, and `stock`, `stock_log`, `product_barcodes` and `product_barcodes_view` as
+    `ShoppingListItem`. It does not support `not`: a member that uses `not` is skipped, and
+    the union and both routes' response bodies are skipped with it. Closing all thirteen
+    members with `additionalProperties: false` does not separate subset rows either.
+    `.devtools/issue648/RESULTS.md` records these measurements, and
+    `.devtools/issue648/run.sh` reproduces them.
+
+    Issue 648 records the maintainer's response. The member schemas `StockLogEntry`,
+    `ProductBarcodeView` and `UihelperShoppingListItem` are added, and both unions become
+    `anyOf` with an `x-victual-entity-schemas` map. A client decodes with the member for the
+    entity it requested. Two overlaps remain documented: `product_barcodes` rows also satisfy
+    `ProductBarcodeView`, and `uihelper_shopping_list` rows also satisfy `ShoppingListItem`.
+    `tests/Pgsql/WireContractTest.php` pins both overlaps and the map. This correction changes
+    no decision of this record and does not accept it.
 - **Candidacy is what is measured, and it is not the same as a successful decode.** The
   same test validates real rows against members with a JSON Schema validator. **When this
   record was written it validated every row against all ten members, and exactly one
@@ -510,6 +542,12 @@ This record changes a wire contract, so accepting it requires:
    decider accepts the residual only while
    [issue 648](https://github.com/datagen24/victual/issues/648) is open and tracked. The
    accepting pull request must link the issue in that state, or show it fixed.
+
+   **Correction, 2026-10-12.** The claim that closing the three needs option E or option D
+   held for one entity, not three. `stock_log` and `product_barcodes_view` are separated by
+   `required` properties. `uihelper_shopping_list` still needs option E or D, because it is a
+   superset of `shopping_list`. The re-measurement and the Swift client evidence are under
+   Consequences above. This prerequisite's status is unchanged.
 4. `.devtools/pgsql/run-tests.sh all` green on a working copy, with the `contract` phase
    passing against the committed snapshot rather than regenerating it. Stated in the
    accepting pull request with the date and the working copy it was run against.
