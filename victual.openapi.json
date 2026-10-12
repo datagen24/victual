@@ -1856,11 +1856,14 @@
 							"schema": {
 								"type": "object",
 								"properties": {
-									"permissions_id": {
+									"permission_id": {
 										"type": "integer",
-										"description": "A permission ids"
+										"description": "The id of the permission to assign to the user. Absent or null is refused with 400 \"permission_id is required\""
 									}
-								}
+								},
+								"required": [
+									"permission_id"
+								]
 							}
 						}
 					}
@@ -1928,11 +1931,15 @@
 									"permissions": {
 										"type": "array",
 										"items": {
-											"type": "integer"
+											"type": "integer",
+											"minimum": 1
 										},
-										"description": "A list of permission ids"
+										"description": "The complete list of permission ids the user is left holding; an empty list removes every assignment. Each id must be a positive integer. A missing or non-list value is refused with 400 before any assignment changes"
 									}
-								}
+								},
+								"required": [
+									"permissions"
+								]
 							}
 						}
 					}
@@ -3417,7 +3424,22 @@
 										"required": [
 											"amount",
 											"qu_id"
-										]
+										],
+										"if": {
+											"properties": {
+												"gross": {
+													"const": true
+												}
+											},
+											"required": [
+												"gross"
+											]
+										},
+										"then": {
+											"required": [
+												"tare"
+											]
+										}
 									}
 								},
 								"example": {
@@ -6999,7 +7021,10 @@
 										"type": "string",
 										"pattern": "^[0-9a-f]{64}$"
 									}
-								}
+								},
+								"required": [
+									"material"
+								]
 							}
 						}
 					}
@@ -7056,7 +7081,11 @@
 										"type": "string",
 										"pattern": "^[0-9a-f]{64}$"
 									}
-								}
+								},
+								"required": [
+									"material",
+									"rotation_request_id"
+								]
 							}
 						}
 					}
@@ -7361,7 +7390,11 @@
 									"detail": {
 										"type": "object"
 									}
-								}
+								},
+								"required": [
+									"outcome",
+									"detail"
+								]
 							}
 						}
 					}

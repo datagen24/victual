@@ -384,6 +384,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn() > 0;
 	}
 
+	// =========================================================================
 	// ================================================================================
 	// Group A: the ten empty-body routes (#487 H9's own list)
 	// ================================================================================
@@ -1088,5 +1089,251 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 			self::assertSame($expected, $decoded['error_message'], "POST $path with $label: the controller's refusal text");
 			self::assertSame($before, self::bookingCounts(), "POST $path with $label: a refusal must write no stock, stock_log or shopping_list row");
 		}
+	}
+=======
+	// Group G: request-body schemas of six more operations (issue #804)
+	//
+	// Each operation's requestBody schema in victual.openapi.json used to omit the fields the
+	// runtime refuses without (POST /users/{id}/permissions even named the field
+	// `permissions_id` where the controller reads `permission_id`). The document half pins
+	// each schema with Opis; the runtime half (here for the user and stock operations, in
+	// LabelApiTest for the label ones) proves the refusal the schema now promises is the
+	// one the route gives, and that nothing was written first.
+	// ================================================================================
+
+	private const TARGET_USER_ID = 9801;
+
+	/**
+	 * Validates a JSON text against the requestBody schema of one operation, read off the
+	 * document by path and method. The body is passed as JSON text so that `{}` stays an
+	 * object rather than becoming the empty PHP array.
+	 *
+	 * @return string|null null when valid; otherwise "path: keyword" of the first deepest failure
+	 */
+	private static function ValidateRequestBody(string $path, string $method, string $json): ?string
+	{
+		static $document = null;
+		$document ??= json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), false, flags: JSON_THROW_ON_ERROR);
+
+		$schema = $document->paths->{$path}->{$method}->requestBody->content->{'application/json'}->schema;
+
+		$validator = new \Opis\JsonSchema\Validator();
+		$validator->parser()->setOption('allowDefaults', false);
+		$result = $validator->validate(json_decode($json, false, flags: JSON_THROW_ON_ERROR), json_decode(json_encode($schema), false));
+
+		if ($result->isValid())
+		{
+			return null;
+		}
+
+		$error = $result->error();
+		while ($error->subErrors())
+		{
+			$error = $error->subErrors()[0];
+		}
+
+		return (implode('/', $error->data()->fullPath()) ?: '<root>') . ': ' . $error->keyword();
+	}
+
+	/**
+	 * Sends a body as JSON text built from objects, so that an empty one reaches the route as
+	 * `{}`: Send() round-trips its spec through an associative decode, which turns an empty
+	 * object into the empty array and the route would see `[]` (a different refusal).
+	 */
+	private static function JsonObjectRequest(string $method, string $path, array $body): array
+	{
+		return self::RawRequest($method, $path, json_encode((object)$body));
+	}
+
+	private static function requestRequiredList(string $path, string $method): array
+	{
+		$document = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), true, flags: JSON_THROW_ON_ERROR);
+
+		return $document['paths'][$path][$method]['requestBody']['content']['application/json']['schema']['required'] ?? [];
+	}
+
+	public static function requestSchemaProvider(): array
+	{
+		$hex = str_repeat('a', 64);
+
+		return [
+			'POST user permission' => ['/users/{userId}/permissions', 'post', ['permission_id'], ['permission_id' => 1], []],
+			'PUT user permissions' => ['/users/{userId}/permissions', 'put', ['permissions'], ['permissions' => []], []],
+			'POST labels pair' => ['/labels/pair', 'post', ['material'], ['material' => $hex], []],
+			'POST labels rotate' => ['/labels/credentials/rotate', 'post', ['material', 'rotation_request_id'], ['material' => $hex, 'rotation_request_id' => $hex], []],
+			'POST attempt result' => ['/labels/attempts/{attemptId}/result', 'post', ['outcome', 'detail'], ['outcome' => 'printed', 'detail' => new \stdClass()], []],
+			'POST product open' => ['/stock/products/{productId}/open', 'post', [], ['amount' => 1], []],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('requestSchemaProvider')]
+	public function testRequestSchemaRequiredListAndMinimalBody(string $path, string $method, array $required, array $minimal): void
+	{
+		self::assertSame($required, self::requestRequiredList($path, $method), "$method $path: the documented required list");
+
+		if ($required === [])
+		{
+			return;
+		}
+
+		self::assertNotNull(self::ValidateRequestBody($path, $method, '{}'), "$method $path: {} must fail the schema");
+		self::assertNull(self::ValidateRequestBody($path, $method, json_encode((object)$minimal)), "$method $path: the minimal body must pass");
+
+		foreach (array_keys($minimal) as $dropped)
+		{
+			$without = $minimal;
+			unset($without[$dropped]);
+			self::assertNotNull(self::ValidateRequestBody($path, $method, json_encode((object)$without)), "$method $path: the minimal body without $dropped must fail");
+		}
+	}
+
+	public function testPostUserPermissionDocumentsPermissionIdAndNotPermissionsId(): void
+	{
+		self::assertNotNull(self::ValidateRequestBody('/users/{userId}/permissions', 'post', '{"permissions_id": 1}'),
+			'the old, never-working name must not satisfy the schema');
+		self::assertNull(self::ValidateRequestBody('/users/{userId}/permissions', 'post', '{"permission_id": 1}'));
+		self::assertNotNull(self::ValidateRequestBody('/users/{userId}/permissions', 'post', '{"permission_id": "1"}'), 'the documented type is integer');
+	}
+
+	public function testPutUserPermissionsDocumentsAnEmptyListAsValidAndRefusesNonIdLists(): void
+	{
+		self::assertNull(self::ValidateRequestBody('/users/{userId}/permissions', 'put', '{"permissions": []}'), 'an empty list is accepted by the runtime and by the schema');
+		self::assertNull(self::ValidateRequestBody('/users/{userId}/permissions', 'put', '{"permissions": [1, 2]}'));
+
+		foreach (['{"permissions": 1}', '{"permissions": [0]}', '{"permissions": [-1]}', '{"permissions": ["1"]}'] as $body)
+		{
+			self::assertNotNull(self::ValidateRequestBody('/users/{userId}/permissions', 'put', $body), "$body must fail the schema");
+		}
+	}
+
+	public function testOpenMeasurementDocumentsAmountQuIdAndTareForAGrossReading(): void
+	{
+		$validate = static fn (string $measurement): ?string => self::ValidateRequestBody('/stock/products/{productId}/open', 'post', '{"amount": 1, "measurement": ' . $measurement . '}');
+
+		self::assertNotNull($validate('{}'), 'a present measurement needs amount and qu_id');
+		self::assertNotNull($validate('{"amount": 1}'), 'qu_id is required');
+		self::assertNotNull($validate('{"qu_id": 2}'), 'amount is required');
+		self::assertNull($validate('{"amount": 1, "qu_id": 2}'), 'a net reading needs no tare');
+		self::assertNull($validate('{"amount": 1, "qu_id": 2, "gross": false}'), 'gross false needs no tare');
+		self::assertNotNull($validate('{"amount": 1, "qu_id": 2, "gross": true}'), 'gross true needs tare');
+		self::assertNull($validate('{"amount": 1, "qu_id": 2, "gross": true, "tare": 0.1}'));
+		self::assertNull(self::ValidateRequestBody('/stock/products/{productId}/open', 'post', '{"amount": 1}'), 'measurement itself stays optional');
+	}
+
+	// --- runtime half: users ------------------------------------------------------
+
+	/** Gives the caller USERS_EDIT (idempotent) and (re)creates a target user holding two known permissions. */
+	private static function prepareUserPermissionFixture(): array
+	{
+		self::$db->exec('INSERT INTO user_permissions (user_id, permission_id) SELECT ' . self::USER_ID . ", id FROM permission_hierarchy WHERE name = 'USERS_EDIT' ON CONFLICT DO NOTHING");
+		self::$db->exec('DELETE FROM user_permissions WHERE user_id = ' . self::TARGET_USER_ID);
+		self::$db->exec('DELETE FROM users WHERE id = ' . self::TARGET_USER_ID);
+		self::$db->exec("INSERT INTO users(id, username, password) VALUES (" . self::TARGET_USER_ID . ", 'api-input-shapes-target', 'fixture')");
+		self::$db->exec('INSERT INTO user_permissions (user_id, permission_id) SELECT ' . self::TARGET_USER_ID . ", id FROM permission_hierarchy WHERE name IN ('STOCK_VIEW', 'TASKS_VIEW')");
+
+		return self::targetPermissions();
+	}
+
+	private static function targetPermissions(): array
+	{
+		return self::$db->query('SELECT permission_id FROM user_permissions WHERE user_id = ' . self::TARGET_USER_ID . ' ORDER BY permission_id')->fetchAll(PDO::FETCH_COLUMN);
+	}
+
+	public function testPostUserPermissionWithoutPermissionIdIsRefusedAndAssignsNothing(): void
+	{
+		$before = self::prepareUserPermissionFixture();
+		self::assertCount(2, $before);
+
+		foreach ([[], ['permissions_id' => 1], ['permission_id' => null]] as $body)
+		{
+			$result = self::JsonObjectRequest('POST', '/api/users/' . self::TARGET_USER_ID . '/permissions', $body);
+
+			$decoded = self::AssertRefusedAsError400($result, 'POST /users/{id}/permissions ' . json_encode($body));
+			self::assertSame('permission_id is required', $decoded['error_message']);
+			self::assertEquals($before, self::targetPermissions(), 'a refused request must not have assigned a permission');
+		}
+	}
+
+	public function testPutUserPermissionsWithoutAnIdListIsRefusedAndKeepsTheAssignments(): void
+	{
+		$before = self::prepareUserPermissionFixture();
+
+		$cases = [
+			'no permissions key' => [[], 'permissions must be an array of integer ids'],
+			'null' => [['permissions' => null], 'permissions must be an array of integer ids'],
+			'not a list' => [['permissions' => 1], 'permissions must be an array of integer ids'],
+			'non-positive id' => [['permissions' => [0]], 'permissions must contain positive integer ids'],
+			'string id' => [['permissions' => ['1']], 'permissions must contain positive integer ids'],
+		];
+
+		foreach ($cases as $label => [$body, $message])
+		{
+			$decoded = self::AssertRefusedAsError400(self::JsonObjectRequest('PUT', '/api/users/' . self::TARGET_USER_ID . '/permissions', $body), "PUT /users/{id}/permissions ($label)");
+			self::assertSame($message, $decoded['error_message'], $label);
+			self::assertEquals($before, self::targetPermissions(), "$label: a refused request must leave the assignments as they were");
+		}
+	}
+
+	/** The empty list is valid at runtime, which is why the schema must not forbid it. */
+	public function testPutUserPermissionsWithAnEmptyListRemovesEveryAssignment(): void
+	{
+		self::prepareUserPermissionFixture();
+
+		$result = self::Request('PUT', '/api/users/' . self::TARGET_USER_ID . '/permissions', ['permissions' => []]);
+
+		self::assertSame(204, $result['status'], $result['body']);
+		self::assertSame([], self::targetPermissions());
+	}
+
+	// --- runtime half: open measurement -------------------------------------------
+
+	/** @return array{0: int, 1: string} the product id and a digest of every row the open could have written */
+	private static function openMeasurementFixture(string $name): array
+	{
+		$locationId = self::insertLocation($name . ' location');
+		$productId = self::insertProduct($name, $locationId);
+		self::insertStock($productId, $locationId, 2, '2099-12-31');
+
+		return [$productId, self::bookingDigest($productId)];
+	}
+
+	private static function bookingDigest(int $productId): string
+	{
+		return (string)self::$db->query("SELECT md5(coalesce((SELECT string_agg(row_to_json(s)::text, ',' ORDER BY s.id) FROM stock s WHERE s.product_id = $productId), '')"
+			. " || '|' || coalesce((SELECT string_agg(row_to_json(l)::text, ',' ORDER BY l.id) FROM stock_log l WHERE l.product_id = $productId), ''))")->fetchColumn();
+	}
+
+	public function testOpenWithAnIncompleteMeasurementIsRefusedAndWritesNothing(): void
+	{
+		[$productId, $digest] = self::openMeasurementFixture('Open Measurement Required');
+		$entryId = 'api-input-shapes-' . $productId;
+
+		$cases = [
+			'empty measurement' => [[], 'A measurement requires a positive amount'],
+			'no qu_id' => [['amount' => 1], 'A measurement requires a quantity unit'],
+			'no amount' => [['qu_id' => 2], 'A measurement requires a positive amount'],
+			'gross without tare' => [['amount' => 1, 'qu_id' => 2, 'gross' => true], 'A gross measurement requires a tare weight'],
+		];
+
+		foreach ($cases as $label => [$measurement, $message])
+		{
+			$body = ['amount' => 1, 'stock_entry_id' => $entryId, 'measurement' => (object)$measurement];
+			$decoded = self::AssertRefusedAsError400(self::JsonObjectRequest('POST', '/api/stock/products/' . $productId . '/open', $body), "POST .../open measurement ($label)");
+
+			self::assertSame($message, $decoded['error_message'], $label);
+			self::assertSame($digest, self::bookingDigest($productId), "$label: a refused open must write neither stock nor stock_log");
+		}
+	}
+
+	/** Positive control: the documented complete gross measurement opens the entry, so the refusals above came from the measurement checks. */
+	public function testOpenWithACompleteGrossMeasurementOpensTheEntry(): void
+	{
+		[$productId, $digest] = self::openMeasurementFixture('Open Measurement Complete');
+
+		$result = self::Request('POST', '/api/stock/products/' . $productId . '/open',
+			['amount' => 1, 'stock_entry_id' => 'api-input-shapes-' . $productId, 'measurement' => ['amount' => 1.5, 'qu_id' => 2, 'gross' => true, 'tare' => 0.5]]);
+
+		self::assertSame(200, $result['status'], $result['body']);
+		self::assertNotSame($digest, self::bookingDigest($productId), 'the complete request books the opening');
 	}
 }
