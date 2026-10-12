@@ -11,7 +11,8 @@ Victual's scope.
 the external-event schema, service, API and reconciliation inbox (issue 700, merged), and the
 organizer inventory workflow's test evidence (issue 699, merged in pull requests 738 and 744).
 Issues 698 to 700 are closed. Refill tracking (issue 701) merged in pull requests 748, 749 and 751, and
-its read-authorization fix in pull request 755. Not implemented: native acceptance on a device (issue 702) and integrated verification (issue 703).
+its read-authorization fix in pull request 755. Native acceptance (issue 702) was accepted on simulator
+evidence on 2026-10-11 (see its Executed section). Not complete: integrated verification (issue 703).
 
 **Release target:** v0.5.0. [Release 0.4.0](../releases/0.4.0.md) ships issues 698 to 701. The maintainer clarified this scope on 2026-10-09. The target
 is a schedule; the release record and signed tag follow verified implementation under
@@ -211,12 +212,15 @@ ADR-0041 and ADR-0042 accepted, each in its own bookkeeping pull request. ADR-00
 ADR-0014 and ADR-0018 unamended. The evidence is in `.devtools/adr0040/`, `.devtools/adr0041/` and
 `.devtools/adr0042/`. Implementation is tracked by issues 698 to 703. Issues 698 to 700 have
 merged. The implementation of issue 701 merged on 2026-10-10 in pull requests 748, 749 and 751, and
-the issue stays open (see its Executed section). Issues 702 and 703 have not started.
+the issue stays open (see its Executed section). The maintainer accepted issue 702 on simulator
+evidence on 2026-10-11. Issue 703 has not started.
 
 The API contract is developed in this repository. Native HealthKit implementation and
 platform-specific notices belong to `victual-kit`. Server verification can use representative
 client fixtures, but an end-to-end Apple integration claim requires real client evidence.
-The release record must distinguish those outcomes.
+The release record must distinguish those outcomes. On 2026-10-11 the maintainer decided that the
+victual-kit client running in the iOS Simulator against a cluster-hosted server meets this gate for
+issue 702; a physical device is not required. Behaviour of a real Health store is a stated limitation.
 
 [Migrations/RESERVATIONS.md](../../migrations/RESERVATIONS.md) claims 0305 to 0307 for this plan.
 As of 2026-10-10, 0305 (private consumption recipes, shares, events), 0306 (source mappings and
@@ -736,4 +740,31 @@ The approval does not declare verification complete.
   tests are in [pull request 755](https://github.com/datagen24/victual/pull/755). The pull request merged on
   2026-10-10, which meets the private-access criterion above.
 - Native acceptance on a real device (issue 702) and integrated verification (issue 703) have no evidence.
+  Issue 702 was later accepted on simulator evidence; see its Executed section.
 - Plan 22 stays in progress and v0.5.0 is not claimed. Release 0.4.0 ships issues 698 to 701 only.
+
+### Issue 702: native acceptance on simulator evidence
+
+**Maintainer decision, 2026-10-11.** The current simulator evidence closes issue 702. No physical phone
+is used: a phone brings its owner's whole medication history into the test, while the simulator runs
+against a predictable data set. The server was a Victual stack on the maintainer's Talos cluster with a
+disposable on-cluster database. Issue 702's criteria 1 and 6 name a real device; this decision replaces
+that requirement.
+
+**Evidence** (victual-kit `main` at `055553e`, read 2026-10-11; reconciliation in
+[`.devtools/plan22/NATIVE-ACCEPTANCE.md`](../../.devtools/plan22/NATIVE-ACCEPTANCE.md)):
+
+- UI round 1 on an iOS 27.0 simulator with administrator, Adult and Child keys, and the macOS manual
+  test with the same three roles (victual-kit `docs/acceptance/ui-round-1-phone.md`,
+  `macos-app-manual-test.md`).
+- A replay of this repository's 28 consumption-event fixtures against a v0.4.0 instance (tag commit
+  `f73d2bec`, database version 307): 28 of 28 passed. Fixtures 16 and 17 ran with two administrators
+  (victual-kit `docs/acceptance/live-server-replay.md`).
+- Client unit tests for the synchronization, reconciliation and refill code (victual-kit
+  `docs/acceptance/plan-22-native.md`).
+
+**Limitations for the release record.** No real Health store was observed, so identifier changes on
+edit and delete, late delivery and background delivery are known from Apple's documentation and the
+client's design, not from observation. The victual-kit acceptance matrix still names a client commit
+(`743ab1f`) that no longer resolves after a rebase and predates the v0.4.0 spec pin.
+
