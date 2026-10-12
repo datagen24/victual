@@ -2,7 +2,7 @@
 	"openapi": "3.1.0",
 	"info": {
 		"title": "Victual REST API",
-		"description": "Authentication is done via API keys (header *VICTUAL-API-KEY* or same named query parameter), which you can manage [here](PlaceHolderManageApiKeysUrl).<br>Additionally requests from within the frontend are also valid (via session cookie).<br><br>**Dates and times.** Every instant this API stores or sends is RFC 3339 in UTC with exactly six fractional digits - `2026-10-04T18:30:00.000000Z` - typed *format: date-time* (ADR-0027 decision 2, issue #650). The fixed width is part of the contract: text order is chronological order, so two values may be compared as strings. The one exception is *time_local* on the system time endpoint, the same instant with the server's offset (`2026-10-04T14:30:00.000000-04:00`). Fields whose column is a SQL DATE are calendar dates, typed *format: date* and written `YYYY-MM-DD`; they are never converted between zones. Days the server computes - due today, overdue, expiring in N days - are days in the server's configured time zone. A value sent without an offset - to the three write fields *tracked_time* and *done_time*, to a generic entity write, or as a `query[]` comparison - is a wall clock in the server's configured zone: a repeated hour names the earlier instant, and a skipped hour is refused with **400**. Send an offset to name any instant unambiguously. These values were local wall clocks in the server's zone, `YYYY-MM-DD HH:MM:SS`, until migration 0301 converted them.",
+		"description": "Authentication uses one of the credentials below. Which one is accepted depends on the operation.<br><br>**API key.** Send an API key you manage [here](PlaceHolderManageApiKeysUrl) in the *VICTUAL-API-KEY* header. Add the optional *VICTUAL-API-KEY-TYPE* header to narrow which key types may match; it can only remove authority, never add it. A read-only key is limited to GET, HEAD and OPTIONS and gets **403** on anything else. A key is never accepted in the query string.<br><br>**Session cookie.** Requests from the frontend authenticate with the *victual_session* cookie. A cookie-authenticated request other than GET, HEAD or OPTIONS is refused with **403** when its Origin header (or its Referer header, if there is no Origin) names another origin. A request without an Origin header is allowed, and requests that carry an API key are exempt.<br><br>**Calendar secret.** The calendar feed link carries a calendar key in the *secret* query parameter. It is accepted on GET /calendar/ical only. GET /calendar/ical/sharing-link does not accept it, and no other operation does.<br><br>**Label worker, verifier and renderer keys.** These use the same *VICTUAL-API-KEY* header but are accepted only on the label worker and renderer operations that name them. On those operations user API keys, session cookies and a disabled-authentication setup are refused with **401**. POST /labels/pair is public.<br><br>**Dates and times.** Every instant this API stores or sends is RFC 3339 in UTC with exactly six fractional digits - `2026-10-04T18:30:00.000000Z` - typed *format: date-time* (ADR-0027 decision 2, issue #650). The fixed width is part of the contract: text order is chronological order, so two values may be compared as strings. The one exception is *time_local* on the system time endpoint, the same instant with the server's offset (`2026-10-04T14:30:00.000000-04:00`). Fields whose column is a SQL DATE are calendar dates, typed *format: date* and written `YYYY-MM-DD`; they are never converted between zones. Days the server computes - due today, overdue, expiring in N days - are days in the server's configured time zone. A value sent without an offset - to the three write fields *tracked_time* and *done_time*, to a generic entity write, or as a `query[]` comparison - is a wall clock in the server's configured zone: a repeated hour names the earlier instant, and a skipped hour is refused with **400**. Send an offset to name any instant unambiguously. These values were local wall clocks in the server's zone, `YYYY-MM-DD HH:MM:SS`, until migration 0301 converted them.",
 		"version": "0.4.0",
 		"license": {
 			"name": "MIT (code originating from upstream grocy) AND BSD-3-Clause (Victual)",
@@ -6017,6 +6017,17 @@
 		},
 		"/calendar/ical": {
 			"get": {
+				"security": [
+					{
+						"CalendarSecretAuth": []
+					},
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"SessionCookieAuth": []
+					}
+				],
 				"summary": "Returns the calendar in iCal format",
 				"tags": [
 					"Calendar"
@@ -6895,6 +6906,11 @@
 		},
 		"/labels/credentials/rotate": {
 			"post": {
+				"security": [
+					{
+						"LabelWorkerKeyAuth": []
+					}
+				],
 				"tags": [
 					"Labels"
 				],
@@ -6945,6 +6961,11 @@
 		},
 		"/labels/register": {
 			"post": {
+				"security": [
+					{
+						"LabelWorkerKeyAuth": []
+					}
+				],
 				"tags": [
 					"Labels"
 				],
@@ -6994,6 +7015,11 @@
 		},
 		"/labels/jobs/claim": {
 			"post": {
+				"security": [
+					{
+						"LabelWorkerKeyAuth": []
+					}
+				],
 				"tags": [
 					"Labels"
 				],
@@ -7045,6 +7071,11 @@
 		},
 		"/labels/attempts/{attemptId}/heartbeat": {
 			"post": {
+				"security": [
+					{
+						"LabelWorkerKeyAuth": []
+					}
+				],
 				"tags": [
 					"Labels"
 				],
@@ -7097,6 +7128,11 @@
 		},
 		"/labels/attempts/{attemptId}/sent": {
 			"post": {
+				"security": [
+					{
+						"LabelWorkerKeyAuth": []
+					}
+				],
 				"tags": [
 					"Labels"
 				],
@@ -7149,6 +7185,11 @@
 		},
 		"/labels/attempts/{attemptId}/result": {
 			"post": {
+				"security": [
+					{
+						"LabelWorkerKeyAuth": []
+					}
+				],
 				"tags": [
 					"Labels"
 				],
@@ -7212,6 +7253,14 @@
 		},
 		"/labels/attempts/{attemptId}/evidence": {
 			"post": {
+				"security": [
+					{
+						"LabelWorkerKeyAuth": []
+					},
+					{
+						"LabelVerifierKeyAuth": []
+					}
+				],
 				"tags": [
 					"Labels"
 				],
@@ -7294,6 +7343,11 @@
 		},
 		"/labels/printers/{printerId}/status": {
 			"post": {
+				"security": [
+					{
+						"LabelWorkerKeyAuth": []
+					}
+				],
 				"tags": [
 					"Labels"
 				],
@@ -8832,6 +8886,11 @@
 		},
 		"/labels/assets/{assetId}/bytes": {
 			"get": {
+				"security": [
+					{
+						"LabelRendererKeyAuth": []
+					}
+				],
 				"tags": [
 					"Label rendering"
 				],
@@ -8917,6 +8976,11 @@
 		},
 		"/labels/render/claim": {
 			"post": {
+				"security": [
+					{
+						"LabelRendererKeyAuth": []
+					}
+				],
 				"tags": [
 					"Label rendering"
 				],
@@ -8948,6 +9012,11 @@
 		},
 		"/labels/render/{requestId}/result": {
 			"post": {
+				"security": [
+					{
+						"LabelRendererKeyAuth": []
+					}
+				],
 				"tags": [
 					"Label rendering"
 				],
@@ -9001,6 +9070,11 @@
 		},
 		"/labels/render/{requestId}/invalid": {
 			"post": {
+				"security": [
+					{
+						"LabelRendererKeyAuth": []
+					}
+				],
 				"tags": [
 					"Label rendering"
 				],
@@ -9054,6 +9128,11 @@
 		},
 		"/labels/render/{requestId}/failed": {
 			"post": {
+				"security": [
+					{
+						"LabelRendererKeyAuth": []
+					}
+				],
 				"tags": [
 					"Label rendering"
 				],
@@ -9107,6 +9186,11 @@
 		},
 		"/labels/artifacts/{artifactId}/bytes": {
 			"get": {
+				"security": [
+					{
+						"LabelWorkerKeyAuth": []
+					}
+				],
 				"tags": [
 					"Label rendering"
 				],
@@ -16385,7 +16469,38 @@
 			"ApiKeyAuth": {
 				"type": "apiKey",
 				"in": "header",
-				"name": "VICTUAL-API-KEY"
+				"name": "VICTUAL-API-KEY",
+				"description": "A user-issued API key of type default or mcp. Read-only keys are limited to GET, HEAD and OPTIONS. The optional VICTUAL-API-KEY-TYPE header can only narrow the accepted key types. A key in the query string is never accepted. Not accepted on the label worker and renderer operations."
+			},
+			"SessionCookieAuth": {
+				"type": "apiKey",
+				"in": "cookie",
+				"name": "victual_session",
+				"description": "The session cookie set at login. It is tried first on every operation except the label worker and renderer operations. A cookie-authenticated request other than GET, HEAD or OPTIONS gets 403 when its Origin header, or its Referer header when there is no Origin, names another origin; a request with no Origin is allowed."
+			},
+			"CalendarSecretAuth": {
+				"type": "apiKey",
+				"in": "query",
+				"name": "secret",
+				"description": "A calendar key of type special-purpose-calendar-ical, passed in the secret query parameter. Accepted on GET /calendar/ical only."
+			},
+			"LabelWorkerKeyAuth": {
+				"type": "apiKey",
+				"in": "header",
+				"name": "VICTUAL-API-KEY",
+				"description": "A label-worker key. Accepted only on the label worker operations that name it. User API keys, sessions and disabled authentication are refused with 401 there."
+			},
+			"LabelVerifierKeyAuth": {
+				"type": "apiKey",
+				"in": "header",
+				"name": "VICTUAL-API-KEY",
+				"description": "A label-verifier key. Accepted only on POST /labels/attempts/{attemptId}/evidence, alongside a label-worker key. User API keys, sessions and disabled authentication are refused with 401 there."
+			},
+			"LabelRendererKeyAuth": {
+				"type": "apiKey",
+				"in": "header",
+				"name": "VICTUAL-API-KEY",
+				"description": "A label-renderer key. Accepted only on the label renderer operations that name it. User API keys, sessions and disabled authentication are refused with 401 there."
 			}
 		},
 		"parameters": {
@@ -16442,6 +16557,9 @@
 	"security": [
 		{
 			"ApiKeyAuth": []
+		},
+		{
+			"SessionCookieAuth": []
 		}
 	]
 }

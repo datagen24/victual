@@ -9,7 +9,7 @@
 # So the suite still builds a SQLite side, through an escape hatch no installation has (see
 # DIFFTEST_SQLITE_RUNTIME below), and everything here goes when that snapshot lands.
 #
-#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys|pgtap|contract|shopliststores|credentialsplit|mealplan|rootentry|mcpauth|bootstrapadmin|uploadclamp|labeltracking|serverversion|wirecontract|stockpages|householdpages|labelapi|labelservices|authstack|helperunits|barcodelookup|storagefiles|stockcoverage|stockconcurrency|demodata|dialectpolicy|httpboot|mqttcoverage|genericquery|recipeoperations|stocklocations|stockmaintenance|consumption]
+#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys|pgtap|contract|shopliststores|credentialsplit|mealplan|rootentry|mcpauth|bootstrapadmin|uploadclamp|labeltracking|serverversion|openapisecurity|wirecontract|stockpages|householdpages|labelapi|labelservices|authstack|helperunits|barcodelookup|storagefiles|stockcoverage|stockconcurrency|demodata|dialectpolicy|httpboot|mqttcoverage|genericquery|recipeoperations|stocklocations|stockmaintenance|consumption]
 #
 # Fifty kinds of check. Views are compared by what they return, because
 # that is all a view is. Triggers cannot be compared that way — what a trigger does is
@@ -805,6 +805,20 @@ run_wirecontract_tests() {
 run_serverversion_tests() {
 	say ""
 	if ! php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite serverversion; then
+		failures=$((failures + 1))
+	fi
+}
+
+# --- OpenAPI security contract ---------------------------------------------------------
+#
+# Issue #803: the securitySchemes and security requirements victual.openapi.json declares
+# match what the authentication middleware accepts - the session cookie name, the header,
+# the one query-string credential (the calendar secret) and the label worker routes. No
+# database of its own; it reads the route table and the document.
+
+run_openapisecurity_tests() {
+	say ""
+	if ! php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite openapisecurity; then
 		failures=$((failures + 1))
 	fi
 }
@@ -2611,6 +2625,7 @@ case "$WHICH" in
 	uploadclamp) run_uploadclamp_tests ;;
 	labeltracking) run_labeltracking_tests ;;
 	serverversion) run_serverversion_tests ;;
+	openapisecurity) run_openapisecurity_tests ;;
 	wirecontract) run_wirecontract_tests ;;
 	stockpages) run_stockpages_tests ;;
 	householdpages) run_householdpages_tests ;;
@@ -2631,8 +2646,8 @@ case "$WHICH" in
 	mqttcoverage) run_mqttcoverage_tests ;;
 	genericquery) run_genericquery_tests ;;
 	recipeoperations) run_recipeoperations_tests ;;
-	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests; run_pgtap_tests; run_contract_tests; run_shopliststores_tests; run_credentialsplit_tests; run_mealplan_tests; run_rootentry_tests; run_mcpauth_tests; run_bootstrapadmin_tests; run_uploadclamp_tests; run_labeltracking_tests; run_serverversion_tests; run_wirecontract_tests; run_stockpages_tests; run_householdpages_tests; run_labelapi_tests; run_labelservices_tests; run_authstack_tests; run_helperunits_tests; run_barcodelookup_tests; run_storagefiles_tests; run_stockcoverage_tests; run_stockconcurrency_tests; run_stocklocations_tests; run_stockmaintenance_tests; run_consumption_tests; run_demodata_tests; run_dialectpolicy_tests; run_httpboot_tests; run_mqttcoverage_tests; run_genericquery_tests; run_recipeoperations_tests ;;
-	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys, pgtap, contract, shopliststores, credentialsplit, mealplan, rootentry, mcpauth, bootstrapadmin, uploadclamp, labeltracking, serverversion, wirecontract, stockpages, householdpages, labelapi, labelservices, authstack, helperunits, barcodelookup, storagefiles, stockcoverage, stockconcurrency, demodata, dialectpolicy, httpboot, mqttcoverage, genericquery, recipeoperations, stocklocations, stockmaintenance, consumption or all)" ;;
+	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests; run_pgtap_tests; run_contract_tests; run_shopliststores_tests; run_credentialsplit_tests; run_mealplan_tests; run_rootentry_tests; run_mcpauth_tests; run_bootstrapadmin_tests; run_uploadclamp_tests; run_labeltracking_tests; run_serverversion_tests; run_openapisecurity_tests; run_wirecontract_tests; run_stockpages_tests; run_householdpages_tests; run_labelapi_tests; run_labelservices_tests; run_authstack_tests; run_helperunits_tests; run_barcodelookup_tests; run_storagefiles_tests; run_stockcoverage_tests; run_stockconcurrency_tests; run_stocklocations_tests; run_stockmaintenance_tests; run_consumption_tests; run_demodata_tests; run_dialectpolicy_tests; run_httpboot_tests; run_mqttcoverage_tests; run_genericquery_tests; run_recipeoperations_tests ;;
+	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys, pgtap, contract, shopliststores, credentialsplit, mealplan, rootentry, mcpauth, bootstrapadmin, uploadclamp, labeltracking, serverversion, openapisecurity, wirecontract, stockpages, householdpages, labelapi, labelservices, authstack, helperunits, barcodelookup, storagefiles, stockcoverage, stockconcurrency, demodata, dialectpolicy, httpboot, mqttcoverage, genericquery, recipeoperations, stocklocations, stockmaintenance, consumption or all)" ;;
 esac
 
 if [ -n "$COVERAGE_DIR" ]; then
