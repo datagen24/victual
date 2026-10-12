@@ -342,6 +342,14 @@ if [ "${SUITE_COVERAGE:-0}" = "1" ]; then
 		pcov.enabled=1
 	INI
 
+	# Every measured process parses the files it ran to find their executable lines;
+	# analysing them once here lets each one read the result instead. prepend.php uses
+	# this directory only if it exists, which is why it is warmed before anything runs.
+	# Before the export below, so this process is not itself measured.
+	rm -rf "$COVERAGE_DIR-analysis"
+	php "$VICTUAL_ROOT/.devtools/coverage/warm-analysis-cache.php" "$COVERAGE_DIR-analysis" \
+		|| fail 'could not warm the coverage analysis cache'
+
 	export PHP_INI_SCAN_DIR=":$COVERAGE_INI_DIR"
 	export VICTUAL_COVERAGE_DIR="$COVERAGE_DIR"
 

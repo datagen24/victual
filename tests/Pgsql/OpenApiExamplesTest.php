@@ -18,8 +18,8 @@ use PHPUnit\Framework\TestCase;
  * The walker visits the whole document, not a list of known locations, so a new example
  * anywhere - a component schema, an inline request or response schema, a Parameter,
  * Header or MediaType, an Example Object - is checked the day it is added. What it cannot
- * place it refuses (see collect()) rather than skipping, and the exact count below stops
- * the walker from silently shrinking.
+ * place it refuses (see collect()) rather than skipping, and the floor below stops the
+ * walker from silently shrinking.
  *
  * Validation is Opis with the whole document as the base: each example is validated
  * against a `$ref` to the schema's own JSON pointer, so `$ref`, `allOf` and `oneOf`
@@ -29,14 +29,20 @@ use PHPUnit\Framework\TestCase;
 class OpenApiExamplesTest extends TestCase
 {
 	/**
-	 * How many example values the document carries today: 43 Schema Object examples (the
-	 * 17 issue 800 corrected, 23 that were already valid, and the three on the schemas of
-	 * GET /files/{group}/{fileName}'s 200 response headers that issue 806 added) and no
-	 * Parameter, Header, MediaType or Example Object examples yet. Adding an example raises
-	 * this number on purpose; a walker that quietly stops finding some lowers it and fails
-	 * here.
+	 * How many example values the document carried on 2026-10-12: 43 Schema Object examples
+	 * (the 17 issue 800 corrected, 23 that were already valid, and the three on the schemas
+	 * of GET /files/{group}/{fileName}'s 200 response headers that issue 806 added) and no
+	 * Parameter, Header, MediaType or Example Object examples. A walker that quietly stops
+	 * finding some drops below it and fails here.
+	 *
+	 * A floor, not an exact count. The exact count failed master whenever two pull requests
+	 * that each added examples merged close together: each passed against its own base, and
+	 * master held the sum (#814 and #797, 43 against a pin of 40). Where the walker reaches
+	 * is pinned exactly by testWalkerReachesHeadersMediaTypesExampleObjectsAndAllOf, so the
+	 * floor only has to catch the walker losing examples it used to find. Raise it when
+	 * examples are added, if you like; nothing fails if you do not.
 	 */
-	private const EXPECTED_EXAMPLE_COUNT = 43;
+	private const MINIMUM_EXAMPLE_COUNT = 43;
 
 	private const DOCUMENT_ID = 'https://victual.invalid/victual.openapi.json';
 
@@ -71,18 +77,21 @@ class OpenApiExamplesTest extends TestCase
 			$failures,
 			count($failures) . " example(s) fail their schema:\n" . implode("\n", $failures)
 		);
-		self::assertSame(self::EXPECTED_EXAMPLE_COUNT, $checked, 'the walker found a different number of examples than the document is known to hold');
+		self::assertGreaterThanOrEqual(self::MINIMUM_EXAMPLE_COUNT, $checked, 'the walker found fewer examples than the document is known to hold');
 	}
 
 	public function testTheWalkerReportsAnInvalidExample(): void
 	{
+		[$unchanged] = self::validateExamples(self::loadDocument());
+
 		$document = self::loadDocument();
 		// The negative control: the pre-fix Product example sent the id as a string.
 		$document->components->schemas->Product->example->id = '1';
 
 		[$checked, $failures] = self::validateExamples($document);
 
-		self::assertSame(self::EXPECTED_EXAMPLE_COUNT, $checked);
+		// Breaking an example must not change how many the walker finds.
+		self::assertSame($unchanged, $checked);
 		self::assertCount(1, $failures, implode("\n", $failures));
 		self::assertStringStartsWith('/components/schemas/Product/example:', $failures[0]);
 		self::assertStringContainsString('/id', $failures[0]);

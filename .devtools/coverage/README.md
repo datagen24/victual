@@ -39,7 +39,7 @@ automated per-file enforcement remains optional under
 
 ## Measurement scope
 
-[prepend.php](prepend.php) measures PHP files in `services/`, `controllers/`, `helpers/`,
+[filter.php](filter.php) defines the scope [prepend.php](prepend.php) measures: PHP files in `services/`, `controllers/`, `helpers/`,
 `middleware/`, and `plugins/`, plus `app.php`, `routes.php`, and `config-dist.php`.
 Vendor code, test tooling, and Blade templates are excluded.
 
@@ -212,6 +212,15 @@ PHP processes started by the runner, including PHPUnit, use this configuration.
 named `.cov` file. When `VICTUAL_COVERAGE_DIR` is unset, it returns without loading the
 autoloader, driver, or handler. `report.php` merges the files; run it with
 `VICTUAL_COVERAGE_DIR` unset so it does not collect coverage of itself.
+
+Writing a `.cov` file means finding the executable lines of every file the process ran,
+which php-code-coverage does by parsing them. The suite runs about 3,300 PHP processes, so
+before any phase starts the runner analyses every file in scope once, with
+[warm-analysis-cache.php](warm-analysis-cache.php), into `$VICTUAL_COVERAGE_DIR-analysis`.
+Each process then reads that cache instead of parsing the files again. `prepend.php` uses the
+cache only if the directory exists. php-code-coverage writes cache entries non-atomically, and
+concurrent processes writing to a cold cache could read each other's partial entries. A step
+run outside the runner therefore parses as it always has.
 
 The development image and CI install [pcov](https://github.com/krakjoe/pcov). A host PHP
 installation needs pcov or Xdebug configured for coverage. For pcov, install it with
