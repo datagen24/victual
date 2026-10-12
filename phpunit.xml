@@ -101,6 +101,7 @@
 			<file>tests/Pgsql/StockLabelRevivalTest.php</file>
 			<file>tests/Pgsql/StockLabelRevivalPrintJobTest.php</file>
 			<file>tests/Pgsql/StockLabelRevivalRaceTest.php</file>
+			<file>tests/Pgsql/LabelRenderLifecycleTest.php</file>
 		</testsuite>
 		<testsuite name="authstack">
 			<file>tests/Pgsql/AuthStackTest.php</file>

@@ -84,11 +84,7 @@ class LabelTemplateService extends LabelService
         $validated = TemplateDocument::Validate(json_decode($draft['document'], true), $draft['entity_kind']);
 
         $assetIds = [];
-        foreach ($validated['asset_ids'] as $assetName) {
-            $asset = $this->Query('SELECT id,asset_kind FROM label_assets WHERE name=?', [$assetName])->fetch(\PDO::FETCH_ASSOC);
-            if (!$asset) {
-                $this->Refuse('assets', 'asset_unavailable', 'The document references asset "' . $assetName . '", which is not stored');
-            }
+        foreach ((new LabelAssetService($this->db))->ResolveByName($validated['asset_ids']) as $assetName => $asset) {
             $assetIds[$assetName] = (int)$asset['id'];
         }
 

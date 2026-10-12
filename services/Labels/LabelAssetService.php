@@ -63,6 +63,31 @@ class LabelAssetService extends LabelService
                 $licence, $licenceNotice])->fetch(\PDO::FETCH_ASSOC);
     }
 
+    /**
+     * The stored asset behind each name a document pins, or a refusal naming the first one
+     * that is not stored.
+     *
+     * One check for the three places that need it - publishing a version, asking for a draft
+     * preview, and resolving a draft's render input - so that a document one of them accepts
+     * is not one another refuses with a different answer. Fonts are pinned by name and never
+     * substituted, so a name that resolves to nothing cannot render.
+     *
+     * @param string[] $names
+     * @return array<string, array> The asset row by name
+     */
+    public function ResolveByName(array $names): array
+    {
+        $assets = [];
+        foreach ($names as $name) {
+            $row = $this->Query('SELECT id,name,asset_kind,mime_type,content_digest,font_family FROM label_assets WHERE name=?', [$name])->fetch(\PDO::FETCH_ASSOC);
+            if (!$row) {
+                $this->Refuse('assets', 'asset_unavailable', 'The document references asset "' . $name . '", which is not stored');
+            }
+            $assets[$name] = $row;
+        }
+        return $assets;
+    }
+
     public function Bytes(int $assetId): ?string
     {
         $asset = $this->Query('SELECT file_group,file_name FROM label_assets WHERE id=?', [$assetId])->fetch(\PDO::FETCH_ASSOC);

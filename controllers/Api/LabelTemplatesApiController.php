@@ -139,7 +139,11 @@ class LabelTemplatesApiController extends BaseApiController
         $requests = new RenderRequestService($db);
 
         if ($kind === 'draft') {
-            $document = \Victual\Services\Labels\TemplateDocument::Validate($draft['document'], $entityKind)['document'];
+            $validated = \Victual\Services\Labels\TemplateDocument::Validate($draft['document'], $entityKind);
+            $document = $validated['document'];
+            // The same existence check Publish makes, before anything is captured or queued:
+            // a request naming a font nobody uploaded can only ever come back invalid.
+            (new \Victual\Services\Labels\LabelAssetService($db))->ResolveByName($validated['asset_ids']);
             $fields = $this->FieldsOf($document);
             $capture = $captures->CaptureSample($entityKind, $fields, (string)($body['locale'] ?? 'en'), (string)($body['timezone'] ?? 'UTC'), $user);
             return $requests->CreateForDraft($templateId, $document, $profileId, (int)$capture['id'], $user);
@@ -172,6 +176,10 @@ class LabelTemplatesApiController extends BaseApiController
     private function RenderStatus($db, int $requestId): array
     {
         $request = (new RenderRequestService($db))->Get($requestId);
+        // Expiry is the database's clock, as it is for the claim: a preview past its
+        // lifetime is never handed to a renderer, so telling a client to keep polling it
+        // would be telling it to wait for nothing.
+        $expired = (bool)$db->query('SELECT expires_at IS NOT NULL AND expires_at<=CURRENT_TIMESTAMP FROM label_render_requests WHERE id=' . (int)$requestId)->fetchColumn();
         return [
             'render_request_id' => (int)$request['id'],
             'state' => $request['state'],
@@ -180,7 +188,7 @@ class LabelTemplatesApiController extends BaseApiController
             'error_code' => $request['error_code'],
             'error_element' => $request['error_element'],
             'error_detail' => $request['error_detail'],
-            'retryable' => in_array($request['state'], ['pending', 'rendering'], true),
+            'retryable' => !$expired && in_array($request['state'], ['pending', 'rendering'], true),
         ];
     }
 
