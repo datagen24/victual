@@ -337,4 +337,58 @@ in
     fi
     echo "${version}" > "$out"
   '';
+
+  # 9. The security headers survive the static locations, and the dotfile deny is
+  #    reached first.
+  #
+  #    nginx replaces, rather than merges, the inherited `add_header` set in any block that
+  #    declares one, so a location that adds Cache-Control drops X-Content-Type-Options,
+  #    X-Frame-Options and Referrer-Policy unless it repeats them. And the first matching
+  #    regex location wins, so `location ~ /\.` below an asset regex never sees
+  #    /packages/<pkg>/.<dotfile>. Both are properties of the text in the generated
+  #    config; neither needs nginx running to be checked.
+  nginx-static-locations-keep-security-headers =
+    runCommand "victual-check-nginx-headers" { conf = runtimeNginxConf; } ''
+      awk '
+        /^[[:space:]]*location / {
+          inloc = 1; name = $0; sub(/^[[:space:]]+/, "", name); sub(/ *\{$/, "", name)
+          nloc++; order[name] = nloc; has = 0; hdrs = 0; next
+        }
+        inloc && /add_header / { has = 1 }
+        inloc && /add_header X-Content-Type-Options nosniff always;/ { hdrs++ }
+        inloc && /add_header X-Frame-Options SAMEORIGIN always;/ { hdrs++ }
+        inloc && /add_header Referrer-Policy no-referrer always;/ { hdrs++ }
+        inloc && /^[[:space:]]*}/ {
+          if (has && hdrs != 3) {
+            print name " sets add_header but carries " hdrs " of the 3 security headers" > "/dev/stderr"
+            bad = 1
+          }
+          if (has) checked++
+          inloc = 0
+        }
+        END {
+          dot = order["location ~ /\\."]
+          if (!dot) { print "no dotfile deny location found" > "/dev/stderr"; bad = 1 }
+          for (n in order)
+            if (n ~ /^location ~/ && n != "location ~ /\\." && order[n] < dot) {
+              print "dotfile deny comes after " n > "/dev/stderr"; bad = 1
+            }
+          if (checked < 2) { print "expected at least two add_header locations, saw " checked+0 > "/dev/stderr"; bad = 1 }
+          exit bad
+        }
+      ' "$conf"
+
+      # The server level still sets them for every other response: once there, once in
+      # each of the two asset locations. (The interpolated block keeps its own
+      # indentation, so the lines are matched without anchoring on it.)
+      for h in X-Content-Type-Options X-Frame-Options Referrer-Policy; do
+        n=$(grep -cE "^[[:space:]]*add_header $h .* always;" "$conf" || true)
+        if [ "$n" -lt 3 ]; then
+          echo "$h appears $n times in the generated nginx.conf; expected the server level plus both asset locations" >&2
+          exit 1
+        fi
+      done
+
+      echo ok > "$out"
+    '';
 }
