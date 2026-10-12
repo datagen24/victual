@@ -1045,7 +1045,7 @@
 			},
 			"put": {
 				"summary": "Edits the given object of the given entity",
-				"description": "Editing chores requires CHORES and editing tasks requires TASKS, whoever created the object. Editing any other entity, including the six that MASTER_DATA_ADD can create (products, product_barcodes, locations, quantity_units, product_groups, shopping_locations), requires MASTER_DATA_EDIT, except for entities with their own permission such as shopping lists, recipes, the meal plan and equipment. MASTER_DATA_ADD alone does not allow editing.",
+				"description": "Editing chores requires CHORES and editing tasks requires TASKS, whoever created the object. Editing any other entity, including the six that MASTER_DATA_ADD can create (products, product_barcodes, locations, quantity_units, product_groups, shopping_locations), requires MASTER_DATA_EDIT, except for entities with their own permission such as shopping lists, recipes, the meal plan and equipment. Editing userfields and userentities also requires ADMIN. MASTER_DATA_ADD alone does not allow editing.",
 				"tags": [
 					"Generic entity interactions"
 				],

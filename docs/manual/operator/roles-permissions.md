@@ -121,8 +121,10 @@ these gates:
 | Create, edit | Chores | `CHORES` |
 | Create, edit | Tasks | `TASKS` |
 | Delete | Chores and tasks | `MASTER_DATA_EDIT` |
+| Merge | Chores (`POST /chores/{keep}/merge/{remove}`) | `MASTER_DATA_EDIT` |
 | Create, edit, delete | Quantity unit conversions, batteries, task categories | `MASTER_DATA_EDIT` |
-| Create, edit, delete | Userfields and user entities | `ADMIN` |
+| Create, edit, delete | Userfield and user entity definitions | `ADMIN` |
+| Save values | Userfield values on an object | `MASTER_DATA_EDIT` |
 
 The shopping list, recipes, meal plan and equipment have their own permissions. Nothing in a
 stock, consumption or recipe permission lets an account add a product.
@@ -132,8 +134,10 @@ chores or tasks. Those two domain permissions gate create and edit for every cho
 whoever created it. The seeded Adult role holds `CHORES` and `TASKS`, so it can create and edit
 both. The Child role cannot.
 
-Quantity unit conversions stay under `MASTER_DATA_EDIT`. The one exception is the barcode lookup
-described below, which can set the purchase-to-stock conversion of the product it creates.
+Quantity unit conversions stay under `MASTER_DATA_EDIT`. Two exceptions apply. Creating a product
+by any route also creates the default conversions that the database makes for it
+(`products_default_qu_conversions_INS`), so check their factors as in step 3 below. The barcode
+lookup described below can also set the purchase-to-stock conversion of the product it creates.
 
 ### Barcode lookup
 
@@ -217,7 +221,7 @@ design decision.
 | Batteries | `BATTERIES`, `BATTERIES_TRACK_CHARGE_CYCLE`, `BATTERIES_UNDO_CHARGE_CYCLE` |
 | Equipment | `EQUIPMENT` |
 | Calendar | `CALENDAR` |
-| Master data | `MASTER_DATA_ADD` (create products, locations, quantity units, barcodes, stores and product groups; a child of `MASTER_DATA_EDIT`), `MASTER_DATA_EDIT` (products, locations, quantity units and conversions, barcodes, stores, product groups, chores, batteries, tasks and userfields, and — with the label subsystem — printing itself; see [Adding a product, unit or location](#adding-a-product-unit-or-location)) |
+| Master data | `MASTER_DATA_ADD` (create products, locations, quantity units, barcodes, stores and product groups; a child of `MASTER_DATA_EDIT`), `MASTER_DATA_EDIT` (edit and delete of products, locations, quantity units, barcodes, stores and product groups, quantity unit conversions, batteries, task categories and userfield values, delete and merge of chores, delete of tasks, and — with the label subsystem — printing itself; see [Adding a product, unit or location](#adding-a-product-unit-or-location)) |
 | Users | `USERS`, `USERS_READ`, `USERS_CREATE`, `USERS_EDIT`, `USERS_EDIT_SELF` |
 | Everything | `ADMIN` |
 
