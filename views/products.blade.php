@@ -164,7 +164,7 @@
 									href="{{ $U('/product/new?copy-of=') }}{{ $product->id }}">
 									<span class="dropdown-item-text">{{ $__t('Copy') }}</span>
 								</a>
-								<a class="dropdown-item merge-products-button permission-MASTER_DATA_EDIT"
+								<a class="dropdown-item merge-products-button permission-STOCK_EDIT permission-MASTER_DATA_EDIT"
 									data-product-id="{{ $product->id }}"
 									type="button"
 									href="#">
