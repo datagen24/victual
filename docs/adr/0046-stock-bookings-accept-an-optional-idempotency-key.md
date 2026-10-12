@@ -16,8 +16,9 @@
   rule 1's identity scope (per user, never per API key) and its rejected option D. Keeps
   accepted [ADR-0036](0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md)'s
   meaning of a transaction unchanged. Stores state in PostgreSQL, per accepted
-  [ADR-0007](0007-auth-state-outlives-the-process.md). Changes the wire contract additively
-  under [ADR-0005](0005-wire-contract-is-the-invariant.md).
+  [ADR-0007](0007-auth-state-outlives-the-process.md). Adds to the API additively; accepted
+  [ADR-0024](0024-the-fork-writes-its-own-clients.md) decision 1 requires the OpenAPI
+  specification, `victual.openapi.json`, to change in the same pull request.
 
 ## Context
 
@@ -112,10 +113,10 @@ another booking moved the stock in between. The client cannot tell that 400 from
 refusal. No other booking has a comparable guard: a retried open opens another unit, and a
 retried transfer moves more stock.
 
-### Related finding F4, decided elsewhere
+### A committed booking can answer 403
 
-Each booking route commits through `StockService`, then calls `StockTransactions()` to
-return the rows. `StockTransactions()` calls `User::CheckPermission(STOCK_VIEW)`. A caller
+This behaviour is related and is decided elsewhere. Each booking route commits through
+`StockService`, then calls `StockTransactions()` to return the rows. `StockTransactions()` calls `User::CheckPermission(STOCK_VIEW)`. A caller
 holding the booking permission without `STOCK_VIEW` gets 403 for a booking that committed.
 Every seeded role resolves to `STOCK_VIEW` (`db/pgsql/roles-seed.sql`: ADMIN and ADULT
 through their parent grants, CHILD and GUEST directly), so only custom roles or direct grants
@@ -199,9 +200,10 @@ scope a change to the unique constraint alone.
 
 ### 5. Atomic persistence in the booking's transaction
 
-The controller opens the transaction with `InRequestTransaction()` before calling
-`StockService`. `DatabaseService::InTransaction()` joins an open transaction, so the booking
-runs inside it. Inside the transaction, in order:
+The controller would open the transaction before calling `StockService`, which the booking
+routes do not do today; each currently lets `StockService` open and commit its own.
+`DatabaseService::InTransaction()` joins an open transaction, so the booking would run inside
+the controller's. Inside that transaction, in order:
 
 1. Reserve the key: read the key row `FOR UPDATE`, or insert it under a savepoint.
 2. On a new key, call the `StockService` booking.
@@ -210,7 +212,21 @@ runs inside it. Inside the transaction, in order:
 The transaction then commits, and only after the commit does the controller call
 `StockTransactions()` to build the response. The key row and the booking commit together or
 not at all. The read stays outside the transaction so that a `STOCK_VIEW` refusal cannot roll
-back a booking, which keeps finding F4's behaviour unchanged.
+back a booking. A caller without `STOCK_VIEW` therefore still gets 403 for a committed
+booking, as today.
+
+The helper must not mark the database changed on its own account.
+`BaseApiController::InRequestTransaction()` calls `DatabaseService::MarkDbChanged()` for
+every non-GET request unless `$changesData` is `false`, which advances
+`GET /api/system/db-changed-time` even for a replay that wrote nothing. The helper should
+pass `false`, or call `DatabaseService::InTransaction()` directly. A booking still marks the
+change itself: `StockService` writes through LessQL, whose write callback calls both
+`MarkDbChanged` on the dialect and `MarkDataChanged()`. The key-table writes go through the
+raw connection and mark nothing.
+
+`MarkDbChanged()` does not set the flag the request-end MQTT and InfluxDB publication reads
+(`HasDataChanged()`); only `MarkDataChanged()` does. A replay through `InRequestTransaction()`
+would therefore move the changed time without republishing MQTT state.
 
 Lock order is the key row, then the product's advisory lock taken inside `StockService`. No
 other path takes the key table's locks, and nested callers take no key (decision 12), so the
@@ -229,6 +245,12 @@ insert waits for the first transaction. If the first commits, the second gets SQ
 rolls back to its savepoint, reads the committed row and replays. If the first rolls back,
 the second's insert succeeds and it books. This is `IdempotencyService::Begin`'s behaviour.
 
+The second request waits as long as the first runs. No request path sets `lock_timeout`;
+the only `SET LOCAL lock_timeout` in `services/` is in `TimestampMigration`. A booking takes
+well under a second in the victual-kit PR 35 measurements, so no timeout is recommended. If
+the maintainer wants one, a `SET LOCAL lock_timeout` before the key insert would answer 409
+`idempotency_in_progress` on expiry, and the client would retry later with the same key.
+
 A committed row without a transaction id cannot occur under decision 5, because the key and
 the booking commit together. The implementation should still answer 409
 `idempotency_in_progress` for such a row and must not book.
@@ -246,6 +268,25 @@ replay time. Consequences of reading rather than storing the response:
   caller as they are now. A stored body would return prices the caller may no longer see.
 - A booking undone since the original request shows its rows with `undone` set. The client
   learns that the booking happened and was reversed, and nothing is booked again.
+- If no `stock_log` row with the transaction id remains, `StockTransactions()` answers 400
+  "No transaction was found by the given transaction id", as it does today for an unknown id.
+  Nothing is booked. The client must treat that answer as "booked once, rows no longer
+  readable", never as a reason to retry with a new key.
+
+`StockTransactions()` selects by `transaction_id` across all users, and `uniqid()` derives
+the id from the clock in microseconds. It is not unique across processes or pods, so two
+requests in the same microsecond can share an id. A booking response today would then show
+the other request's rows too; a replay adds a second reader with the same exposure. The
+record does not decide between these options:
+
+- Filter the replay read by `stock_log.user_id` equal to the acting user. The key is per
+  user, so the user's own rows are the only ones the replay should return. This narrows the
+  replay alone and leaves the existing responses and undo as they are.
+- Record the collision as a pre-existing risk of `uniqid()` and replace it with a
+  higher-entropy id, such as `bin2hex(random_bytes(16))`, which manual consumption already
+  uses for request ids. This fixes every reader, including undo, and is a change to
+  `StockService` beyond this record's routes.
+- Both. The filter protects the replay immediately; the identifier change removes the cause.
 
 The response carries `Idempotent-Replayed: true`. A keyed request that books carries
 `Idempotent-Replayed: false`, which tells the client the server honoured the key.
@@ -261,8 +302,9 @@ was created), the retry books. The client sent the retry intending the booking, 
 the expected outcome. Storing refusals would instead replay a stale refusal for the whole
 retention window.
 
-A 403 from finding F4 is not a failure in this sense: the booking committed, and so did the
-key. A replay answers the same 403 while that finding stands.
+The 403 a caller without `STOCK_VIEW` gets after a committed booking is not a failure in
+this sense: the booking committed, and so did the key. A replay answers the same 403 while
+that behaviour stands.
 
 ### 9. Retention
 
@@ -366,7 +408,9 @@ entry edits, measurements, weighing and undo are outside this record.
 
 1. The maintainer chooses the retention window (decision 9) and the discovery field
    (decision 11), and those choices are written into this record's Decision before acceptance.
-2. The OpenAPI and CORS changes in the Consequences are reviewed as additive under ADR-0005.
+2. The OpenAPI and CORS changes in the Consequences are reviewed as additive, with
+   `victual.openapi.json` updated in the implementing pull request as ADR-0024 decision 1
+   requires.
 3. victual-kit states how it will use the key: which bookings send one, how it generates it,
    and that it stops retrying at the published retention window.
 
