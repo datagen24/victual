@@ -956,7 +956,12 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		$asGuest = self::calendarEventTitles();
 		self::assertFalse(self::titlesContain($asGuest, 'Chore overdue'), 'a caller without CHORES_VIEW is not shown the chores');
 		self::assertFalse(self::titlesContain($asGuest, 'Task overdue'), 'a caller without TASKS_VIEW is not shown the tasks');
-		self::assertTrue(self::titlesContain($asGuest, 'Battery overdue'), 'ADR-0035 gates the battery pages and API, not CalendarService::GetEvents() - calendar aggregation was never extended to filter battery events by permission, so they stay regardless of BATTERIES_VIEW');
+		// Maintainer decision on #847 (2026-10-12): calendar battery events require
+		// BATTERIES_VIEW, like the stock, chore, task and meal plan blocks require theirs.
+		self::assertFalse(self::titlesContain($asGuest, 'Battery overdue'), 'a caller without BATTERIES_VIEW is not shown the battery events (#847)');
+
+		self::grant(['CALENDAR_VIEW', 'BATTERIES_VIEW']);
+		self::assertTrue(self::titlesContain(self::calendarEventTitles(), 'Battery overdue'), 'a caller with BATTERIES_VIEW is shown the battery events');
 	}
 
 	/**

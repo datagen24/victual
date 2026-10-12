@@ -144,26 +144,37 @@ class DialectPolicyTest extends PgsqlSchemaTestCase
 		self::grant([User::PERMISSION_STOCK_VIEW]);
 
 		EntityReadPolicy::Check(self::request(), 'products');
-		EntityReadPolicy::Check(self::request(), 'batteries');
 
 		self::grant([]);
 
-		// batteries maps to null, so it stays readable with nothing granted - that is what
-		// the null means, and the control that keeps the refusal below from being vacuous.
+		// A null-mapped entity still in the table (userfields - ADR-0035 gave batteries and
+		// equipment their own leaves, #847) stays readable with nothing granted: that is
+		// what the null means, and the control that keeps the refusals below from being
+		// vacuous.
+		EntityReadPolicy::Check(self::request(), 'userfields');
+
+		foreach (['products', 'batteries', 'battery_charge_cycles', 'equipment'] as $entity)
+		{
+			$refused = false;
+
+			try
+			{
+				EntityReadPolicy::Check(self::request(), $entity);
+			}
+			catch (\Throwable $exception)
+			{
+				$refused = true;
+			}
+
+			self::assertTrue($refused, "$entity needs its view leaf and is refused without it");
+		}
+
+		self::grant([User::PERMISSION_BATTERIES_VIEW]);
 		EntityReadPolicy::Check(self::request(), 'batteries');
+		EntityReadPolicy::Check(self::request(), 'battery_charge_cycles');
 
-		$refused = false;
-
-		try
-		{
-			EntityReadPolicy::Check(self::request(), 'products');
-		}
-		catch (\Throwable $exception)
-		{
-			$refused = true;
-		}
-
-		self::assertTrue($refused, 'products needs STOCK_VIEW and is refused without it');
+		self::grant([User::PERMISSION_EQUIPMENT_VIEW]);
+		EntityReadPolicy::Check(self::request(), 'equipment');
 	}
 
 	// ----- ADR-0008: SQLite is not a runtime engine ----------------------------------

@@ -60,10 +60,12 @@ class FilesApiController extends BaseApiController
 	 *
 	 * null is a decided "no further permission needed", not an omission, and is kept in
 	 * step with EntityReadPolicy's read policy for the same underlying entity:
-	 * 'equipment' => null and 'userfields' => null there are why equipmentmanuals and
-	 * userfiles are null here - a caller who may already read the equipment record or
-	 * the userfield entry without a permission needs none for the file hanging off it
-	 * either. userpictures maps to USERS_READ for the same reason 'users' => USERS_READ
+	 * 'userfields' => null there is why userfiles is null here - a caller who may already
+	 * read the userfield entry without a permission needs none for the file hanging off
+	 * it either. equipmentmanuals maps to EQUIPMENT_VIEW, the leaf ADR-0035 requires for
+	 * the equipment pages and APIs and EntityReadPolicy now requires for 'equipment'
+	 * (#847): a manual is equipment data and must not be readable by a caller who is
+	 * refused the equipment record. userpictures maps to USERS_READ for the same reason 'users' => USERS_READ
 	 * there; CheckGroupReadPermission carries its own exception for a caller's own
 	 * picture, the read equivalent of CheckUserPictureDeletion's exception below, since
 	 * every authenticated user's own avatar renders in the nav bar regardless of
@@ -77,7 +79,7 @@ class FilesApiController extends BaseApiController
 	const GROUP_READ_PERMISSIONS = [
 		'productpictures' => User::PERMISSION_STOCK_VIEW,
 		'recipepictures' => User::PERMISSION_RECIPES_VIEW,
-		'equipmentmanuals' => null,
+		'equipmentmanuals' => User::PERMISSION_EQUIPMENT_VIEW,
 		'userfiles' => null,
 		'userpictures' => User::PERMISSION_USERS_READ
 	];
