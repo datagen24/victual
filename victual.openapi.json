@@ -15093,6 +15093,22 @@
 							"null"
 						],
 						"description": "The stock_log.transaction_id this execution's own stock consumption was booked under, when TrackChore() booked one in the same transaction - null for an execution that consumed nothing, and for one recorded before this column existed. Undoing this execution undoes that stock transaction too (issue #506)."
+					},
+					"prior_rescheduled_date": {
+						"type": [
+							"string",
+							"null"
+						],
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "The chore's rescheduled_date that recording this execution cleared, kept so that undoing the execution can restore it (issue #865). Null when no reschedule was cleared, and for an execution recorded before this column existed."
+					},
+					"prior_rescheduled_next_execution_assigned_to_user_id": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The chore's rescheduled_next_execution_assigned_to_user_id that recording this execution cleared, kept so that undoing the execution can restore it (issue #865). Null when no assignee was cleared, and for an execution recorded before this column existed."
 					}
 				}
 			},

@@ -143,6 +143,18 @@ because they are the fork being *more careful* than upstream rather than merely 
   object. This suite's first run recorded the `null`-against-`"0"` difference and said the
   `200` was the defect; [plan 11](../../docs/plans/11-api-error-handling.md) has since
   refused the request instead.
+- **`skipped-chore-consumes-nothing`** — a skipped chore execution (`POST
+  /api/chores/{choreId}/execute` with `skipped`) consumes no product and needs no
+  `STOCK_CONSUME` here. Upstream 4.6.0 consumes the chore's product on a skip as it does on
+  an execution. Maintainer decision of 2026-10-12, issue #856: a skip records that a
+  scheduled execution was passed over, not that the chore was performed.
+- **`undo-restores-reschedule`** — undoing a chore execution restores the `rescheduled_date`
+  and `rescheduled_next_execution_assigned_to_user_id` that tracking cleared, when the undone
+  row is the chore's most recent live execution and the chore's field is still empty.
+  Upstream 4.6.0 leaves both empty. The values are kept in two new nullable `chores_log`
+  columns, `prior_rescheduled_date` and `prior_rescheduled_next_execution_assigned_to_user_id`,
+  so `/api/objects/chores_log` carries two fields upstream does not. Maintainer decision of
+  2026-10-12, issue #865.
 
 What normalisation erases is listed in [`harness/lib/normalize.js`](harness/lib/normalize.js)
 and is deliberately thin: wall-clock moments, `uniqid()`-derived opaque handles, the

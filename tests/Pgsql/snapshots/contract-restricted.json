@@ -257,6 +257,8 @@
                 "chore_id": "integer",
                 "done_by_user_id": "integer",
                 "id": "integer",
+                "prior_rescheduled_date": "null",
+                "prior_rescheduled_next_execution_assigned_to_user_id": "null",
                 "row_created_timestamp": "string(date-time)",
                 "scheduled_execution_time": "null",
                 "skipped": "integer",
