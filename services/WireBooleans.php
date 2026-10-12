@@ -58,9 +58,7 @@ final class WireBooleans
 	 * `undone` is deliberately absent although it sits beside `spoiled` in every stock_log
 	 * row and ships on the booking responses: no schema types it `boolean`, so nothing here
 	 * has a promise to keep for it and it stays the integer the rest of the API's flags are.
-	 * It is in fact documented by no schema at all - `StockLogEntry` omits it - which is a
-	 * gap in the document rather than in this map, and a separate question from making the
-	 * server keep the promises it has already made.
+	 * `StockLogEntry` documents it as an integer (issue 772), so this map leaves it alone.
 	 *
 	 * `uihelper_stock_journal` was listed here until the `StockJournal` and
 	 * `StockJournalSummary` schemas were removed as dead declarations. The view is read only
