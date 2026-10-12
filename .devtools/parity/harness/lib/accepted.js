@@ -259,24 +259,6 @@ const ACCEPTED = [
 	},
 
 	{
-		id: 'skipped-chore-consumes-nothing',
-		reference: 'services/ChoresService.php',
-		reason:
-			'A skipped chore execution (POST /chores/{id}/execute with skipped) consumes no product here ' +
-			'and needs no STOCK_CONSUME; upstream 4.6.0 consumes the chore\'s product on a skip as it ' +
-			'does on an execution. Maintainer decision of 2026-10-12, issue #856: a skip records that a ' +
-			'scheduled execution was passed over, not that the chore was performed.\n\n' +
-			'**The fork is the intended side and this must not be "fixed" towards upstream.** The ' +
-			'matcher is narrow: a numeric stock-amount difference on a /stock read where the fork holds ' +
-			'more than upstream. Any other stock difference, or the fork holding less, is still reported.',
-		match: ({ step, difference }) =>
-			difference.kind === 'value' &&
-			/^\/stock(\/|$)/.test(String(step.path)) &&
-			/\/(amount|amount_aggregated|stock_amount|stock_amount_aggregated)$/.test(difference.pointer) &&
-			Number(difference.victual) > Number(difference.upstream)
-	},
-
-	{
 		id: 'undo-restores-reschedule',
 		reference: 'services/ChoresService.php',
 		reason:
