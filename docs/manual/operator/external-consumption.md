@@ -74,7 +74,8 @@ strength, or a location from a schedule. A mapping holds:
   can name `qu_id`, the unit the event quantity is in, and a `quantity_factor`. A unit other
   than the product's stock unit needs a conversion to the stock unit that the household entered,
   or the mapping is refused with `422 invalid_mapping`. The stock unit itself needs none. The
-  product and the conversion are master data, and adding them needs `MASTER_DATA_EDIT`; see
+  product and the conversion are master data. Adding the product needs `MASTER_DATA_ADD` and adding
+  the conversion needs `MASTER_DATA_EDIT`; see
   [Adding a product, unit or location](roles-permissions.md#adding-a-product-unit-or-location).
 - **`unit_labels`.** The unit strings the person confirmed. An event whose `unit_label` is not
   on the list is not booked. It becomes `needs_review` with reason `unit_unconfirmed` and

@@ -779,7 +779,7 @@
 					@if($mode == "edit")
 					<div class="related-links collapse d-md-flex order-2 width-xs-sm-100"
 						id="related-links">
-						<a class="btn btn-primary btn-sm m-1 mt-md-0 mb-md-0 float-right show-as-dialog-link"
+						<a class="btn btn-primary btn-sm permission-MASTER_DATA_ADD m-1 mt-md-0 mb-md-0 float-right show-as-dialog-link"
 							href="{{ $U('/productbarcodes/new?embedded&product=' . $product->id ) }}">
 							{{ $__t('Add') }}
 						</a>

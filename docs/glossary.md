@@ -81,8 +81,10 @@ entry.
 
 Reusable records that describe household items and their configuration, such as products,
 locations, quantity units, and product groups. These records are distinct from bookings
-that record activity. `MASTER_DATA_EDIT` is the permission used for editing master data;
-individual operations can require additional permissions.
+that record activity. `MASTER_DATA_EDIT` is the permission used for editing master data.
+`MASTER_DATA_ADD`, a child of `MASTER_DATA_EDIT`, covers creating products, locations,
+quantity units, product groups, stores and product barcodes. Individual operations can require
+additional permissions.
 See [Roles and permissions](manual/operator/roles-permissions.md).
 
 ### Measured remainder

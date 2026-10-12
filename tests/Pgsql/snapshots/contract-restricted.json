@@ -1838,6 +1838,9 @@
                     "EQUIPMENT": [
                         "string"
                     ],
+                    "MASTER_DATA_ADD": [
+                        "string"
+                    ],
                     "MASTER_DATA_EDIT": [
                         "string"
                     ],

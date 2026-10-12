@@ -52,6 +52,10 @@ msgstr ""
 msgid "MASTER_DATA_EDIT"
 msgstr ""
 
+# Add master data
+msgid "MASTER_DATA_ADD"
+msgstr ""
+
 # Undo execution
 msgid "TASKS_UNDO_EXECUTION"
 msgstr ""
