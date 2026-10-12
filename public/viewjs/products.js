@@ -124,8 +124,15 @@ if (GetUriParam("filter"))
 }
 
 // Merge products: opens the modal with the clicked row's product (data-product-id) preselected as the one to keep
+// (MASTER_DATA_EDIT only - issue #782; victual.js disables the menu item for anyone else)
 $(".merge-products-button").on("click", function (e)
 {
+	if ($(e.currentTarget).hasClass("disabled"))
+	{
+		e.preventDefault();
+		return;
+	}
+
 	var productId = $(e.currentTarget).attr("data-product-id");
 	$("#merge-products-keep").val(productId);
 	$("#merge-products-remove").val("");

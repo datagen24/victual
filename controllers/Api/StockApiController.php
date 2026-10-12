@@ -1554,12 +1554,13 @@ class StockApiController extends BaseApiController
 	 * POST /api/stock/products/{productIdToKeep}/merge/{productIdToRemove} - merges
 	 * two products, moving all stock, references and history from the
 	 * productIdToRemove product onto productIdToKeep and deleting the former.
-	 * Requires the STOCK_EDIT permission (403 otherwise). Returns 204 on success or a
-	 * 400 error response (e.g. non-numeric ids).
+	 * Requires the MASTER_DATA_EDIT permission (403 otherwise), as deleting a product and
+	 * merging two chores do: the merge deletes shared master data (issue #782). Returns 204
+	 * on success or a 400 error response (e.g. non-numeric ids).
 	 */
 	public function MergeProducts(Request $request, Response $response, array $args)
 	{
-		User::CheckPermission($request, User::PERMISSION_STOCK_EDIT);
+		User::CheckPermission($request, User::PERMISSION_MASTER_DATA_EDIT);
 
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{

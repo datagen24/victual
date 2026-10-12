@@ -102,6 +102,11 @@ product groups, chores, batteries, tasks and userfields. The shopping list, reci
 equipment have their own permissions. Nothing in a stock, consumption or recipe permission lets an
 account add a product.
 
+Merging two products also needs `MASTER_DATA_EDIT`, as merging two chores does. A merge moves the
+stock, history and references of one product onto the other and then deletes the first product,
+and it cannot be undone. A stock permission, including `STOCK_EDIT`, does not allow a merge, and
+the products page disables the Merge menu item for an account without `MASTER_DATA_EDIT`.
+
 The seeded Adult, Child and Guest roles do not hold `MASTER_DATA_EDIT`, so on a household set up
 with those roles only an administrator can add a medication or vitamin. `ADMIN` is not required:
 an account that holds `MASTER_DATA_EDIT` and nothing else can add and edit master data. Such an
