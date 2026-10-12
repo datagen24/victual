@@ -220,6 +220,18 @@ if (empty($policyBeforeImport))
 	Fail('the target has a price-visibility policy to keep', 'permission_fields is empty before any import - the target was not migrated past 0281');
 }
 
+// db/pgsql/view-leaves-seed.sql is migration 0299's statements carried for the importer, and
+// the migration cannot be changed to read the file the way 0282 reads prices-seed.sql, so the
+// two copies are held equal here. Comments and whitespace are not compared.
+$statementsOf = fn(string $path) => array_values(array_filter(array_map(
+	fn(string $statement) => trim(preg_replace('/\s+/', ' ', $statement)),
+	explode(';', preg_replace('/--[^\n]*/', '', file_get_contents($path))))));
+$seedStatements = $statementsOf(VICTUAL_ROOT_PATH . '/db/pgsql/view-leaves-seed.sql');
+$migrationStatements = $statementsOf(VICTUAL_ROOT_PATH . '/migrations/0299.pgsql.sql');
+Check('view-leaves-seed.sql matches migration 0299', $seedStatements === $migrationStatements && count($seedStatements) === 3,
+	count($migrationStatements) . ' identical statements',
+	$seedStatements === $migrationStatements ? count($seedStatements) . ' statements' : 'the statements differ');
+
 // --- The two ends of the span import at all ----------------------------------------
 //
 // --force because the runner migrated the target with bin/victual-migrate, which seeds a
