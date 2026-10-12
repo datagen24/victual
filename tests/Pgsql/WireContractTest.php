@@ -25,9 +25,11 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *        that is stays. The renderings ADR-0027 decision 2 excepts - time_utc's UTC, that
  *        one RFC 3339 field, and the label surface's TIMESTAMPTZ values - are asserted to
  *        still be exceptions.
- *   #232 The GET /objects/{entity} union members are mutually exclusive. All fifty-seven
- *        listable entities are measured against all ten members, and the three that still
- *        match a member that is not theirs are pinned rather than claimed away.
+ *   #232 The GET /objects/{entity} union has a member for each entity it describes. All
+ *        fifty-seven listable entities are measured against every member of both unions,
+ *        the list's and the single read's, and (issue #648) the only member an entity
+ *        satisfies that is not its own is one of two documented superset overlaps. The
+ *        unions are anyOf with a machine-readable entity-to-member map.
  *   #233 GET /user's 200 is an array of UserDto, which is what it returns.
  *
  * And, from the same family, ADR-0028: the three write routes that take a timestamp
@@ -1435,37 +1437,52 @@ class WireContractTest extends PgsqlSchemaTestCase
 
 	// --------------------------------------------------------------------- issue #232
 
-	public function testTheGenericEntityUnionMembersAreMutuallyExclusive(): void
+	public function testTheGenericEntityUnionMembersOverlapOnlyWhereDocumented(): void
 	{
 		$spec = self::spec();
-		$members = array_map(
-			fn (array $ref) => substr($ref['$ref'], strlen('#/components/schemas/')),
-			$spec['paths']['/objects/{entity}']['get']['responses']['200']['content']['application/json']['schema']['items']['oneOf']
-		);
+		$schemas = $spec['components']['schemas'];
 
-		self::assertContains('LocationResolved', $members, 'the listable entity issue #232 found missing from the union');
+		self::assertContains('LocationResolved', self::unionMembers($spec, false), 'the listable entity issue #232 found missing from the union');
 
-		$ambiguous = [];
-		foreach ($members as $candidate)
+		$overlaps = [];
+		foreach ([false, true] as $single)
 		{
-			$properties = array_keys($spec['components']['schemas'][$candidate]['properties']);
+			$members = self::unionMembers($spec, $single);
 
-			foreach ($members as $other)
+			foreach ($members as $candidate)
 			{
-				$required = $spec['components']['schemas'][$other]['required'] ?? null;
-				self::assertNotNull($required, "$other declares no required properties, so it matches any object");
-
-				if ($other !== $candidate && array_diff($required, $properties) === [])
+				// What a $candidate row carries: every property it declares. The single read
+				// attaches userfields to every entity, so its rows carry that key too.
+				$keys = array_keys($schemas[$candidate]['properties']);
+				if ($single)
 				{
-					// Every property $other requires exists on $candidate, so a $candidate
-					// row would validate against $other as well - which is how every entity
-					// used to decode as a Product.
-					$ambiguous[] = "a $candidate row would also match $other";
+					$keys[] = 'userfields';
+				}
+
+				foreach ($members as $other)
+				{
+					self::assertNotEmpty(
+						self::requiredKeys($schemas[$other], $schemas),
+						"$other declares no required properties, so it matches any object"
+					);
+
+					if ($other !== $candidate && self::admitsKeys($schemas[$other], $keys, $schemas))
+					{
+						$overlaps[$single ? 'single' : 'list'][] = "$candidate -> $other";
+					}
 				}
 			}
 		}
 
-		self::assertSame([], $ambiguous, implode('; ', $ambiguous));
+		// A member's own rows also satisfy a member whose required properties are a subset
+		// of theirs. Exactly two pairs do (see EXPECTED_OVERLAPS, entity for member).
+		$expected = ['ProductBarcode -> ProductBarcodeView', 'UihelperShoppingListItem -> ShoppingListItem'];
+		foreach ($overlaps as &$found)
+		{
+			sort($found);
+		}
+		unset($found);
+		self::assertSame(['list' => $expected, 'single' => $expected], $overlaps);
 	}
 
 	public function testTheWriteBodiesDoNotShareTheReadUnion(): void
@@ -1506,26 +1523,25 @@ class WireContractTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * Which members of the GET /objects/{entity} union each listable entity's rows are a
-	 * *candidate* for - that is, whose `required` properties the row carries, which is what
-	 * decides the member `oneOf` can select. Measured, not intended. Every entity absent
-	 * from this map is a candidate for none, which is the loud failure ADR-0027 decision 3
-	 * is for.
+	 * The member each listable entity that has one is documented as, and the one a client
+	 * decodes its rows with. Every entity absent from this map has no member, which is the
+	 * loud failure ADR-0027 decision 3 is for. It is also what x-victual-entity-schemas on
+	 * both unions must say.
 	 *
-	 * Every candidate response is also validated against its complete member schema below.
+	 * The first ten are the pairings issue #232 made. The last three were found by issue
+	 * #648 satisfying a member that is not theirs and none of their own:
 	 *
-	 * The first ten are the intended pairings. The last three are the ones ADR-0027's
-	 * consequences name: unmodelled entities whose rows happen to carry every property some
-	 * member declares `required`, so exactly one member is a candidate - the wrong one - and
-	 * nothing else in the union's shape rules it out. The nullable schemas accept these
-	 * three unintended pairings. Required properties discriminate the ten from each
-	 * other; they do not discriminate them from every relation in the database.
+	 *   stock_log              satisfied StockEntry. It has no `open`, which StockEntry now
+	 *                          requires, and it has `transaction_type`, which StockLogEntry
+	 *                          requires and nothing else carries.
+	 *   product_barcodes_view  satisfied ProductBarcode. It has no row_created_timestamp,
+	 *                          which ProductBarcode now requires.
+	 *   uihelper_shopping_list satisfied ShoppingListItem. It selects sl.* plus ten joined
+	 *                          columns, so UihelperShoppingListItem requires qu_name_plural,
+	 *                          which a shopping_list row lacks. The reverse overlap remains
+	 *                          (EXPECTED_OVERLAPS).
 	 *
-	 * uihelper_shopping_list is the one that cannot be fixed by requiring more: it is a
-	 * superset of shopping_list, so no property shopping_list has distinguishes them. That
-	 * needs `additionalProperties: false` on ShoppingListItem, which needs ShoppingListItem
-	 * to declare every column shopping_list has - it declares seven of eight today - and the
-	 * same is true of nine of the ten members. See ADR-0027's options E and D.
+	 * Every row is also validated against its member's complete schema.
 	 */
 	private const UNION_MATCHES = [
 		'products' => ['Product'],
@@ -1538,51 +1554,69 @@ class WireContractTest extends PgsqlSchemaTestCase
 		'userfields' => ['Userfield'],
 		'stock' => ['StockEntry'],
 		'locations_resolved' => ['LocationResolved'],
-		'stock_log' => ['StockEntry'],
-		'product_barcodes_view' => ['ProductBarcode'],
-		'uihelper_shopping_list' => ['ShoppingListItem']
+		'stock_log' => ['StockLogEntry'],
+		'product_barcodes_view' => ['ProductBarcodeView'],
+		'uihelper_shopping_list' => ['UihelperShoppingListItem']
 	];
 
 	/**
-	 * The three above, measured the only way that counts: a real row off a real response,
-	 * carrying every property the wrong member requires.
+	 * The only places a row satisfies a member that is not the entity's own, in both unions,
+	 * as "entity -> member". A view that selects every column of a table and adds more
+	 * satisfies the table's schema too, because `required` is a subset test and nothing
+	 * closes the table's schema:
 	 *
-	 * testEveryListableEntityIsMeasuredAgainstTheUnion() below is exhaustive but falls back
-	 * to the relation's columns for an entity the fixture leaves empty. These three do not
-	 * fall back, so the claim ADR-0027 makes about them rests on responses.
+	 *   product_barcodes       -> ProductBarcodeView: the view's required id, product_id and
+	 *                             barcode are all columns of product_barcodes.
+	 *   uihelper_shopping_list -> ShoppingListItem: the view is `sl.*` plus ten columns.
+	 *
+	 * The unions are `anyOf` and the rows carry no type field, so a client decodes with the
+	 * member x-victual-entity-schemas maps the requested entity to. `not` and
+	 * `additionalProperties: false` would remove these, and swift-openapi-generator supports
+	 * neither. A new overlap fails the test; stock_log, product_barcodes_view and
+	 * shopping_list match only their own member.
 	 */
-	private const AMBIGUOUS_ON_REAL_ROWS = ['stock_log', 'product_barcodes_view', 'uihelper_shopping_list'];
+	private const EXPECTED_OVERLAPS = [
+		'product_barcodes -> ProductBarcodeView',
+		'uihelper_shopping_list -> ShoppingListItem'
+	];
 
 	/**
-	 * Every listable entity, against every member of the union - which is the check issue
-	 * #232's fix needed and did not get. testTheGenericEntityUnionMembersAreMutuallyExclusive()
-	 * above compares the ten members with each other, and that is all it can see; it cannot
-	 * see the forty-seven entities that have no member and still match one.
+	 * Entities whose key sets must come off a real response row rather than off the
+	 * relation's columns: the three issue #648 is about, and shopping_list, the member
+	 * uihelper_shopping_list is a superset of.
+	 *
+	 * testEveryListableEntityIsMeasuredAgainstTheUnion() below is exhaustive but falls back
+	 * to the relation's columns for an entity the fixture leaves empty. These do not fall
+	 * back, so the claim the document makes about them rests on responses.
+	 */
+	private const REAL_ROWS_REQUIRED = ['stock_log', 'product_barcodes_view', 'uihelper_shopping_list', 'shopping_list'];
+
+	/**
+	 * Every listable entity, against every member of both unions - the list's items and the
+	 * single read - which is the check issue #232's fix needed and did not get.
+	 * testTheGenericEntityUnionMembersAreMutuallyExclusive() above compares the members
+	 * with each other, and that is all it can see; it cannot see the entities that have no
+	 * member and still match one.
 	 *
 	 * The key set is what a row actually carries: the response's own keys where the fixture
 	 * gives the entity a row, and the relation's columns where it does not. Both are checked
-	 * against each other wherever both exist, so the fallback is not taken on trust.
+	 * against each other wherever both exist, so the fallback is not taken on trust. The
+	 * single read attaches userfields to every entity, so its key set has that key too.
+	 *
+	 * Issue #648's requirement: each entity's own member admits it, and the only other
+	 * members an entity satisfies are EXPECTED_OVERLAPS, in either union.
 	 */
 	public function testEveryListableEntityIsMeasuredAgainstTheUnion(): void
 	{
 		$spec = self::spec();
-		$members = array_map(
-			fn (array $ref) => substr($ref['$ref'], strlen('#/components/schemas/')),
-			$spec['paths']['/objects/{entity}']['get']['responses']['200']['content']['application/json']['schema']['items']['oneOf']
-		);
-		$required = [];
-		foreach ($members as $member)
-		{
-			$required[$member] = $spec['components']['schemas'][$member]['required'];
-		}
+		$schemas = $spec['components']['schemas'];
 
 		$columns = self::relationColumns();
-		$noListing = $spec['components']['schemas']['ExposedEntityNoListing']['enum'];
-		$measured = [];
-		$fromResponse = [];
+		$noListing = $schemas['ExposedEntityNoListing']['enum'];
+		$keysByEntity = [];
 		$rowsByEntity = [];
 
-		foreach ($spec['components']['schemas']['ExposedEntity']['enum'] as $entity)
+		foreach ($schemas['ExposedEntity']['enum'] as $entity)
 		{
 			if (in_array($entity, $noListing, true))
 			{
@@ -1598,7 +1632,6 @@ class WireContractTest extends PgsqlSchemaTestCase
 			if (count($rows) > 0)
 			{
 				$keys = array_keys($rows[0]);
-				$fromResponse[] = $entity;
 				$rowsByEntity[$entity] = $rows;
 
 				// Candidacy is read off the first row, so the others have to agree about
@@ -1628,38 +1661,97 @@ class WireContractTest extends PgsqlSchemaTestCase
 				$keys = $columns[$entity];
 			}
 
-			$matches = [];
-			foreach ($members as $member)
-			{
-				if (array_diff($required[$member], $keys) === [])
-				{
-					$matches[] = $member;
-				}
-			}
-
-			if ($matches !== [])
-			{
-				$measured[$entity] = $matches;
-			}
+			$keysByEntity[$entity] = $keys;
 		}
-
-		// Both sides by entity name rather than in the enum's order: what is under test is
-		// which entities match which members, not where the document happens to list them.
-		$expected = self::UNION_MATCHES;
-		ksort($expected);
-		ksort($measured);
-		self::assertSame($expected, $measured);
 
 		self::assertSame(
 			[],
-			array_values(array_diff(self::AMBIGUOUS_ON_REAL_ROWS, $fromResponse)),
-			'an entity ADR-0027 states is ambiguous was measured off its columns rather than off a response'
+			array_values(array_diff(self::REAL_ROWS_REQUIRED, array_keys($rowsByEntity))),
+			'an entity issue #648 is about was measured off its columns rather than off a response'
 		);
+
+		foreach ([false, true] as $single)
+		{
+			$label = $single ? 'GET /objects/{entity}/{objectId}' : 'GET /objects/{entity}';
+			$members = self::unionMembers($spec, $single);
+			// LocationResolved has no single read, so it is not a member there and its
+			// entity has nothing to match.
+			$intended = self::UNION_MATCHES;
+			foreach ($intended as $entity => $names)
+			{
+				$intended[$entity] = array_values(array_intersect($names, $members));
+				if ($intended[$entity] === [])
+				{
+					unset($intended[$entity]);
+				}
+			}
+
+			$measured = [];
+			$incorrect = [];
+			foreach ($keysByEntity as $entity => $keys)
+			{
+				if ($single)
+				{
+					$keys[] = 'userfields';
+				}
+
+				foreach ($members as $member)
+				{
+					if (!self::admitsKeys($schemas[$member], $keys, $schemas))
+					{
+						continue;
+					}
+
+					$measured[$entity][] = $member;
+					if (!in_array($member, $intended[$entity] ?? [], true))
+					{
+						$incorrect[] = "$entity -> $member";
+					}
+				}
+			}
+
+			// Issue #648: an entity's own member is always among its candidates, and the
+			// only candidates that are not its own are the two documented overlaps.
+			$missing = [];
+			foreach ($intended as $entity => $names)
+			{
+				foreach ($names as $name)
+				{
+					if (!in_array($name, $measured[$entity] ?? [], true))
+					{
+						$missing[] = "$entity -> $name";
+					}
+				}
+			}
+			self::assertSame([], $missing, "$label: entities whose own member does not admit them: " . implode(', ', $missing));
+			sort($incorrect);
+			self::assertSame(self::EXPECTED_OVERLAPS, $incorrect, "$label: entities that match a member that is not theirs");
+
+			foreach (['stock_log', 'product_barcodes_view', 'shopping_list'] as $exclusive)
+			{
+				self::assertSame(self::UNION_MATCHES[$exclusive], $measured[$exclusive], "$label: $exclusive matches only its own member");
+			}
+
+			// The map a client decodes by names the entity's own member, for exactly the
+			// entities that have one, and each is a member of this union.
+			self::assertSame(
+				array_map(fn (array $names) => $names[0], $intended),
+				self::unionSchema($spec, $single)['x-victual-entity-schemas'],
+				"$label: x-victual-entity-schemas"
+			);
+			foreach (self::unionSchema($spec, $single)['x-victual-entity-schemas'] as $entity => $name)
+			{
+				self::assertContains($name, $members, "$label: $entity maps to a schema that is not a member");
+			}
+
+			// Nothing that has no member matches one.
+			self::assertSame([], array_values(array_diff(array_keys($measured), array_keys($intended))), $label);
+		}
 
 		$failures = [];
 		foreach ($rowsByEntity as $entity => $rows)
 		{
-			foreach ($measured[$entity] ?? [] as $member)
+			foreach (self::UNION_MATCHES[$entity] ?? [] as $member)
 			{
 				foreach ($rows as $index => $row)
 				{
@@ -1671,6 +1763,158 @@ class WireContractTest extends PgsqlSchemaTestCase
 			}
 		}
 		self::assertSame([], $failures, implode("\n", $failures));
+	}
+
+	/**
+	 * The single read answers every entity the single union maps to a member, and what it
+	 * answers - userfields included - validates against that member. An entity the fixture
+	 * leaves empty is skipped, except those REAL_ROWS_REQUIRED names.
+	 */
+	public function testTheSingleReadOfEveryMappedEntityValidatesAgainstItsMember(): void
+	{
+		$map = self::unionSchema(self::spec(), true)['x-victual-entity-schemas'];
+		self::assertNotSame([], $map);
+
+		$failures = [];
+		$checked = [];
+		foreach ($map as $entity => $member)
+		{
+			$rows = self::get("/api/objects/$entity");
+			if ($rows === [])
+			{
+				self::assertNotContains($entity, self::REAL_ROWS_REQUIRED, "the fixture leaves $entity empty");
+				continue;
+			}
+
+			$answer = self::send('GET', "/api/objects/$entity/{$rows[0]['id']}");
+			self::assertSame(200, $answer['status'], "/api/objects/$entity/{$rows[0]['id']} answered {$answer['status']}");
+			$body = json_decode($answer['body'], false, flags: JSON_THROW_ON_ERROR);
+			$checked[] = $entity;
+
+			foreach (self::validateAgainstMember($body, $member) as $error)
+			{
+				$failures[] = "$entity/{$rows[0]['id']} against $member: $error";
+			}
+		}
+		self::assertSame([], array_values(array_diff(self::REAL_ROWS_REQUIRED, $checked)));
+		self::assertSame([], $failures, implode("\n", $failures));
+	}
+
+	/**
+	 * The member names of the GET /objects/{entity} union (the list's `items.anyOf`) or of
+	 * the GET /objects/{entity}/{objectId} union, in document order.
+	 *
+	 * @return string[]
+	 */
+	private static function unionSchema(array $spec, bool $single): array
+	{
+		$schema = $spec['paths'][$single ? '/objects/{entity}/{objectId}' : '/objects/{entity}']['get']['responses']['200']['content']['application/json']['schema'];
+
+		return $single ? $schema : $schema['items'];
+	}
+
+	private static function unionMembers(array $spec, bool $single): array
+	{
+		$schema = $spec['paths'][$single ? '/objects/{entity}/{objectId}' : '/objects/{entity}']['get']['responses']['200']['content']['application/json']['schema'];
+
+		return array_map(
+			fn (array $ref) => substr($ref['$ref'], strlen('#/components/schemas/')),
+			($single ? $schema : $schema['items'])['anyOf']
+		);
+	}
+
+	/**
+	 * The `required` keys of a schema, followed through $ref and allOf. Nothing else
+	 * about it: no `not`, no closure. That is the rule a Codable client applies.
+	 *
+	 * @return string[]
+	 */
+	private static function requiredKeys(array $schema, array $schemas): array
+	{
+		while (isset($schema['$ref']))
+		{
+			$schema = $schemas[substr($schema['$ref'], strlen('#/components/schemas/'))];
+		}
+
+		$required = $schema['required'] ?? [];
+		foreach ($schema['allOf'] ?? [] as $part)
+		{
+			$required = array_merge($required, self::requiredKeys($part, $schemas));
+		}
+
+		return array_values(array_unique($required));
+	}
+
+	/**
+	 * Whether an object carrying exactly $keys is a candidate for $schema: it carries every
+	 * required key, and the closure holds. The closure is what a validating client applies
+	 * beyond `required` - `not` (the negated schema must not admit the keys), `allOf` (all),
+	 * `anyOf` (any), `oneOf` (exactly one) and `additionalProperties: false` (every key
+	 * declared). Types are not modelled: this decides candidacy, which is a question about
+	 * keys; the types are Opis's to check on the real rows.
+	 *
+	 * @param string[] $keys
+	 */
+	private static function admitsKeys(array $schema, array $keys, array $schemas, int $depth = 0): bool
+	{
+		self::assertLessThan(30, $depth, 'a schema reference cycle');
+
+		while (isset($schema['$ref']))
+		{
+			$schema = $schemas[substr($schema['$ref'], strlen('#/components/schemas/'))];
+		}
+
+		if (array_diff($schema['required'] ?? [], $keys) !== [])
+		{
+			return false;
+		}
+
+		foreach ($schema['allOf'] ?? [] as $part)
+		{
+			if (!self::admitsKeys($part, $keys, $schemas, $depth + 1))
+			{
+				return false;
+			}
+		}
+
+		if (isset($schema['anyOf']))
+		{
+			$any = false;
+			foreach ($schema['anyOf'] as $part)
+			{
+				$any = $any || self::admitsKeys($part, $keys, $schemas, $depth + 1);
+			}
+			if (!$any)
+			{
+				return false;
+			}
+		}
+
+		if (isset($schema['oneOf']))
+		{
+			$matching = 0;
+			foreach ($schema['oneOf'] as $part)
+			{
+				$matching += self::admitsKeys($part, $keys, $schemas, $depth + 1) ? 1 : 0;
+			}
+			if ($matching !== 1)
+			{
+				return false;
+			}
+		}
+
+		if (isset($schema['not']) && self::admitsKeys($schema['not'], $keys, $schemas, $depth + 1))
+		{
+			return false;
+		}
+
+		if (($schema['additionalProperties'] ?? true) === false
+			&& array_diff($keys, array_keys($schema['properties'] ?? [])) !== [])
+		{
+			return false;
+		}
+
+		return true;
 	}
 
 	/**

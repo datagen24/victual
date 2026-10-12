@@ -757,9 +757,24 @@
 							"application/json": {
 								"schema": {
 									"type": "array",
-									"description": "One element per row of the requested entity. The union is **undiscriminated** - the entity is in the path, not in the payload - so a generated client decodes it by trying each member and keeping the first that validates. Each member therefore declares `required` properties that no other member has. Before that, `Product` had no required properties and so matched any JSON object, and every row of every entity decoded as a Product: `quantity_units` lost `name_plural`, `locations` lost `parent_location_id`. Issue #232.\n\n**A row of a listable entity that has no schema here matches no member and will not decode.** That is deliberate - a loud failure in place of the silent wrong answer it replaces. `ExposedEntity_NotIncludingNotListable` names every entity this route serves and only the ten below are described; the rest are undocumented rather than absent, and a client that needs one should read this route outside its generated code until a schema exists.",
+									"description": "One element per row of the requested entity. The union is **undiscriminated** and is an `anyOf`, not a `oneOf`: rows carry no type field (the entity is in the path, not in the payload), and more than one member can describe the same row. A `product_barcodes` row also satisfies `ProductBarcodeView`, and a `uihelper_shopping_list` row also satisfies `ShoppingListItem`, because a view that adds columns to a table satisfies the table's schema too. **A client decodes the response with the member `x-victual-entity-schemas` maps the requested `{entity}` to**, and does not try members in order. `Product` once had no required properties and matched any JSON object, so every row of every entity decoded as a Product: `quantity_units` lost `name_plural`, `locations` lost `parent_location_id`. Issue #232. Each member requires properties that keep the other entities' rows from satisfying it, except in the two overlaps named above, so the entity's own member is always among those a row satisfies; `stock_log`, `product_barcodes_view` and `uihelper_shopping_list` once satisfied `StockEntry`, `ProductBarcode` and `ShoppingListItem` and nothing of their own, and each has a member now. Issue #648.\n\n**A row of a listable entity that has no schema here matches no member and will not decode.** That is deliberate - a loud failure in place of the silent wrong answer it replaces. `ExposedEntity_NotIncludingNotListable` names every entity this route serves and only the thirteen in `x-victual-entity-schemas` are described; the rest are undocumented rather than absent, and a client that needs one should read this route outside its generated code until a schema exists.",
 									"items": {
-										"oneOf": [
+										"x-victual-entity-schemas": {
+											"products": "Product",
+											"chores": "Chore",
+											"product_barcodes": "ProductBarcode",
+											"batteries": "Battery",
+											"locations": "Location",
+											"quantity_units": "QuantityUnit",
+											"shopping_list": "ShoppingListItem",
+											"userfields": "Userfield",
+											"stock": "StockEntry",
+											"locations_resolved": "LocationResolved",
+											"stock_log": "StockLogEntry",
+											"product_barcodes_view": "ProductBarcodeView",
+											"uihelper_shopping_list": "UihelperShoppingListItem"
+										},
+										"anyOf": [
 											{
 												"$ref": "#/components/schemas/Product"
 											},
@@ -779,6 +794,9 @@
 												"$ref": "#/components/schemas/QuantityUnit"
 											},
 											{
+												"$ref": "#/components/schemas/UihelperShoppingListItem"
+											},
+											{
 												"$ref": "#/components/schemas/ShoppingListItem"
 											},
 											{
@@ -789,6 +807,12 @@
 											},
 											{
 												"$ref": "#/components/schemas/Userfield"
+											},
+											{
+												"$ref": "#/components/schemas/StockLogEntry"
+											},
+											{
+												"$ref": "#/components/schemas/ProductBarcodeView"
 											}
 										]
 									}
@@ -928,7 +952,22 @@
 						"content": {
 							"application/json": {
 								"schema": {
-									"oneOf": [
+									"x-victual-entity-schemas": {
+										"products": "Product",
+										"chores": "Chore",
+										"product_barcodes": "ProductBarcode",
+										"batteries": "Battery",
+										"locations": "Location",
+										"quantity_units": "QuantityUnit",
+										"shopping_list": "ShoppingListItem",
+										"userfields": "Userfield",
+										"stock": "StockEntry",
+										"stock_log": "StockLogEntry",
+										"product_barcodes_view": "ProductBarcodeView",
+										"uihelper_shopping_list": "UihelperShoppingListItem"
+									},
+									"description": "The same undiscriminated union as the items of `GET /objects/{entity}`, in the same order, without `LocationResolved`, which has no single-object read. The row additionally carries a `userfields` map. See that operation for how a client picks the member. Issue #648.",
+									"anyOf": [
 										{
 											"$ref": "#/components/schemas/Product"
 										},
@@ -945,6 +984,9 @@
 											"$ref": "#/components/schemas/QuantityUnit"
 										},
 										{
+											"$ref": "#/components/schemas/UihelperShoppingListItem"
+										},
+										{
 											"$ref": "#/components/schemas/ShoppingListItem"
 										},
 										{
@@ -955,6 +997,12 @@
 										},
 										{
 											"$ref": "#/components/schemas/Userfield"
+										},
+										{
+											"$ref": "#/components/schemas/StockLogEntry"
+										},
+										{
+											"$ref": "#/components/schemas/ProductBarcodeView"
 										}
 									]
 								}
@@ -13714,7 +13762,8 @@
 				"required": [
 					"id",
 					"stock_id",
-					"product_id"
+					"product_id",
+					"open"
 				],
 				"properties": {
 					"id": {
@@ -14100,7 +14149,8 @@
 							"barcode": "01321230213",
 							"qu_id": 1,
 							"shopping_location_id": 2,
-							"amount": 10
+							"amount": 10,
+							"row_created_timestamp": "2019-05-03T18:24:04.000000Z"
 						}
 					],
 					"last_purchased": null,
@@ -14183,7 +14233,8 @@
 				"type": "object",
 				"required": [
 					"barcode",
-					"product_id"
+					"product_id",
+					"row_created_timestamp"
 				],
 				"properties": {
 					"product_id": {
@@ -14238,6 +14289,61 @@
 					"userfields": {
 						"type": "object",
 						"description": "Key/value pairs of userfields. Sent by GET /objects/product_barcodes/{objectId} only."
+					}
+				}
+			},
+			"ProductBarcodeView": {
+				"type": "object",
+				"description": "A row of `product_barcodes_view`, which `GET /objects/product_barcodes_view` answers: every `product_barcodes` row, plus one grocycode row (`grcy:p:<id>`) per product. The view has no `row_created_timestamp`, which `ProductBarcode` requires, so this row is not a `ProductBarcode`. A `product_barcodes` row does satisfy this schema, because its required properties are a subset of that row's; the rows carry no type field, so a client selects the member by the entity it requested (see `x-victual-entity-schemas` on the entity unions), not by trying members. Issue #648.",
+				"required": [
+					"id",
+					"product_id",
+					"barcode"
+				],
+				"properties": {
+					"id": {
+						"type": "integer"
+					},
+					"product_id": {
+						"type": "integer"
+					},
+					"barcode": {
+						"type": "string"
+					},
+					"qu_id": {
+						"type": [
+							"integer",
+							"null"
+						]
+					},
+					"amount": {
+						"type": [
+							"number",
+							"null"
+						]
+					},
+					"shopping_location_id": {
+						"type": [
+							"integer",
+							"null"
+						]
+					},
+					"last_price": {
+						"type": [
+							"number",
+							"null"
+						],
+						"x-visibility": "STOCK_PRICES_VIEW"
+					},
+					"note": {
+						"type": [
+							"string",
+							"null"
+						]
+					},
+					"userfields": {
+						"type": "object",
+						"description": "Key/value pairs of userfields. Sent by GET /objects/product_barcodes_view/{objectId} only: the single-object read attaches the map to every entity, views included."
 					}
 				}
 			},
@@ -14573,6 +14679,7 @@
 			},
 			"ShoppingListItem": {
 				"type": "object",
+				"description": "A row of `shopping_list`. `UihelperShoppingListItem` (the `uihelper_shopping_list` view, which selects `sl.*` and adds ten joined columns) is a superset of it, so a `uihelper_shopping_list` row also satisfies this schema, while a `shopping_list` row lacks `qu_name_plural` and does not satisfy that one. The rows carry no type field, so a client selects the member by the entity it requested (see `x-victual-entity-schemas` on the entity unions). Issue #648.",
 				"required": [
 					"id",
 					"shopping_list_id"
@@ -14617,6 +14724,149 @@
 					"userfields": {
 						"type": "object",
 						"description": "Key/value pairs of userfields"
+					},
+					"done": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "1 when the item has been ticked off the list, otherwise 0. An integer flag like the rest of the API's flags, not a boolean: nothing converts it (WireBooleans)"
+					},
+					"qu_id": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The quantity unit the item's amount is in"
+					}
+				}
+			},
+			"UihelperShoppingListItem": {
+				"type": "object",
+				"description": "A row of `uihelper_shopping_list`, which `GET /objects/uihelper_shopping_list` answers: every `shopping_list` column (the view selects `sl.*`) plus ten joined columns. `qu_name_plural` is required because it is the one required key a `shopping_list` row lacks, so a `shopping_list` row is not an `UihelperShoppingListItem`. This row also satisfies `ShoppingListItem`, whose required properties are a subset; a client selects the member by the entity it requested (see `x-victual-entity-schemas` on the entity unions). Issue #648.",
+				"required": [
+					"id",
+					"shopping_list_id",
+					"qu_name_plural"
+				],
+				"properties": {
+					"id": {
+						"type": "integer"
+					},
+					"shopping_list_id": {
+						"type": [
+							"integer",
+							"null"
+						]
+					},
+					"product_id": {
+						"type": [
+							"integer",
+							"null"
+						]
+					},
+					"note": {
+						"type": [
+							"string",
+							"null"
+						]
+					},
+					"amount": {
+						"type": "number",
+						"minimum": 0,
+						"default": 0,
+						"description": "The manual entered amount"
+					},
+					"row_created_timestamp": {
+						"type": [
+							"string",
+							"null"
+						],
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
+					},
+					"done": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "1 when the item has been ticked off the list, otherwise 0. An integer flag like the rest of the API's flags, not a boolean: nothing converts it (WireBooleans)"
+					},
+					"qu_id": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The quantity unit the item's amount is in"
+					},
+					"product_name": {
+						"type": [
+							"string",
+							"null"
+						]
+					},
+					"last_price_unit": {
+						"type": [
+							"number",
+							"null"
+						],
+						"x-visibility": "STOCK_PRICES_VIEW"
+					},
+					"last_price_total": {
+						"type": [
+							"number",
+							"null"
+						],
+						"x-visibility": "STOCK_PRICES_VIEW"
+					},
+					"price": {
+						"type": [
+							"number",
+							"null"
+						],
+						"x-visibility": "STOCK_PRICES_VIEW"
+					},
+					"default_shopping_location_name": {
+						"type": [
+							"string",
+							"null"
+						]
+					},
+					"qu_name": {
+						"type": [
+							"string",
+							"null"
+						]
+					},
+					"qu_name_plural": {
+						"type": [
+							"string",
+							"null"
+						]
+					},
+					"product_group_id": {
+						"type": [
+							"integer",
+							"null"
+						]
+					},
+					"product_group_name": {
+						"type": [
+							"string",
+							"null"
+						]
+					},
+					"product_barcodes": {
+						"type": [
+							"string",
+							"null"
+						],
+						"description": "The product's barcodes, comma separated"
+					},
+					"userfields": {
+						"type": "object",
+						"description": "Key/value pairs of userfields. Sent by GET /objects/uihelper_shopping_list/{objectId} only: the single-object read attaches the map to every entity, views included."
 					}
 				}
 			},
@@ -14848,6 +15098,9 @@
 			},
 			"StockLogEntry": {
 				"type": "object",
+				"required": [
+					"transaction_type"
+				],
 				"properties": {
 					"id": {
 						"type": "integer"
