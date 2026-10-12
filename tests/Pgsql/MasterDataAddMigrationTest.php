@@ -152,8 +152,12 @@ class MasterDataAddMigrationTest extends PgsqlSchemaTestCase
 	 * right changes. CHORES and TASKS are siblings of MASTER_DATA_EDIT under ADMIN, so the
 	 * change goes both ways: holders of CHORES / TASKS without MASTER_DATA_EDIT gain, holders
 	 * of MASTER_DATA_EDIT without them lose, and ADMIN resolves all three and keeps both.
+	 *
+	 * This is the upgrade rehearsal's account listing: it derives the affected accounts from
+	 * the resolved permissions the seeded roles produce. It does not exercise the gate;
+	 * MasterDataAddPermissionTest proves that.
 	 */
-	public function testDecisionSevenListsTheAccountsWhoseChoreAndTaskRightsChange(): void
+	public function testDecisionSevenAffectedAccountsFollowTheSeededRoles(): void
 	{
 		DatabaseMigrationService::GetInstance()->MigrateDatabase();
 		$resolved = self::snapshotResolved();

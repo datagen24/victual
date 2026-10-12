@@ -65,6 +65,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 			9714 => ['tasks', ['TASKS'], []],
 			9715 => ['child', [], ['CHILD']],
 			9716 => ['adult', [], ['ADULT']],
+			9717 => ['add-and-shopping', ['MASTER_DATA_ADD', 'SHOPPINGLIST_ITEMS_ADD'], []],
 		];
 		foreach ($callers as $id => [$name, $permissions, $roles])
 		{
@@ -78,6 +79,12 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 				self::$db->prepare('INSERT INTO user_roles (user_id, role_id) SELECT ?, id FROM roles WHERE code = ? AND builtin = 1')->execute([$id, $role]);
 			}
 			self::$keys[$name] = self::issueKey($id);
+		}
+
+		// The user setting that makes a product create fill the shopping list.
+		foreach ([9710, 9717] as $id)
+		{
+			self::$db->exec("INSERT INTO user_settings (user_id, key, value) VALUES ($id, 'shopping_list_auto_add_below_min_stock_amount', '1'), ($id, 'shopping_list_auto_add_below_min_stock_amount_list_id', '1')");
 		}
 	}
 
@@ -206,6 +213,19 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 		return self::insertRow($entity, $body);
 	}
 
+	/** Row count of an entity's table, or -1 when the entity is not a plain table (a view). */
+	private static function tableCount(string $entity): int
+	{
+		try
+		{
+			return (int)self::$db->query('SELECT COUNT(*) FROM ' . preg_replace('/[^a-z_]/', '', $entity))->fetchColumn();
+		}
+		catch (\PDOException)
+		{
+			return -1;
+		}
+	}
+
 	/** @param array{status:int, body:mixed} $response */
 	private static function assertRefused(array $response, string $permission, string $context): void
 	{
@@ -297,9 +317,22 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 	{
 		foreach (self::otherEditableEntities() as $entity)
 		{
+			$before = self::tableCount($entity);
 			$response = self::send('POST', "/api/objects/$entity", 'add-only', ['name' => "refused $entity"]);
 
 			self::assertRefused($response, 'MASTER_DATA_EDIT', "MASTER_DATA_ADD alone must not create $entity");
+			self::assertSame($before, self::tableCount($entity), "No $entity row was written");
+		}
+	}
+
+	public function testAddOnlyAccountIsRefusedAtTheGateOnNoEditEntitiesToo(): void
+	{
+		// ExposedEntityNoEdit entities are not creatable at all, but the permission gate runs first.
+		$schemas = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), true)['components']['schemas'];
+		self::assertNotEmpty($schemas['ExposedEntityNoEdit']['enum']);
+		foreach ($schemas['ExposedEntityNoEdit']['enum'] as $entity)
+		{
+			self::assertRefused(self::send('POST', "/api/objects/$entity", 'add-only', ['name' => "refused $entity"]), 'MASTER_DATA_EDIT', "MASTER_DATA_ADD alone is refused at the gate for the no-edit entity $entity");
 		}
 	}
 
@@ -318,11 +351,13 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 			}
 			else
 			{
-				self::assertNotSame(403, $editOnly['status'], "MASTER_DATA_EDIT passes the gate for $entity: " . json_encode($editOnly['body']));
+				self::assertLessThan(500, $editOnly['status'], "MASTER_DATA_EDIT passes the gate for $entity (status {$editOnly['status']}): " . json_encode($editOnly['body']));
+				self::assertNotSame(403, $editOnly['status'], "MASTER_DATA_EDIT passes the gate for $entity");
 			}
 
 			$admin = self::send('POST', "/api/objects/$entity", 'admin', ['name' => "admin $entity"]);
-			self::assertNotSame(403, $admin['status'], "ADMIN passes the gate for $entity: " . json_encode($admin['body']));
+			self::assertLessThan(500, $admin['status'], "ADMIN passes the gate for $entity (status {$admin['status']}): " . json_encode($admin['body']));
+			self::assertNotSame(403, $admin['status'], "ADMIN passes the gate for $entity");
 		}
 	}
 
@@ -357,8 +392,12 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 
 	public function testHoldingOnlyTheOtherDomainPermissionIsNotEnough(): void
 	{
+		$chores = self::tableCount('chores');
+		$tasks = self::tableCount('tasks');
 		self::assertRefused(self::send('POST', '/api/objects/chores', 'tasks', self::createBody('chores', 'tasks creates chore')), 'CHORES', 'TASKS must not create chores');
 		self::assertRefused(self::send('POST', '/api/objects/tasks', 'chores', self::createBody('tasks', 'chores creates task')), 'TASKS', 'CHORES must not create tasks');
+		self::assertSame($chores, self::tableCount('chores'), 'No chore row was written');
+		self::assertSame($tasks, self::tableCount('tasks'), 'No task row was written');
 	}
 
 	public function testTheAdultRoleCreatesAndEditsChoresAndTasks(): void
@@ -411,5 +450,40 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 			$id = self::seedRow($entity, "delete me $entity");
 			self::assertSame(204, self::send('DELETE', "/api/objects/$entity/$id", 'edit-only')['status'], "MASTER_DATA_EDIT deletes $entity");
 		}
+	}
+
+	// ------------------------------------------------------------------------------
+	// Shopping-list side effect of creating a product
+	// ------------------------------------------------------------------------------
+
+	private function createBelowMinStockProduct(string $caller, string $name): int
+	{
+		$body = self::createBody('products', $name) + ['min_stock_amount' => 3];
+		$response = self::send('POST', '/api/objects/products', $caller, $body);
+		self::assertSame(200, $response['status'], "$caller creates the product: " . json_encode($response['body']));
+
+		return (int)$response['body']['created_object_id'];
+	}
+
+	private static function shoppingListRows(int $productId): int
+	{
+		return (int)self::$db->query("SELECT COUNT(*) FROM shopping_list WHERE product_id = $productId")->fetchColumn();
+	}
+
+	public function testCreatingAProductFillsTheShoppingListForACallerWithShoppinglistItemsAdd(): void
+	{
+		$productId = $this->createBelowMinStockProduct('add-and-shopping', 'auto-add with shopping list right');
+
+		self::assertSame(1, self::shoppingListRows($productId), 'The below-min-stock product was added to the shopping list');
+	}
+
+	public function testCreatingAProductWithoutShoppinglistItemsAddCreatesItAndWritesNoShoppingListRow(): void
+	{
+		$before = (int)self::$db->query('SELECT COUNT(*) FROM shopping_list')->fetchColumn();
+		$productId = $this->createBelowMinStockProduct('add-only', 'auto-add without shopping list right');
+
+		self::assertSame(1, self::rowCount('products', 'auto-add without shopping list right'), 'The product exists');
+		self::assertSame(0, self::shoppingListRows($productId), 'No shopping_list row for the product');
+		self::assertSame($before, (int)self::$db->query('SELECT COUNT(*) FROM shopping_list')->fetchColumn(), 'No shopping_list row was written at all');
 	}
 }

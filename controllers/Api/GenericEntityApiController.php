@@ -37,7 +37,8 @@ class GenericEntityApiController extends BaseApiController
 	 * and ADMIN resolve it) and MASTER_DATA_EDIT for everything else, including
 	 * quantity_unit_conversions; some entities additionally ADMIN (ADR-0043).
 	 * As a side effect, creating a product may add below-min-stock products to the
-	 * shopping list (per user setting).
+	 * shopping list (per user setting, and only for a caller holding
+	 * SHOPPINGLIST_ITEMS_ADD; the product is created either way).
 	 * The columns the server owns (id, row_created_timestamp) are dropped from the body
 	 * before it is written - see WithoutServerOwnedColumns().
 	 * Returns { "created_object_id": int } (200) or a 400 error response
@@ -187,7 +188,9 @@ class GenericEntityApiController extends BaseApiController
 					$newObjectId = $newRow->id;
 
 					// TODO: This should be better done somehow in StockService
-					if ($args['entity'] == 'products' && boolval(UsersService::GetInstance()->GetUserSetting(VICTUAL_USER_ID, 'shopping_list_auto_add_below_min_stock_amount')))
+					// Writing shopping_list rows needs SHOPPINGLIST_ITEMS_ADD, which MASTER_DATA_ADD
+					// does not carry (ADR-0043). Without it the product is still created.
+					if ($args['entity'] == 'products' && (new User())->HasPermission(User::PERMISSION_SHOPPINGLIST_ITEMS_ADD) && boolval(UsersService::GetInstance()->GetUserSetting(VICTUAL_USER_ID, 'shopping_list_auto_add_below_min_stock_amount')))
 					{
 						StockService::GetInstance()->AddMissingProductsToShoppingList(UsersService::GetInstance()->GetUserSetting(VICTUAL_USER_ID, 'shopping_list_auto_add_below_min_stock_amount_list_id'));
 					}
@@ -355,8 +358,9 @@ class GenericEntityApiController extends BaseApiController
 	 * PUT /api/objects/{entity}/{objectId} - updates the given object with the JSON
 	 * request body. Requires an entity-dependent permission, answered with 403
 	 * when missing: as in AddObject, except that the six MASTER_DATA_ADD entities
-	 * need MASTER_DATA_EDIT (the new permission gates create only). As a side effect, editing a product may add
-	 * below-min-stock products to the shopping list (per user setting).
+	 * need MASTER_DATA_EDIT (the new permission gates create only). As a side effect,
+	 * editing a product may add below-min-stock products to the shopping list (per
+	 * user setting).
 	 * The columns the server owns (id, row_created_timestamp) are dropped from the body
 	 * before it is written - see WithoutServerOwnedColumns().
 	 * Returns 204 on success, 404 when the object does not exist, or a 400 error
@@ -447,6 +451,7 @@ class GenericEntityApiController extends BaseApiController
 						$this->PropagateFreezerFlagToLocations((int)$row->id);
 					}
 
+					// Not gated on SHOPPINGLIST_ITEMS_ADD like AddObject(): edit already requires MASTER_DATA_EDIT, which ADR-0043 does not widen.
 					// TODO: This should be better done somehow in StockService
 					if ($args['entity'] == 'products' && boolval(UsersService::GetInstance()->GetUserSetting(VICTUAL_USER_ID, 'shopping_list_auto_add_below_min_stock_amount')))
 					{
