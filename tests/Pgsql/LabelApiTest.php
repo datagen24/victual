@@ -684,6 +684,32 @@ class LabelApiTest extends PgsqlSchemaTestCase
 			self::Send('POST', '/api/labels/credentials/rotate', ['rotation_request_id' => 'short', 'material' => bin2hex(random_bytes(32))], self::$pairedKey),
 			422, 'rotation_request_id', 'value_out_of_range'
 		);
+
+		// Issue #804: `material` is required on pair, `material` and `rotation_request_id` on
+		// rotate, and the schema in victual.openapi.json says so. A body missing one is
+		// refused 422 naming that field, and neither route touches a session, a credential
+		// or a key.
+		$digest = self::WorkerStateDigest();
+		$hex = bin2hex(random_bytes(32));
+
+		self::AssertRefusal(self::Send('POST', '/api/labels/pair', []), 422, 'material', 'value_out_of_range');
+		self::AssertRefusal(self::Send('POST', '/api/labels/pair', ['rotation_request_id' => $hex]), 422, 'material', 'value_out_of_range');
+
+		self::AssertRefusal(self::Send('POST', '/api/labels/credentials/rotate', [], self::$pairedKey), 422, 'rotation_request_id', 'value_out_of_range');
+		self::AssertRefusal(self::Send('POST', '/api/labels/credentials/rotate', ['material' => $hex], self::$pairedKey), 422, 'rotation_request_id', 'value_out_of_range');
+		self::AssertRefusal(self::Send('POST', '/api/labels/credentials/rotate', ['rotation_request_id' => $hex], self::$pairedKey), 422, 'material', 'value_out_of_range');
+
+		self::assertSame($digest, self::WorkerStateDigest(), 'a refused pair or rotate must leave sessions, credentials and keys untouched');
+	}
+
+	/** A digest of every row pairing and rotation can write: workers, sessions, credentials and api keys. */
+	private static function WorkerStateDigest(): string
+	{
+		return (string)self::$db->query("SELECT md5(concat_ws('|',
+			(SELECT coalesce(string_agg(row_to_json(t)::text, ',' ORDER BY t.id), '') FROM label_workers t),
+			(SELECT coalesce(string_agg(row_to_json(t)::text, ',' ORDER BY t.id), '') FROM label_worker_sessions t),
+			(SELECT coalesce(string_agg(row_to_json(t)::text, ',' ORDER BY t.api_key_id), '') FROM label_worker_credentials t),
+			(SELECT coalesce(string_agg(row_to_json(t)::text, ',' ORDER BY t.id), '') FROM api_keys t)))")->fetchColumn();
 	}
 
 	// ============================================================ driver registry
@@ -1608,6 +1634,19 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 		self::AssertRefusal(self::Send('POST', '/api/labels/attempts/' . self::$attemptId . '/result', ['outcome' => 'printed'], self::$workerKey),
 			422, 'detail', 'value_out_of_range');
+
+		// Issue #804: `outcome` and `detail` are both required, and the schema says so. A
+		// refused report writes nothing on the attempt.
+		$path = '/api/labels/attempts/' . self::$attemptId . '/result';
+		$before = self::Row('SELECT * FROM print_attempts WHERE id = ?', [self::$attemptId]);
+		$counts = self::Counts();
+
+		self::AssertRefusal(self::Send('POST', $path, [], self::$workerKey), 422, 'outcome', 'value_out_of_range');
+		self::AssertRefusal(self::Send('POST', $path, ['detail' => ['device' => 'complete']], self::$workerKey), 422, 'outcome', 'value_out_of_range');
+		self::AssertRefusal(self::Send('POST', $path, ['outcome' => 'printed'], self::$workerKey), 422, 'detail', 'value_out_of_range');
+
+		self::assertSame($before, self::Row('SELECT * FROM print_attempts WHERE id = ?', [self::$attemptId]), 'a refused report writes nothing on the attempt');
+		self::assertSame($counts, self::Counts());
 	}
 
 	// Reporting the outcome ends the attempt, so the two tests that read it while it is live

@@ -1886,11 +1886,14 @@
 							"schema": {
 								"type": "object",
 								"properties": {
-									"permissions_id": {
+									"permission_id": {
 										"type": "integer",
-										"description": "A permission ids"
+										"description": "The id of the permission to assign to the user. Absent or null is refused with 400 \"permission_id is required\""
 									}
-								}
+								},
+								"required": [
+									"permission_id"
+								]
 							}
 						}
 					}
@@ -1958,11 +1961,15 @@
 									"permissions": {
 										"type": "array",
 										"items": {
-											"type": "integer"
+											"type": "integer",
+											"minimum": 1
 										},
-										"description": "A list of permission ids"
+										"description": "The complete list of permission ids the user is left holding; an empty list removes every assignment. Each id must be a positive integer. A missing or non-list value is refused with 400 before any assignment changes"
 									}
-								}
+								},
+								"required": [
+									"permissions"
+								]
 							}
 						}
 					}
@@ -2569,6 +2576,21 @@
 									"amount",
 									"qu_id"
 								],
+								"if": {
+									"properties": {
+										"gross": {
+											"const": true
+										}
+									},
+									"required": [
+										"gross"
+									]
+								},
+								"then": {
+									"required": [
+										"tare"
+									]
+								},
 								"example": {
 									"amount": 1.2,
 									"qu_id": 2,
@@ -3447,7 +3469,22 @@
 										"required": [
 											"amount",
 											"qu_id"
-										]
+										],
+										"if": {
+											"properties": {
+												"gross": {
+													"const": true
+												}
+											},
+											"required": [
+												"gross"
+											]
+										},
+										"then": {
+											"required": [
+												"tare"
+											]
+										}
 									}
 								},
 								"example": {
@@ -4035,6 +4072,47 @@
 									"allow_subproduct_substitution": {
 										"type": "boolean",
 										"description": "`rue` when any in stock sub product should be used when the given product is a parent product and currently not in stock"
+									},
+									"measurement": {
+										"type": "object",
+										"description": "Optional. Records the container's remaining contents as it is opened (ADR-0022). Requires stock_entry_id and amount = 1 - a measurement describes exactly one container.",
+										"properties": {
+											"amount": {
+												"type": "number",
+												"description": "The reading, in qu_id. Net contents unless gross is true"
+											},
+											"qu_id": {
+												"type": "integer",
+												"description": "The quantity unit the reading was taken in; must convert to the product's stock quantity unit"
+											},
+											"gross": {
+												"type": "boolean",
+												"description": "`true` when amount includes the container's own weight, which tare then subtracts. Default `false` (amount is already net)"
+											},
+											"tare": {
+												"type": "number",
+												"description": "Required when gross is `true`; the container weight, in the same unit as amount, subtracted before storage"
+											}
+										},
+										"required": [
+											"amount",
+											"qu_id"
+										],
+										"if": {
+											"properties": {
+												"gross": {
+													"const": true
+												}
+											},
+											"required": [
+												"gross"
+											]
+										},
+										"then": {
+											"required": [
+												"tare"
+											]
+										}
 									}
 								},
 								"example": {
@@ -7033,7 +7111,10 @@
 										"type": "string",
 										"pattern": "^[0-9a-f]{64}$"
 									}
-								}
+								},
+								"required": [
+									"material"
+								]
 							}
 						}
 					}
@@ -7090,7 +7171,11 @@
 										"type": "string",
 										"pattern": "^[0-9a-f]{64}$"
 									}
-								}
+								},
+								"required": [
+									"material",
+									"rotation_request_id"
+								]
 							}
 						}
 					}
@@ -7407,7 +7492,11 @@
 									"detail": {
 										"type": "object"
 									}
-								}
+								},
+								"required": [
+									"outcome",
+									"detail"
+								]
 							}
 						}
 					}
