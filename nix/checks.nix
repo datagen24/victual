@@ -354,7 +354,7 @@ in
           inloc = 1; name = $0; sub(/^[[:space:]]+/, "", name); sub(/ *\{$/, "", name)
           nloc++; order[name] = nloc; has = 0; hdrs = 0; next
         }
-        inloc && /add_header Cache-Control/ { has = 1 }
+        inloc && /add_header / { has = 1 }
         inloc && /add_header X-Content-Type-Options nosniff always;/ { hdrs++ }
         inloc && /add_header X-Frame-Options SAMEORIGIN always;/ { hdrs++ }
         inloc && /add_header Referrer-Policy no-referrer always;/ { hdrs++ }
@@ -370,7 +370,7 @@ in
           dot = order["location ~ /\\."]
           if (!dot) { print "no dotfile deny location found" > "/dev/stderr"; bad = 1 }
           for (n in order)
-            if (n ~ /^location ~\*/ && order[n] < dot) {
+            if (n ~ /^location ~/ && n != "location ~ /\\." && order[n] < dot) {
               print "dotfile deny comes after " n > "/dev/stderr"; bad = 1
             }
           if (checked < 2) { print "expected at least two add_header locations, saw " checked+0 > "/dev/stderr"; bad = 1 }
