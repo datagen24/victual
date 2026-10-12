@@ -53,6 +53,12 @@ object read from that domain requires it: `STOCK_VIEW`, `SHOPPINGLIST_VIEW`, `CH
 events from domains the caller can read. An installation upgraded from before this model
 existed keeps all six for its existing users; only a newly created user starts without them.
 
+A stock booking through the API also needs `STOCK_VIEW`, because its answer lists the
+`stock_log` rows it wrote. This covers purchase, consume, transfer, open and inventory, their
+by-barcode forms, editing or measuring a stock entry, and weighing a location. A caller that
+holds the booking permission but not `STOCK_VIEW` gets `403` and nothing is booked. Every seeded
+role holds `STOCK_VIEW`, so only an account with custom direct grants is affected.
+
 ## Consumption recipes
 
 A [consumption recipe](../using-victual/consumption-recipes.md) is visible only to its owner

@@ -265,7 +265,7 @@ class StockApiController extends BaseApiController
 
 	/**
 	 * POST /api/stock/products/{productId}/add - adds the given amount of a product to
-	 * stock (a purchase). Requires the STOCK_PURCHASE permission (403 otherwise).
+	 * stock (a purchase). Requires the STOCK_PURCHASE and STOCK_VIEW permissions (403 otherwise).
 	 * Body fields: amount (required), best_before_date (ISO date), purchased_date
 	 * (ISO date, default today), price, location_id, shopping_location_id,
 	 * transaction_type (default "purchase"), stock_label_type (default 0) and note.
@@ -274,6 +274,9 @@ class StockApiController extends BaseApiController
 	public function AddProduct(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_PURCHASE);
+		// Checked before anything is booked (issue #785): the answer is read back through
+		// StockTransactions(), which requires STOCK_VIEW, after the booking has committed.
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
@@ -513,7 +516,7 @@ class StockApiController extends BaseApiController
 
 	/**
 	 * POST /api/stock/products/{productId}/consume - consumes the given amount of a
-	 * product from stock. Requires the STOCK_CONSUME permission (403 otherwise).
+	 * product from stock. Requires the STOCK_CONSUME and STOCK_VIEW permissions (403 otherwise).
 	 * Body fields: amount (required), spoiled, stock_entry_id (consume a specific
 	 * entry), location_id, recipe_id, exact_amount and allow_subproduct_substitution;
 	 * transaction_type defaults to "consume".
@@ -522,6 +525,9 @@ class StockApiController extends BaseApiController
 	public function ConsumeProduct(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_CONSUME);
+		// Checked before anything is booked (issue #785): the answer is read back through
+		// StockTransactions(), which requires STOCK_VIEW, after the booking has committed.
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
@@ -681,7 +687,7 @@ class StockApiController extends BaseApiController
 
 	/**
 	 * PUT /api/stock/entry/{entryId} - edits a single stock entry.
-	 * Requires the STOCK_EDIT permission (403 otherwise).
+	 * Requires the STOCK_EDIT and STOCK_VIEW permissions (403 otherwise).
 	 * Body fields: amount (required; a negative amount is refused). best_before_date,
 	 * price, location_id, shopping_location_id, open, purchased_date and note are all
 	 * optional - a key absent from the body keeps the entry's current value, resolved by
@@ -705,6 +711,9 @@ class StockApiController extends BaseApiController
 	public function EditStockEntry(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_EDIT);
+		// Checked before anything is booked (issue #785): the answer is read back through
+		// StockTransactions(), which requires STOCK_VIEW, after the booking has committed.
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
@@ -812,7 +821,7 @@ class StockApiController extends BaseApiController
 	/**
 	 * POST /api/stock/entry/{entryId}/measure - records a new measurement of an
 	 * already-open, single-unit stock entry (ADR-0022, docs/plans/landed/28-open-container-measurement.md).
-	 * Requires the STOCK_EDIT permission (403 otherwise).
+	 * Requires the STOCK_EDIT and STOCK_VIEW permissions (403 otherwise).
 	 * Body fields: amount and qu_id (both required, the reading and the unit it was taken
 	 * in), gross (bool, default false) and tare (required, same unit, when gross is true -
 	 * the contract names the reading gross explicitly so a client cannot subtract tare
@@ -824,6 +833,9 @@ class StockApiController extends BaseApiController
 	public function MeasureStockEntry(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_EDIT);
+		// Checked before anything is booked (issue #785): the answer is read back through
+		// StockTransactions(), which requires STOCK_VIEW, after the booking has committed.
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
@@ -887,7 +899,7 @@ class StockApiController extends BaseApiController
 	/**
 	 * POST /api/stock/products/{productId}/inventory - sets the stock amount of a
 	 * product to a new absolute value (inventory correction booking).
-	 * Requires the STOCK_INVENTORY permission (403 otherwise).
+	 * Requires the STOCK_INVENTORY and STOCK_VIEW permissions (403 otherwise).
 	 * Body fields: new_amount (required), best_before_date (ISO date), purchased_date
 	 * (ISO date), location_id, price, shopping_location_id, stock_label_type (default 0)
 	 * and note.
@@ -896,6 +908,9 @@ class StockApiController extends BaseApiController
 	public function InventoryProduct(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_INVENTORY);
+		// Checked before anything is booked (issue #785): the answer is read back through
+		// StockTransactions(), which requires STOCK_VIEW, after the booking has committed.
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
@@ -998,7 +1013,7 @@ class StockApiController extends BaseApiController
 
 	/**
 	 * POST /api/stock/products/{productId}/open - marks the given amount of a product
-	 * as opened. Requires the STOCK_OPEN permission (403 otherwise).
+	 * as opened. Requires the STOCK_OPEN and STOCK_VIEW permissions (403 otherwise).
 	 * Body fields: amount (required), stock_entry_id (open a specific entry) and
 	 * allow_subproduct_substitution. Optionally, a measurement object records the
 	 * container's contents as it is opened (ADR-0022, docs/plans/landed/28-open-container-measurement.md):
@@ -1010,6 +1025,9 @@ class StockApiController extends BaseApiController
 	public function OpenProduct(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_OPEN);
+		// Checked before anything is booked (issue #785): the answer is read back through
+		// StockTransactions(), which requires STOCK_VIEW, after the booking has committed.
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
@@ -1335,14 +1353,17 @@ class StockApiController extends BaseApiController
 
 	/**
 	 * POST /api/stock/products/{productId}/transfer - moves the given amount of a
-	 * product from one location to another. Requires the STOCK_TRANSFER permission
-	 * (403 otherwise). Body fields: amount, location_id_from and location_id_to
+	 * product from one location to another. Requires the STOCK_TRANSFER and STOCK_VIEW
+	 * permissions (403 otherwise). Body fields: amount, location_id_from and location_id_to
 	 * (all required), and stock_entry_id to transfer a specific entry.
 	 * Returns the stock_log rows of the resulting transaction (200) or a 400 error response.
 	 */
 	public function TransferProduct(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_TRANSFER);
+		// Checked before anything is booked (issue #785): the answer is read back through
+		// StockTransactions(), which requires STOCK_VIEW, after the booking has committed.
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
@@ -1417,7 +1438,7 @@ class StockApiController extends BaseApiController
 	/**
 	 * POST /api/stock/locations/{locationId}/weigh - weighs a vessel (a bin, a spice jar)
 	 * and corrects its stock TOTAL at that location to match (ADR-0033 decision 5). Requires
-	 * the STOCK_EDIT permission (403 otherwise). Body field gross_amount is required;
+	 * the STOCK_EDIT and STOCK_VIEW permissions (403 otherwise). Body field gross_amount is required;
 	 * gross_qu_id is optional and, when given, must equal the location's own tare_qu_id -
 	 * present so a client's unit mismatch is refused rather than silently misweighed
 	 * (ADR-0022 question 5's "gross" contract; docs/plans/landed/29-working-container-replenishment.md).
@@ -1430,6 +1451,9 @@ class StockApiController extends BaseApiController
 	public function WeighLocation(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_EDIT);
+		// Checked before anything is booked (issue #785): the answer is read back through
+		// StockTransactions(), which requires STOCK_VIEW, after the booking has committed.
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
@@ -1486,11 +1510,15 @@ class StockApiController extends BaseApiController
 	 * (a `vctl:` payload, plan 06/25) to a location id and delegates to WeighLocation. This
 	 * is the device-facing route: a kitchen scale identifies the vessel by scanning its
 	 * location label rather than knowing a numeric id (ADR-0022 decision 4).
-	 * 400 error response when the label is unknown, retired, or resolves to no location.
+	 * Requires the STOCK_EDIT and STOCK_VIEW permissions (403 otherwise), checked before the
+	 * label is resolved. A 400 error response when the label is unknown, retired, or
+	 * resolves to no location.
 	 */
 	public function WeighLocationByLabel(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_EDIT);
+		// Before the label is resolved; WeighLocation() checks it again (issue #785).
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
