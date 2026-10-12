@@ -22,6 +22,8 @@
 // is answered 409 idempotency_conflict, and would be on every click after. Pending keys are
 // therefore held per (kind, target, printer) and kept in sessionStorage, which is what lets a
 // reload after a lost response retry with the key the first attempt used.
+// Changing the printer does not clear anything: each printer has its own slot, and a slot whose
+// response was lost must survive a trip to another printer and back, or that retry prints twice.
 //
 // AGENTS.md's two frontend sink rules hold throughout: DOM-derived strings reach jQuery via
 // $(document).find(sel), and every piece of markup here is built as nodes rather than
@@ -62,13 +64,21 @@ Victual.LabelPrinting.Wire = function (options)
 	}
 
 	// Pending keys by 'kind|target|printer'. sessionStorage is tab-scoped, so a key outlives a
-	// reload but not the tab; where it is unavailable (privacy mode, quota) the page's own
-	// copy still serves a retry, only a reload loses it.
+	// reload but not the tab. memoryKeys always holds the latest map. Once a write has thrown
+	// (quota, old Safari private mode: getItem works, setItem throws) storage is stale, so
+	// storageBroken makes memoryKeys authoritative; otherwise every read would see {} and every
+	// click would mint a fresh key. In that state only a reload loses the keys.
 	var STORAGE_NAME = 'victual.labelprint.pendingKeys';
 	var memoryKeys = {};
+	var storageBroken = false;
 
 	function readKeys()
 	{
+		if (storageBroken)
+		{
+			return memoryKeys;
+		}
+
 		try
 		{
 			var stored = JSON.parse(window.sessionStorage.getItem(STORAGE_NAME) || '{}');
@@ -89,7 +99,7 @@ Victual.LabelPrinting.Wire = function (options)
 		}
 		catch (error)
 		{
-			// Memory copy above is all there is.
+			storageBroken = true;
 		}
 	}
 
@@ -118,23 +128,6 @@ Victual.LabelPrinting.Wire = function (options)
 		delete keys[slotOf(targetId, printerId)];
 		writeKeys(keys);
 	}
-
-	// A different printer is a different intention: drop what was pending for the old one.
-	var lastPrinterId = printerSelect.value;
-	printerSelect.addEventListener('change', function ()
-	{
-		var keys = readKeys();
-		var suffix = '|' + lastPrinterId;
-		Object.keys(keys).forEach(function (slot)
-		{
-			if (slot.indexOf(kind + '|') === 0 && slot.slice(-suffix.length) === suffix)
-			{
-				delete keys[slot];
-			}
-		});
-		writeKeys(keys);
-		lastPrinterId = printerSelect.value;
-	});
 
 	// Whether a refusal says the request was understood and will never succeed as sent, so its
 	// key is finished. 408 and 429 are 4xx but say "try again"; 409 is handled by the caller.

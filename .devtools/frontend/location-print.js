@@ -153,6 +153,36 @@ const payload = '<img src=x onerror=window.__xss=1>';
 		assert.notEqual(keys[keys.length - 1], lostKey, 'another target does not reuse the lost attempt\'s key');
 		assert.equal(conflicts, 0, 'the server never saw one key for two targets');
 
+		// Storage whose writes throw (quota, old Safari private mode) must not defeat the
+		// retry: the page keeps the key in memory.
+		const brokenPage = await browser.newPage();
+		await brokenPage.addInitScript(() => {
+			Storage.prototype.setItem = function () { throw new DOMException('quota', 'QuotaExceededError'); };
+		});
+		await brokenPage.route('**/api/labels/locations/*/context', route => route.fulfill({ json: { id: 1, name: 'print-probe-b', import_epoch: 7 } }));
+		await brokenPage.route('**/api/labels/locations/*/print', async route => {
+			keys.push(route.request().headers()['idempotency-key']);
+			if (lostNext) {
+				lostNext = false;
+				await route.abort('failed');
+				return;
+			}
+			await route.fulfill({ status: 202, json: { job_id: 6, label_uid: '0ABCDEFGHJKMN', state: 'awaiting_artifact' } });
+		});
+		await brokenPage.goto(base + '/locations');
+		const brokenStatus = brokenPage.locator('#location-list-status');
+		const brokenButton = brokenPage.locator('.location-print-button[data-target-id="' + idB + '"]').first();
+		lostNext = true;
+		const beforeBroken = keys.length;
+		await brokenButton.click();
+		await brokenStatus.getByText('The label was not requested', { exact: false }).waitFor();
+		await brokenStatus.evaluate(el => el.replaceChildren());
+		await brokenButton.click();
+		await brokenStatus.getByText('It prints once its image', { exact: false }).waitFor();
+		assert.equal(keys.length, beforeBroken + 2, 'both attempts were sent');
+		assert.equal(keys[beforeBroken + 1], keys[beforeBroken], 'with storage writes failing, a retry still reuses the key');
+		await brokenPage.close();
+
 		// Leave the region showing the seeded location again for the S29 checks below.
 		await clickTarget(idA);
 		await status.getByText('It prints once its image', { exact: false }).waitFor();
