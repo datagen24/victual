@@ -91,7 +91,9 @@ entities: `products`, `product_barcodes`, `locations`, `quantity_units`, `produc
   conversion with the validated lookup factor, in the same transaction that creates the
   product, including by updating the conversion the creation trigger inserted (maintainer,
   2026-10-12; see open question 5). It writes only that one conversion, purchase to stock,
-  of the product it creates. It must not modify a global conversion or a conversion that
+  of the product it creates. The database's conversion triggers then keep the matching
+  stock-to-purchase row of the same product at the inverse factor, as they do for any
+  conversion write. The lookup must not modify a global conversion or a conversion that
   belongs to any other product. "Validated" means a finite number greater than zero. The
   plugin check on `master` at `1b05387f` (`helpers/BaseBarcodeLookupPlugin.php:192-196`)
   refuses zero, negative and non-numeric values but not a non-finite one, so the
@@ -356,7 +358,9 @@ should move to `MASTER_DATA_EDIT`; that needs its own decision.
      transaction as the product. Global conversions and every other product's conversions stay
      unchanged, and a later edit of that conversion by the same account gets 403. The
      following cases are named separately:
-     - the row the trigger inserted is updated in place, with the same id and no second row;
+     - the row the trigger inserted is updated in place, with the same id and no second
+       purchase-to-stock row, and its trigger-maintained stock-to-purchase row holds the
+       inverse factor. These two are the only conversion rows that change;
      - where a global conversion already covers the pair, one product-specific row is
        inserted and the global row is unchanged;
      - the consume and price rows the trigger inserted for the new product keep factor 1;
