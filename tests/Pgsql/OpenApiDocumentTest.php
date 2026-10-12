@@ -40,6 +40,13 @@ class OpenApiDocumentTest extends PgsqlSchemaTestCase
 	/** @var array<string,mixed> what the route serves */
 	private static array $served;
 
+	/**
+	 * The route's response body byte for byte. The gate is given this, not a re-encoding of
+	 * $served: decoding to an array turns an empty object into an empty array, so a raw-binary
+	 * `"schema": {}` (issue 805) would be dumped as `[]`, which is not a Schema Object.
+	 */
+	private static string $servedBody;
+
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -59,7 +66,8 @@ class OpenApiDocumentTest extends PgsqlSchemaTestCase
 		$request = (new \Slim\Psr7\Factory\ServerRequestFactory())->createServerRequest('GET', 'https://victual.example/api/openapi/specification');
 		$response = self::$controller->DocumentationSpec($request, new Response(), []);
 		self::assertSame(200, $response->getStatusCode());
-		self::$served = json_decode((string)$response->getBody(), true, flags: JSON_THROW_ON_ERROR);
+		self::$servedBody = (string)$response->getBody();
+		self::$served = json_decode(self::$servedBody, true, flags: JSON_THROW_ON_ERROR);
 	}
 
 	private static function committedEnum(string $schema): array
@@ -181,7 +189,21 @@ class OpenApiDocumentTest extends PgsqlSchemaTestCase
 		$file = getenv('OPENAPI_SERVED_DUMP');
 		self::assertTrue($file !== false && $file !== '' && is_dir(dirname($file)), 'OPENAPI_SERVED_DUMP is not set to a path in an existing directory, so there is nowhere to leave the served document for the gate');
 
-		self::assertNotFalse(file_put_contents($file, json_encode(self::$served, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"), "could not write $file");
-		self::assertSame(self::$served, json_decode(file_get_contents($file), true), 'the dump is not the served document');
+		self::assertNotFalse(file_put_contents($file, self::$servedBody), "could not write $file");
+		self::assertSame(self::$servedBody, file_get_contents($file), 'the dump is not the served document');
+	}
+
+	/**
+	 * The served document keeps an empty Schema Object as `{}`. The raw-binary payloads
+	 * (issue 805) are described by an empty schema, and an array-decoded round trip
+	 * anywhere between the file and the wire would serve `[]` there instead.
+	 */
+	public function testTheServedDocumentKeepsEmptySchemasAsObjects(): void
+	{
+		$served = json_decode(self::$servedBody, flags: JSON_THROW_ON_ERROR);
+		$content = $served->paths->{'/files/{group}/{fileName}'}->put->requestBody->content->{'application/octet-stream'};
+		self::assertInstanceOf(\stdClass::class, $content->schema, 'the raw-binary request schema is not served as a JSON object');
+		self::assertSame([], get_object_vars($content->schema));
+		self::assertStringNotContainsString('"schema":[]', self::$servedBody);
 	}
 }
