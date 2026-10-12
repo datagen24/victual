@@ -1766,26 +1766,37 @@ class WireContractTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * The single read answers the three entities issue #648 gave members, and what it
-	 * answers - userfields included - validates against that member.
+	 * The single read answers every entity the single union maps to a member, and what it
+	 * answers - userfields included - validates against that member. An entity the fixture
+	 * leaves empty is skipped, except those REAL_ROWS_REQUIRED names.
 	 */
-	public function testTheSingleReadOfTheNewMembersValidatesAgainstThem(): void
+	public function testTheSingleReadOfEveryMappedEntityValidatesAgainstItsMember(): void
 	{
+		$map = self::unionSchema(self::spec(), true)['x-victual-entity-schemas'];
+		self::assertNotSame([], $map);
+
 		$failures = [];
-		foreach (['stock_log' => 'StockLogEntry', 'product_barcodes_view' => 'ProductBarcodeView', 'uihelper_shopping_list' => 'UihelperShoppingListItem'] as $entity => $member)
+		$checked = [];
+		foreach ($map as $entity => $member)
 		{
 			$rows = self::get("/api/objects/$entity");
-			self::assertNotSame([], $rows, "the fixture leaves $entity empty");
+			if ($rows === [])
+			{
+				self::assertNotContains($entity, self::REAL_ROWS_REQUIRED, "the fixture leaves $entity empty");
+				continue;
+			}
 
 			$answer = self::send('GET', "/api/objects/$entity/{$rows[0]['id']}");
 			self::assertSame(200, $answer['status'], "/api/objects/$entity/{$rows[0]['id']} answered {$answer['status']}");
 			$body = json_decode($answer['body'], false, flags: JSON_THROW_ON_ERROR);
+			$checked[] = $entity;
 
 			foreach (self::validateAgainstMember($body, $member) as $error)
 			{
 				$failures[] = "$entity/{$rows[0]['id']} against $member: $error";
 			}
 		}
+		self::assertSame([], array_values(array_diff(self::REAL_ROWS_REQUIRED, $checked)));
 		self::assertSame([], $failures, implode("\n", $failures));
 	}
 
