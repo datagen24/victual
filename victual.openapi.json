@@ -278,6 +278,10 @@
 								}
 							}
 						}
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					}
 				}
 			}
@@ -327,6 +331,14 @@
 								}
 							}
 						}
+					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {locationId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"403": {
 						"description": "Missing STOCK_VIEW",
@@ -406,6 +418,14 @@
 								}
 							}
 						}
+					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {id} path parameter is an id beyond the integer range. A non-digit id never reaches the handler: it matches no route and the router answers 404"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"403": {
 						"description": "Missing the kind's domain read permission",
@@ -1458,6 +1478,16 @@
 					},
 					"403": {
 						"description": "The authenticated user lacks a permission this operation requires",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					},
+					"413": {
+						"description": "The body is larger than the effective upload limit, the smallest of FILE_STORAGE_MAX_SIZE_MB, upload_max_filesize and post_max_size. Nothing is stored. The message names the setting, for example \"... FILE_STORAGE_MAX_SIZE_MB ...\".",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -5151,6 +5181,10 @@
 					"204": {
 						"description": "The operation was successful"
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {recipeId} path parameter is not an integer"
+					},
 					"401": {
 						"description": "The request carried no valid API key or session",
 						"content": {
@@ -7285,6 +7319,10 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {attemptId} path parameter is not an integer"
+					},
 					"401": {
 						"$ref": "#/components/responses/WorkerUnauthorized",
 						"description": "Invalid or expired credential"
@@ -7345,6 +7383,10 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {attemptId} path parameter is not an integer"
+					},
 					"401": {
 						"$ref": "#/components/responses/WorkerUnauthorized",
 						"description": "Invalid or expired credential"
@@ -7404,6 +7446,10 @@
 								}
 							}
 						}
+					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {attemptId} path parameter is not an integer"
 					},
 					"401": {
 						"$ref": "#/components/responses/WorkerUnauthorized",
@@ -7482,6 +7528,10 @@
 								}
 							}
 						}
+					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {attemptId} path parameter is not an integer"
 					},
 					"401": {
 						"$ref": "#/components/responses/WorkerUnauthorized",
@@ -7572,6 +7622,10 @@
 								}
 							}
 						}
+					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {printerId} path parameter is not an integer"
 					},
 					"401": {
 						"$ref": "#/components/responses/WorkerUnauthorized",
@@ -7684,6 +7738,10 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {printerId} path parameter is not an integer"
+					},
 					"401": {
 						"$ref": "#/components/responses/Unauthorized",
 						"description": "Missing, invalid or expired API key"
@@ -7736,6 +7794,10 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {printerId} path parameter is not an integer"
+					},
 					"401": {
 						"$ref": "#/components/responses/Unauthorized",
 						"description": "Missing, invalid or expired API key"
@@ -7779,6 +7841,10 @@
 								}
 							}
 						}
+					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {printerId} path parameter is not an integer"
 					},
 					"401": {
 						"$ref": "#/components/responses/Unauthorized",
@@ -7903,6 +7969,10 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {workerId} path parameter is not an integer"
+					},
 					"401": {
 						"$ref": "#/components/responses/Unauthorized",
 						"description": "Missing, invalid or expired API key"
@@ -7983,6 +8053,10 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {workerId} path parameter is not an integer"
+					},
 					"401": {
 						"$ref": "#/components/responses/Unauthorized",
 						"description": "Missing, invalid or expired API key"
@@ -8038,6 +8112,10 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {workerId} path parameter is not an integer"
+					},
 					"401": {
 						"$ref": "#/components/responses/Unauthorized",
 						"description": "Missing, invalid or expired API key"
@@ -8090,6 +8168,10 @@
 								}
 							}
 						}
+					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {workerId} path parameter is not an integer"
 					},
 					"401": {
 						"$ref": "#/components/responses/Unauthorized",
@@ -8170,6 +8252,10 @@
 								}
 							}
 						}
+					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {jobId} path parameter is not an integer"
 					},
 					"401": {
 						"$ref": "#/components/responses/Unauthorized",
@@ -8310,6 +8396,18 @@
 					"202": {
 						"description": "Job queued, awaiting_artifact"
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {locationId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
+					},
+					"409": {
+						"$ref": "#/components/responses/LabelConflict",
+						"description": "idempotency_conflict: the Idempotency-Key was already used for a different request"
+					},
 					"422": {
 						"description": "Invalid printer configuration or request",
 						"content": {
@@ -8362,6 +8460,18 @@
 								}
 							}
 						}
+					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {locationId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
+					},
+					"409": {
+						"$ref": "#/components/responses/LabelConflict",
+						"description": "idempotency_conflict: the Idempotency-Key was already used for a different request"
 					},
 					"422": {
 						"description": "A refusal carrying a field and a code",
@@ -8438,6 +8548,18 @@
 					"202": {
 						"description": "Job queued, awaiting_artifact"
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {id} path parameter is an id beyond the integer range. A non-digit id never reaches the handler: it matches no route and the router answers 404"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
+					},
+					"409": {
+						"$ref": "#/components/responses/LabelConflict",
+						"description": "idempotency_conflict: the Idempotency-Key was already used for a different request"
+					},
 					"422": {
 						"description": "Invalid printer configuration or request",
 						"content": {
@@ -8507,6 +8629,18 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {id} path parameter is an id beyond the integer range. A non-digit id never reaches the handler: it matches no route and the router answers 404"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
+					},
+					"409": {
+						"$ref": "#/components/responses/LabelConflict",
+						"description": "idempotency_conflict: the Idempotency-Key was already used for a different request"
+					},
 					"422": {
 						"description": "A refusal carrying a field and a code",
 						"content": {
@@ -8559,6 +8693,18 @@
 								}
 							}
 						}
+					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {jobId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
+					},
+					"409": {
+						"$ref": "#/components/responses/LabelConflict",
+						"description": "idempotency_conflict: the Idempotency-Key was already used for a different request"
 					},
 					"422": {
 						"description": "A refusal carrying a field and a code",
@@ -8613,6 +8759,18 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {jobId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
+					},
+					"409": {
+						"$ref": "#/components/responses/LabelConflict",
+						"description": "idempotency_conflict: the Idempotency-Key was already used for a different request; already_claimed: an attempt has already been made, so the job can no longer be cancelled"
+					},
 					"422": {
 						"description": "A refusal carrying a field and a code",
 						"content": {
@@ -8666,6 +8824,18 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {artifactId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
+					},
+					"409": {
+						"$ref": "#/components/responses/LabelConflict",
+						"description": "idempotency_conflict: the Idempotency-Key was already used for a different request"
+					},
 					"422": {
 						"description": "A refusal carrying a field and a code",
 						"content": {
@@ -8696,6 +8866,10 @@
 								}
 							}
 						}
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
 						"description": "A refusal carrying a field and a code",
@@ -8736,6 +8910,10 @@
 								}
 							}
 						}
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
 						"description": "A refusal carrying a field and a code",
@@ -8778,6 +8956,14 @@
 								}
 							}
 						}
+					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {templateId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
 						"description": "A refusal carrying a field and a code",
@@ -8830,6 +9016,18 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {templateId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
+					},
+					"409": {
+						"$ref": "#/components/responses/LabelConflict",
+						"description": "stale_revision: the draft changed since its revision token was read"
+					},
 					"422": {
 						"description": "A refusal carrying a field and a code",
 						"content": {
@@ -8872,6 +9070,14 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {templateId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
+					},
 					"422": {
 						"description": "A refusal carrying a field and a code",
 						"content": {
@@ -8913,6 +9119,14 @@
 								}
 							}
 						}
+					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {templateId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
 						"description": "A refusal carrying a field and a code",
@@ -8967,6 +9181,14 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {templateId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
+					},
 					"422": {
 						"description": "A refusal carrying a field and a code",
 						"content": {
@@ -9008,6 +9230,14 @@
 								}
 							}
 						}
+					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {templateId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
 						"description": "A refusal carrying a field and a code",
@@ -9062,6 +9292,14 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {templateId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
+					},
 					"422": {
 						"description": "A refusal carrying a field and a code",
 						"content": {
@@ -9092,6 +9330,10 @@
 								}
 							}
 						}
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
 						"description": "A refusal carrying a field and a code",
@@ -9132,6 +9374,10 @@
 								}
 							}
 						}
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
 						"description": "A refusal carrying a field and a code",
@@ -9178,12 +9424,30 @@
 							}
 						}
 					},
-					"422": {
-						"description": "A refusal carrying a field and a code",
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {assetId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, unknown or expired renderer key. A worker key is refused on this route"
+					},
+					"404": {
+						"description": "No such asset. The body is a LabelRefusal with field asset_id and code not_found",
 						"content": {
 							"application/json": {
 								"schema": {
-									"type": "object"
+									"$ref": "#/components/schemas/LabelRefusal"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code (LabelRefusal). This controller answers every refusal with 422, including unauthorized (the worker was deactivated after the key was checked), where the worker controller answers 401",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/LabelRefusal"
 								}
 							}
 						}
@@ -9219,6 +9483,14 @@
 								}
 							}
 						}
+					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {requestId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
 						"description": "A refusal carrying a field and a code",
@@ -9256,12 +9528,16 @@
 							}
 						}
 					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, unknown or expired renderer key. A worker key is refused on this route"
+					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
+						"description": "A refusal carrying a field and a code (LabelRefusal). This controller answers every refusal with 422, including unauthorized (the worker was deactivated after the key was checked), where the worker controller answers 401",
 						"content": {
 							"application/json": {
 								"schema": {
-									"type": "object"
+									"$ref": "#/components/schemas/LabelRefusal"
 								}
 							}
 						}
@@ -9314,12 +9590,20 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {requestId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, unknown or expired renderer key. A worker key is refused on this route"
+					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
+						"description": "A refusal carrying a field and a code (LabelRefusal). This controller answers every refusal with 422, including unauthorized (the worker was deactivated after the key was checked), where the worker controller answers 401",
 						"content": {
 							"application/json": {
 								"schema": {
-									"type": "object"
+									"$ref": "#/components/schemas/LabelRefusal"
 								}
 							}
 						}
@@ -9372,12 +9656,20 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {requestId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, unknown or expired renderer key. A worker key is refused on this route"
+					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
+						"description": "A refusal carrying a field and a code (LabelRefusal). This controller answers every refusal with 422, including unauthorized (the worker was deactivated after the key was checked), where the worker controller answers 401",
 						"content": {
 							"application/json": {
 								"schema": {
-									"type": "object"
+									"$ref": "#/components/schemas/LabelRefusal"
 								}
 							}
 						}
@@ -9430,12 +9722,20 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {requestId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, unknown or expired renderer key. A worker key is refused on this route"
+					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
+						"description": "A refusal carrying a field and a code (LabelRefusal). This controller answers every refusal with 422, including unauthorized (the worker was deactivated after the key was checked), where the worker controller answers 401",
 						"content": {
 							"application/json": {
 								"schema": {
-									"type": "object"
+									"$ref": "#/components/schemas/LabelRefusal"
 								}
 							}
 						}
@@ -9475,12 +9775,20 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {artifactId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, unknown or expired worker key. A renderer key is refused on this route"
+					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
+						"description": "A refusal carrying a field and a code (LabelRefusal). This controller answers every refusal with 422: a forbidden refusal (field artifact_id, no live attempt of this worker carries the artifact) is answered 422 here, where the worker controller answers 403, and unauthorized (the worker was deactivated after the key was checked) is answered 422, where the worker controller answers 401",
 						"content": {
 							"application/json": {
 								"schema": {
-									"type": "object"
+									"$ref": "#/components/schemas/LabelRefusal"
 								}
 							}
 						}
@@ -9514,6 +9822,14 @@
 								"schema": {}
 							}
 						}
+					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {artifactId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
 						"description": "A refusal carrying a field and a code",
@@ -9557,6 +9873,14 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {workerId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
+					},
 					"422": {
 						"description": "A refusal carrying a field and a code",
 						"content": {
@@ -9592,24 +9916,12 @@
 						}
 					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Permission missing"
 					}
 				}
 			},
@@ -9656,24 +9968,12 @@
 						}
 					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Permission missing"
 					},
 					"422": {
 						"description": "The request cannot be acted on",
@@ -9706,25 +10006,17 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {recipeId} path parameter is not an integer"
+					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Permission missing"
 					},
 					"404": {
 						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
@@ -9779,24 +10071,12 @@
 						}
 					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/ConsumptionForbidden",
+						"description": "Permission or right missing"
 					},
 					"404": {
 						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
@@ -9840,25 +10120,17 @@
 					"204": {
 						"description": "Success"
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {recipeId} path parameter is not an integer"
+					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/ConsumptionForbidden",
+						"description": "Permission or right missing"
 					},
 					"404": {
 						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
@@ -9932,24 +10204,12 @@
 						}
 					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/ConsumptionForbidden",
+						"description": "Permission or right missing"
 					},
 					"404": {
 						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
@@ -10015,25 +10275,17 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {recipeId} path parameter is not an integer"
+					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Permission missing"
 					},
 					"404": {
 						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
@@ -10076,25 +10328,17 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "A path parameter ({recipeId} or {eventId}) is not an integer"
+					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/ConsumptionForbidden",
+						"description": "Permission or right missing"
 					},
 					"404": {
 						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
@@ -10158,25 +10402,17 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {recipeId} path parameter is not an integer"
+					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/ConsumptionForbidden",
+						"description": "Permission or right missing"
 					},
 					"404": {
 						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
@@ -10231,24 +10467,12 @@
 						}
 					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/ConsumptionForbidden",
+						"description": "Permission or right missing"
 					},
 					"404": {
 						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
@@ -10315,24 +10539,12 @@
 						}
 					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/ConsumptionForbidden",
+						"description": "Permission or right missing"
 					},
 					"404": {
 						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
@@ -10384,25 +10596,17 @@
 					"204": {
 						"description": "Success"
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "A path parameter ({recipeId} or {userId}) is not an integer"
+					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/ConsumptionForbidden",
+						"description": "Permission or right missing"
 					},
 					"404": {
 						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
@@ -10475,24 +10679,12 @@
 						}
 					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/ConsumptionForbidden",
+						"description": "Permission or right missing"
 					},
 					"404": {
 						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
@@ -11399,25 +11591,17 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {recipeId} path parameter is not an integer"
+					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Permission missing"
 					},
 					"404": {
 						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
@@ -11500,24 +11684,12 @@
 						}
 					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/ConsumptionForbidden",
+						"description": "Permission or right missing"
 					},
 					"404": {
 						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
@@ -11602,24 +11774,12 @@
 						}
 					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/ConsumptionForbidden",
+						"description": "Permission or right missing"
 					},
 					"404": {
 						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
@@ -11704,24 +11864,12 @@
 						}
 					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/ConsumptionForbidden",
+						"description": "Permission or right missing"
 					},
 					"404": {
 						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
@@ -11824,24 +11972,12 @@
 						}
 					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/ConsumptionForbidden",
+						"description": "Permission or right missing"
 					},
 					"404": {
 						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
@@ -11936,24 +12072,12 @@
 						}
 					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/ConsumptionForbidden",
+						"description": "Permission or right missing"
 					},
 					"404": {
 						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
@@ -12035,25 +12159,17 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "A path parameter ({recipeId} or {orderId}) is not an integer"
+					},
 					"401": {
-						"description": "Not authenticated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"description": "Permission or right missing",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
+						"$ref": "#/components/responses/ConsumptionForbidden",
+						"description": "Permission or right missing"
 					},
 					"404": {
 						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
@@ -17124,6 +17240,43 @@
 					"application/json": {
 						"schema": {
 							"$ref": "#/components/schemas/LabelRefusal"
+						}
+					}
+				}
+			},
+			"InvalidPathParameter": {
+				"description": "A path parameter that the operation takes as an integer was not one. PathParameterMiddleware answers this after authentication and before the handler runs. The body is {\"error_message\": \"Invalid path parameter: {name} has to be an integer\"}, which names the parameter and does not quote the value back.",
+				"content": {
+					"application/json": {
+						"schema": {
+							"$ref": "#/components/schemas/Error400"
+						}
+					}
+				}
+			},
+			"LabelConflict": {
+				"description": "The request conflicts with the state it acts on. The body is a LabelRefusal naming the field and a code.",
+				"content": {
+					"application/json": {
+						"schema": {
+							"$ref": "#/components/schemas/LabelRefusal"
+						}
+					}
+				}
+			},
+			"ConsumptionForbidden": {
+				"description": "The caller lacks a global permission or a right on the recipe. The permission gate answers an ApiError, {\"error_message\": \"Permission missing: <PERMISSION>\"}. A right missing on the recipe is raised by the service and answers a ConsumptionError with error right_missing.",
+				"content": {
+					"application/json": {
+						"schema": {
+							"anyOf": [
+								{
+									"$ref": "#/components/schemas/ApiError"
+								},
+								{
+									"$ref": "#/components/schemas/ConsumptionError"
+								}
+							]
 						}
 					}
 				}
