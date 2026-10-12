@@ -12484,6 +12484,102 @@
 							"null"
 						],
 						"description": "The shopping list a product lands on by default when added without choosing one (plan 05 part C). Null falls back to the pre-existing behaviour."
+					},
+					"active": {
+						"type": "integer",
+						"description": "1 for an active product, 0 for an inactive one (products.active, CHECK 0 or 1)."
+					},
+					"parent_product_id": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The product this one is a sub product of, or null for a product with no parent."
+					},
+					"calories": {
+						"type": [
+							"number",
+							"null"
+						],
+						"description": "Energy per stock quantity unit, or null when none is recorded."
+					},
+					"cumulate_min_stock_amount_of_sub_products": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "0 or 1. When 1, the min. stock amounts of this product's sub products are accumulated into this product, so a sub product is never reported missing on its own. The column is nullable (products.cumulate_min_stock_amount_of_sub_products, default 0)."
+					},
+					"default_best_before_days_after_freezing": {
+						"type": "integer",
+						"default": 0,
+						"description": "Days until a stock entry of this product is due once frozen: applied when the entry is moved into a freezer location (if above 0), and when stock is added to a freezer location without a due date. -1 means the entry is then never due (StockService.php)."
+					},
+					"default_best_before_days_after_thawing": {
+						"type": "integer",
+						"default": 0,
+						"description": "Days until a stock entry of this product is due once thawed: applied, if above 0, when the entry is moved from a freezer location to a non-freezer one (StockService.php)."
+					},
+					"due_type": {
+						"type": "integer",
+						"enum": [
+							1,
+							2
+						],
+						"default": 1,
+						"description": "What a due date means for this product: 1 a best before date (the product may still be safe to consume after it), 2 an expiration date (it is not). products.due_type CHECK allows only these two values."
+					},
+					"quick_consume_amount": {
+						"type": "number",
+						"default": 1,
+						"description": "The amount the stock overview's quick consume button consumes."
+					},
+					"quick_open_amount": {
+						"type": "number",
+						"default": 1,
+						"description": "The amount the stock overview's quick open button opens."
+					},
+					"hide_on_stock_overview": {
+						"type": "integer",
+						"description": "0 or 1. When 1, the product is never shown on the stock overview."
+					},
+					"default_stock_label_type": {
+						"type": "integer",
+						"default": 0,
+						"description": "The stock entry label the purchase and inventory forms preselect: 0 no label, 1 a single label, 2 a label per unit (views/productform.blade.php). The column has no CHECK constraint."
+					},
+					"qu_id_consume": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The quantity unit consumption is entered in by default; resolved as default_quantity_unit_consume on GET /stock/products/{productId}. The column is nullable."
+					},
+					"qu_id_price": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The quantity unit prices are quoted in; resolved as quantity_unit_price on GET /stock/products/{productId}. The column is nullable."
+					},
+					"disable_open": {
+						"type": "integer",
+						"description": "0 or 1. When 1, stock of this product cannot be marked opened: StockService::OpenProduct() refuses it with \"Product can't be opened\"."
+					},
+					"default_purchase_price_type": {
+						"type": "integer",
+						"enum": [
+							1,
+							2,
+							3
+						],
+						"default": 1,
+						"description": "Which price input the purchase form preselects: 1 no preference, 2 unit price, 3 total price (public/viewjs/purchase.js). products.default_purchase_price_type CHECK allows only these three values."
+					},
+					"import_epoch": {
+						"type": "integer",
+						"minimum": 0,
+						"description": "A server-owned generation: label_current_import_epoch() when the row was written, which a legacy import bumps (migrations/0283.pgsql.php). Label issuance refuses a print request composed for an epoch an import has since replaced."
 					}
 				},
 				"example": {
@@ -12640,6 +12736,102 @@
 							"null"
 						],
 						"description": "The shopping list a product lands on by default when added without choosing one (plan 05 part C). Null falls back to the pre-existing behaviour."
+					},
+					"active": {
+						"type": "integer",
+						"description": "1 for an active product, 0 for an inactive one (products.active, CHECK 0 or 1)."
+					},
+					"parent_product_id": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The product this one is a sub product of, or null for a product with no parent."
+					},
+					"calories": {
+						"type": [
+							"number",
+							"null"
+						],
+						"description": "Energy per stock quantity unit, or null when none is recorded."
+					},
+					"cumulate_min_stock_amount_of_sub_products": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "0 or 1. When 1, the min. stock amounts of this product's sub products are accumulated into this product, so a sub product is never reported missing on its own. The column is nullable (products.cumulate_min_stock_amount_of_sub_products, default 0)."
+					},
+					"default_best_before_days_after_freezing": {
+						"type": "integer",
+						"default": 0,
+						"description": "Days until a stock entry of this product is due once frozen: applied when the entry is moved into a freezer location (if above 0), and when stock is added to a freezer location without a due date. -1 means the entry is then never due (StockService.php)."
+					},
+					"default_best_before_days_after_thawing": {
+						"type": "integer",
+						"default": 0,
+						"description": "Days until a stock entry of this product is due once thawed: applied, if above 0, when the entry is moved from a freezer location to a non-freezer one (StockService.php)."
+					},
+					"due_type": {
+						"type": "integer",
+						"enum": [
+							1,
+							2
+						],
+						"default": 1,
+						"description": "What a due date means for this product: 1 a best before date (the product may still be safe to consume after it), 2 an expiration date (it is not). products.due_type CHECK allows only these two values."
+					},
+					"quick_consume_amount": {
+						"type": "number",
+						"default": 1,
+						"description": "The amount the stock overview's quick consume button consumes."
+					},
+					"quick_open_amount": {
+						"type": "number",
+						"default": 1,
+						"description": "The amount the stock overview's quick open button opens."
+					},
+					"hide_on_stock_overview": {
+						"type": "integer",
+						"description": "0 or 1. When 1, the product is never shown on the stock overview."
+					},
+					"default_stock_label_type": {
+						"type": "integer",
+						"default": 0,
+						"description": "The stock entry label the purchase and inventory forms preselect: 0 no label, 1 a single label, 2 a label per unit (views/productform.blade.php). The column has no CHECK constraint."
+					},
+					"qu_id_consume": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The quantity unit consumption is entered in by default; resolved as default_quantity_unit_consume on GET /stock/products/{productId}. The column is nullable."
+					},
+					"qu_id_price": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The quantity unit prices are quoted in; resolved as quantity_unit_price on GET /stock/products/{productId}. The column is nullable."
+					},
+					"disable_open": {
+						"type": "integer",
+						"description": "0 or 1. When 1, stock of this product cannot be marked opened: StockService::OpenProduct() refuses it with \"Product can't be opened\"."
+					},
+					"default_purchase_price_type": {
+						"type": "integer",
+						"enum": [
+							1,
+							2,
+							3
+						],
+						"default": 1,
+						"description": "Which price input the purchase form preselects: 1 no preference, 2 unit price, 3 total price (public/viewjs/purchase.js). products.default_purchase_price_type CHECK allows only these three values."
+					},
+					"import_epoch": {
+						"type": "integer",
+						"minimum": 0,
+						"description": "A server-owned generation: label_current_import_epoch() when the row was written, which a legacy import bumps (migrations/0283.pgsql.php). Label issuance refuses a print request composed for an epoch an import has since replaced."
 					}
 				},
 				"example": {
@@ -12713,6 +12905,10 @@
 					"userfields": {
 						"type": "object",
 						"description": "Key/value pairs of userfields"
+					},
+					"active": {
+						"type": "integer",
+						"description": "1 for an active quantity unit, 0 for an inactive one (quantity_units.active, CHECK 0 or 1)."
 					}
 				},
 				"example": {
@@ -12766,25 +12962,33 @@
 							"integer",
 							"null"
 						],
-						"description": "How cold this location is kept, or null for unclassified - see StorageClass. is_freezer is independently editable when the location has no storage class after this request - whether none was ever set or this request clears it - and is derived from the class otherwise, overwriting whatever this same request submits for the flag. Editing a storage class's own treats_as_freezer re-derives is_freezer for every location currently carrying that class."
+						"description": "How cold this location is kept, or null for unclassified - see StorageClass. is_freezer is independently editable when the location has no storage class after this request - whether none was ever set or this request clears it - and is derived from the class otherwise, overwriting whatever this same request submits for the flag. Editing a storage class's own treats_as_freezer re-derives is_freezer for every location currently carrying that class. Not sent in the location and default_consume_location objects of GET /stock/products/{productId} and GET /stock/products/by-barcode/{barcode}, which select only id, name, description, row_created_timestamp, is_freezer, active and parent_location_id (StockService::GetProductDetails())."
 					},
 					"tare_weight": {
 						"type": [
 							"number",
 							"null"
 						],
-						"description": "The empty weight of this location's own container - a bin, a spice jar - in tare_qu_id, or null when this location is not weighed as a vessel. Set alongside tare_qu_id (ADR-0022 decision 4); a vessel's tare lives on the location rather than on a stock entry because every refill mints a new entry via TransferProduct()."
+						"description": "The empty weight of this location's own container - a bin, a spice jar - in tare_qu_id, or null when this location is not weighed as a vessel. Set alongside tare_qu_id (ADR-0022 decision 4); a vessel's tare lives on the location rather than on a stock entry because every refill mints a new entry via TransferProduct(). Not sent in the location and default_consume_location objects of GET /stock/products/{productId} and GET /stock/products/by-barcode/{barcode}, which select only id, name, description, row_created_timestamp, is_freezer, active and parent_location_id (StockService::GetProductDetails())."
 					},
 					"tare_qu_id": {
 						"type": [
 							"integer",
 							"null"
 						],
-						"description": "The quantity unit tare_weight and a gross weighing are given in. A location has no stock unit of its own to borrow, so this is independent of any product's units; StockService::WeighLocation() converts through the stocked product's own quantity unit conversions and refuses when no path exists."
+						"description": "The quantity unit tare_weight and a gross weighing are given in. A location has no stock unit of its own to borrow, so this is independent of any product's units; StockService::WeighLocation() converts through the stocked product's own quantity unit conversions and refuses when no path exists. Not sent in the location and default_consume_location objects of GET /stock/products/{productId} and GET /stock/products/by-barcode/{barcode}, which select only id, name, description, row_created_timestamp, is_freezer, active and parent_location_id (StockService::GetProductDetails())."
 					},
 					"userfields": {
 						"type": "object",
 						"description": "Key/value pairs of userfields"
+					},
+					"is_freezer": {
+						"type": "integer",
+						"description": "0 or 1. 1 marks a freezer location, which Product's default_best_before_days_after_freezing and default_best_before_days_after_thawing apply to. Derived from the storage class when storage_class_id is set (see storage_class_id)."
+					},
+					"active": {
+						"type": "integer",
+						"description": "1 for an active location, 0 for an inactive one (locations.active, CHECK 0 or 1)."
 					}
 				},
 				"example": {
@@ -13161,6 +13365,10 @@
 						"type": "integer",
 						"minimum": 0,
 						"description": "A server-owned generation: label_current_import_epoch() when the row was written, which a legacy import bumps (migrations/0283.pgsql.php). Label issuance refuses a print request composed for an epoch an import has since replaced. Not sent by GET /stock/products/{productId}/entries, whose rows come from the stock_next_use view"
+					},
+					"userfields": {
+						"type": "object",
+						"description": "Key/value pairs of userfields. Sent by GET /objects/stock/{objectId} only."
 					}
 				},
 				"example": {
@@ -13209,6 +13417,25 @@
 						"type": "boolean",
 						"description": "Whether some ingredient of this recipe has no known price, so that \"costs\" is a floor rather than a total. A derived price fact rather than a price, and redacted with the other two - a caller who may not see what a recipe costs may not be told how complete the figure they cannot see is.",
 						"x-visibility": "STOCK_PRICES_VIEW"
+					},
+					"id": {
+						"type": "integer",
+						"description": "Always 1: a placeholder column of the recipes_resolved view (db/pgsql/baseline/05_views_l3.sql), not an identifier. recipe_id names the recipe."
+					},
+					"calories": {
+						"type": "number",
+						"description": "The summed calories of the recipe's ingredients; 0 when none is known."
+					},
+					"due_score": {
+						"type": "integer",
+						"description": "The sum of the ingredients' due scores: 0 for an ingredient whose stock is ok, 1 due soon, 10 overdue, 20 expired (recipes_pos_resolved, db/pgsql/baseline/05_views_l3.sql)."
+					},
+					"product_names_comma_separated": {
+						"type": [
+							"string",
+							"null"
+						],
+						"description": "The names of the recipe's ingredient products joined with commas, or null for a recipe with no ingredients."
 					}
 				},
 				"example": {
@@ -13341,7 +13568,13 @@
 						"description": "True when `stock_amount` counts sub products as well as this product's own stock. Undocumented until issue #230, which is also where it stopped being the integer 0/1 StockService::GetProductDetails() assigned and became the boolean CurrentStockResponse already documented."
 					},
 					"default_location": {
-						"$ref": "#/components/schemas/Location"
+						"deprecated": true,
+						"description": "Never sent. The product's default location is sent as `location`. This property was added to the document upstream (grocy commit 5e30e897, 2022) without the server ever sending it; it stays declared, and not required, so that a client generated from an earlier document keeps compiling. Issue #787.",
+						"allOf": [
+							{
+								"$ref": "#/components/schemas/Location"
+							}
+						]
 					},
 					"qu_conversion_factor_purchase_to_stock": {
 						"type": "number",
@@ -13532,6 +13765,22 @@
 							"string",
 							"null"
 						]
+					},
+					"id": {
+						"type": "integer"
+					},
+					"row_created_timestamp": {
+						"type": [
+							"string",
+							"null"
+						],
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
+					},
+					"userfields": {
+						"type": "object",
+						"description": "Key/value pairs of userfields. Sent by GET /objects/product_barcodes/{objectId} only."
 					}
 				}
 			},
