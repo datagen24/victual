@@ -1,5 +1,5 @@
 {
-	"openapi": "3.1.0",
+	"openapi": "3.2.0",
 	"info": {
 		"title": "Victual REST API",
 		"description": "Authentication uses one of the credentials below. Which one is accepted depends on the operation.<br><br>**API key.** Send an API key you manage [here](PlaceHolderManageApiKeysUrl) in the *VICTUAL-API-KEY* header. Add the optional *VICTUAL-API-KEY-TYPE* header to narrow which key types may match; it can only remove authority, never add it. A read-only key is limited to GET, HEAD and OPTIONS and gets **403** on anything else; it also gets **403** on three GET operations that write: GET /calendar/ical/sharing-link, GET /stock/barcodes/external-lookup/{barcode} and GET /print/shoppinglist/thermal. A general API key is never accepted in the query string; the calendar secret on GET /calendar/ical is the only query-string credential.<br><br>**Session cookie.** Requests from the frontend authenticate with the *victual_session* cookie. On API routes, a request authenticated by the session cookie other than GET, HEAD or OPTIONS is refused with **403** when its Origin header (or its Referer header, if there is no Origin) names another origin. A request with neither header is allowed. Requests authenticated by an API key rather than the session cookie are exempt.<br><br>**Calendar secret.** The calendar feed link carries a calendar key in the *secret* query parameter. It is accepted on GET /calendar/ical only. GET /calendar/ical/sharing-link does not accept it, and no other operation does.<br><br>**Label worker, verifier and renderer keys.** These use the same *VICTUAL-API-KEY* header but are accepted only on the label worker and renderer operations that name them. On those operations user API keys, session cookies and a disabled-authentication setup are refused with **401**. POST /labels/pair is public.<br><br>**Deployment modes.** These are not credentials. With reverse-proxy authentication the server takes the user's identity from a header set by the proxy. In dev, demo and prerelease modes, in an embedded install, and with authentication disabled, requests run as the default user without a credential, except on the label worker and renderer operations above.<br><br>**Dates and times.** Every instant this API stores or sends is RFC 3339 in UTC with exactly six fractional digits - `2026-10-04T18:30:00.000000Z` - typed *format: date-time* (ADR-0027 decision 2, issue #650). The fixed width is part of the contract: text order is chronological order, so two values may be compared as strings. The one exception is *time_local* on the system time endpoint, the same instant with the server's offset (`2026-10-04T14:30:00.000000-04:00`). Fields whose column is a SQL DATE are calendar dates, typed *format: date* and written `YYYY-MM-DD`; they are never converted between zones. Days the server computes - due today, overdue, expiring in N days - are days in the server's configured time zone. A value sent without an offset - to the three write fields *tracked_time* and *done_time*, to a generic entity write, or as a `query[]` comparison - is a wall clock in the server's configured zone: a repeated hour names the earlier instant, and a skipped hour is refused with **400**. Send an offset to name any instant unambiguously. These values were local wall clocks in the server's zone, `YYYY-MM-DD HH:MM:SS`, until migration 0301 converted them.",
@@ -1306,13 +1306,48 @@
 				],
 				"responses": {
 					"200": {
-						"description": "The binary file contents (Content-Type header is automatically set based on the file type)",
-						"content": {
-							"application/octet-stream": {
+						"description": "The binary file contents. A file whose detected type is image/jpeg, image/png, image/gif, image/webp or application/pdf is served with that media type and `Content-Disposition: inline`; every other file is served as application/octet-stream with `Content-Disposition: attachment`. The Content-Type header is set from the file and is one of the keys of this content map.",
+						"headers": {
+							"Content-Disposition": {
+								"description": "`inline; filename*=UTF-8''<name>` when the file is served with one of the image or PDF media types above, `attachment; filename*=UTF-8''<name>` for every other file (served as `application/octet-stream`). The name is RFC 5987 percent-encoded; when `{fileName}` carries a second BASE64 name, that second name is used.",
 								"schema": {
 									"type": "string",
-									"format": "binary"
+									"example": "inline; filename*=UTF-8''photo.png"
 								}
+							},
+							"Cache-Control": {
+								"description": "Always `private, no-store`: the response is never cached by a shared cache or stored.",
+								"schema": {
+									"type": "string",
+									"example": "private, no-store"
+								}
+							},
+							"X-Content-Type-Options": {
+								"description": "Always `nosniff`, so a browser does not second-guess the declared media type.",
+								"schema": {
+									"type": "string",
+									"example": "nosniff"
+								}
+							}
+						},
+						"content": {
+							"image/jpeg": {
+								"schema": {}
+							},
+							"image/png": {
+								"schema": {}
+							},
+							"image/gif": {
+								"schema": {}
+							},
+							"image/webp": {
+								"schema": {}
+							},
+							"application/pdf": {
+								"schema": {}
+							},
+							"application/octet-stream": {
+								"schema": {}
 							}
 						}
 					},
@@ -1377,10 +1412,7 @@
 				"requestBody": {
 					"content": {
 						"application/octet-stream": {
-							"schema": {
-								"type": "string",
-								"format": "binary"
-							}
+							"schema": {}
 						}
 					}
 				},
@@ -2925,7 +2957,7 @@
 									"amount": 1,
 									"best_before_date": "2019-01-19",
 									"transaction_type": "purchase",
-									"price": "1.99"
+									"price": 1.99
 								}
 							}
 						}
@@ -3573,7 +3605,7 @@
 									"amount": 1,
 									"best_before_date": "2019-01-19",
 									"transaction_type": "purchase",
-									"price": "1.99"
+									"price": 1.99
 								}
 							}
 						}
@@ -8912,10 +8944,7 @@
 						"description": "Fetch an asset",
 						"content": {
 							"image/png": {
-								"schema": {
-									"type": "string",
-									"format": "binary"
-								}
+								"schema": {}
 							}
 						}
 					},
@@ -9212,10 +9241,7 @@
 						"description": "Fetch artifact bytes",
 						"content": {
 							"image/png": {
-								"schema": {
-									"type": "string",
-									"format": "binary"
-								}
+								"schema": {}
 							}
 						}
 					},
@@ -9255,10 +9281,7 @@
 						"description": "The rendered preview image",
 						"content": {
 							"image/png": {
-								"schema": {
-									"type": "string",
-									"format": "binary"
-								}
+								"schema": {}
 							}
 						}
 					},
@@ -12545,30 +12568,126 @@
 							"null"
 						],
 						"description": "The shopping list a product lands on by default when added without choosing one (plan 05 part C). Null falls back to the pre-existing behaviour."
+					},
+					"active": {
+						"type": "integer",
+						"description": "1 for an active product, 0 for an inactive one (products.active, CHECK 0 or 1)."
+					},
+					"parent_product_id": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The product this one is a sub product of, or null for a product with no parent."
+					},
+					"calories": {
+						"type": [
+							"number",
+							"null"
+						],
+						"description": "Energy per stock quantity unit, or null when none is recorded."
+					},
+					"cumulate_min_stock_amount_of_sub_products": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "0 or 1. When 1, the min. stock amounts of this product's sub products are accumulated into this product, so a sub product is never reported missing on its own. The column is nullable (products.cumulate_min_stock_amount_of_sub_products, default 0)."
+					},
+					"default_best_before_days_after_freezing": {
+						"type": "integer",
+						"default": 0,
+						"description": "Days until a stock entry of this product is due once frozen: applied when the entry is moved into a freezer location (if above 0), and when stock is added to a freezer location without a due date. -1 means the entry is then never due (StockService.php)."
+					},
+					"default_best_before_days_after_thawing": {
+						"type": "integer",
+						"default": 0,
+						"description": "Days until a stock entry of this product is due once thawed: applied, if above 0, when the entry is moved from a freezer location to a non-freezer one (StockService.php)."
+					},
+					"due_type": {
+						"type": "integer",
+						"enum": [
+							1,
+							2
+						],
+						"default": 1,
+						"description": "What a due date means for this product: 1 a best before date (the product may still be safe to consume after it), 2 an expiration date (it is not). products.due_type CHECK allows only these two values."
+					},
+					"quick_consume_amount": {
+						"type": "number",
+						"default": 1,
+						"description": "The amount the stock overview's quick consume button consumes."
+					},
+					"quick_open_amount": {
+						"type": "number",
+						"default": 1,
+						"description": "The amount the stock overview's quick open button opens."
+					},
+					"hide_on_stock_overview": {
+						"type": "integer",
+						"description": "0 or 1. When 1, the product is never shown on the stock overview."
+					},
+					"default_stock_label_type": {
+						"type": "integer",
+						"default": 0,
+						"description": "The stock entry label the purchase and inventory forms preselect: 0 no label, 1 a single label, 2 a label per unit (views/productform.blade.php). The column has no CHECK constraint."
+					},
+					"qu_id_consume": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The quantity unit consumption is entered in by default; resolved as default_quantity_unit_consume on GET /stock/products/{productId}. The column is nullable."
+					},
+					"qu_id_price": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The quantity unit prices are quoted in; resolved as quantity_unit_price on GET /stock/products/{productId}. The column is nullable."
+					},
+					"disable_open": {
+						"type": "integer",
+						"description": "0 or 1. When 1, stock of this product cannot be marked opened: StockService::OpenProduct() refuses it with \"Product can't be opened\"."
+					},
+					"default_purchase_price_type": {
+						"type": "integer",
+						"enum": [
+							1,
+							2,
+							3
+						],
+						"default": 1,
+						"description": "Which price input the purchase form preselects: 1 no preference, 2 unit price, 3 total price (public/viewjs/purchase.js). products.default_purchase_price_type CHECK allows only these three values."
+					},
+					"import_epoch": {
+						"type": "integer",
+						"minimum": 0,
+						"description": "A server-owned generation: label_current_import_epoch() when the row was written, which a legacy import bumps (migrations/0283.pgsql.php). Label issuance refuses a print request composed for an epoch an import has since replaced."
 					}
 				},
 				"example": {
-					"id": "1",
+					"id": 1,
 					"name": "Cookies",
 					"description": null,
-					"location_id": "4",
-					"qu_id_purchase": "3",
-					"qu_id_stock": "3",
-					"min_stock_amount": "8",
-					"default_best_before_days": "0",
-					"row_created_timestamp": "2019-05-02 20:12:26",
-					"product_group_id": "1",
+					"location_id": 4,
+					"qu_id_purchase": 3,
+					"qu_id_stock": 3,
+					"min_stock_amount": 8,
+					"default_best_before_days": 0,
+					"row_created_timestamp": "2019-05-02T20:12:26.000000Z",
+					"product_group_id": 1,
 					"picture_file_name": "cookies.jpg",
-					"default_best_before_days_after_open": "0",
-					"enable_tare_weight_handling": "0",
-					"tare_weight": "0.0",
-					"not_check_stock_fulfillment_for_recipes": "0",
+					"default_best_before_days_after_open": 0,
+					"enable_tare_weight_handling": 0,
+					"tare_weight": 0,
+					"not_check_stock_fulfillment_for_recipes": 0,
 					"shopping_location_id": null,
-					"userfields": null,
-					"should_not_be_frozen": "1",
-					"default_consume_location_id": "5",
-					"move_on_open": "1",
-					"quick_refill_amount": "1",
+					"userfields": {},
+					"should_not_be_frozen": 1,
+					"default_consume_location_id": 5,
+					"move_on_open": 1,
+					"quick_refill_amount": 1,
 					"default_refill_location_id_from": null,
 					"default_refill_location_id_to": null,
 					"default_shopping_list_id": null
@@ -12701,30 +12820,125 @@
 							"null"
 						],
 						"description": "The shopping list a product lands on by default when added without choosing one (plan 05 part C). Null falls back to the pre-existing behaviour."
+					},
+					"active": {
+						"type": "integer",
+						"description": "1 for an active product, 0 for an inactive one (products.active, CHECK 0 or 1)."
+					},
+					"parent_product_id": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The product this one is a sub product of, or null for a product with no parent."
+					},
+					"calories": {
+						"type": [
+							"number",
+							"null"
+						],
+						"description": "Energy per stock quantity unit, or null when none is recorded."
+					},
+					"cumulate_min_stock_amount_of_sub_products": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "0 or 1. When 1, the min. stock amounts of this product's sub products are accumulated into this product, so a sub product is never reported missing on its own. The column is nullable (products.cumulate_min_stock_amount_of_sub_products, default 0)."
+					},
+					"default_best_before_days_after_freezing": {
+						"type": "integer",
+						"default": 0,
+						"description": "Days until a stock entry of this product is due once frozen: applied when the entry is moved into a freezer location (if above 0), and when stock is added to a freezer location without a due date. -1 means the entry is then never due (StockService.php)."
+					},
+					"default_best_before_days_after_thawing": {
+						"type": "integer",
+						"default": 0,
+						"description": "Days until a stock entry of this product is due once thawed: applied, if above 0, when the entry is moved from a freezer location to a non-freezer one (StockService.php)."
+					},
+					"due_type": {
+						"type": "integer",
+						"enum": [
+							1,
+							2
+						],
+						"default": 1,
+						"description": "What a due date means for this product: 1 a best before date (the product may still be safe to consume after it), 2 an expiration date (it is not). products.due_type CHECK allows only these two values."
+					},
+					"quick_consume_amount": {
+						"type": "number",
+						"default": 1,
+						"description": "The amount the stock overview's quick consume button consumes."
+					},
+					"quick_open_amount": {
+						"type": "number",
+						"default": 1,
+						"description": "The amount the stock overview's quick open button opens."
+					},
+					"hide_on_stock_overview": {
+						"type": "integer",
+						"description": "0 or 1. When 1, the product is never shown on the stock overview."
+					},
+					"default_stock_label_type": {
+						"type": "integer",
+						"default": 0,
+						"description": "The stock entry label the purchase and inventory forms preselect: 0 no label, 1 a single label, 2 a label per unit (views/productform.blade.php). The column has no CHECK constraint."
+					},
+					"qu_id_consume": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The quantity unit consumption is entered in by default; resolved as default_quantity_unit_consume on GET /stock/products/{productId}. The column is nullable."
+					},
+					"qu_id_price": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The quantity unit prices are quoted in; resolved as quantity_unit_price on GET /stock/products/{productId}. The column is nullable."
+					},
+					"disable_open": {
+						"type": "integer",
+						"description": "0 or 1. When 1, stock of this product cannot be marked opened: StockService::OpenProduct() refuses it with \"Product can't be opened\"."
+					},
+					"default_purchase_price_type": {
+						"type": "integer",
+						"enum": [
+							1,
+							2,
+							3
+						],
+						"default": 1,
+						"description": "Which price input the purchase form preselects: 1 no preference, 2 unit price, 3 total price (public/viewjs/purchase.js). products.default_purchase_price_type CHECK allows only these three values."
+					},
+					"import_epoch": {
+						"type": "integer",
+						"minimum": 0,
+						"description": "A server-owned generation: label_current_import_epoch() when the row was written, which a legacy import bumps (migrations/0283.pgsql.php). Label issuance refuses a print request composed for an epoch an import has since replaced."
 					}
 				},
 				"example": {
-					"id": "1",
+					"id": 1,
 					"name": "Cookies",
 					"description": null,
-					"location_id": "4",
-					"qu_id_purchase": "3",
-					"qu_id_stock": "3",
-					"min_stock_amount": "8",
-					"default_best_before_days": "0",
-					"row_created_timestamp": "2019-05-02 20:12:26",
-					"product_group_id": "1",
+					"location_id": 4,
+					"qu_id_purchase": 3,
+					"qu_id_stock": 3,
+					"min_stock_amount": 8,
+					"default_best_before_days": 0,
+					"row_created_timestamp": "2019-05-02T20:12:26.000000Z",
+					"product_group_id": 1,
 					"picture_file_name": "cookies.jpg",
-					"default_best_before_days_after_open": "0",
-					"enable_tare_weight_handling": "0",
-					"tare_weight": "0.0",
-					"not_check_stock_fulfillment_for_recipes": "0",
+					"default_best_before_days_after_open": 0,
+					"enable_tare_weight_handling": 0,
+					"tare_weight": 0,
+					"not_check_stock_fulfillment_for_recipes": 0,
 					"shopping_location_id": null,
-					"userfields": null,
-					"should_not_be_frozen": "1",
-					"default_consume_location_id": "5",
-					"move_on_open": "1",
-					"quick_refill_amount": "1",
+					"should_not_be_frozen": 1,
+					"default_consume_location_id": 5,
+					"move_on_open": 1,
+					"quick_refill_amount": 1,
 					"default_refill_location_id_from": null,
 					"default_refill_location_id_to": null,
 					"default_shopping_list_id": null
@@ -12774,16 +12988,20 @@
 					"userfields": {
 						"type": "object",
 						"description": "Key/value pairs of userfields"
+					},
+					"active": {
+						"type": "integer",
+						"description": "1 for an active quantity unit, 0 for an inactive one (quantity_units.active, CHECK 0 or 1)."
 					}
 				},
 				"example": {
-					"id": "2",
+					"id": 2,
 					"name": "Piece",
 					"description": null,
-					"row_created_timestamp": "2019-05-02 20:12:25",
+					"row_created_timestamp": "2019-05-02T20:12:25.000000Z",
 					"name_plural": "Pieces",
 					"plural_forms": null,
-					"userfields": null
+					"userfields": {}
 				}
 			},
 			"Location": {
@@ -12827,37 +13045,45 @@
 							"integer",
 							"null"
 						],
-						"description": "How cold this location is kept, or null for unclassified - see StorageClass. is_freezer is independently editable when the location has no storage class after this request - whether none was ever set or this request clears it - and is derived from the class otherwise, overwriting whatever this same request submits for the flag. Editing a storage class's own treats_as_freezer re-derives is_freezer for every location currently carrying that class."
+						"description": "How cold this location is kept, or null for unclassified - see StorageClass. is_freezer is independently editable when the location has no storage class after this request - whether none was ever set or this request clears it - and is derived from the class otherwise, overwriting whatever this same request submits for the flag. Editing a storage class's own treats_as_freezer re-derives is_freezer for every location currently carrying that class. Not sent in the location and default_consume_location objects of GET /stock/products/{productId} and GET /stock/products/by-barcode/{barcode}, which select only id, name, description, row_created_timestamp, is_freezer, active and parent_location_id (StockService::GetProductDetails())."
 					},
 					"tare_weight": {
 						"type": [
 							"number",
 							"null"
 						],
-						"description": "The empty weight of this location's own container - a bin, a spice jar - in tare_qu_id, or null when this location is not weighed as a vessel. Set alongside tare_qu_id (ADR-0022 decision 4); a vessel's tare lives on the location rather than on a stock entry because every refill mints a new entry via TransferProduct()."
+						"description": "The empty weight of this location's own container - a bin, a spice jar - in tare_qu_id, or null when this location is not weighed as a vessel. Set alongside tare_qu_id (ADR-0022 decision 4); a vessel's tare lives on the location rather than on a stock entry because every refill mints a new entry via TransferProduct(). Not sent in the location and default_consume_location objects of GET /stock/products/{productId} and GET /stock/products/by-barcode/{barcode}, which select only id, name, description, row_created_timestamp, is_freezer, active and parent_location_id (StockService::GetProductDetails())."
 					},
 					"tare_qu_id": {
 						"type": [
 							"integer",
 							"null"
 						],
-						"description": "The quantity unit tare_weight and a gross weighing are given in. A location has no stock unit of its own to borrow, so this is independent of any product's units; StockService::WeighLocation() converts through the stocked product's own quantity unit conversions and refuses when no path exists."
+						"description": "The quantity unit tare_weight and a gross weighing are given in. A location has no stock unit of its own to borrow, so this is independent of any product's units; StockService::WeighLocation() converts through the stocked product's own quantity unit conversions and refuses when no path exists. Not sent in the location and default_consume_location objects of GET /stock/products/{productId} and GET /stock/products/by-barcode/{barcode}, which select only id, name, description, row_created_timestamp, is_freezer, active and parent_location_id (StockService::GetProductDetails())."
 					},
 					"userfields": {
 						"type": "object",
 						"description": "Key/value pairs of userfields"
+					},
+					"is_freezer": {
+						"type": "integer",
+						"description": "0 or 1. 1 marks a freezer location, which Product's default_best_before_days_after_freezing and default_best_before_days_after_thawing apply to. Derived from the storage class when storage_class_id is set (see storage_class_id)."
+					},
+					"active": {
+						"type": "integer",
+						"description": "1 for an active location, 0 for an inactive one (locations.active, CHECK 0 or 1)."
 					}
 				},
 				"example": {
-					"id": "2",
+					"id": 2,
 					"name": "0",
 					"description": null,
-					"row_created_timestamp": "2019-05-02 20:12:25",
+					"row_created_timestamp": "2019-05-02T20:12:25.000000Z",
 					"parent_location_id": null,
 					"storage_class_id": null,
 					"tare_weight": null,
 					"tare_qu_id": null,
-					"userfields": null
+					"userfields": {}
 				}
 			},
 			"StorageClass": {
@@ -12916,15 +13142,15 @@
 					}
 				},
 				"example": {
-					"id": "3",
+					"id": 3,
 					"name": "Freezer",
-					"min_temp_c": "-18",
-					"max_temp_c": "-12",
-					"treats_as_freezer": "1",
-					"sort_order": "1",
-					"row_created_timestamp": "2019-05-02 20:12:25",
-					"active": "1",
-					"userfields": null
+					"min_temp_c": -18,
+					"max_temp_c": -12,
+					"treats_as_freezer": 1,
+					"sort_order": 1,
+					"row_created_timestamp": "2019-05-02T20:12:25.000000Z",
+					"active": 1,
+					"userfields": {}
 				}
 			},
 			"LocationResolved": {
@@ -12959,9 +13185,9 @@
 				},
 				"example": {
 					"id": 1,
-					"ancestor_location_id": "3",
-					"descendant_location_id": "11",
-					"depth": "3",
+					"ancestor_location_id": 3,
+					"descendant_location_id": 11,
+					"depth": 3,
 					"path": "Basement / StorageRoom / UprightFreezer / Door"
 				}
 			},
@@ -12990,9 +13216,9 @@
 				},
 				"example": {
 					"id": 1,
-					"ancestor_product_group_id": "1",
-					"descendant_product_group_id": "5",
-					"depth": "2",
+					"ancestor_product_group_id": 1,
+					"descendant_product_group_id": 5,
+					"depth": 2,
 					"path": "Spices / Garlic / Fresh"
 				}
 			},
@@ -13035,10 +13261,10 @@
 				},
 				"example": {
 					"id": 1,
-					"to_product_id": "2",
-					"from_product_id": "5",
+					"to_product_id": 2,
+					"from_product_id": 5,
 					"direction": "directed",
-					"from_product_amount_in_stock": "3",
+					"from_product_amount_in_stock": 3,
 					"from_product_best_before_date": "2026-10-01"
 				}
 			},
@@ -13072,11 +13298,11 @@
 					}
 				},
 				"example": {
-					"id": "2",
+					"id": 2,
 					"name": "0",
 					"description": null,
-					"row_created_timestamp": "2019-05-02 20:12:25",
-					"userfields": null
+					"row_created_timestamp": "2019-05-02T20:12:25.000000Z",
+					"userfields": {}
 				}
 			},
 			"StockLocation": {
@@ -13102,11 +13328,12 @@
 					}
 				},
 				"example": {
-					"id": "1",
-					"product_id": "3",
-					"amount": "2",
-					"location_id": "1",
-					"name": "Fridge"
+					"id": 1,
+					"product_id": 3,
+					"amount": 2,
+					"location_id": 1,
+					"location_name": "Fridge",
+					"location_is_freezer": 0
 				}
 			},
 			"StockEntry": {
@@ -13222,20 +13449,24 @@
 						"type": "integer",
 						"minimum": 0,
 						"description": "A server-owned generation: label_current_import_epoch() when the row was written, which a legacy import bumps (migrations/0283.pgsql.php). Label issuance refuses a print request composed for an epoch an import has since replaced. Not sent by GET /stock/products/{productId}/entries, whose rows come from the stock_next_use view"
+					},
+					"userfields": {
+						"type": "object",
+						"description": "Key/value pairs of userfields. Sent by GET /objects/stock/{objectId} only."
 					}
 				},
 				"example": {
-					"id": "77",
-					"product_id": "1",
-					"amount": "2",
+					"id": 77,
+					"product_id": 1,
+					"amount": 2,
 					"best_before_date": "2019-07-07",
 					"purchased_date": "2019-05-03",
 					"stock_id": "5ccc6b2421979",
 					"price": null,
-					"open": "0",
+					"open": 0,
 					"opened_date": null,
-					"row_created_timestamp": "2019-05-03 18:24:04",
-					"location_id": "4",
+					"row_created_timestamp": "2019-05-03T18:24:04.000000Z",
+					"location_id": 4,
 					"shopping_location_id": null,
 					"opened_amount": null,
 					"opened_qu_id": null,
@@ -13270,16 +13501,35 @@
 						"type": "boolean",
 						"description": "Whether some ingredient of this recipe has no known price, so that \"costs\" is a floor rather than a total. A derived price fact rather than a price, and redacted with the other two - a caller who may not see what a recipe costs may not be told how complete the figure they cannot see is.",
 						"x-visibility": "STOCK_PRICES_VIEW"
+					},
+					"id": {
+						"type": "integer",
+						"description": "Always 1: a placeholder column of the recipes_resolved view (db/pgsql/baseline/05_views_l3.sql), not an identifier. recipe_id names the recipe."
+					},
+					"calories": {
+						"type": "number",
+						"description": "The summed calories of the recipe's ingredients; 0 when none is known."
+					},
+					"due_score": {
+						"type": "integer",
+						"description": "The sum of the ingredients' due scores: 0 for an ingredient whose stock is ok, 1 due soon, 10 overdue, 20 expired (recipes_pos_resolved, db/pgsql/baseline/05_views_l3.sql)."
+					},
+					"product_names_comma_separated": {
+						"type": [
+							"string",
+							"null"
+						],
+						"description": "The names of the recipe's ingredient products joined with commas, or null for a recipe with no ingredients."
 					}
 				},
 				"example": {
-					"recipe_id": "1",
-					"need_fulfilled": "0",
-					"need_fulfilled_with_shopping_list": "0",
-					"missing_products_count": "2",
-					"costs": "17.74",
-					"costs_per_serving": "4.44",
-					"prices_incomplete": "0"
+					"recipe_id": 1,
+					"need_fulfilled": false,
+					"need_fulfilled_with_shopping_list": false,
+					"missing_products_count": 2,
+					"costs": 17.74,
+					"costs_per_serving": 4.44,
+					"prices_incomplete": false
 				}
 			},
 			"ProductDetailsResponse": {
@@ -13402,7 +13652,13 @@
 						"description": "True when `stock_amount` counts sub products as well as this product's own stock. Undocumented until issue #230, which is also where it stopped being the integer 0/1 StockService::GetProductDetails() assigned and became the boolean CurrentStockResponse already documented."
 					},
 					"default_location": {
-						"$ref": "#/components/schemas/Location"
+						"deprecated": true,
+						"description": "Never sent. The product's default location is sent as `location`. This property was added to the document upstream (grocy commit 5e30e897, 2022) without the server ever sending it; it stays declared, and not required, so that a client generated from an earlier document keeps compiling. Issue #787.",
+						"allOf": [
+							{
+								"$ref": "#/components/schemas/Location"
+							}
+						]
 					},
 					"qu_conversion_factor_purchase_to_stock": {
 						"type": "number",
@@ -13448,58 +13704,57 @@
 				},
 				"example": {
 					"product": {
-						"id": "1",
+						"id": 1,
 						"name": "Cookies",
 						"description": null,
-						"location_id": "4",
-						"qu_id_purchase": "3",
-						"qu_id_stock": "3",
-						"min_stock_amount": "8",
-						"default_best_before_days": "0",
-						"row_created_timestamp": "2019-05-02 20:12:26",
-						"product_group_id": "1",
+						"location_id": 4,
+						"qu_id_purchase": 3,
+						"qu_id_stock": 3,
+						"min_stock_amount": 8,
+						"default_best_before_days": 0,
+						"row_created_timestamp": "2019-05-02T20:12:26.000000Z",
+						"product_group_id": 1,
 						"picture_file_name": "cookies.jpg",
-						"default_best_before_days_after_open": "0",
-						"enable_tare_weight_handling": "0",
-						"tare_weight": "0.0",
-						"not_check_stock_fulfillment_for_recipes": "0",
-						"last_shopping_location_id": null
+						"default_best_before_days_after_open": 0,
+						"enable_tare_weight_handling": 0,
+						"tare_weight": 0,
+						"not_check_stock_fulfillment_for_recipes": 0
 					},
 					"product_barcodes": [
 						{
-							"id": "1",
-							"product_id": "13",
+							"id": 1,
+							"product_id": 1,
 							"barcode": "01321230213",
-							"qu_id": "1",
-							"shopping_location_id": "2",
-							"amount": "10"
+							"qu_id": 1,
+							"shopping_location_id": 2,
+							"amount": 10
 						}
 					],
 					"last_purchased": null,
 					"last_used": null,
-					"stock_amount": "2",
-					"stock_amount_opened": null,
+					"stock_amount": 2,
+					"stock_amount_opened": 0,
 					"default_quantity_unit_purchase": {
-						"id": "3",
+						"id": 3,
 						"name": "Pack",
 						"description": null,
-						"row_created_timestamp": "2019-05-02 20:12:25",
+						"row_created_timestamp": "2019-05-02T20:12:25.000000Z",
 						"name_plural": "Packs",
 						"plural_forms": null
 					},
 					"quantity_unit_stock": {
-						"id": "3",
+						"id": 3,
 						"name": "Pack",
 						"description": null,
-						"row_created_timestamp": "2019-05-02 20:12:25",
+						"row_created_timestamp": "2019-05-02T20:12:25.000000Z",
 						"name_plural": "Packs",
 						"plural_forms": null
 					},
 					"quantity_unit_price": {
-						"id": "3",
+						"id": 3,
 						"name": "Pack",
 						"description": null,
-						"row_created_timestamp": "2019-05-02 20:12:25",
+						"row_created_timestamp": "2019-05-02T20:12:25.000000Z",
 						"name_plural": "Packs",
 						"plural_forms": null
 					},
@@ -13509,10 +13764,11 @@
 					"last_shopping_location_id": null,
 					"next_due_date": "2019-07-07",
 					"location": {
-						"id": "4",
+						"id": 4,
 						"name": "Candy cupboard",
 						"description": null,
-						"row_created_timestamp": "2019-05-02 20:12:25"
+						"row_created_timestamp": "2019-05-02T20:12:25.000000Z",
+						"parent_location_id": null
 					},
 					"average_shelf_life_days": -1,
 					"spoil_rate_percent": 0,
@@ -13593,6 +13849,22 @@
 							"string",
 							"null"
 						]
+					},
+					"id": {
+						"type": "integer"
+					},
+					"row_created_timestamp": {
+						"type": [
+							"string",
+							"null"
+						],
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
+					},
+					"userfields": {
+						"type": "object",
+						"description": "Key/value pairs of userfields. Sent by GET /objects/product_barcodes/{objectId} only."
 					}
 				}
 			},
@@ -13737,30 +14009,30 @@
 				},
 				"example": {
 					"chore": {
-						"id": 0,
-						"name": "string",
-						"description": "string",
-						"period_type": "manually",
-						"period_days": 0,
-						"row_created_timestamp": "2019-05-04T11:31:04.563Z"
+						"id": 1,
+						"name": "Take out the trash",
+						"description": "Bins go to the kerb on Thursday evening",
+						"period_type": "daily",
+						"period_days": 1,
+						"row_created_timestamp": "2019-05-02T20:12:26.000000Z"
 					},
-					"last_tracked": "2019-05-04T11:31:04.563Z",
-					"track_count": 0,
+					"last_tracked": "2019-05-04T11:31:04.563000Z",
+					"track_count": 1,
 					"last_done_by": {
-						"id": 0,
-						"username": "string",
-						"first_name": "string",
-						"last_name": "string",
-						"display_name": "string",
-						"row_created_timestamp": "2019-05-04T11:31:04.564Z"
+						"id": 1,
+						"username": "admin",
+						"first_name": "Ada",
+						"last_name": "Lovelace",
+						"display_name": "Ada Lovelace",
+						"row_created_timestamp": "2019-05-02T20:12:25.000000Z"
 					},
-					"next_estimated_execution_time": "2019-05-04T11:31:04.564Z"
+					"next_estimated_execution_time": "2019-05-05T11:31:04.563000Z"
 				}
 			},
 			"BatteryDetailsResponse": {
 				"type": "object",
 				"properties": {
-					"chore": {
+					"battery": {
 						"$ref": "#/components/schemas/Battery"
 					},
 					"last_charged": {
@@ -13788,16 +14060,16 @@
 				},
 				"example": {
 					"battery": {
-						"id": "1",
+						"id": 1,
 						"name": "Battery1",
 						"description": "Warranty ends 2023",
 						"used_in": "TV remote control",
-						"charge_interval_days": "0",
-						"row_created_timestamp": "2019-05-02 20:12:26"
+						"charge_interval_days": 0,
+						"row_created_timestamp": "2019-05-02T20:12:26.000000Z"
 					},
-					"last_charged": "2019-03-13 18:12:28",
+					"last_charged": "2019-05-10T18:12:28.000000Z",
 					"charge_cycles_count": 4,
-					"next_estimated_charge_time": "2999-12-31 23:59:59"
+					"next_estimated_charge_time": "2999-12-31T23:59:59.000000Z"
 				}
 			},
 			"User": {

@@ -7,7 +7,10 @@
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-11, against `master` at `d4960138`. Design work only: it changes no
-  code, reserves no migration number and amends no accepted record.
+  code, reserves no migration number and amends no accepted record. Revised 2026-10-12
+  against `master` at `8fd76607` to specify acceptance prerequisites 1, 5 and 7 (see
+  [Specification of the gates](#specification-of-the-gates-2026-10-12)) and to add open
+  questions 8 to 13. No maintainer decision changed.
 - **Referenced by:** [issue 774](https://github.com/datagen24/victual/issues/774), which
   asks for the change; [issue 702](https://github.com/datagen24/victual/issues/702), which
   issue 774 names as related; `victual-kit`
@@ -181,9 +184,11 @@ paths change with it:
 These rewritten views diverge from the frozen SQLite line whatever response option is
 chosen, so P2 needs the ADR-0005 treatment described under "Constraints from accepted
 records". Today's fixtures exercise the divergence only where a row is priced `0` or a
-recipe position has no known price. No stock row in `.devtools/pgsql/view-tests/01` to
-`03` is priced `0`. Whether `03_recipes.sql` has a position without a known price was not
-checked.
+recipe position has no known price. No `stock` or `stock_log` row in
+`.devtools/pgsql/fixtures/00_base.sql` or `.devtools/pgsql/view-tests/01` to `05` is
+priced `0`, and every position in `03_recipes.sql` resolves to a priced product. Gate 7
+under [Specification of the gates](#specification-of-the-gates-2026-10-12) gives the
+per-view result.
 
 The following alternatives document the existing-data tradeoffs. The maintainer
 confirmed there is no production data to preserve; historical imports remain in scope.
@@ -472,7 +477,295 @@ by the maintainer on 2026-10-11. Historical grocy imports need an explicit polic
 legacy zeros cannot reliably distinguish a free purchase from a price never entered.
 Treat them as unknown by default, disclose that interpretation during import, and preserve
 original booking values. The representation of that interpretation requires further design;
-no cutoff mechanism or ledger conversion is selected by this response.
+no cutoff mechanism or ledger conversion is selected by this response. The next section
+compares the candidate representations and recommends one; open question 8 asks the
+maintainer to choose.
+
+## Specification of the gates, 2026-10-12
+
+This section states what acceptance prerequisites 1, 5 and 7 require. It was read from the
+source at `8fd76607` on 2026-10-12. No test, suite phase or container was run, so every
+statement about a suite result is inferred from the code and the fixtures. Where a gate
+needs a choice the maintainer has not made, this section recommends an option and open
+questions 8 to 13 ask for the decision.
+
+### Gate 1: how imported legacy zeros keep their stored value
+
+The importer must copy every `stock.price` and `stock_log.price` unchanged. A reader must
+still tell an imported legacy `0` from a `0` written after the change. Four mechanisms were
+examined.
+
+**(a) A per-row marker.** `stock` and `stock_log` each gain a column owned by the target,
+for example `legacy_zero_price SMALLINT NOT NULL DEFAULT 0` with
+`CHECK (legacy_zero_price = 0 OR price IS NOT DISTINCT FROM 0)`, which also refuses a marked
+row priced `NULL`. The importer sets it to `1` on each imported
+row whose price is exactly `0`. Every reader treats a marked row's price as unknown. The
+column changes no booking value; the importer writes it with an `UPDATE` that touches the
+new column only.
+
+**(b) An import watermark.** `import_epoch` cannot serve as one. Migration 0283 added it to
+`products`, `stock`, `recipes`, `chores` and `batteries`, and migration 0269 to `locations`;
+`stock_log` has none. Its default is `label_current_import_epoch()`, the generation held in
+`label_import_state`. `DatabaseImporter` increments that generation before it copies,
+whenever the target has a `labels` table, and `GetCommonColumns()` leaves `import_epoch` out of the copy. Each imported `stock` row
+therefore takes the new generation from the default, and so does every row booked after the
+import. The column exists so that a label request composed before an import is refused
+(ADR-0021). It does not separate imported rows from later ones.
+
+A new watermark, such as the highest `stock.id` and `stock_log.id` at import time, fails for
+rows created later from imported ones:
+
+- `TransferProduct()` and `OpenProduct()` split an entry into a new `stock` row that copies
+  `price`.
+- Undo re-inserts a `stock` row from its booking (`InsertRowFromBooking()`).
+- `EditStockEntry()` writes a `stock-edit-new` booking that keeps the stored price when the
+  request omits it.
+
+Each of these rows has an id above the watermark and would read as a known zero.
+
+**(c) A set of legacy `stock_id` values.** The importer records, in a table of its own, each
+`stock_id` whose imported rows carry a `0`. Transfers, edits and undo keep the `stock_id`
+(`TransferProduct()` copies `$stockEntry->stock_id`). `OpenProduct()` does not: a partial
+open puts the remainder in a new `stock` row under a new `stock_id` (`$restStockId =
+uniqid()`) that copies `price`. Under (c), that write path must add the new `stock_id` to the
+set, the same propagation work (a) needs on every path.
+
+Under (c), an edit that deliberately sets an imported entry's price to `0` keeps the `stock_id` too, and
+the entry still reads as unknown. Removing the `stock_id` from the set on that edit would turn
+the entry's earlier imported bookings into known zeros. Every price reader also needs a
+semi-join on the set.
+
+**(d) A side table of row ids.** The importer records `(table, id)` for each imported `0`.
+This keeps the ledger tables free of a new column. Every write path that copies a price must
+insert a side-table row where (a) copies a column, so it has (a)'s propagation work and adds a
+join to every reader.
+
+| Concern | (a) Per-row marker | (b) Row-id watermark | (c) Legacy `stock_id` set |
+|---|---|---|---|
+| Schema | One column and one `CHECK` on `stock` and `stock_log` | One recorded number per table | One table of `stock_id` values |
+| Readers | Test the column | Compare ids with the watermark | Semi-join on the set |
+| New bookings | Default `0`, a known price | Above the watermark, read as known | Unaffected unless they reuse an imported `stock_id` |
+| Undo | Copies the marker from the booking | Re-inserted row reads as known: wrong | Correct, `stock_id` kept |
+| Partial open | Remainder row copies the marker | Remainder row reads as known: wrong | Remainder's new `stock_id` must be added to the set |
+| Edit of an imported entry | Explicit price writes `0`; kept price copies the marker | `stock-edit-new` reads as known: wrong | Explicit `0` still reads as unknown: wrong |
+| Re-import | Truncated with the rows and set again | Recomputed | Truncated and rebuilt |
+| Views phase of the differential suite | Not set; see placement below | Not set | Not set |
+
+Under (a), each write that creates a `stock` or `stock_log` row by copying `price` from an
+existing row must copy the marker with it. Read at `8fd76607`, these are in `StockService`:
+`ConsumeProduct()`, `TransferProduct()`, `OpenProduct()`, `MeasureStockEntry()`, and the
+undo paths `UndoBookingInTransaction()`, `UndoTrackedOpening()` and `InsertRowFromBooking()`.
+A write that takes its price from the caller, such as a purchase or an inventory correction
+with a price, writes `0`.
+
+`EditStockEntry()` and `UndoTrackedEdit()` also update a `stock` row in place:
+
+- `EditStockEntry()` always writes a `stock-edit-old` booking with the row's previous price
+  (`'price' => $stockRow->price`), so that booking always copies the row's marker. Its
+  in-place `$stockRow->update()` and its `stock-edit-new` booking keep the marker when the
+  request omits the price, and write `0` when the request supplies one.
+- `UndoTrackedEdit()` restores the row from the `stock-edit-old` booking
+  (`'price' => $old->price`), so the same update must restore the marker from that booking.
+
+Two further sites need attention:
+
+- `CompactStockEntries()` merges the rows that `stock_splits` groups, and that view groups by
+  `s.price`. The `GROUP BY` must include the marker, or compaction merges a legacy `0` with a
+  known `0`.
+- `MergeProducts()` already rewrites `stock.price` and `stock_log.price` in place as
+  `price / factor`. That rewrite predates this record. A `0` stays `0`, and the marker stays
+  on its row.
+
+The `CHECK` refuses a marked row whose price is not `0`, so a path that sets a new price but
+copies the marker fails loudly. The opposite omission, a copied `0` without its marker, is
+silent. Each listed path therefore needs a test that books from a marked row.
+
+Under (a), the readers that test the marker are:
+
+- `stock_current`, for the gate 5 flag;
+- `products_current_price`, so that a marked next-use entry falls back to the last known
+  price, as question 2's answer requires;
+- `products_price_history` and `products_average_price`, which exclude marked rows, and
+  through them `products_last_purchased` and both price caches;
+- `stock_splits`, as above;
+- the routes that return `stock` or `stock_log` rows, which open question 10 covers.
+
+The importer sets the marker inside the copy transaction: after the `CopyTable()` loop and
+before `$this->Target->commit()`, where `RebuildStockLineage()` already runs, and only when
+`applyRowMigrations` is true. An import then either commits with every legacy zero marked or
+rolls back to the target's previous state. Setting it after the commit, in the block where
+`RebuildPriceCaches()` runs, would leave a window in which a failure commits an import whose
+legacy zeros read as known zeros, the silent outcome gate 1 exists to prevent.
+
+`AssertValuesMatch()` runs after the commit and compares only the columns
+`GetCommonColumns()` returns. That method must exclude the marker by name, so the assertion
+still proves the copied columns verbatim and does not see the marker. `RebuildPriceCaches()`
+runs after the commit in its own transaction and reads views that apply the committed
+marker. If it fails, the caches are stale but every stored row is correct; rerunning the
+import with `--force` rebuilds them, as for any failure of that step today. `difftest.php`
+passes `false`, so the views phase never sees a marker set by the importer.
+
+Under (a), the write paths listed above write the marker column, and the differential
+suite's rollback phase drives `StockService` against SQLite. The SQLite fixture must
+therefore gain the column on `stock` and `stock_log`, as `.devtools/pgsql/fixtures/00_base.sql`
+already adds the four `opened_*` columns to SQLite's `stock` for the same phase. Three
+consequences follow:
+
+- `GetCommonColumns()` would then find the column on both sides and copy it. Its exclusion
+  by name, as for `import_epoch`, also keeps a source from supplying the interpretation.
+- `trigdifftest.php` compares the columns both engines share, so the column reaches it.
+  Both sides hold `0` there, because no trigger sets it.
+- SQLite re-expands `s.*` on every query, so its `stock_next_use` and
+  `uihelper_stock_entries` carry the column without a rewrite. That is why gate 7 strips it
+  on both sides, in the block that strips the `opened_*` columns. No view the suite compares
+  projects `stock_log.*`: `products_price_history` and `products_average_price` read `sl.*`
+  only inside a subquery, and the `sl.*` of `uihelper_shopping_list` is `shopping_list`.
+
+The importer discloses the interpretation in its progress output, the channel
+`RepairProductNesting()` already uses. An illustrative line:
+
+```text
+  stock_log    412 row(s) priced 0 read as unknown (imported legacy zero); stored prices unchanged
+```
+
+No table records an import's report today. Open question 8 asks whether a recorded row is
+also required.
+
+**Recommendation:** (a). It classifies each row exactly, follows an explicit edit, survives
+undo, and its `CHECK` catches one of the two possible propagation errors. Its cost is the
+copy work in the listed write paths and one test per path.
+
+**Rows written by Victual before the change.** The maintainer confirmed on 2026-10-11 that
+no production database exists. An upgrade still needs a rule for an installation that ran an
+earlier release, where five write paths stored `0` for a blank price (see
+[Context](#a-stored-price-of-0-usually-means-not-entered)). Open question 9 presents the two
+treatments.
+
+**Opt-out.** "Unknown by default" implies an operator may choose otherwise. Open question 11
+asks whether the import command offers that choice.
+
+### Gate 5: the incompleteness flags
+
+Option B adds two documented flags and one column for the web overview:
+
+| Flag | Schema and routes | `permission_fields` row | `WireBooleans::COLUMNS` | `DOCUMENTED_BOOLEANS` | `CONVERSION_COVERAGE` |
+|---|---|---|---|---|---|
+| `value_incomplete` | `CurrentStockResponse`: `GET /api/stock`, and `due_products`, `overdue_products` and `expired_products` of `GET /api/stock/volatile` | `('STOCK_PRICES_VIEW', 'stock_current', 'value_incomplete')` | `'stock_current' => ['is_aggregated_amount', 'value_incomplete']` | `'CurrentStockResponse.value_incomplete' => 'stock_current'` | `'stock_current.value_incomplete' => '/api/stock'` |
+| `stock_value_incomplete` | `ProductDetailsResponse`: `GET /api/stock/products/{productId}` and `GET /api/stock/products/by-barcode/{barcode}` | `('STOCK_PRICES_VIEW', 'product_details', 'stock_value_incomplete')` | `'product_details' => ['is_aggregated_amount', 'stock_value_incomplete']` | `'ProductDetailsResponse.stock_value_incomplete' => 'product_details'` | `'product_details.stock_value_incomplete' => '/api/stock/products/9500'` |
+| `value_incomplete` on `uihelper_stock_current_overview` | None; the stock overview page reads the view | `('STOCK_PRICES_VIEW', 'uihelper_stock_current_overview', 'value_incomplete')`, beside that view's `value` row | None | None | None |
+
+The three maps are `services/WireBooleans.php`, and `DOCUMENTED_BOOLEANS` and
+`CONVERSION_COVERAGE` in `tests/Pgsql/WireContractTest.php`.
+`testEveryDocumentedBooleanIsAccountedFor()` fails until the first two agree with the
+document. `testEveryConvertedPropertyIsProvenByAResponse()` fails until every converted
+property has a route. The `permission_fields` rows go into `db/pgsql/prices-seed.sql`,
+which the importer re-applies, and into the implementing migration. Migration 0282 applied
+the seed file once, so it does not reach an existing installation.
+
+No other response carries an aggregate stock value. `missing_products` reads
+`stock_missing_products`, which has no price column. `stock_current_locations` has no
+`value`. Recipes already carry `prices_incomplete`. `uihelper_shopping_list.last_price_total`
+multiplies one price by an amount. `BookingEventPublisher` selects `product_id, amount, value`
+by name, so a new `stock_current` column does not reach it.
+
+A flag is `1` when any row whose price that `stock_current` branch sums has an unknown price:
+`price IS NULL`, or the gate 1 marker under option (a). The rows are the product's own stock,
+as question 1's answer requires. The `value` expression does not change:
+`SUM(COALESCE(price, 0) * amount)` already sums known prices, and a marked `0` adds `0`
+either way.
+
+The flag can be computed in two places:
+
+- **In `stock_current` (SQL).** Each `UNION` branch gains `value_incomplete` beside `value`.
+  `GetCurrentStock()`, the three volatile lists, `GetProductDetails()` and
+  `uihelper_stock_current_overview` read the same column. The unknown-price rule stays in SQL
+  with the other readers listed under gate 1.
+- **In `StockService` (PHP).** `GetCurrentStock()` runs a second query for products with an
+  unknown-priced row and sets a PHP boolean. The stock overview reads
+  `uihelper_stock_current_overview` through LessQL and would need the same rule a second time.
+  The `DOCUMENTED_BOOLEANS` entries would be `'php'` and `WireBooleans` would not change.
+
+**Recommendation:** compute it in `stock_current`, because one definition then serves every
+reader. The consequences are:
+
+- `difftest.php` gains `unset($row['value_incomplete'])` on the PostgreSQL side in its
+  existing `stock_current` block, beside `amount_measured`, and in its existing
+  `uihelper_stock_current_overview` block.
+- `GetProductDetails()` sets `value_incomplete = 0` on its fallback row for a product with
+  no `stock_current` row. It reads the column with `?? 0`, as it reads `amount_measured`,
+  because the differential suite's rollback phase runs it against SQLite.
+
+Open question 12 asks the maintainer to confirm the computing site.
+
+### Gate 7: the rewritten views and the differential suite
+
+Two properties of the harness decide what the views phase can see:
+
+- `difftest.php` loads PostgreSQL through `DatabaseImporter::Import(true, false)`. With
+  `applyRowMigrations` false, `RebuildPriceCaches()` and the gate 1 marker step do not run.
+  The views phase therefore compares price caches copied from SQLite. A view that reads
+  `cache__products_last_purchased` or `cache__products_average_price` cannot show a rewrite
+  of `products_last_purchased` or `products_average_price`.
+- No `stock` or `stock_log` row in the base fixture or the five view seeds is priced `0`. The
+  unpriced rows are product 6 in `01_stock_basics.sql`, and `stock_log` rows in
+  `04_chores_batteries_tasks.sql` and `05_users_and_journal.sql` that feed views not changed
+  here.
+
+| View | Rewrite under P2 and option B | Seed that compares it | Changes a value the frozen SQLite line computes for today's seeds | Treatment |
+|---|---|---|---|---|
+| `stock_current` | Adds `value_incomplete`; `value` unchanged | `01` | No value changes. The new column is a key SQLite lacks | Strip the column on the PostgreSQL side |
+| `uihelper_stock_current_overview` | Projects `value_incomplete` | `01` | Same as `stock_current`; `last_price` and `average_price` come from the copied caches | Strip the column on the PostgreSQL side |
+| `stock_next_use`, `uihelper_stock_entries` | Project the marker, if `products_current_price` reads it through `stock_next_use` | `01` | No values change. The marker is `0` on every row; SQLite's `s.*` carries it once the fixture adds it | Strip the marker on both sides in the existing block for these two views |
+| `stock_splits` | Groups by the marker as well | `01` | No. Every marker is `0`, so the groups are unchanged | None |
+| `products_price_history` | `price IS NOT NULL` and not marked, instead of `COALESCE(price, 0) > 0` | `02` | No. No row is priced `0`; `NULL` rows are excluded on both sides | Accepted difference D1 |
+| `products_average_price` | Same filter | `02` | No, for the same reason | Accepted difference D1 |
+| `products_last_purchased` | Drops `COALESCE(..., 0)`; can select a known `0` | `02` | No. Products 701 and 703 have only priced purchases, and 702 has none | Accepted differences D1 and D2 |
+| `products_current_price` | A marked next-use entry falls back to the last known price; the fallback can be `NULL` | `02` | No. Every marker is `0`, and the fallback reads the copied cache | Accepted difference D2 |
+| `recipes_pos_resolved` | `costs` is `NULL` when the position's product has no known current price | `03` | No. Every position resolves to product 3 at 1.50 or product 703 at 3.00 | Accepted difference D3 |
+| `recipes_resolved` | `prices_incomplete` tests for a `NULL` cost instead of a `0` cost | `03` | No. No position costs exactly `0`, and every recipe resolves at least one position | Accepted difference D4 |
+| `uihelper_product_details`, `uihelper_shopping_list` | Not rewritten; read the caches and `products_current_price` | `02`, `03` | No | None |
+
+The `recipes_resolved` rewrite must keep today's result for a recipe with no resolved
+positions. Today `MIN(COALESCE(rpr.costs, 0)) = 0` returns `1` for it, because the `LEFT
+JOIN` yields one row with a `NULL` cost. A test of `rpr.costs IS NULL` over the same join
+also returns `1`. A rewrite that counts only joined positions would return `0`, which this
+record does not propose. The seeds were read for this: the meal plan trigger nests recipe
+701 into every internal recipe it creates, and the migrations seed no recipes.
+
+The proposed accepted differences name what each touches and whether it is exposed, as
+ADR-0005's Consequences require. PostgreSQL is the conforming side in each, because the
+OpenAPI descriptions written with this change define `0` as a known zero and `null` as
+unknown. The frozen SQLite line cannot move.
+
+- **D1.** A `stock_log` row priced `0` and not marked counts as a known price.
+  `products_price_history` and `products_average_price` include it, and
+  `products_last_purchased` can select it. The frozen SQLite line excludes it. Exposed:
+  `products_average_price` and `products_last_purchased` are `ExposedEntity` values;
+  `products_price_history` is read by `GET /api/stock/products/{productId}/price-history`;
+  `avg_price` and `last_price` reach both product details routes.
+- **D2.** A product whose purchases have no known price reports `null` from
+  `products_last_purchased.price` and, with no known next-use price, from
+  `products_current_price.price`. The frozen SQLite line reports `0`. Exposed through
+  `products_last_purchased`, and as `last_price`, `current_price` and `oldest_price` on both
+  product details routes.
+- **D3.** `recipes_pos_resolved.costs` is `null` for a position whose product has no known
+  current price; the frozen SQLite line reports `0`. Exposed: `recipes_pos_resolved` is an
+  `ExposedEntity`.
+- **D4.** `recipes_resolved.prices_incomplete` is `0` for a recipe whose positions all have
+  known costs, some of them exactly `0`; the frozen SQLite line reports `1`. Exposed through
+  `GET /api/recipes/fulfillment` and `GET /api/recipes/{recipeId}/fulfillment`.
+
+No difftest normalisation maps a PostgreSQL value back to the SQLite one. Such a mapping
+would also hide a regression in the same column. The harness only strips the columns that
+exist on PostgreSQL alone, as it already does for `amount_measured` and the `opened_*`
+columns. The cases D1 to D4 describe are tested in pgTAP and PHPUnit, not in the view seeds.
+A seed row priced `0`, or a position without a known price, would make the views phase
+report `DIFF`.
+
+**Recommendation:** record D1 to D4 in this record, as
+[ADR-0031](0031-barcode-identity-is-canonical-and-reserved.md) decision item 11 records its wire
+changes, and leave ADR-0005's text unchanged. Open question 13 asks the maintainer to choose
+between that and a superseding record that adds the exceptions to ADR-0005.
 
 ## Open questions
 
@@ -522,18 +815,66 @@ no cutoff mechanism or ledger conversion is selected by this response.
    > concern. Treat imported legacy zeros as unknown by default, disclose that
    > interpretation during import, and preserve original booking values.
 
-   The mechanism for storing the interpretation remains open.
+   The mechanism for storing the interpretation remains open; see open question 8.
 
 7. **How is a mixed priced/unpriced total represented?**
 
    > **Response:** datagen24, 2026-10-11: Use the known subtotal with an added
    > `*_incomplete` flag, as in option B.
 
+8. **How is an imported legacy zero recorded, and how does the import disclose it?** The
+   candidates are (a) a per-row marker on `stock` and `stock_log`, (b) a row-id watermark,
+   (c) a set of legacy `stock_id` values, and (d) a side table of row ids. The existing
+   `import_epoch` cannot serve, because rows booked after an import share the imported
+   rows' generation. The recommendation is (a), compared under gate 1. Disclosure has two
+   forms: the progress output alone, or that output plus a row in a new target-owned table
+   recording the import time, the rule applied and the count per table. The recommendation is
+   both, so that an operator can read the interpretation after the terminal is gone.
+9. **What does the upgrade migration do with price-`0` rows that Victual wrote before this
+   change?**
+   - Read them as known zeros. No row changes. This option is nearest the maintainer's
+     2026-10-11 note that existing rows hold test data only. Blank web purchases made before
+     the upgrade report a known price of `0`, the false statement issue 774 describes.
+   - Read them as unknown. The migration applies the import's mechanism to every existing
+     row priced `0` and reports the count per table. A deliberately free entry written
+     through the API also becomes unknown, because no column records the writer. This
+     extends response 6's rule, which covers imported legacy zeros, to rows Victual wrote;
+     response 6 does not decide it.
+
+   The recommendation is unknown. Five write paths stored `0` for a blank price, the same
+   evidence that set the import default. Under (a) the migration changes the marker column
+   only.
+10. **What do routes that return raw `stock` and `stock_log` rows send for a marked price?**
+    These are `GET /api/objects/stock`, `GET /api/objects/stock_log`,
+    `GET /api/stock/entry/{entryId}`, the two `.../entries` routes,
+    `GET /api/stock/bookings/{bookingId}`, `GET /api/stock/transactions/{transactionId}` and
+    the booking responses.
+    - Send `price: null`, mapped at the boundary where `FieldPolicy` redacts these rows, and
+      keep the marker off the wire.
+    - Send the stored `0` and expose the marker as a documented field.
+
+    The recommendation is `null`, because the table under "Maintainer response and remaining
+    choices" defines unknown as `null`. The stored `0` stays readable in the database.
+11. **Can an operator choose to import legacy zeros as known zeros?** "Unknown by default"
+    implies an alternative. The options are no override in this change, or a
+    `bin/victual-db-import` option that leaves the marker unset and is named in the
+    disclosure. The recommendation is the option, because only the operator knows whether
+    the source recorded free items as `0`.
+12. **Does `stock_current` (SQL) or `StockService` (PHP) compute the incompleteness flags?**
+    The recommendation is `stock_current`, compared under gate 5.
+13. **Where are the accepted differences D1 to D4 recorded?** The options are this record,
+    as ADR-0031 decision item 11 records its wire changes, or a superseding record that adds
+    them to ADR-0005's exceptions. The recommendation is this record, with no difftest
+    normalisation of values, compared under gate 7.
+
 ## Acceptance prerequisites
 
 1. P2's semantics and the import interpretation policy are confirmed. Before acceptance,
    the record must define how imported legacy zeros retain their original booking values
-   while readers distinguish their unknown interpretation from new, known zeros.
+   while readers distinguish their unknown interpretation from new, known zeros. Gate 1
+   under [Specification of the gates](#specification-of-the-gates-2026-10-12) defines the
+   candidates, the write paths that must propagate the interpretation and its readers. The
+   gate is met when open questions 8 to 11 are answered.
 2. Option B and the answers to open questions 2 and 4 are confirmed.
 3. A coordinated change for affected maintained clients is identified under ADR-0024.
    Clients read option B's flags, preserve absent versus present-null fields, and rely on
@@ -543,6 +884,9 @@ no cutoff mechanism or ledger conversion is selected by this response.
    the selected option B. The applicable differences remain covered by gates 5 and 7.
 5. Under option B: the record names the flags' `permission_fields` rows, their
    `WireBooleans` entries, and whether `stock_current` or `StockService` computes them.
+   Gate 5 names the flags, their rows and their entries in `WireBooleans`,
+   `DOCUMENTED_BOOLEANS` and `CONVERSION_COVERAGE`. The gate is met when open question 12
+   is answered.
 6. Parent-only values and completeness are confirmed. The API descriptions must distinguish
    that scope from `amount_aggregated`, as defined above.
 7. Under P2, or under option A or B: the record names the ADR-0005 accepted difference or
@@ -550,6 +894,9 @@ no cutoff mechanism or ledger conversion is selected by this response.
    `products_average_price`, `products_last_purchased`, `products_current_price`,
    `recipes_pos_resolved`, `recipes_resolved`, as applicable). Import evidence must show
    original booking values unchanged and the disclosed interpretation applied consistently.
+   Gate 7 gives the result and treatment per view, including `stock_current` and the
+   `uihelper` views, and proposes accepted differences D1 to D4. The gate is met when open
+   question 13 is answered.
 
 ## Verification
 
@@ -567,6 +914,9 @@ its pull request:
   migration test checks both price caches against the selected semantics. Import tests
   show that legacy zeros are interpreted as unknown, the importer discloses that policy,
   original booking values remain unchanged, and new known-zero purchases remain known.
+  Under gate 1 option (a), one test per write path listed there books from a marked row and
+  shows the new row carries the marker, and a compaction test shows a marked `0` and a
+  known `0` stay separate.
 - pgTAP for every view the change rewrites (`stock_current`, `products_last_purchased`,
   `products_price_history`, `products_average_price`, `products_current_price`,
   `recipes_resolved`), as `.devtools/pgtap/README.md`'s completeness list requires.
@@ -576,10 +926,12 @@ its pull request:
   `testSensitiveFieldVocabularyIsClassified()` pass.
 - `WireContractTest`: `CurrentStockResponse` and `ProductDetailsResponse` validate
   against a served response for case (a). Under option A the response carries `null`;
-  under option B it carries the flags, and `DOCUMENTED_BOOLEANS` lists them.
+  under option B it carries the flags, and `DOCUMENTED_BOOLEANS` and
+  `CONVERSION_COVERAGE` list them.
 - Differential suite: The views phase passes with the recorded differences or
   normalisations of prerequisite 7, plus the strip line (option B) or the `value`
-  difference (option A).
+  difference (option A). Under gate 7's recommendation the only harness changes are the
+  strip lines named there.
 - Browser probe: A probe in `.devtools/frontend/` shows that the stock overview and the
   product card display an unknown value for case (a) and `0.00` for case (e). Under P2, it
   also shows that a blank purchase price is sent as `null`.

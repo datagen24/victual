@@ -64,6 +64,10 @@ use Victual\Tests\Support\RouteInventory;
  *  9c. testTransactionTypeEnumsMatchStockService(): StockTransactionType is exactly the
  *     TRANSACTION_TYPE_* constants, and the add/consume request enums are exactly what
  *     AddProduct()/ConsumeProduct() accept (issue #772).
+ *  9d. testRecordedKeysAreDeclaredByTheirDocumentedSchemas(): every key a recorded Admin
+ *     2xx body carries is a property its documented schema declares, for the schemas
+ *     UNDECLARED_KEY_COVERED_SCHEMAS lists - which include every schema the stock routes
+ *     reach (issue #787).
  *
  * The consumption recipe routes (ADR-0040) are invoked for the administrator, and only the list and
  * the by-id read are replayed for CHILD. A user with no share on a recipe gets 404 from every by-id
@@ -1757,5 +1761,247 @@ class ContractTest extends PgsqlSchemaTestCase
 		}
 
 		self::assertSame([], $failures, implode("\n", $failures));
+	}
+
+	// ------------------------------------------------------------------------------
+	// 9d. Issue #787: every key a recorded response carries is declared by its documented
+	//     schema. A generated client drops a key its schema does not declare, so a field
+	//     the server sends and the document omits is a field no client can read. Scoped
+	//     to the schemas below rather than to the whole document, with no allowlist of
+	//     keys: a schema is either listed, and then every key it is sent with must be
+	//     declared, or it is not checked at all.
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * The component schemas whose every recorded key is declared. Each was checked
+	 * against the columns or the code that fills it when it was listed, not only against
+	 * the recorded bodies. The first twelve are every schema the recorded 2xx bodies of
+	 * the /api/stock routes reach, which the test asserts;
+	 * RecipeFulfillmentResponse is the other schema issue #787 names.
+	 *
+	 * Not listed, because they still omit keys the server sends (found by this leg's walk
+	 * over contract-admin.json when it was written, and left for their own change):
+	 * Battery, BatteryChargeCycleEntry, BatteryDetailsResponse, Chore, ChoreDetailsResponse,
+	 * ChoreLogEntry, CurrentBatteryResponse, CurrentChoreResponse, Role, ShoppingLocation
+	 * and TaskCategory, and the inline GET /system/info schema. Adding a schema here is
+	 * how its gaps become a failure.
+	 */
+	private const UNDECLARED_KEY_COVERED_SCHEMAS = [
+		'CurrentStockResponse',
+		'CurrentVolatilStockResponse',
+		'Location',
+		'Product',
+		'ProductBarcode',
+		'ProductDetailsResponse',
+		'ProductPriceHistory',
+		'ProductWithoutUserfields',
+		'QuantityUnit',
+		'StockEntry',
+		'StockLocation',
+		'StockLogEntry',
+		'RecipeFulfillmentResponse',
+	];
+
+	/** The schemas issue #787 names, which the covered list has to include. */
+	private const ISSUE_787_SCHEMAS = [
+		'Product', 'ProductWithoutUserfields', 'Location', 'QuantityUnit', 'ProductBarcode',
+		'ProductDetailsResponse', 'RecipeFulfillmentResponse',
+	];
+
+	/**
+	 * The schemas a value is checked against at one position: $schema itself, its allOf
+	 * members (recursively), and the one non-null oneOf/anyOf member the value can be
+	 * (for an object, by its `required` keys, as collectEnumValues() chooses). Each entry
+	 * is [resolved schema, component name or null]. $ambiguous is set when more than one
+	 * member could be chosen, so the caller can refuse to guess for a covered schema.
+	 *
+	 * @return array<int, array{0: array, 1: ?string}>
+	 */
+	private static function schemaMembers(array $spec, array $schema, $value, array &$ambiguous, int $depth = 0): array
+	{
+		$name = null;
+		$resolved = self::resolveSchema($spec, $schema, $name);
+		if ($resolved === null || $depth > 16)
+		{
+			return [];
+		}
+
+		$members = [[$resolved, $name]];
+		foreach ($resolved['allOf'] ?? [] as $member)
+		{
+			array_push($members, ...self::schemaMembers($spec, $member, $value, $ambiguous, $depth + 1));
+		}
+
+		foreach (['oneOf', 'anyOf'] as $keyword)
+		{
+			if (!isset($resolved[$keyword]))
+			{
+				continue;
+			}
+
+			$candidates = [];
+			foreach ($resolved[$keyword] as $member)
+			{
+				$memberName = null;
+				$memberSchema = self::resolveSchema($spec, $member, $memberName);
+				if ($memberSchema === null || ($memberSchema['type'] ?? null) === 'null')
+				{
+					continue;
+				}
+				if (!array_is_list($value) && array_diff($memberSchema['required'] ?? [], array_keys($value)) !== [])
+				{
+					continue;
+				}
+				$candidates[] = [$member, $memberName];
+			}
+
+			if (count($candidates) === 1)
+			{
+				array_push($members, ...self::schemaMembers($spec, $candidates[0][0], $value, $ambiguous, $depth + 1));
+			}
+			elseif (count($candidates) > 1)
+			{
+				$ambiguous = array_merge($ambiguous, array_filter(array_column($candidates, 1)));
+			}
+		}
+
+		return $members;
+	}
+
+	/**
+	 * Walks a decoded body beside its documented schema. An object is checked when one of
+	 * the schemas it is matched against is covered, or, for an inline object with no
+	 * component name of its own, when the component it is nested in is covered ($context);
+	 * a key none of those schemas declares is a violation, unless one of them allows
+	 * additionalProperties. $reached records every component schema an object of this
+	 * body was matched against, so the test can show the covered list is not vacuous.
+	 */
+	private static function collectUndeclaredKeys(array $spec, array $schema, $value, ?string $context, string $path, string $key, array &$reached, array &$violations, int $depth = 0): void
+	{
+		// An empty JSON object and an empty list both decode to [], which has no keys.
+		if (!is_array($value) || $value === [] || $depth > 24)
+		{
+			return;
+		}
+
+		$ambiguous = [];
+		$members = self::schemaMembers($spec, $schema, $value, $ambiguous);
+		$names = array_values(array_unique(array_filter(array_column($members, 1))));
+		foreach ($names as $name)
+		{
+			$reached[$name] = true;
+		}
+		$owners = $names === [] && $context !== null ? [$context] : $names;
+		$covered = array_values(array_intersect($owners, self::UNDECLARED_KEY_COVERED_SCHEMAS));
+		$context = $names[0] ?? $context;
+
+		if ($covered !== [] && array_intersect($ambiguous, self::UNDECLARED_KEY_COVERED_SCHEMAS) !== [])
+		{
+			$violations[] = "$key: $path matches more than one of " . json_encode(array_values(array_unique($ambiguous))) . ', so its keys cannot be attributed';
+			return;
+		}
+
+		if (array_is_list($value))
+		{
+			foreach ($members as [$member])
+			{
+				if (isset($member['items']) && is_array($member['items']))
+				{
+					foreach ($value as $item)
+					{
+						self::collectUndeclaredKeys($spec, $member['items'], $item, $context, $path . '[]', $key, $reached, $violations, $depth + 1);
+					}
+					return;
+				}
+			}
+			return;
+		}
+
+		$declared = [];
+		$open = false;
+		$hasProperties = false;
+		foreach ($members as [$member])
+		{
+			if (isset($member['properties']) && is_array($member['properties']))
+			{
+				$hasProperties = true;
+				$declared += $member['properties'];
+			}
+			if (($member['additionalProperties'] ?? false) !== false)
+			{
+				$open = true;
+			}
+		}
+
+		if (!$hasProperties)
+		{
+			return;
+		}
+
+		foreach ($value as $property => $propertyValue)
+		{
+			if (isset($declared[$property]) && is_array($declared[$property]))
+			{
+				self::collectUndeclaredKeys($spec, $declared[$property], $propertyValue, $context, "$path.$property", $key, $reached, $violations, $depth + 1);
+			}
+			elseif ($covered !== [] && !$open)
+			{
+				$violations[] = "$key: " . implode('/', $covered) . ".$property is sent (at " . ltrim("$path.$property", '.') . ') but not declared';
+			}
+		}
+	}
+
+	/**
+	 * Depends on the sweep that fills $adminBodies, not on the golden comparison, so that
+	 * a golden-file difference does not skip it.
+	 */
+	#[Depends('testGenericEntitySweepAsAdmin')]
+	public function testRecordedKeysAreDeclaredByTheirDocumentedSchemas(): void
+	{
+		$spec = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), true);
+		$violations = [];
+		$reachedAnywhere = [];
+		$reachedByStock = [];
+		$walked = 0;
+
+		foreach (self::$adminBodies as $key => $body)
+		{
+			$status = self::$adminSnapshot[$key]['status'];
+			if ($status < 200 || $status >= 300 || $body === null)
+			{
+				continue;
+			}
+
+			$schema = self::documentedResponseSchema($spec, $key, $status);
+			if ($schema === null)
+			{
+				continue;
+			}
+
+			$walked++;
+			$reached = [];
+			self::collectUndeclaredKeys($spec, $schema, $body, null, '', $key, $reached, $violations);
+			$reachedAnywhere += $reached;
+			if (preg_match('/^[A-Z]+ \/api\/stock(\/| |$)/', $key) === 1)
+			{
+				$reachedByStock += $reached;
+			}
+		}
+
+		self::assertGreaterThan(120, $walked, 'Sanity: most recorded 2xx bodies should map to a documented response schema');
+
+		$violations = array_values(array_unique($violations));
+		sort($violations);
+		self::assertSame([], $violations, "Recorded responses carry keys their documented schema does not declare:\n" . implode("\n", $violations));
+
+		// The scope is the stock routes and the schemas issue #787 names, at least.
+		$uncoveredStock = array_values(array_diff(array_keys($reachedByStock), self::UNDECLARED_KEY_COVERED_SCHEMAS));
+		sort($uncoveredStock);
+		self::assertSame([], $uncoveredStock, 'Schemas the stock routes reach that UNDECLARED_KEY_COVERED_SCHEMAS does not list');
+		self::assertSame([], array_values(array_diff(self::ISSUE_787_SCHEMAS, self::UNDECLARED_KEY_COVERED_SCHEMAS)), 'Schemas issue #787 names that UNDECLARED_KEY_COVERED_SCHEMAS does not list');
+
+		// And no listed schema passes only because nothing recorded reached it.
+		$unreached = array_values(array_diff(self::UNDECLARED_KEY_COVERED_SCHEMAS, array_keys($reachedAnywhere)));
+		self::assertSame([], $unreached, 'Covered schemas no recorded 2xx body reached, so the check above says nothing about them');
 	}
 }

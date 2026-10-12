@@ -28,6 +28,7 @@
 		</testsuite>
 		<testsuite name="contract">
 			<file>tests/Pgsql/ContractTest.php</file>
+			<file>tests/Pgsql/OpenApiExamplesTest.php</file>
 		</testsuite>
 		<testsuite name="credentialsplit">
 			<file>tests/Pgsql/CredentialSplitTest.php</file>
@@ -167,6 +168,9 @@
 			<file>tests/Pgsql/GenericQueryTest.php</file>
 			<file>tests/Pgsql/GenericWriteAtomicityTest.php</file>
 			<file>tests/Pgsql/ObjectRoundTripTest.php</file>
+		</testsuite>
+		<testsuite name="openapidocument">
+			<file>tests/Pgsql/OpenApiDocumentTest.php</file>
 		</testsuite>
 		<testsuite name="recipeoperations">
 			<file>tests/Pgsql/RecipeOperationsTest.php</file>

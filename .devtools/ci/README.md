@@ -123,3 +123,23 @@ To check it locally:
 ```sh
 python3 .devtools/ci/check_vendor_paths.py
 ```
+
+## OpenAPI documents
+
+`check_openapi_document.py` holds an OpenAPI document to the official OAS 3.2 structural
+schema, vendored at `oas/3.2/schema-2025-09-17.json` and pinned by SHA-256 in the script.
+It also fails on a local `$ref` that resolves to nothing, which the schema does not check,
+and on an enum containing an empty string anywhere but `StringEnumTemplate`, the
+placeholder the served enums are derived from. It needs `jsonschema`, pinned in
+`tests.yml`. Example validation is not part of it.
+
+The `lint` job's unit tests run it against the committed `victual.openapi.json` and
+against negative-control documents in `fixtures/oas/`. The `suite` job runs it on the
+served document, which `OpenApiDocumentTest` writes to `$SUITE_SCRATCH/served-openapi.json`
+after the application derives it, and fails if that file is missing.
+
+To check documents locally:
+
+```sh
+python3 .devtools/ci/check_openapi_document.py victual.openapi.json
+```
