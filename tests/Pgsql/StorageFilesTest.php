@@ -752,6 +752,35 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 	}
 
 	/**
+	 * A downscaled picture (force_serve_as=picture) is the same media type as its source,
+	 * served inline, and that type is one the document lists.
+	 */
+	#[DataProvider('backends')]
+	public function testAResizedPictureKeepsItsFormatAndIsDocumented(string $backend): void
+	{
+		self::Storage($backend, ['productpictures']);
+		self::grant(['MASTER_DATA_EDIT', 'STOCK_VIEW']);
+		$documented = self::DocumentedServeResponse();
+
+		$image = imagecreatetruecolor(400, 300);
+		imagefilledrectangle($image, 0, 0, 199, 149, imagecolorallocate($image, 230, 40, 40));
+		ob_start();
+		imagejpeg($image);
+		$jpeg = (string)ob_get_clean();
+
+		foreach ([['resize.png', self::MakePng(400, 300), 'image/png'], ['resize.jpg', $jpeg, 'image/jpeg']] as [$name, $bytes, $type])
+		{
+			$this->expectStatus(fn () => self::$files->UploadFile(self::requestWithRawBody('PUT', $bytes), new Response(), ['group' => 'productpictures', 'fileName' => base64_encode($name)]), 204, "$name accepted");
+			$response = $this->expectStatus(fn () => self::$files->ServeFile(self::request('GET', ['force_serve_as' => 'picture', 'best_fit_width' => '32']), new Response(), ['group' => 'productpictures', 'fileName' => base64_encode($name)]), 200, "$name resized");
+
+			self::assertSame(32, getimagesizefromstring((string)$response->getBody())[0], "$name was downscaled");
+			self::assertSame($type, $response->getHeaderLine('Content-Type'), "The resized $name keeps its source format");
+			self::assertArrayHasKey($response->getHeaderLine('Content-Type'), $documented['content']);
+			self::assertStringStartsWith('inline;', $response->getHeaderLine('Content-Disposition'));
+		}
+	}
+
+	/**
 	 * The second BASE64 name in the route argument is the name the download is offered
 	 * under; the stored file is still the first one.
 	 */
