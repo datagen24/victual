@@ -62,6 +62,10 @@ Proposed until a separate acceptance pull request.
 
 ## Still open
 
+On 2026-10-12 the maintainer started a major cleanup of `victual.openapi.json`. No new work from
+this ledger edits that file until the cleanup lands; issue 798 waits for it. PRs 797 and 810 already
+edit it.
+
 | ID | Item | State | Blocks |
 |---|---|---|---|
 | G1 | ADR-0045 gates 1, 5 and 7 | Specified in PR [808](https://github.com/datagen24/victual/pull/808) (reviewed; fixes in `c0b53e70`). Open questions 8 to 13 need answers; Q8 recommends a per-row marker set inside the import transaction | Acceptance of ADR-0045, then #774 |
