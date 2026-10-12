@@ -2957,7 +2957,7 @@
 									"amount": 1,
 									"best_before_date": "2019-01-19",
 									"transaction_type": "purchase",
-									"price": "1.99"
+									"price": 1.99
 								}
 							}
 						}
@@ -3605,7 +3605,7 @@
 									"amount": 1,
 									"best_before_date": "2019-01-19",
 									"transaction_type": "purchase",
-									"price": "1.99"
+									"price": 1.99
 								}
 							}
 						}
@@ -12583,27 +12583,27 @@
 					}
 				},
 				"example": {
-					"id": "1",
+					"id": 1,
 					"name": "Cookies",
 					"description": null,
-					"location_id": "4",
-					"qu_id_purchase": "3",
-					"qu_id_stock": "3",
-					"min_stock_amount": "8",
-					"default_best_before_days": "0",
-					"row_created_timestamp": "2019-05-02 20:12:26",
-					"product_group_id": "1",
+					"location_id": 4,
+					"qu_id_purchase": 3,
+					"qu_id_stock": 3,
+					"min_stock_amount": 8,
+					"default_best_before_days": 0,
+					"row_created_timestamp": "2019-05-02T20:12:26.000000Z",
+					"product_group_id": 1,
 					"picture_file_name": "cookies.jpg",
-					"default_best_before_days_after_open": "0",
-					"enable_tare_weight_handling": "0",
-					"tare_weight": "0.0",
-					"not_check_stock_fulfillment_for_recipes": "0",
+					"default_best_before_days_after_open": 0,
+					"enable_tare_weight_handling": 0,
+					"tare_weight": 0,
+					"not_check_stock_fulfillment_for_recipes": 0,
 					"shopping_location_id": null,
-					"userfields": null,
-					"should_not_be_frozen": "1",
-					"default_consume_location_id": "5",
-					"move_on_open": "1",
-					"quick_refill_amount": "1",
+					"userfields": {},
+					"should_not_be_frozen": 1,
+					"default_consume_location_id": 5,
+					"move_on_open": 1,
+					"quick_refill_amount": 1,
 					"default_refill_location_id_from": null,
 					"default_refill_location_id_to": null,
 					"default_shopping_list_id": null
@@ -12835,27 +12835,26 @@
 					}
 				},
 				"example": {
-					"id": "1",
+					"id": 1,
 					"name": "Cookies",
 					"description": null,
-					"location_id": "4",
-					"qu_id_purchase": "3",
-					"qu_id_stock": "3",
-					"min_stock_amount": "8",
-					"default_best_before_days": "0",
-					"row_created_timestamp": "2019-05-02 20:12:26",
-					"product_group_id": "1",
+					"location_id": 4,
+					"qu_id_purchase": 3,
+					"qu_id_stock": 3,
+					"min_stock_amount": 8,
+					"default_best_before_days": 0,
+					"row_created_timestamp": "2019-05-02T20:12:26.000000Z",
+					"product_group_id": 1,
 					"picture_file_name": "cookies.jpg",
-					"default_best_before_days_after_open": "0",
-					"enable_tare_weight_handling": "0",
-					"tare_weight": "0.0",
-					"not_check_stock_fulfillment_for_recipes": "0",
+					"default_best_before_days_after_open": 0,
+					"enable_tare_weight_handling": 0,
+					"tare_weight": 0,
+					"not_check_stock_fulfillment_for_recipes": 0,
 					"shopping_location_id": null,
-					"userfields": null,
-					"should_not_be_frozen": "1",
-					"default_consume_location_id": "5",
-					"move_on_open": "1",
-					"quick_refill_amount": "1",
+					"should_not_be_frozen": 1,
+					"default_consume_location_id": 5,
+					"move_on_open": 1,
+					"quick_refill_amount": 1,
 					"default_refill_location_id_from": null,
 					"default_refill_location_id_to": null,
 					"default_shopping_list_id": null
@@ -12912,13 +12911,13 @@
 					}
 				},
 				"example": {
-					"id": "2",
+					"id": 2,
 					"name": "Piece",
 					"description": null,
-					"row_created_timestamp": "2019-05-02 20:12:25",
+					"row_created_timestamp": "2019-05-02T20:12:25.000000Z",
 					"name_plural": "Pieces",
 					"plural_forms": null,
-					"userfields": null
+					"userfields": {}
 				}
 			},
 			"Location": {
@@ -12992,15 +12991,15 @@
 					}
 				},
 				"example": {
-					"id": "2",
+					"id": 2,
 					"name": "0",
 					"description": null,
-					"row_created_timestamp": "2019-05-02 20:12:25",
+					"row_created_timestamp": "2019-05-02T20:12:25.000000Z",
 					"parent_location_id": null,
 					"storage_class_id": null,
 					"tare_weight": null,
 					"tare_qu_id": null,
-					"userfields": null
+					"userfields": {}
 				}
 			},
 			"StorageClass": {
@@ -13059,15 +13058,15 @@
 					}
 				},
 				"example": {
-					"id": "3",
+					"id": 3,
 					"name": "Freezer",
-					"min_temp_c": "-18",
-					"max_temp_c": "-12",
-					"treats_as_freezer": "1",
-					"sort_order": "1",
-					"row_created_timestamp": "2019-05-02 20:12:25",
-					"active": "1",
-					"userfields": null
+					"min_temp_c": -18,
+					"max_temp_c": -12,
+					"treats_as_freezer": 1,
+					"sort_order": 1,
+					"row_created_timestamp": "2019-05-02T20:12:25.000000Z",
+					"active": 1,
+					"userfields": {}
 				}
 			},
 			"LocationResolved": {
@@ -13102,9 +13101,9 @@
 				},
 				"example": {
 					"id": 1,
-					"ancestor_location_id": "3",
-					"descendant_location_id": "11",
-					"depth": "3",
+					"ancestor_location_id": 3,
+					"descendant_location_id": 11,
+					"depth": 3,
 					"path": "Basement / StorageRoom / UprightFreezer / Door"
 				}
 			},
@@ -13133,9 +13132,9 @@
 				},
 				"example": {
 					"id": 1,
-					"ancestor_product_group_id": "1",
-					"descendant_product_group_id": "5",
-					"depth": "2",
+					"ancestor_product_group_id": 1,
+					"descendant_product_group_id": 5,
+					"depth": 2,
 					"path": "Spices / Garlic / Fresh"
 				}
 			},
@@ -13178,10 +13177,10 @@
 				},
 				"example": {
 					"id": 1,
-					"to_product_id": "2",
-					"from_product_id": "5",
+					"to_product_id": 2,
+					"from_product_id": 5,
 					"direction": "directed",
-					"from_product_amount_in_stock": "3",
+					"from_product_amount_in_stock": 3,
 					"from_product_best_before_date": "2026-10-01"
 				}
 			},
@@ -13215,11 +13214,11 @@
 					}
 				},
 				"example": {
-					"id": "2",
+					"id": 2,
 					"name": "0",
 					"description": null,
-					"row_created_timestamp": "2019-05-02 20:12:25",
-					"userfields": null
+					"row_created_timestamp": "2019-05-02T20:12:25.000000Z",
+					"userfields": {}
 				}
 			},
 			"StockLocation": {
@@ -13245,11 +13244,12 @@
 					}
 				},
 				"example": {
-					"id": "1",
-					"product_id": "3",
-					"amount": "2",
-					"location_id": "1",
-					"name": "Fridge"
+					"id": 1,
+					"product_id": 3,
+					"amount": 2,
+					"location_id": 1,
+					"location_name": "Fridge",
+					"location_is_freezer": 0
 				}
 			},
 			"StockEntry": {
@@ -13372,17 +13372,17 @@
 					}
 				},
 				"example": {
-					"id": "77",
-					"product_id": "1",
-					"amount": "2",
+					"id": 77,
+					"product_id": 1,
+					"amount": 2,
 					"best_before_date": "2019-07-07",
 					"purchased_date": "2019-05-03",
 					"stock_id": "5ccc6b2421979",
 					"price": null,
-					"open": "0",
+					"open": 0,
 					"opened_date": null,
-					"row_created_timestamp": "2019-05-03 18:24:04",
-					"location_id": "4",
+					"row_created_timestamp": "2019-05-03T18:24:04.000000Z",
+					"location_id": 4,
 					"shopping_location_id": null,
 					"opened_amount": null,
 					"opened_qu_id": null,
@@ -13439,13 +13439,13 @@
 					}
 				},
 				"example": {
-					"recipe_id": "1",
-					"need_fulfilled": "0",
-					"need_fulfilled_with_shopping_list": "0",
-					"missing_products_count": "2",
-					"costs": "17.74",
-					"costs_per_serving": "4.44",
-					"prices_incomplete": "0"
+					"recipe_id": 1,
+					"need_fulfilled": false,
+					"need_fulfilled_with_shopping_list": false,
+					"missing_products_count": 2,
+					"costs": 17.74,
+					"costs_per_serving": 4.44,
+					"prices_incomplete": false
 				}
 			},
 			"ProductDetailsResponse": {
@@ -13620,58 +13620,57 @@
 				},
 				"example": {
 					"product": {
-						"id": "1",
+						"id": 1,
 						"name": "Cookies",
 						"description": null,
-						"location_id": "4",
-						"qu_id_purchase": "3",
-						"qu_id_stock": "3",
-						"min_stock_amount": "8",
-						"default_best_before_days": "0",
-						"row_created_timestamp": "2019-05-02 20:12:26",
-						"product_group_id": "1",
+						"location_id": 4,
+						"qu_id_purchase": 3,
+						"qu_id_stock": 3,
+						"min_stock_amount": 8,
+						"default_best_before_days": 0,
+						"row_created_timestamp": "2019-05-02T20:12:26.000000Z",
+						"product_group_id": 1,
 						"picture_file_name": "cookies.jpg",
-						"default_best_before_days_after_open": "0",
-						"enable_tare_weight_handling": "0",
-						"tare_weight": "0.0",
-						"not_check_stock_fulfillment_for_recipes": "0",
-						"last_shopping_location_id": null
+						"default_best_before_days_after_open": 0,
+						"enable_tare_weight_handling": 0,
+						"tare_weight": 0,
+						"not_check_stock_fulfillment_for_recipes": 0
 					},
 					"product_barcodes": [
 						{
-							"id": "1",
-							"product_id": "13",
+							"id": 1,
+							"product_id": 1,
 							"barcode": "01321230213",
-							"qu_id": "1",
-							"shopping_location_id": "2",
-							"amount": "10"
+							"qu_id": 1,
+							"shopping_location_id": 2,
+							"amount": 10
 						}
 					],
 					"last_purchased": null,
 					"last_used": null,
-					"stock_amount": "2",
-					"stock_amount_opened": null,
+					"stock_amount": 2,
+					"stock_amount_opened": 0,
 					"default_quantity_unit_purchase": {
-						"id": "3",
+						"id": 3,
 						"name": "Pack",
 						"description": null,
-						"row_created_timestamp": "2019-05-02 20:12:25",
+						"row_created_timestamp": "2019-05-02T20:12:25.000000Z",
 						"name_plural": "Packs",
 						"plural_forms": null
 					},
 					"quantity_unit_stock": {
-						"id": "3",
+						"id": 3,
 						"name": "Pack",
 						"description": null,
-						"row_created_timestamp": "2019-05-02 20:12:25",
+						"row_created_timestamp": "2019-05-02T20:12:25.000000Z",
 						"name_plural": "Packs",
 						"plural_forms": null
 					},
 					"quantity_unit_price": {
-						"id": "3",
+						"id": 3,
 						"name": "Pack",
 						"description": null,
-						"row_created_timestamp": "2019-05-02 20:12:25",
+						"row_created_timestamp": "2019-05-02T20:12:25.000000Z",
 						"name_plural": "Packs",
 						"plural_forms": null
 					},
@@ -13681,10 +13680,11 @@
 					"last_shopping_location_id": null,
 					"next_due_date": "2019-07-07",
 					"location": {
-						"id": "4",
+						"id": 4,
 						"name": "Candy cupboard",
 						"description": null,
-						"row_created_timestamp": "2019-05-02 20:12:25"
+						"row_created_timestamp": "2019-05-02T20:12:25.000000Z",
+						"parent_location_id": null
 					},
 					"average_shelf_life_days": -1,
 					"spoil_rate_percent": 0,
@@ -13925,30 +13925,30 @@
 				},
 				"example": {
 					"chore": {
-						"id": 0,
-						"name": "string",
-						"description": "string",
-						"period_type": "manually",
-						"period_days": 0,
-						"row_created_timestamp": "2019-05-04T11:31:04.563Z"
+						"id": 1,
+						"name": "Take out the trash",
+						"description": "Bins go to the kerb on Thursday evening",
+						"period_type": "daily",
+						"period_days": 1,
+						"row_created_timestamp": "2019-05-02T20:12:26.000000Z"
 					},
-					"last_tracked": "2019-05-04T11:31:04.563Z",
-					"track_count": 0,
+					"last_tracked": "2019-05-04T11:31:04.563000Z",
+					"track_count": 1,
 					"last_done_by": {
-						"id": 0,
-						"username": "string",
-						"first_name": "string",
-						"last_name": "string",
-						"display_name": "string",
-						"row_created_timestamp": "2019-05-04T11:31:04.564Z"
+						"id": 1,
+						"username": "admin",
+						"first_name": "Ada",
+						"last_name": "Lovelace",
+						"display_name": "Ada Lovelace",
+						"row_created_timestamp": "2019-05-02T20:12:25.000000Z"
 					},
-					"next_estimated_execution_time": "2019-05-04T11:31:04.564Z"
+					"next_estimated_execution_time": "2019-05-05T11:31:04.563000Z"
 				}
 			},
 			"BatteryDetailsResponse": {
 				"type": "object",
 				"properties": {
-					"chore": {
+					"battery": {
 						"$ref": "#/components/schemas/Battery"
 					},
 					"last_charged": {
@@ -13976,16 +13976,16 @@
 				},
 				"example": {
 					"battery": {
-						"id": "1",
+						"id": 1,
 						"name": "Battery1",
 						"description": "Warranty ends 2023",
 						"used_in": "TV remote control",
-						"charge_interval_days": "0",
-						"row_created_timestamp": "2019-05-02 20:12:26"
+						"charge_interval_days": 0,
+						"row_created_timestamp": "2019-05-02T20:12:26.000000Z"
 					},
-					"last_charged": "2019-03-13 18:12:28",
+					"last_charged": "2019-05-10T18:12:28.000000Z",
 					"charge_cycles_count": 4,
-					"next_estimated_charge_time": "2999-12-31 23:59:59"
+					"next_estimated_charge_time": "2999-12-31T23:59:59.000000Z"
 				}
 			},
 			"User": {
