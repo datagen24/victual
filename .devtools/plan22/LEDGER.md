@@ -31,7 +31,7 @@ release scope is decision D5.
 | F3. Shopping-list containers use item permissions | [783](https://github.com/datagen24/victual/issues/783) | design question | `GenericEntityApiController` create, edit and delete gates | Needs a decision (D6) |
 | F4. Legacy import drops the three view leaves of migration 0299 | [784](https://github.com/datagen24/victual/issues/784) | defect | Reproduced: 12 failures in the `import` phase without the fix | Fix in PR [789](https://github.com/datagen24/victual/pull/789); `import` and `rbac` pass on PostgreSQL 16 and 15.19; reviewed |
 | F5. A booking commits, then answers 403 without `STOCK_VIEW` | [785](https://github.com/datagen24/victual/issues/785) | authorization | `StockApiController.php:1301` after the service commits | Needs an authorization decision (D6) |
-| F6. Stock add accepts JSON `true` as `transaction_type` | [786](https://github.com/datagen24/victual/issues/786) | defect | Loose comparison at `StockService.php:390`; found by the #772 review | Fix ready to assign; no decision needed |
+| F6. Stock add accepts JSON `true` as `transaction_type` | [786](https://github.com/datagen24/victual/issues/786) | defect | Reproduced: JSON `true` answered 200 and wrote `"1"` | Fix in PR [792](https://github.com/datagen24/victual/pull/792); `wirecontract` passes on PostgreSQL 16 and 15.19 |
 | #772 follow-up: inherited schema gaps and a key-coverage check | [787](https://github.com/datagen24/victual/issues/787) | documentation | Recorded keys in `contract-admin.json` | Ready to assign after #772 merges |
 | `quantity_factor` next to `qu_id` on a mapping is undefined | [788](https://github.com/datagen24/victual/issues/788) | documentation | victual-kit matrix difference 7 | Ready to assign |
 | Possible stale average-price cache after an insert | not filed | unverified | R2 research: `trg_stock_log_INS` only upserts | Needs a reproduction before filing |
@@ -42,6 +42,7 @@ release scope is decision D5.
 |---|---|---|
 | [778](https://github.com/datagen24/victual/pull/778) ADR-0045 | 774 | Rebased onto master after PR 779 merged; review fixes in |
 | [789](https://github.com/datagen24/victual/pull/789) import view leaves | 784 | Reviewed; drift check added |
+| [792](https://github.com/datagen24/victual/pull/792) strict `transaction_type` | 786 | `wirecontract` failed before the fix (2 failures) and passes after, on PostgreSQL 16 and 15.19 |
 | [791](https://github.com/datagen24/victual/pull/791) OpenAPI stock drift | 772 | Reviewed; `contract` and `wirecontract` pass on PostgreSQL 16 and 15.19 at `57f687e2` |
 
 ## Decisions needed from the maintainer
