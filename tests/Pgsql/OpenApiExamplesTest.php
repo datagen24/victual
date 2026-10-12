@@ -29,12 +29,14 @@ use PHPUnit\Framework\TestCase;
 class OpenApiExamplesTest extends TestCase
 {
 	/**
-	 * How many example values the document carries today: 40 Schema Object examples (the
-	 * 17 this issue corrected and 23 that were already valid) and no Parameter, Header,
-	 * MediaType or Example Object examples yet. Adding an example raises this number on
-	 * purpose; a walker that quietly stops finding some lowers it and fails here.
+	 * How many example values the document carries today: 43 Schema Object examples (the
+	 * 17 issue 800 corrected, 23 that were already valid, and the three on the schemas of
+	 * GET /files/{group}/{fileName}'s 200 response headers that issue 806 added) and no
+	 * Parameter, Header, MediaType or Example Object examples yet. Adding an example raises
+	 * this number on purpose; a walker that quietly stops finding some lowers it and fails
+	 * here.
 	 */
-	private const EXPECTED_EXAMPLE_COUNT = 40;
+	private const EXPECTED_EXAMPLE_COUNT = 43;
 
 	private const DOCUMENT_ID = 'https://victual.invalid/victual.openapi.json';
 
@@ -125,7 +127,7 @@ class OpenApiExamplesTest extends TestCase
 
 	/**
 	 * The document holds no Parameter, Header, MediaType, Example Object or allOf example
-	 * today, so the count of 40 does not exercise those branches. This synthetic document
+	 * today, so the count of 43 does not exercise those branches. This synthetic document
 	 * carries one of each: valid, it must yield four examples and no failure; with every
 	 * value broken, each location must be reported by its own pointer.
 	 */
