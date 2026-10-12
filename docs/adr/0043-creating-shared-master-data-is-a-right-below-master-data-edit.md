@@ -9,7 +9,10 @@
   code, reserves no migration number and amends no accepted record. Revised 2026-10-11
   against `master` at `d4960138` to add source evidence (section "Evidence added
   2026-10-11"); the decision is unchanged. The revision also adds open question 5, adds
-  it to acceptance prerequisite 2, and adds a test to prerequisite 3.
+  it to acceptance prerequisite 2, and adds a test to prerequisite 3. Revised 2026-10-12
+  against `master` at `9bd1df91` to record the maintainer's release boundaries: the response
+  under acceptance prerequisite 1 and under open questions 1, 2, 2a and 5, decision 2's
+  lookup gate, and the consequences for conversion creation and issue 742.
 - **Referenced by:** [issue 742](https://github.com/datagen24/victual/issues/742) and its
   evidence, [`.devtools/issue742/RESULTS.md`](../../.devtools/issue742/RESULTS.md).
 - **Relationship:** compatible with accepted
@@ -73,15 +76,21 @@ entities: `products`, `product_barcodes`, `locations`, `quantity_units`, `produc
 - Edit and delete of every entity stay with `MASTER_DATA_EDIT`.
 - `quantity_unit_conversions` stays with `MASTER_DATA_EDIT` for create too. A conversion is
   not an addition to the household's reference data; it changes the arithmetic of a product
-  that already exists, and there is no owner to scope it to.
+  that already exists, and there is no owner to scope it to. The maintainer confirmed on
+  2026-10-12 that conversion creation stays with `MASTER_DATA_EDIT`. An account that holds
+  `MASTER_DATA_ADD` and not `MASTER_DATA_EDIT` can therefore create a product and gets 403 on
+  `POST /api/objects/quantity_unit_conversions`.
 - Userfield values and definitions, label subsystem writes, and merges keep their gates.
-- `external-lookup?add=true` accepts the new permission in place of `MASTER_DATA_EDIT`, in
-  addition to its existing `STOCK_VIEW` check. It creates a product through the same service
-  as the generic route. A newly created product may receive its fetched picture, but
-  that operation must not overwrite an existing shared picture.
+- `GET /api/stock/barcodes/external-lookup/{barcode}` checks `STOCK_VIEW` alone for a lookup
+  that creates nothing. With `add=true` it also requires `MASTER_DATA_ADD`, which every
+  `MASTER_DATA_EDIT` and `ADMIN` holder resolves through the tree. The `MASTER_DATA_EDIT`
+  check that today runs before `add` is read therefore moves after it. The route creates a
+  product through the same service as the generic route. A newly created product may receive
+  its fetched picture, but that operation must not overwrite an existing shared picture.
+  The maintainer decided the lookup gate on 2026-10-12 (open question 5).
 
 Chores and tasks do not use the new permission; see decision 7. Batteries and task categories
-are open question 2.
+keep `MASTER_DATA_EDIT` for create, edit and delete in this release (open question 2).
 
 ### 3. No second write path, no new endpoint
 
@@ -113,9 +122,11 @@ the rest, and its author gains no right to edit or delete it. Recipe ownership
 ([ADR-0040](0040-consumption-recipes-are-private-rows-with-scoped-shares.md)) grants no right
 over a product either. An owner-scoped edit would need a column, a backfill that cannot name
 the author of existing rows, and a migration. That design is not decided here.
+
 On 2026-10-11, the maintainer identified ownership markers
 as a direction for medication imports and finer permissions. No ownership-based right
-is authorized by that direction alone.
+is authorized by that direction alone. On 2026-10-12, the maintainer deferred ownership
+columns and creator-specific rights (open question 2a).
 
 ### 7. Chores and tasks are created and edited under their own domain permissions
 
@@ -180,6 +191,15 @@ no household has asked for. Open question 3 keeps it available.
   A product created with a purchase, consume or price unit that differs from the stock unit
   therefore needs a `MASTER_DATA_EDIT` holder to set the factor. Creating a product whose
   units are all the same needs none.
+- Conversion creation stays with `MASTER_DATA_EDIT`, so an account that holds only
+  `MASTER_DATA_ADD` can create a product and cannot create a conversion. A medication
+  consumption mapping that names a unit other than the stock unit needs a conversion with the
+  real factor, or it answers 422 `invalid_mapping` (`.devtools/issue742/RESULTS.md`, the
+  medication setup steps). Such a mapping therefore still needs a `MASTER_DATA_EDIT` holder.
+  This record narrows the setup restriction reported in issue 742 and does not remove it.
+- Clients must handle a 403 on `POST /api/objects/quantity_unit_conversions`. The native
+  setup flow must handle conversion creation being unavailable to an add-only account
+  (maintainer response, 2026-10-12).
 - Migration compatibility: one PostgreSQL-only migration inserts the `permission_hierarchy`
   row. Installations upgrading keep every existing grant, and `MASTER_DATA_EDIT` and `ADMIN`
   holders resolve the new permission with no update to `user_permissions`. The migration
@@ -191,7 +211,8 @@ no household has asked for. Open question 3 keeps it available.
   [permission reference](../manual/operator/roles-permissions.md#permission-reference), and the
   permission count in AGENTS.md (it says 37; `controllers/Users/User.php` already declares 40).
 - Native clients gain create without a new route. A client still has to handle 403.
-- Not decided here: when this ships. The record assigns no release.
+- The maintainer decided on 2026-10-12 that the feature ships in v0.5.0, with the boundaries
+  recorded under acceptance prerequisite 1.
 
 ## Evidence added 2026-10-11
 
@@ -277,6 +298,21 @@ should move to `MASTER_DATA_EDIT`; that needs its own decision.
 
    > **Response:** datagen24, 2026-10-12: Needed. It ships in v0.5.0.
 
+   > **Response:** datagen24, 2026-10-12: Ship it in v0.5.0, with these boundaries: Keep
+   > explicit grants of MASTER_DATA_ADD; do not add it automatically to Adult. Preserve
+   > MASTER_DATA_EDIT for conversion creation, existing shared-data edits and deletion. Allow
+   > lookup without creation under STOCK_VIEW; creation additionally requires
+   > MASTER_DATA_ADD or its parent permission. Keep batteries unchanged. Keep task-category
+   > permissions unchanged for this release too. Preserve the already approved shared editing
+   > of chores and tasks. Defer ownership columns and creator-specific rights. Ensure the
+   > native setup flow handles conversion creation being unavailable to an add-only account.
+   > ADR-0043 does not completely remove the setup restriction reported in #742.
+
+   Each boundary is recorded under the matching open question below: explicit grants under
+   question 1, batteries and task categories under question 2, shared editing and ownership
+   under question 2a, and the lookup gate under question 5. Conversion creation and the
+   native setup flow are in decision 2 and the Consequences.
+
 2. Open questions 1 to 3 and 5 are answered.
 3. Tests, each named in the accepting pull request:
    - an account holding only the new permission can create each entity in the set and gets 403
@@ -289,7 +325,14 @@ should move to `MASTER_DATA_EDIT`; that needs its own decision.
    - a create-only external lookup can attach a new picture but cannot overwrite an
      existing shared picture, including when the fetched filename collides;
    - a fresh install and a legacy import hold the permission row with the same parent as an
-     upgraded installation (see "Permission rows on each install path").
+     upgraded installation (see "Permission rows on each install path");
+   - an account that holds `STOCK_VIEW` and neither `MASTER_DATA_ADD` nor `MASTER_DATA_EDIT`
+     can call `GET /api/stock/barcodes/external-lookup/{barcode}` without `add` and gets a
+     result, and gets 403 with `add=true`, which creates nothing;
+   - product creation, through `POST /api/objects/products` and through
+     `external-lookup?add=true`, requires `MASTER_DATA_ADD` or a permission above it, and an
+     account that holds only `MASTER_DATA_ADD` gets 403 on
+     `POST /api/objects/quantity_unit_conversions`.
 4. The contract snapshots and `check-migrations.php` pass with the migration.
 
 ## Open questions
@@ -305,11 +348,22 @@ should move to `MASTER_DATA_EDIT`; that needs its own decision.
    Role creation and editing already exist in `UsersController::RoleEditForm`,
    `RolesApiController` and `views/roleform.blade.php`. The new permission must be
    available through that existing permission picker.
+
+   > **Response:** datagen24, 2026-10-12: Keep explicit grants of MASTER_DATA_ADD; do not
+   > add it automatically to Adult.
+
 2. **Batteries and task categories.** Chores and tasks are decided in decision 7. Batteries
    and task categories still use `MASTER_DATA_EDIT`. The maintainer wants to revisit the battery
    module together with equipment, so the record leaves batteries alone. Task categories
    follow tasks if the maintainer wants adults to add one. *Lean: batteries unchanged; task
    categories under `TASKS`.*
+
+   > **Response:** datagen24, 2026-10-12: Keep batteries unchanged. Keep task-category
+   > permissions unchanged for this release too.
+
+   The lean on task categories was not adopted. In v0.5.0, batteries and task categories
+   keep `MASTER_DATA_EDIT` for create, edit and delete, and neither accepts `MASTER_DATA_ADD`.
+
 2a. **Edit is not limited to the creator.** The maintainer said adults edit what they created
    and that any adult edits what is assigned to a child. The record applies "any adult edits
    any" (decision 7) because there is no creator column. Say if an adult must not edit a
@@ -323,6 +377,12 @@ should move to `MASTER_DATA_EDIT`; that needs its own decision.
 
    This confirms shared editing of chores and tasks. It does not decide ownership
    columns or creator-edit rights for shared products.
+
+   > **Response:** datagen24, 2026-10-12: Preserve the already approved shared editing of
+   > chores and tasks. Defer ownership columns and creator-specific rights.
+
+   Decision 7's shared edit rule stands for v0.5.0. Ownership columns and creator-specific
+   rights are deferred; this record adds neither.
 3. **One permission or one per entity?**
 
    > **Response:** datagen24, 2026-10-11: One `MASTER_DATA_ADD` permission for the
@@ -347,5 +407,15 @@ should move to `MASTER_DATA_EDIT`; that needs its own decision.
    > its fetched picture. Prevent this operation from overwriting an existing shared
    > picture; it grants no general picture-editing right.
 
-   Lookup access without `add=true` remains undecided. The implementation must test
-   that a name collision leaves the existing picture unchanged.
+   The implementation must test that a name collision leaves the existing picture
+   unchanged.
+
+   > **Response:** datagen24, 2026-10-12: Allow lookup without creation under STOCK_VIEW;
+   > creation additionally requires MASTER_DATA_ADD or its parent permission.
+
+   This decides lookup access without `add=true`, which the 2026-10-11 response left open.
+   A lookup without `add` needs `STOCK_VIEW` only. With `add=true`, the route also requires
+   `MASTER_DATA_ADD`, which `MASTER_DATA_EDIT` and `ADMIN` holders resolve through the tree.
+   The permission check therefore moves after the controller reads `add`
+   (`controllers/Api/StockApiController.php`, where on `master` at `9bd1df91` both checks run
+   at lines 872-873, before `add` is read at 878). Decision 2 states the resulting gate.
