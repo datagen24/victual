@@ -190,10 +190,24 @@ A product mapping can carry `qu_id`, the unit the event quantity is in. Without 
 is in the product's stock unit. Victual computes `quantity × quantity_factor × conversion`, where
 the conversion is the household's entered conversion from `qu_id` to the stock unit.
 
+`quantity_factor` is a multiplier on the event quantity. It defaults to 1 when the mapping omits it
+or sends null, and most mappings leave it at 1. It must be a number greater than 0. Set it only
+when one event should book a fixed multiple of the quantity it reports. A recipe mapping ignores
+it.
+
 A product is held in tablets. A device reports 500 and the mapping names milligrams as `qu_id`,
 with a household conversion of 0.002 tablets per milligram. The booking is
 500 × 1 × 0.002 = 1 tablet. If the household entered no conversion, saving the mapping fails
 with `422 invalid_mapping`, and no event can book through it.
+
+A second product is also held in tablets, and the household entered that 1 bottle is 30 tablets.
+Each of three mappings receives an event that reports a quantity of 1:
+
+| `qu_id` | `quantity_factor` | Booked |
+|---|---|---|
+| bottle | 1 | 1 × 1 × 30 = 30 tablets |
+| bottle | 0.5 | 1 × 0.5 × 30 = 15 tablets |
+| none | 2 | 1 × 2 × 1 = 2 tablets |
 
 ### Fields on an event object
 
