@@ -12,6 +12,7 @@ use Slim\Psr7\Response;
 use Victual\Controllers\Api\FilesApiController;
 use Victual\Services\FilesService;
 use Victual\Services\Storage\DatabaseStorage;
+use Victual\Services\Storage\FileAlreadyExistsException;
 use Victual\Services\Storage\FileSizeLimit;
 use Victual\Services\Storage\FileStorage;
 use Victual\Services\Storage\FilesystemStorage;
@@ -136,11 +137,7 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 		$refused = null;
 		try
 		{
-			// The refusal itself is the application's: fopen($path, 'xb') emits a warning
-			// before returning false, and Create() turns that false into the exception
-			// under test. Suppressed here rather than fixed, because application code is
-			// out of scope for this work - see the hand-back note.
-			@$storage->Create($group, 'taken.png', 'replacement bytes');
+			$storage->Create($group, 'taken.png', 'replacement bytes');
 		}
 		catch (\Exception $ex)
 		{
@@ -150,6 +147,45 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 		self::assertNotNull($refused, 'A name that is already taken is refused');
 		self::assertSame(self::$png, self::DurableBytes($backend, $group, 'taken.png'), 'The refused create did not overwrite anything');
 		self::assertSame(['taken.png'], self::DurableNames($backend, $group), 'And it did not leave a second entry behind');
+	}
+
+	/**
+	 * A taken name is reported as its own exception class on both backends, so a caller
+	 * that must treat "already there" differently from "the write failed" (the external
+	 * barcode lookup's picture step, issue 742 / ADR-0043) can tell them apart - and the
+	 * class is still a plain \Exception with the message Create() always had, which is all
+	 * the files API relies on. A refusal that is not a collision stays a different class.
+	 */
+	#[DataProvider('backends')]
+	public function testCreateReportsATakenNameAsFileAlreadyExistsException(string $backend): void
+	{
+		$group = 'storagefiles-collision';
+		$storage = self::Storage($backend, [$group]);
+
+		$storage->Create($group, 'taken.png', self::$png);
+
+		try
+		{
+			$storage->Create($group, 'taken.png', 'replacement bytes');
+			self::fail('A taken name must be refused');
+		}
+		catch (FileAlreadyExistsException $ex)
+		{
+			self::assertInstanceOf(\Exception::class, $ex);
+			self::assertSame('Error while creating file taken.png', $ex->getMessage(), 'The message is the one Create() has always thrown');
+		}
+
+		self::assertSame(self::$png, self::DurableBytes($backend, $group, 'taken.png'), 'and the first file is untouched');
+
+		try
+		{
+			$storage->Create($group, '../escape.png', 'x');
+			self::fail('A hostile name must be refused');
+		}
+		catch (InvalidFileNameException $ex)
+		{
+			self::assertNotInstanceOf(FileAlreadyExistsException::class, $ex, 'A name refused for being invalid is not a collision');
+		}
 	}
 
 	/**
@@ -897,9 +933,8 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 		// A name that is already taken: the exclusive create is what stops one caller
 		// replacing another's picture by guessing its name.
 		$this->expectStatus(fn () => self::$files->UploadFile(self::requestWithRawBody('PUT', self::$png), new Response(), ['group' => 'productpictures', 'fileName' => base64_encode('taken.png')]), 204, 'First upload accepted');
-		// Suppressed: on the filesystem backend the refusal is a warning-emitting fopen
-		// inside the application, the same one testCreateRefusesATakenName... documents.
-		$this->expectStatus(fn () => @self::$files->UploadFile(self::requestWithRawBody('PUT', 'replacement'), new Response(), ['group' => 'productpictures', 'fileName' => base64_encode('taken.png')]), 400, 'Second upload of the same name refused');
+		$refused = $this->expectStatus(fn () => self::$files->UploadFile(self::requestWithRawBody('PUT', 'replacement'), new Response(), ['group' => 'productpictures', 'fileName' => base64_encode('taken.png')]), 400, 'Second upload of the same name refused');
+		self::assertSame(['error_message' => 'Error while creating file taken.png'], json_decode((string)$refused->getBody(), true), 'with the message the files API has always answered');
 		self::assertSame(self::$png, self::DurableBytes($backend, 'productpictures', 'taken.png'), 'and the first caller\'s bytes are untouched');
 
 		// A file name that is not one.
