@@ -1,8 +1,6 @@
 # ADR-0043: Creating shared master data is a right of its own, placed below MASTER_DATA_EDIT
 
-- **Status:** **Proposed.** Nothing here constrains work until the maintainer accepts it in a
-  separate pull request. The maintainer has not yet decided that the feature is needed or in
-  which release it ships.
+- **Status:** **Accepted 2026-10-12.** Prerequisites are stated in the accepting pull request.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-10, against `master` at `0639a23d`. Design work only: it changes no
