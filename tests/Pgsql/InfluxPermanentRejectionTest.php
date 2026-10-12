@@ -271,21 +271,103 @@ class InfluxPermanentRejectionTest extends PgsqlSchemaTestCase
 		self::assertSame(1, (int)$this->row($bad)['attempts'], 'the dead-lettered row is not claimed again');
 	}
 
-	public function testASingleBadRowIsDeadLettered(): void
+	/**
+	 * A 400 is only evidence about a row when the endpoint has accepted some other row of
+	 * Victual's in the same drain. A lone rejected row proves nothing - a proxy answering 400,
+	 * a bucket with an explicit schema or a field-type conflict with another writer would
+	 * reject every row alike - so it stays queued, with the failure recorded.
+	 */
+	public function testASingleRejectedRowIsKeptNotDeadLettered(): void
 	{
-		$bad = $this->queue('reject-BADROW');
+		$only = $this->queue('reject-BADROW');
 
 		file_put_contents(self::$standinControl, 'lines:BADROW=400');
 
 		$result = self::Drain();
 
-		self::assertFalse($result['delivered'], 'nothing was delivered');
+		self::assertFalse($result['delivered'], 'nothing progressed');
+		$this->assertRetryable($only, 'a rejected row with no accepted row beside it');
+		self::assertStringContainsString('400', (string)$this->row($only)['last_error']);
+	}
 
+	public function testARejectionOfEveryRowDeadLettersNothing(): void
+	{
+		$ids = [$this->queue('reject-one'), $this->queue('reject-two'), $this->queue('reject-three')];
+
+		file_put_contents(self::$standinControl, 'status:400');
+
+		$result = self::Drain();
+
+		self::assertFalse($result['delivered']);
+
+		foreach ($ids as $id)
+		{
+			$this->assertRetryable($id, 'HTTP 400 for every row');
+		}
+	}
+
+	public function testOneRowUnderAnEverythingRejectedEndpointIsNotDeadLettered(): void
+	{
+		$only = $this->queue('reject-one');
+
+		file_put_contents(self::$standinControl, 'status:400');
+
+		self::Drain();
+
+		$this->assertRetryable($only, 'a one-row batch answered 400');
+	}
+
+	public function testAKeptBadRowIsDeadLetteredOnceAGoodRowIsClaimedWithIt(): void
+	{
+		$bad = $this->queue('reject-BADROW');
+
+		file_put_contents(self::$standinControl, 'lines:BADROW=400');
+
+		self::Drain();
+		$this->assertRetryable($bad, 'first drain, alone');
+
+		$good = $this->queue('reject-good');
+
+		$result = self::Drain();
+
+		self::assertTrue($result['delivered']);
+		$this->assertDelivered($good, 'the good row');
 		$row = $this->row($bad);
+		self::assertNotNull($row['dead_lettered_at'], 'now the endpoint has shown it accepts good lines');
 		self::assertNull($row['delivered_at']);
-		self::assertNotNull($row['dead_lettered_at']);
-		self::assertSame(1, (int)$row['attempts']);
-		self::assertStringContainsString('400', (string)$row['last_error']);
+		self::assertSame(2, (int)$row['attempts']);
+	}
+
+	public function testA422IsRowLevelToo(): void
+	{
+		$good = $this->queue('reject-good');
+		$bad = $this->queue('reject-BADROW');
+
+		file_put_contents(self::$standinControl, 'lines:BADROW=422');
+
+		self::Drain();
+
+		$this->assertDelivered($good, 'the good row');
+		self::assertNotNull($this->row($bad)['dead_lettered_at']);
+		self::assertStringContainsString('422', (string)$this->row($bad)['last_error']);
+	}
+
+	public function testAnAbortBeforeAnyRowWasAcceptedDeadLettersNothing(): void
+	{
+		// Halves [BADROW, FLAKY] and [x, y]; the first splits to [BADROW] (400) and [FLAKY]
+		// (500), which stops the walk with nothing accepted, so BADROW has no proof behind it
+		$rows = [$this->queue('reject-BADROW'), $this->queue('reject-FLAKY'), $this->queue('reject-x'), $this->queue('reject-y')];
+
+		file_put_contents(self::$standinControl, 'lines:BADROW=400,FLAKY=500');
+
+		$result = self::Drain();
+
+		self::assertFalse($result['delivered']);
+
+		foreach ($rows as $id)
+		{
+			$this->assertRetryable($id, 'nothing was accepted before the abort');
+		}
 	}
 
 	public function testA413IsRowLevelToo(): void
@@ -351,7 +433,7 @@ class InfluxPermanentRejectionTest extends PgsqlSchemaTestCase
 
 		$result = self::Drain();
 
-		self::assertFalse($result['delivered'], 'the drain did not finish, so it does not claim to have');
+		self::assertTrue($result['delivered'], 'progress was made before the failure, so --drain keeps going');
 
 		$this->assertDelivered($good, 'resolved before the failure');
 		self::assertNotNull($this->row($bad)['dead_lettered_at'], 'resolved before the failure');
