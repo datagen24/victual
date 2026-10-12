@@ -824,10 +824,8 @@ class MergeProductsTest extends PgsqlSchemaTestCase
 			'qu_id_price' => $unit,
 		]);
 
-		// Given: a negative conversion factor. Nothing in db/pgsql/baseline/01_tables.sql
-		// declares a CHECK on quantity_unit_conversions.factor, and this write path (or an
-		// equivalent one through POST/PUT /api/objects/quantity_unit_conversions, which applies
-		// no factor-specific validation of its own either) applies no positivity check either.
+		// Given: a negative conversion factor. Until migration 0308 nothing declared a CHECK
+		// on quantity_unit_conversions.factor, and the write paths applied no positivity check.
 		// A factor of exactly 0 is a different story and is NOT used here: it was tried first,
 		// and quantity_unit_conversions_INS's own inverse-row computation, "1 /
 		// COALESCE(NEW.factor, 1)", raises a genuine SQLSTATE[22012] division-by-zero from
@@ -835,10 +833,24 @@ class MergeProductsTest extends PgsqlSchemaTestCase
 		// zero, unlike raw IEEE 754 - it does not silently produce Infinity) - so 0 specifically
 		// cannot reach this table at all. A negative factor has no such obstacle: 1 / -5 is an
 		// ordinary finite value, so the INSERT below succeeds exactly like any other.
-		self::insertRow('quantity_unit_conversions', ['from_qu_id' => $unit, 'to_qu_id' => 2, 'factor' => -5, 'product_id' => $remove]);
+		//
+		// Migration 0308 (issue #868) now refuses such a row with
+		// quantity_unit_conversions_factor_positive, so this test removes that constraint for
+		// its own duration to reach the PHP guard this test is about, and restores it afterwards.
+		self::$db->exec('ALTER TABLE quantity_unit_conversions DROP CONSTRAINT quantity_unit_conversions_factor_positive');
 
-		// When: merging resolves that factor.
-		$message = $this->expectMergeRefused($keep, $remove, 'Expected the merge to be refused: the resolved conversion factor is not positive');
+		try
+		{
+			self::insertRow('quantity_unit_conversions', ['from_qu_id' => $unit, 'to_qu_id' => 2, 'factor' => -5, 'product_id' => $remove]);
+
+			// When: merging resolves that factor.
+			$message = $this->expectMergeRefused($keep, $remove, 'Expected the merge to be refused: the resolved conversion factor is not positive');
+		}
+		finally
+		{
+			self::$db->prepare('DELETE FROM quantity_unit_conversions WHERE product_id = ?')->execute([$remove]);
+			self::$db->exec("ALTER TABLE quantity_unit_conversions ADD CONSTRAINT quantity_unit_conversions_factor_positive CHECK (factor > 0 AND factor < 'Infinity')");
+		}
 
 		// Then: the refusal is this method's own clean message - a negative factor would
 		// otherwise reach "amount * -5" (a negative amount) and "price / -5" (a negative

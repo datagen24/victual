@@ -55,6 +55,17 @@ non-finite amount, invariants I1 to I3, and `trg_cascade_change_qu_id_stock`'s r
 contributions and allocations. The backfill over history written by the real pre-0304
 `StockService` is `tests/Pgsql/StockLineageBackfillTest.php`.
 
+The [unit-change ledger tests](034-audit1012-unit-change.sql) cover migration 0308 (issues #849,
+#853, #866 and #868). They check that `quantity_unit_conversions.factor` refuses a negative, zero,
+infinite or NaN value and that the unit-change trigger refuses a resolved factor that is not
+positive and finite.
+
+They also check that a unit change rescales a NULL-unit consumption mapping's
+`quantity_factor` and the product's event lines, and leaves a mapping with its own unit alone. They
+count `rebuild_stock_log_cache_for_product` calls (one per product per statement) and compare the
+caches with the views after a bulk update, a product move and a delete. The last block runs 0304's
+`stock_lineage_backfill` text, kept as a temporary function, and the new one on the same fixture.
+
 The [product removal label retirement tests](022-product-removal-label-retirement.sql) cover
 migration 0295 (issue #558). Deleting a product whose stock entries carry a live label now
 retires those labels with the product's own name, not null. `trg_cascade_product_removal`
@@ -138,10 +149,11 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `chores_current` (yearly leap-day anchor, weekly undone filter) | view | 0289 | `018-audit-view-corrections.sql` |
 | `rebuild_stock_log_cache_for_product` | function | 0292 | `019-stock-log-cache-rebuild.sql` |
 | `reconcile_stock_log_cache` | function | 0292 | `019-stock-log-cache-rebuild.sql` |
-| `trg_stock_log_UPD` (trigger `stock_log_UPD`) | function + trigger | 0292 | `019-stock-log-cache-rebuild.sql` |
-| `trg_stock_log_DEL` (trigger `stock_log_DEL`) | function + trigger | 0292 | `019-stock-log-cache-rebuild.sql` |
+| `trg_stock_log_UPD` (trigger `stock_log_UPD`) | function + trigger | 0292, statement-level 0308 | `019-stock-log-cache-rebuild.sql`, `034-audit1012-unit-change.sql` |
+| `trg_stock_log_DEL` (trigger `stock_log_DEL`) | function + trigger | 0292, statement-level 0308 | `019-stock-log-cache-rebuild.sql`, `034-audit1012-unit-change.sql` |
 | `product_groups_missing` (member join rolled up through `product_groups_resolved`) | view | 0293 | `020-product-group-rollup.sql` |
-| `trg_cascade_change_qu_id_stock` | function | 0294, redefined 0304 | `021-cascade-qu-id-stock.sql`, `030-stock-lineage.sql` |
+| `trg_cascade_change_qu_id_stock` | function | 0294, redefined 0304 and 0308 | `021-cascade-qu-id-stock.sql`, `030-stock-lineage.sql`, `034-audit1012-unit-change.sql` |
+| `quantity_unit_conversions_factor_positive` | check constraint | 0308 | `034-audit1012-unit-change.sql` |
 | `stock_amount_non_negative_check` | check constraint | 0297 | `024-stock-amount-non-negative.sql` |
 | `stock_current` (unconvertible/non-positive-factor sub product excluded from `amount_aggregated`, `amount_opened_aggregated`, `amount_measured`) | view | 0298 | `025-unconvertible-subproduct-aggregation.sql` |
 | `products_current_substitutions` (unconvertible/non-positive-factor sub product excluded) | view | 0300 | `026-recipe-substitution-units.sql` |
@@ -154,7 +166,7 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `stock_log_is_addition` | function | 0304 | `030-stock-lineage.sql` |
 | `stock_log_lineage_delta` | function | 0304 | `030-stock-lineage.sql` |
 | `stock_lineage_families` | function | 0304 | `030-stock-lineage.sql` |
-| `stock_lineage_backfill` | function | 0304 | `030-stock-lineage.sql` |
+| `stock_lineage_backfill` | function | 0304, redefined 0308 | `030-stock-lineage.sql`, `034-audit1012-unit-change.sql` |
 | `stock_lineage_violations` | function | 0304 | `030-stock-lineage.sql` |
 | `trg_consumption_share_not_owner` (trigger `consumption_share_not_owner`) | function + trigger | 0305 | `031-consumption-recipes.sql` |
 | `trg_consumption_owner_not_sharee` (trigger `consumption_owner_not_sharee`) | function + trigger | 0305 | `031-consumption-recipes.sql` |

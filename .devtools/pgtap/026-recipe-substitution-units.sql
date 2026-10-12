@@ -35,6 +35,11 @@
 -- and stock_amount/need_fulfilled/missing_amount can be asserted directly - the same
 -- columns the recipe page and /api/objects/recipes_pos_resolved read.
 
+-- Migration 0308 (issue #868) put quantity_unit_conversions_factor_positive on the factor, so
+-- the negative-factor fixture below can only be built with that constraint dropped. The file runs
+-- in one transaction that rolls back, so the constraint comes back and no later file sees the row.
+BEGIN;
+
 SELECT plan(11);
 
 INSERT INTO locations (name) VALUES ('M629 location');
@@ -195,8 +200,10 @@ VALUES (
 );
 
 -- The only resolved conversion between the parent's unit and the sub's is negative -
--- reachable because quantity_unit_conversions.factor carries no CHECK constraint (see
--- StockService::SubstitutionAwareProductIdWhereClause()'s own comment).
+-- reachable before migration 0308 because quantity_unit_conversions.factor carried no CHECK
+-- constraint (see StockService::SubstitutionAwareProductIdWhereClause()'s own comment), and
+-- built here by dropping the constraint 0308 added.
+ALTER TABLE quantity_unit_conversions DROP CONSTRAINT quantity_unit_conversions_factor_positive;
 INSERT INTO quantity_unit_conversions (from_qu_id, to_qu_id, factor, product_id)
 VALUES (
 	(SELECT id FROM quantity_units WHERE name = 'M629 Parent Unit'),
@@ -276,3 +283,5 @@ SELECT is(
 );
 
 SELECT * FROM finish();
+
+ROLLBACK;
