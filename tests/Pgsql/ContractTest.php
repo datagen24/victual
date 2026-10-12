@@ -440,6 +440,10 @@ class ContractTest extends PgsqlSchemaTestCase
 			'qu_id_purchase' => 2,
 			'qu_id_stock' => 2,
 			'product_group_id' => self::$ids['product_group'],
+			// The self-production in testRecipesOperations() books with no due date, so the
+			// entry takes today + this. With 0 it would be due today, and a run crossing local
+			// midnight before the restricted replay would move the product to overdue_products.
+			'default_best_before_days' => 3,
 		]);
 
 		self::invokeAdmin('PUT /api/objects/{entity}/{objectId} (products)', fn() => $generic->EditObject(self::request('PUT', ['description' => 'Edited by the contract snapshot']), new Response(), ['entity' => 'products', 'objectId' => self::$ids['product']]));
@@ -533,8 +537,10 @@ class ContractTest extends PgsqlSchemaTestCase
 
 		// Issue #772: a price change (the stock-edit-old/-new pair) and a measurement (the
 		// stock-measured-old/-new pair) on the due-soon product's single unit, so the ledger
-		// the generic sweep reads carries both pairs. Last in this method, so every read
-		// recorded above sees the graph it saw before. A measurement needs one opened
+		// the generic sweep reads carries both pairs. Last in this method, so every Admin read
+		// recorded above sees the graph it saw before. The restricted replay runs after the
+		// whole graph is built and does see the changed graph, which is why some fields widen
+		// in contract-restricted.json and not in contract-admin.json. A measurement needs one opened
 		// container (open = 1, amount = 1), which the open booking makes of that unit.
 		$dueProductId = self::$ids['product_due'];
 		self::invokeAdmin('POST /api/stock/products/{productId}/open (for measure)', fn() => $stock->OpenProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $dueProductId]));
@@ -1664,39 +1670,54 @@ class ContractTest extends PgsqlSchemaTestCase
 		$statement = self::$db->prepare('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price) VALUES (?, ?, ?, ?, ?, ?) RETURNING id');
 		$statement->execute(['Contract transaction type probe', $location, $unit, $unit, $unit, $unit]);
 		$product = (int)$statement->fetchColumn();
-		$stock->AddProduct($product, 20, '2999-12-31', \Victual\Services\StockService::TRANSACTION_TYPE_PURCHASE, '2026-01-01', null, $location);
 
-		$probe = function (string $method, callable $book) use ($declared): array
+		try
 		{
-			$accepted = [];
-			foreach ($declared as $type)
+			$stock->AddProduct($product, 20, '2999-12-31', \Victual\Services\StockService::TRANSACTION_TYPE_PURCHASE, '2026-01-01', null, $location);
+
+			$probe = function (string $method, callable $book) use ($declared): array
 			{
-				try
+				$accepted = [];
+				foreach ($declared as $type)
 				{
-					$book($type);
-					$accepted[] = $type;
-				}
-				catch (\Exception $ex)
-				{
-					if (preg_match('/^Transaction type .+ is not valid \(StockService\.' . $method . '\)$/', $ex->getMessage()) !== 1)
+					try
 					{
-						throw $ex;
+						$book($type);
+						$accepted[] = $type;
+					}
+					catch (\Exception $ex)
+					{
+						if (preg_match('/^Transaction type .+ is not valid \(StockService\.' . $method . '\)$/', $ex->getMessage()) !== 1)
+						{
+							throw $ex;
+						}
 					}
 				}
-			}
-			sort($accepted);
-			return $accepted;
-		};
+				sort($accepted);
+				return $accepted;
+			};
 
-		return [
-			$probe('AddProduct', fn(string $type) => $stock->AddProduct($product, 1, '2999-12-31', $type, '2026-01-01', null, $location)),
-			$probe('ConsumeProduct', fn(string $type) => $stock->ConsumeProduct($product, 1, false, $type)),
-		];
+			return [
+				$probe('AddProduct', fn(string $type) => $stock->AddProduct($product, 1, '2999-12-31', $type, '2026-01-01', null, $location)),
+				$probe('ConsumeProduct', fn(string $type) => $stock->ConsumeProduct($product, 1, false, $type)),
+			];
+		}
+		finally
+		{
+			// Leaves nothing behind, so the probe cannot widen a recorded shape whatever
+			// order the tests run in: the probe product has no description and no group.
+			foreach (['DELETE FROM stock_log WHERE product_id = ?', 'DELETE FROM stock WHERE product_id = ?', 'DELETE FROM products WHERE id = ?'] as $sql)
+			{
+				self::$db->prepare($sql)->execute([$product]);
+			}
+			self::$db->prepare('DELETE FROM locations WHERE id = ?')->execute([$location]);
+		}
 	}
 
 	/**
-	 * Runs last and books on a product of its own, so the stock it adds reaches no
-	 * recorded snapshot; independent of the fixture graph, so it runs on its own too.
+	 * Books on a product and location of its own and deletes them afterwards, so it
+	 * reaches no recorded snapshot in any test order; independent of the fixture graph,
+	 * so it runs on its own too.
 	 */
 	public function testTransactionTypeEnumsMatchStockService(): void
 	{

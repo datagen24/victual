@@ -13271,7 +13271,7 @@
 							"number",
 							"null"
 						],
-						"description": "The amount-weighted average price per stock unit over this product's purchase, inventory-correction and self-production bookings that are not undone and carry a price above 0 (for an edited entry, its newest stock-edit-new booking in place of the original). It includes bookings whose stock has since been consumed, so it is not the average of what is in stock now (products_average_price, db/pgsql/baseline/04_views_l1a.sql). Null when there is no such booking",
+						"description": "The amount-weighted average price per stock unit over this product's purchase, inventory-correction and self-production bookings that are not undone and carry a price above 0 and an amount above 0, so a negative inventory correction is not counted. For an edited entry its newest stock-edit-new booking stands in for the original, weighted by the entry's edited origin amount. It includes bookings whose stock has since been consumed, so it is not the average of what is in stock now (products_average_price, db/pgsql/baseline/04_views_l1a.sql). Null when there is no such booking",
 						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"current_price": {
@@ -14244,7 +14244,7 @@
 							"integer",
 							"null"
 						],
-						"description": "The recipe whose consumption booked this row, on the ingredient consume bookings of POST /recipes/{recipeId}/consume; null otherwise"
+						"description": "The recipe a consumption was booked for: set on the ingredient consume bookings of POST /recipes/{recipeId}/consume, and on a consume whose request body names a numeric recipe_id; null otherwise"
 					},
 					"shopping_location_id": {
 						"type": [
@@ -15032,7 +15032,7 @@
 			},
 			"StockAddTransactionType": {
 				"type": "string",
-				"description": "The transaction types POST /stock/products/{productId}/add and POST /stock/products/by-barcode/{barcode}/add accept (StockService::AddProduct()). Any other value is answered with 400. Omitted, the booking is a `purchase`. Issue #772.",
+				"description": "The transaction types POST /stock/products/{productId}/add and POST /stock/products/by-barcode/{barcode}/add accept (StockService::AddProduct()). Any other string is answered with 400. Omitted, the booking is a `purchase`. Issue #772.",
 				"enum": [
 					"purchase",
 					"inventory-correction",
