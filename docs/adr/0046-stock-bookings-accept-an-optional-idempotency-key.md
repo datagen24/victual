@@ -8,8 +8,10 @@
 - **Recorded:** 2026-10-11, against `master` at `d4960138` and re-read at `3122b937`, which
   differs from it only in documentation. Revised 2026-10-12, against `master` at `8fd76607`,
   to name the discovery fields and response headers, to record the client obligations and to
-  apply the maintainer's transaction-id choices. Design work only: it changes no code,
-  reserves no migration number and amends no accepted record.
+  apply the maintainer's transaction-id choices. Revised again 2026-10-12, against `master`
+  at `9bd1df91`, to apply the maintainer's decision on issue 785: a booking refuses a caller
+  without the booking permission or `STOCK_VIEW` before it books. Design work only: it
+  changes no code, reserves no migration number and amends no accepted record.
 - **Referenced by:** [issue 775](https://github.com/datagen24/victual/issues/775) and
   [victual-kit PR 35](https://github.com/datagen24/victual-kit/pull/35) (client timeouts).
 - **Relationship:** applies accepted [ADR-0010](0010-workload-standard.md)'s rule that every
@@ -116,16 +118,20 @@ another booking moved the stock in between. The client cannot tell that 400 from
 refusal. No other booking has a comparable guard: a retried open opens another unit, and a
 retried transfer moves more stock.
 
-### A committed booking can answer 403
+### A committed booking could answer 403
 
-This behaviour is related and is decided elsewhere. Each booking route commits through
-`StockService`, then calls `StockTransactions()` to return the rows. `StockTransactions()` calls `User::CheckPermission(STOCK_VIEW)`. A caller
-holding the booking permission without `STOCK_VIEW` gets 403 for a booking that committed.
-Every seeded role resolves to `STOCK_VIEW` (`db/pgsql/roles-seed.sql`: ADMIN and ADULT
-through their parent grants, CHILD and GUEST directly), so only custom roles or direct grants
-reach this case. Whether a booking should require `STOCK_VIEW`, or answer without the rows,
-is a separate authorization decision. Decision 5 keeps today's ordering, so this record works
-under either answer.
+Before issue 785's fix, each booking route committed through `StockService`, then called
+`StockTransactions()` to return the rows. `StockTransactions()` calls
+`User::CheckPermission(STOCK_VIEW)`, so a caller holding the booking permission without
+`STOCK_VIEW` got 403 for a booking that committed. Every seeded role resolves to `STOCK_VIEW`
+(`db/pgsql/roles-seed.sql`: ADMIN and ADULT through their parent grants, CHILD and GUEST
+directly), so only custom roles or direct grants reached this case.
+
+The maintainer decided on issue 785 on 2026-10-12 that a booking route, its by-barcode
+wrapper and a keyed request check the booking permission and `STOCK_VIEW` before any
+mutation, and that the successful response shape stays as it is. Pull request 834
+implements that refusal. This record assumes it: a 403 from a booking route means nothing
+was booked (decisions 5 and 8).
 
 ## Decision (proposed)
 
@@ -210,7 +216,12 @@ scope a change to the unique constraint alone.
 The controller would open the transaction before calling `StockService`, which the booking
 routes do not do today; each currently lets `StockService` open and commit its own.
 `DatabaseService::InTransaction()` joins an open transaction, so the booking would run inside
-the controller's. Inside that transaction, in order:
+the controller's.
+
+Before the transaction opens, the controller checks the booking permission and `STOCK_VIEW`
+(the decision on issue 785; see "A committed booking could answer 403"). The
+by-barcode wrappers make the same checks before any mutation. A caller that lacks either permission gets 403 before the key is reserved, so a refused keyed
+request writes no key row and books nothing. Inside the transaction, in order:
 
 1. Reserve the key: read the key row `FOR UPDATE`, or insert it under a savepoint.
 2. On a new key, call the `StockService` booking.
@@ -218,9 +229,9 @@ the controller's. Inside that transaction, in order:
 
 The transaction then commits, and only after the commit does the controller call
 `StockTransactions()` to build the response. The key row and the booking commit together or
-not at all. The read stays outside the transaction so that a `STOCK_VIEW` refusal cannot roll
-back a booking. A caller without `STOCK_VIEW` therefore still gets 403 for a committed
-booking, as today.
+not at all. The read stays outside the transaction, so a failure while building the response
+cannot roll back a booking. Because `STOCK_VIEW` was checked before the booking, the read
+does not refuse a caller the up-front check admitted.
 
 The helper must not mark the database changed on its own account.
 `BaseApiController::InRequestTransaction()` calls `DatabaseService::MarkDbChanged()` for
@@ -267,12 +278,12 @@ the booking commit together. The implementation should still answer 409
 A replay books nothing and answers 200 with `StockTransactions(transaction_id)`, read at
 replay time. Consequences of reading rather than storing the response:
 
-- The booking permission is checked on every request, replay included, because
-  `User::CheckPermission()` runs at the top of each controller method. A person who lost the
-  permission gets 403. `LabelsApiController::Operate` does the same: it checks
+- The booking permission and `STOCK_VIEW` are checked on every request, replay included,
+  before the key is read (decision 5). A person who lost either permission gets 403, and
+  nothing is replayed or booked. `LabelsApiController::Operate` does the same: it checks
   `MASTER_DATA_EDIT`, and the domain permission where a label kind applies, before any replay.
-- `StockTransactions()` checks `STOCK_VIEW` and applies `FieldPolicy` redaction for the
-  caller as they are now. A stored body would return prices the caller may no longer see.
+- `StockTransactions()` applies `FieldPolicy` redaction for the caller as they are now. A
+  stored body would return prices the caller may no longer see.
 - A booking undone since the original request shows its rows with `undone` set. The client
   learns that the booking happened and was reversed, and nothing is booked again.
 - If no `stock_log` row with the transaction id remains, `StockTransactions()` answers 400
@@ -314,12 +325,11 @@ was created), the retry books. The client sent the retry intending the booking, 
 the expected outcome. Storing refusals would instead replay a stale refusal for the whole
 retention window.
 
-The 403 a caller without `STOCK_VIEW` gets after a committed booking is not a failure in
-this sense: the booking committed, and so did the key. A replay answers the same 403 while
-that behaviour stands. That 403 carries `Idempotent-Replayed: false` on the original request
-and `Idempotent-Replayed: true` on a replay, because the booking happened or was replayed
-and only the re-read was refused. A 403 from the permission check at the top of the
-controller carries no such header, because no booking was attempted.
+A 403 is one of these refusals. The booking permission and `STOCK_VIEW` are checked before
+the key is reserved (decision 5), so a caller that lacks either gets 403 with no key row
+written, no booking and no `Idempotent-Replayed` header. A 403 from a booking route
+therefore always means that nothing was booked. If the caller later gains the permission, a
+retry with the same key books once.
 
 ### 9. Retention
 
@@ -450,7 +460,7 @@ evidence from one client alone.
 | 8 | Treat 409 `idempotency_in_progress` as "wait": retry later with the same key and body, never with a new key. | The subprocess race test and the in-progress test, which covers a committed key row with no transaction id. |
 | 9 | Read `Idempotent-Replayed` on 2xx responses. `true` means the response repeats an earlier booking and is not a second one. `false` means the server honoured the key. Absence on a keyed 2xx response means the server ignored the key. Error responses (409, refusals and a 403 from the permission check) carry no header and say nothing about whether the key was honoured. | Replay, first-booking and unkeyed tests assert `true`, `false` and absence; the 409 test asserts no header. |
 | 10 | Treat a replay's rows as current state. `undone` may be set, redaction follows current permissions, and a 400 "No transaction was found" means "booked once, rows unreadable", never "retry". | The undo-then-replay test and the deleted-rows test. |
-| 11 | Treat a 403 on a keyed booking as possibly committed. A 403 with `Idempotent-Replayed` present means the booking committed or replayed and only the re-read was refused. Resend with the same key and body in either case. | The `STOCK_VIEW` test: a committed booking whose re-read is refused answers 403 with `Idempotent-Replayed: false`, then replays the same 403 with `true` and books once. |
+| 11 | Treat a 403 on a keyed booking as "nothing was booked and the key is unused". Do not resend until the account holds the booking permission and `STOCK_VIEW`; a later retry may reuse the same key and body. | The refusal test: a keyed request lacking the booking permission or `STOCK_VIEW`, direct or by barcode, answers 403 with no `Idempotent-Replayed` header and leaves stock, `stock_log` and the key table unchanged. |
 
 A client that follows these rules does not create a second booking by retrying, and it never
 mistakes an unknown outcome for a known one.
@@ -613,6 +623,15 @@ confirm that it treats the id as opaque before release.
    test for each obligation's server half. Integration evidence from victual-kit is useful
    but is not the only way to meet this gate.
 
+   > **Response:** datagen24, 2026-10-12: Check the booking permission and STOCK_VIEW
+   > before mutation, including barcode wrappers and keyed requests. Preserve the existing
+   > successful response shape. Test that refusal leaves stock, ledger and idempotency state
+   > unchanged. Update ADR-0046's expected behavior accordingly.
+
+   The maintainer gave this decision on issue 785. The Context section "A committed booking could answer 403", decisions 5, 7 and 8, client
+   obligation 11 and the Verification section apply this decision. Pull request 834
+   implements the up-front refusal for issue 785.
+
 ## Verification
 
 Acceptance of an implementation should be shown by these checks, run against PostgreSQL as
@@ -627,7 +646,8 @@ the suite runs (`.devtools/pgsql/run-tests.sh`):
   and `ConsumptionEventRaceTest`: two processes send the same key at once; stock changes once
   and both answer the same transaction id.
 - PHPUnit: a user loses the booking permission, then replays; the answer is 403 and nothing is
-  booked. The same with `STOCK_VIEW` removed answers 403 from the re-read.
+  booked. The same with `STOCK_VIEW` removed answers 403 before the key is read, and nothing
+  is replayed or booked.
 - PHPUnit: two users send the same key value; both book, and neither response mentions the
   other. A fixture with a legacy transaction-id collision proves replay returns only
   the acting user's rows. New transactions use cryptographically random ids, and
@@ -642,8 +662,9 @@ the suite runs (`.devtools/pgsql/run-tests.sh`):
   and books nothing.
 - PHPUnit: delete the transaction's `stock_log` rows, then replay; the answer is 400 and
   nothing is booked.
-- PHPUnit: a keyed booking that committed but whose re-read answers 403 (booking permission
-  without `STOCK_VIEW`) replays the same 403 and books once.
+- PHPUnit: a keyed request from a caller lacking the booking permission or `STOCK_VIEW`,
+  through the direct route and through the by-barcode wrapper, answers 403 with no
+  `Idempotent-Replayed` header and leaves stock, `stock_log` and the key table unchanged.
 - PHPUnit: a keyed first booking carries `Idempotent-Replayed: false`, and a 409 carries no
   `Idempotent-Replayed` header.
 - PHPUnit: new transaction ids are 32 lowercase hexadecimal characters, and a pre-existing
