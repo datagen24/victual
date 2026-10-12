@@ -497,7 +497,8 @@ examined.
 
 **(a) A per-row marker.** `stock` and `stock_log` each gain a column owned by the target,
 for example `legacy_zero_price SMALLINT NOT NULL DEFAULT 0` with
-`CHECK (legacy_zero_price = 0 OR price = 0)`. The importer sets it to `1` on each imported
+`CHECK (legacy_zero_price = 0 OR price IS NOT DISTINCT FROM 0)`, which also refuses a marked
+row priced `NULL`. The importer sets it to `1` on each imported
 row whose price is exactly `0`. Every reader treats a marked row's price as unknown. The
 column changes no booking value; the importer writes it with an `UPDATE` that touches the
 new column only.
@@ -506,8 +507,7 @@ new column only.
 `products`, `stock`, `recipes`, `chores` and `batteries`, and migration 0269 to `locations`;
 `stock_log` has none. Its default is `label_current_import_epoch()`, the generation held in
 `label_import_state`. `DatabaseImporter` increments that generation before it copies,
-whenever the target has a `labels` table, and
-`GetCommonColumns()` leaves `import_epoch` out of the copy. Each imported `stock` row
+whenever the target has a `labels` table, and `GetCommonColumns()` leaves `import_epoch` out of the copy. Each imported `stock` row
 therefore takes the new generation from the default, and so does every row booked after the
 import. The column exists so that a label request composed before an import is refused
 (ADR-0021). It does not separate imported rows from later ones.
@@ -524,9 +524,13 @@ rows created later from imported ones:
 Each of these rows has an id above the watermark and would read as a known zero.
 
 **(c) A set of legacy `stock_id` values.** The importer records, in a table of its own, each
-`stock_id` whose imported rows carry a `0`. Splits, transfers, opens, edits and undo keep the
-`stock_id` (`TransferProduct()` copies `$stockEntry->stock_id`), so no write path changes.
-An edit that deliberately sets an imported entry's price to `0` keeps the `stock_id` too, and
+`stock_id` whose imported rows carry a `0`. Transfers, edits and undo keep the `stock_id`
+(`TransferProduct()` copies `$stockEntry->stock_id`). `OpenProduct()` does not: a partial
+open puts the remainder in a new `stock` row under a new `stock_id` (`$restStockId =
+uniqid()`) that copies `price`. Under (c), that write path must add the new `stock_id` to the
+set, the same propagation work (a) needs on every path.
+
+Under (c), an edit that deliberately sets an imported entry's price to `0` keeps the `stock_id` too, and
 the entry still reads as unknown. Removing the `stock_id` from the set on that edit would turn
 the entry's earlier imported bookings into known zeros. Every price reader also needs a
 semi-join on the set.
@@ -542,18 +546,28 @@ join to every reader.
 | Readers | Test the column | Compare ids with the watermark | Semi-join on the set |
 | New bookings | Default `0`, a known price | Above the watermark, read as known | Unaffected unless they reuse an imported `stock_id` |
 | Undo | Copies the marker from the booking | Re-inserted row reads as known: wrong | Correct, `stock_id` kept |
+| Partial open | Remainder row copies the marker | Remainder row reads as known: wrong | Remainder's new `stock_id` must be added to the set |
 | Edit of an imported entry | Explicit price writes `0`; kept price copies the marker | `stock-edit-new` reads as known: wrong | Explicit `0` still reads as unknown: wrong |
 | Re-import | Truncated with the rows and set again | Recomputed | Truncated and rebuilt |
 | Views phase of the differential suite | Not set; see placement below | Not set | Not set |
 
 Under (a), each write that creates a `stock` or `stock_log` row by copying `price` from an
 existing row must copy the marker with it. Read at `8fd76607`, these are in `StockService`:
-`ConsumeProduct()`, `TransferProduct()`, `OpenProduct()`, `MeasureStockEntry()`,
-`EditStockEntry()` when it keeps the stored price, and the undo paths
-`UndoBookingInTransaction()`, `UndoTrackedOpening()`, `UndoTrackedEdit()` and
-`InsertRowFromBooking()`. A write that takes its price from the caller, such as a purchase,
-an inventory correction with a price or an edit with an explicit price, writes `0`. Two
-further sites need attention:
+`ConsumeProduct()`, `TransferProduct()`, `OpenProduct()`, `MeasureStockEntry()`, and the
+undo paths `UndoBookingInTransaction()`, `UndoTrackedOpening()` and `InsertRowFromBooking()`.
+A write that takes its price from the caller, such as a purchase or an inventory correction
+with a price, writes `0`.
+
+`EditStockEntry()` and `UndoTrackedEdit()` also update a `stock` row in place:
+
+- `EditStockEntry()` always writes a `stock-edit-old` booking with the row's previous price
+  (`'price' => $stockRow->price`), so that booking always copies the row's marker. Its
+  in-place `$stockRow->update()` and its `stock-edit-new` booking keep the marker when the
+  request omits the price, and write `0` when the request supplies one.
+- `UndoTrackedEdit()` restores the row from the `stock-edit-old` booking
+  (`'price' => $old->price`), so the same update must restore the marker from that booking.
+
+Two further sites need attention:
 
 - `CompactStockEntries()` merges the rows that `stock_splits` groups, and that view groups by
   `s.price`. The `GROUP BY` must include the marker, or compaction merges a legacy `0` with a
@@ -576,11 +590,20 @@ Under (a), the readers that test the marker are:
 - `stock_splits`, as above;
 - the routes that return `stock` or `stock_log` rows, which open question 10 covers.
 
-The importer sets the marker in the block that runs only when `applyRowMigrations` is true,
-after `AssertValuesMatch()` and before `RebuildPriceCaches()`. Running it after the
-assertions keeps the copy provably verbatim; running it before the cache rebuild lets the
-caches apply the marker. `difftest.php` passes `false`, so the views phase never sees a
-marker set by the importer.
+The importer sets the marker inside the copy transaction: after the `CopyTable()` loop and
+before `$this->Target->commit()`, where `RebuildStockLineage()` already runs, and only when
+`applyRowMigrations` is true. An import then either commits with every legacy zero marked or
+rolls back to the target's previous state. Setting it after the commit, in the block where
+`RebuildPriceCaches()` runs, would leave a window in which a failure commits an import whose
+legacy zeros read as known zeros, the silent outcome gate 1 exists to prevent.
+
+`AssertValuesMatch()` runs after the commit and compares only the columns
+`GetCommonColumns()` returns. That method must exclude the marker by name, so the assertion
+still proves the copied columns verbatim and does not see the marker. `RebuildPriceCaches()`
+runs after the commit in its own transaction and reads views that apply the committed
+marker. If it fails, the caches are stale but every stored row is correct; rerunning the
+import with `--force` rebuilds them, as for any failure of that step today. `difftest.php`
+passes `false`, so the views phase never sees a marker set by the importer.
 
 Under (a), the write paths listed above write the marker column, and the differential
 suite's rollback phase drives `StockService` against SQLite. The SQLite fixture must
@@ -588,9 +611,8 @@ therefore gain the column on `stock` and `stock_log`, as `.devtools/pgsql/fixtur
 already adds the four `opened_*` columns to SQLite's `stock` for the same phase. Three
 consequences follow:
 
-- `GetCommonColumns()` would then find the column on both sides and copy it. It must
-  exclude the column by name, as it excludes `import_epoch`, so that a source can never
-  supply the interpretation.
+- `GetCommonColumns()` would then find the column on both sides and copy it. Its exclusion
+  by name, as for `import_epoch`, also keeps a source from supplying the interpretation.
 - `trigdifftest.php` compares the columns both engines share, so the column reaches it.
   Both sides hold `0` there, because no trigger sets it.
 - SQLite re-expands `s.*` on every query, so its `stock_next_use` and
@@ -810,11 +832,14 @@ between that and a superseding record that adds the exceptions to ADR-0005.
    both, so that an operator can read the interpretation after the terminal is gone.
 9. **What does the upgrade migration do with price-`0` rows that Victual wrote before this
    change?**
-   - Read them as known zeros. No row changes. Blank web purchases made before the upgrade
-     report a known price of `0`, the false statement issue 774 describes.
+   - Read them as known zeros. No row changes. This option is nearest the maintainer's
+     2026-10-11 note that existing rows hold test data only. Blank web purchases made before
+     the upgrade report a known price of `0`, the false statement issue 774 describes.
    - Read them as unknown. The migration applies the import's mechanism to every existing
      row priced `0` and reports the count per table. A deliberately free entry written
-     through the API also becomes unknown, because no column records the writer.
+     through the API also becomes unknown, because no column records the writer. This
+     extends response 6's rule, which covers imported legacy zeros, to rows Victual wrote;
+     response 6 does not decide it.
 
    The recommendation is unknown. Five write paths stored `0` for a blank price, the same
    evidence that set the import default. Under (a) the migration changes the marker column
