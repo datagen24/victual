@@ -3,6 +3,7 @@
 namespace Victual\Tests\Pgsql;
 
 use PDO;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Depends;
 use Slim\Exception\HttpException;
 use Slim\Psr7\Factory\ServerRequestFactory;
@@ -3641,6 +3642,105 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** @return array<string, array{0: string, 1: string}> Issue #842: factor expression written into the plugin source, and a barcode of its own. */
+	public static function nonFiniteOrUnusableLookupFactorProvider(): array
+	{
+		return [
+			'string that overflows to INF' => ["'1e400'", '4000417842001'],
+			'native INF' => ['INF', '4000417842002'],
+			'native NAN' => ['NAN', '4000417842003'],
+			'zero' => ['0', '4000417842004'],
+			'negative number' => ['-2.5', '4000417842005'],
+			'non-numeric string' => ["'six'", '4000417842006'],
+		];
+	}
+
+	/**
+	 * Issue #842: a plugin factor that is non-finite, zero, negative or not a number is
+	 * refused with a 400 and nothing is written - no product, no barcode, no conversion -
+	 * even though is_numeric() accepts "1e400" and NAN and "NAN <= 0" is false.
+	 */
+	#[DataProvider('nonFiniteOrUnusableLookupFactorProvider')]
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testAddingALookedUpProductWithAnUnusableFactorIsRefusedAndWritesNothing(string $factorExpression, string $barcode): void
+	{
+		$pluginFile = self::writeUserLookupPlugin('Coverage Bad Factor ', 3, 2, 'null', $factorExpression);
+
+		$snapshot = function (): array
+		{
+			return [
+				'products' => (int)self::$db->query('SELECT COUNT(*) FROM products')->fetchColumn(),
+				'products_max' => (int)self::$db->query('SELECT COALESCE(MAX(id), 0) FROM products')->fetchColumn(),
+				'product_barcodes' => (int)self::$db->query('SELECT COUNT(*) FROM product_barcodes')->fetchColumn(),
+				'product_barcodes_max' => (int)self::$db->query('SELECT COALESCE(MAX(id), 0) FROM product_barcodes')->fetchColumn(),
+				'conversions' => (int)self::$db->query('SELECT COUNT(*) FROM quantity_unit_conversions')->fetchColumn(),
+				'conversions_max' => (int)self::$db->query('SELECT COALESCE(MAX(id), 0) FROM quantity_unit_conversions')->fetchColumn(),
+				'conversion_rows' => self::$db->query('SELECT * FROM quantity_unit_conversions ORDER BY id')->fetchAll(\PDO::FETCH_ASSOC),
+			];
+		};
+
+		try
+		{
+			$before = $snapshot();
+
+			$response = self::send('GET', '/api/stock/barcodes/external-lookup/' . $barcode . '?add=true', ['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin']);
+			self::assertSame(400, $response['status'], "the lookup is refused: {$response['body']}");
+			self::assertStringContainsString('Provided __qu_factor_purchase_to_stock must be a finite number greater than zero', $response['body']);
+
+			self::assertSame($before, $snapshot(), 'no product, product_barcodes or quantity_unit_conversions row was written, and the conversions table is unchanged');
+
+			$product = self::$db->prepare('SELECT COUNT(*) FROM products WHERE name = ?');
+			$product->execute(['Coverage Bad Factor ' . $barcode]);
+			self::assertSame(0, (int)$product->fetchColumn(), 'and the product by the name the plugin proposed does not exist');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+		}
+	}
+
+	/** @return array<string, array{0: string, 1: string}> */
+	public static function finiteLookupFactorProvider(): array
+	{
+		return [
+			'float' => ['2.5', '4000417842011'],
+			'numeric string' => ["'2.5'", '4000417842012'],
+		];
+	}
+
+	/** Positive control for issue #842: a finite positive factor still creates the product and the conversion at that factor. */
+	#[DataProvider('finiteLookupFactorProvider')]
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testAddingALookedUpProductWithAFiniteFactorWritesTheConversionAtThatFactor(string $factorExpression, string $barcode): void
+	{
+		$pluginFile = self::writeUserLookupPlugin('Coverage Good Factor ', 3, 2, 'null', $factorExpression);
+
+		try
+		{
+			$response = self::send('GET', '/api/stock/barcodes/external-lookup/' . $barcode . '?add=true', ['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin']);
+			self::assertSame(200, $response['status'], "the add succeeds: {$response['body']}");
+
+			$product = self::$db->prepare('SELECT id FROM products WHERE name = ?');
+			$product->execute(['Coverage Good Factor ' . $barcode]);
+			$productId = $product->fetchColumn();
+			self::assertNotFalse($productId, 'the product row was written');
+
+			$barcodes = self::$db->prepare('SELECT COUNT(*) FROM product_barcodes WHERE product_id = ?');
+			$barcodes->execute([$productId]);
+			self::assertSame(1, (int)$barcodes->fetchColumn(), 'with its barcode');
+
+			$conversions = self::$db->prepare('SELECT factor FROM quantity_unit_conversions WHERE product_id = ? AND from_qu_id = 3 AND to_qu_id = 2');
+			$conversions->execute([$productId]);
+			$factors = $conversions->fetchAll(\PDO::FETCH_COLUMN);
+			self::assertCount(1, $factors, 'exactly one purchase->stock conversion');
+			self::assertSame(2.5, (float)$factors[0], 'at the factor the plugin found');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+		}
+	}
+
 	/**
 	 * products_default_qu_conversions_INS creates the product-specific 1:1 conversion only
 	 * "when no default QU conversion apply" (db/pgsql/baseline/06_triggers_a.sql), i.e. it
@@ -4131,7 +4231,7 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	}
 
 	/** Writes a lookup plugin into the data directory and returns its path. */
-	private static function writeUserLookupPlugin(string $namePrefix, int $quIdPurchase, int $quIdStock, string $imageUrlExpression): string
+	private static function writeUserLookupPlugin(string $namePrefix, int $quIdPurchase, int $quIdStock, string $imageUrlExpression, string $factorExpression = '6'): string
 	{
 		$pluginDirectory = getenv('VICTUAL_DATAPATH') . '/plugins';
 		$pluginFile = $pluginDirectory . '/CoverageBarcodeLookupPlugin.php';
@@ -4153,7 +4253,7 @@ class CoverageBarcodeLookupPlugin extends \\Victual\\Helpers\\BaseBarcodeLookupP
 			'location_id' => {$locationId},
 			'qu_id_purchase' => {$quIdPurchase},
 			'qu_id_stock' => {$quIdStock},
-			'__qu_factor_purchase_to_stock' => 6,
+			'__qu_factor_purchase_to_stock' => {$factorExpression},
 			'__barcode' => \$barcode,
 			'__image_url' => {$imageUrlExpression},
 		];

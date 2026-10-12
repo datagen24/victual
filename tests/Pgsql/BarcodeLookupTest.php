@@ -291,7 +291,14 @@ class BarcodeLookupTest extends TestCase
 			'zero as string' => ['0'],
 			'empty string' => [''],
 			'null' => [null],
-			'not a number' => ['six']
+			'not a number' => ['six'],
+			// Issue #842: numeric to is_numeric(), and not caught by "<= 0".
+			'string that overflows to INF' => ['1e400'],
+			'native INF' => [INF],
+			'native NAN' => [NAN],
+			'negative INF' => [-INF],
+			'negative number' => [-6],
+			'negative number as string' => ['-6']
 		];
 	}
 
@@ -305,9 +312,23 @@ class BarcodeLookupTest extends TestCase
 	{
 		$this->assertLookupRefuses(
 			self::validOutput(['__qu_factor_purchase_to_stock' => $factor]),
-			'Provided __qu_factor_purchase_to_stock must be a number greater than zero',
+			'Provided __qu_factor_purchase_to_stock must be a finite number greater than zero',
 			'a factor that is empty or not a number cannot convert anything'
 		);
+	}
+
+	/**
+	 * Positive control for issue #842: finite positive factors, as a float and as a numeric
+	 * string, still pass untouched.
+	 */
+	public function testLookupAcceptsFinitePositiveConversionFactors(): void
+	{
+		foreach ([2.5, '2.5', 6, '1e3'] as $factor)
+		{
+			$result = self::plugin(self::validOutput(['__qu_factor_purchase_to_stock' => $factor]))->Lookup(self::BARCODE);
+
+			self::assertSame($factor, $result['__qu_factor_purchase_to_stock'], 'a finite positive factor is handed back unchanged');
+		}
 	}
 
 	/**
@@ -329,7 +350,7 @@ class BarcodeLookupTest extends TestCase
 	{
 		$this->assertLookupRefuses(
 			self::validOutput(['__qu_factor_purchase_to_stock' => -6]),
-			'Provided __qu_factor_purchase_to_stock must be a number greater than zero',
+			'Provided __qu_factor_purchase_to_stock must be a finite number greater than zero',
 			'a negative factor would reach quantity_unit_conversions.factor with no meaning'
 		);
 	}
