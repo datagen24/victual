@@ -33,13 +33,21 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 {
 	/**
 	 * Declared error responses allowed to stay description-only, by "METHOD /path STATUS".
+	 * Each is unreachable, so there is no body to describe; they are kept in the document
+	 * (deleting a declared status is a maintainer decision) with a description that says so.
 	 *
-	 * POST /labels/pair 403: LabelWorkerApiController maps a `forbidden` refusal to 403, but
-	 * `forbidden` is raised only by LabelWorkerAuthorization (skipped for labels-pair),
-	 * LabelCaptureService and PrintAttemptService, none of which the pairing path reaches.
-	 * Reachability unverified, tracked in #802.
+	 * LabelWorkerApiController maps a `forbidden` refusal to 403, but `forbidden` is raised only
+	 * for attempt, printer and artifact-bytes ownership (LabelWorkerAuthorization::Authorize(),
+	 * lines 33-54), plus LabelCaptureService and PrintAttemptService. Register, Claim and Rotate
+	 * raise none of them. POST /labels/pair is worse: BaseAuthMiddleware returns before any
+	 * authorization for labels-pair (lines 100-106) and Pair() raises only 401 and 422.
 	 */
-	private const ALLOWED_DESCRIPTION_ONLY = ['POST /labels/pair 403'];
+	private const ALLOWED_DESCRIPTION_ONLY = [
+		'POST /labels/pair 403',
+		'POST /labels/register 403',
+		'POST /labels/jobs/claim 403',
+		'POST /labels/credentials/rotate 403',
+	];
 
 	private const ADMIN_USER = 9700;
 	private const OPERATOR_USER = 9701;
@@ -148,6 +156,7 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::assertSame(['error_message'], $schemas['ConsumptionError']['required'] ?? null);
 		self::assertSame(['field', 'code', 'error_message'], $schemas['LabelRefusal']['required'] ?? null);
 		self::assertSame(['revoked', 'code'], $schemas['CredentialRevoked']['required'] ?? null);
+		self::assertSame('boolean', $schemas['CredentialRevoked']['properties']['revoked']['type'] ?? null);
 		self::assertTrue($schemas['CredentialRevoked']['properties']['revoked']['const'] ?? null);
 		self::assertSame('credential_reuse', $schemas['CredentialRevoked']['properties']['code']['const'] ?? null);
 	}
@@ -269,9 +278,8 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 
 		self::assertSame(422, $response['status'], $response['body']);
 		self::AssertBody($response, 'POST', '/labels/printers', 422, [
-			'field' => 'driver_schema_version', 'code' => 'unknown_driver_version', 'error_message' => $response['json']['error_message'] ?? '',
+			'field' => 'driver_schema_version', 'code' => 'unknown_driver_version', 'error_message' => 'Unknown driver version',
 		]);
-		self::assertNotSame('', $response['json']['error_message'], 'a refusal names the problem');
 	}
 
 	public function testAnInvalidPrintRequestIsALabelRefusal(): void

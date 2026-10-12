@@ -436,6 +436,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		'ConsumptionShareRights.edit' => 'php',
 		'ConsumptionShareRights.share' => 'php',
 		'ConsumptionShareRights.undo' => 'php',
+		// LabelWorkerCredentialService::Rotate() returns the literal PHP array ['revoked' => true, ...] (line 125) for a
+		// reused credential; no column is behind it, so there is nothing for WireBooleans to convert.
+		'CredentialRevoked.revoked' => 'php',
 		'Chore.rollover' => 'chores',
 		'CurrentChoreResponse.track_date_only' => 'chores_current',
 		'CurrentChoreResponse.is_rescheduled' => 'chores_current',

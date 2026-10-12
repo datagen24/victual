@@ -339,7 +339,8 @@
 						}
 					},
 					"404": {
-						"$ref": "#/components/responses/NotFound"
+						"$ref": "#/components/responses/NotFound",
+						"description": "Location not found"
 					}
 				}
 			}
@@ -417,7 +418,8 @@
 						}
 					},
 					"404": {
-						"$ref": "#/components/responses/NotFound"
+						"$ref": "#/components/responses/NotFound",
+						"description": "Target not found"
 					}
 				}
 			}
@@ -6942,10 +6944,11 @@
 						}
 					},
 					"403": {
-						"description": "Caller does not own this resource"
+						"description": "Not produced by this operation: pairing is unauthenticated and raises only 401 and 422; kept so the declared status set does not change"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"security": [],
@@ -6986,13 +6989,15 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/RotateUnauthorized"
+						"$ref": "#/components/responses/RotateUnauthorized",
+						"description": "Invalid or expired credential"
 					},
 					"403": {
-						"$ref": "#/components/responses/ForbiddenLabel"
+						"description": "Not produced by this operation: a 403 `forbidden` refusal is raised only for attempt, printer and artifact ownership, and this operation raises none of those (rotation raises 401 and 422 only); kept so the declared status set does not change"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"requestBody": {
@@ -7036,13 +7041,15 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/WorkerUnauthorized"
+						"$ref": "#/components/responses/WorkerUnauthorized",
+						"description": "Invalid or expired credential"
 					},
 					"403": {
-						"$ref": "#/components/responses/ForbiddenLabel"
+						"description": "Not produced by this operation: a 403 `forbidden` refusal is raised only for attempt, printer and artifact ownership, and this operation raises none of those (it raises 401 and 422 only); kept so the declared status set does not change"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"requestBody": {
@@ -7088,13 +7095,15 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/WorkerUnauthorized"
+						"$ref": "#/components/responses/WorkerUnauthorized",
+						"description": "Invalid or expired credential"
 					},
 					"403": {
-						"$ref": "#/components/responses/ForbiddenLabel"
+						"description": "Not produced by this operation: a 403 `forbidden` refusal is raised only for attempt, printer and artifact ownership, and this operation raises none of those (it raises 401 and 422 only); kept so the declared status set does not change"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"requestBody": {
@@ -7136,13 +7145,16 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/WorkerUnauthorized"
+						"$ref": "#/components/responses/WorkerUnauthorized",
+						"description": "Invalid or expired credential"
 					},
 					"403": {
-						"$ref": "#/components/responses/ForbiddenLabel"
+						"$ref": "#/components/responses/ForbiddenLabel",
+						"description": "Attempt is not owned by this worker"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"parameters": [
@@ -7188,13 +7200,16 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/WorkerUnauthorized"
+						"$ref": "#/components/responses/WorkerUnauthorized",
+						"description": "Invalid or expired credential"
 					},
 					"403": {
-						"$ref": "#/components/responses/ForbiddenLabel"
+						"$ref": "#/components/responses/ForbiddenLabel",
+						"description": "Attempt is not owned by this worker"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"parameters": [
@@ -7240,13 +7255,16 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/WorkerUnauthorized"
+						"$ref": "#/components/responses/WorkerUnauthorized",
+						"description": "Invalid or expired credential"
 					},
 					"403": {
-						"$ref": "#/components/responses/ForbiddenLabel"
+						"$ref": "#/components/responses/ForbiddenLabel",
+						"description": "Attempt is not owned by this worker"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"parameters": [
@@ -7303,13 +7321,16 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/WorkerUnauthorized"
+						"$ref": "#/components/responses/WorkerUnauthorized",
+						"description": "Invalid or expired credential"
 					},
 					"403": {
-						"$ref": "#/components/responses/ForbiddenLabel"
+						"$ref": "#/components/responses/ForbiddenLabel",
+						"description": "Attempt is not owned by this worker"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"parameters": [
@@ -7385,13 +7406,16 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/WorkerUnauthorized"
+						"$ref": "#/components/responses/WorkerUnauthorized",
+						"description": "Invalid or expired credential"
 					},
 					"403": {
-						"$ref": "#/components/responses/ForbiddenLabel"
+						"$ref": "#/components/responses/ForbiddenLabel",
+						"description": "Printer is not assigned to this worker"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"parameters": [
@@ -7450,13 +7474,16 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Caller lacks the ADMIN permission"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"requestBody": {
@@ -7490,13 +7517,16 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Caller lacks the ADMIN permission"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"parameters": [
@@ -7539,13 +7569,16 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Caller lacks the ADMIN permission"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"parameters": [
@@ -7580,13 +7613,16 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Caller lacks the ADMIN permission"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"parameters": [
@@ -7631,13 +7667,16 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Caller lacks the ADMIN permission"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"requestBody": {
@@ -7697,13 +7736,16 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Caller lacks the ADMIN permission"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"parameters": [
@@ -7774,13 +7816,16 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Caller lacks the ADMIN permission"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"parameters": [
@@ -7826,13 +7871,16 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Caller lacks the ADMIN permission"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"parameters": [
@@ -7876,13 +7924,16 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Caller lacks the ADMIN permission"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"parameters": [
@@ -7920,13 +7971,16 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Caller lacks the ADMIN permission"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				}
 			}
@@ -7950,13 +8004,16 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Caller lacks the ADMIN permission"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"parameters": [
@@ -8007,13 +8064,16 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Caller lacks the ADMIN permission"
 					},
 					"422": {
-						"$ref": "#/components/responses/LabelRefused"
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "Refused request with field, code and error_message"
 					}
 				},
 				"parameters": [
@@ -10324,10 +10384,12 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Permission missing"
 					},
 					"404": {
 						"description": "Not found for this user",
@@ -10409,10 +10471,12 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Permission missing"
 					}
 				},
 				"tags": [
@@ -10482,10 +10546,12 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Permission missing"
 					},
 					"404": {
 						"description": "Not found for this user",
@@ -10574,10 +10640,12 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Permission missing"
 					},
 					"404": {
 						"description": "Not found for this user",
@@ -10681,10 +10749,12 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Permission missing"
 					}
 				},
 				"tags": [
@@ -10762,10 +10832,12 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Permission missing"
 					}
 				},
 				"tags": [
@@ -10792,10 +10864,12 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Permission missing"
 					}
 				},
 				"tags": [
@@ -10849,10 +10923,12 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Permission missing"
 					},
 					"404": {
 						"description": "Not found for this user",
@@ -10924,10 +11000,12 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Permission missing"
 					}
 				},
 				"tags": [
@@ -10972,10 +11050,12 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Permission missing"
 					}
 				},
 				"tags": [
@@ -11049,10 +11129,12 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Permission missing"
 					}
 				},
 				"tags": [
@@ -11096,10 +11178,12 @@
 						}
 					},
 					"401": {
-						"$ref": "#/components/responses/Unauthorized"
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Not authenticated"
 					},
 					"403": {
-						"$ref": "#/components/responses/Forbidden"
+						"$ref": "#/components/responses/Forbidden",
+						"description": "Permission missing"
 					}
 				},
 				"tags": [
@@ -14427,6 +14511,7 @@
 				],
 				"properties": {
 					"revoked": {
+						"type": "boolean",
 						"const": true,
 						"description": "Always true."
 					},
@@ -16527,7 +16612,7 @@
 				}
 			},
 			"WorkerUnauthorized": {
-				"description": "The worker credential is missing, unknown, expired or belongs to an inactive worker. The body is an ApiError when the request carries no valid key, and a LabelRefusal when the key is valid but the worker is refused.",
+				"description": "The worker credential is missing, unknown, expired or belongs to an inactive worker. The middleware answers an ApiError when the key is missing, unknown, expired or belongs to an inactive worker. A LabelRefusal with code unauthorized arises only when the worker is deactivated between the middleware check and the handler.",
 				"content": {
 					"application/json": {
 						"schema": {
@@ -16564,7 +16649,7 @@
 				}
 			},
 			"Forbidden": {
-				"description": "The caller lacks a permission the route requires. The body is {\"error_message\": \"Permission missing: <PERMISSION>\"}.",
+				"description": "The caller lacks a permission the route requires. The body is {\"error_message\": \"Permission missing: <PERMISSION>\"}. The middleware's own 403s (a read-only key on a write, a cross-origin request, a forced password change) share the ApiError shape.",
 				"content": {
 					"application/json": {
 						"schema": {
