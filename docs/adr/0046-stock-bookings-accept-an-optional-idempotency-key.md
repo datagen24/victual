@@ -6,8 +6,10 @@
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-11, against `master` at `d4960138` and re-read at `3122b937`, which
-  differs from it only in documentation. Design work only: it changes no code, reserves no
-  migration number and amends no accepted record.
+  differs from it only in documentation. Revised 2026-10-12, against `master` at `8fd76607`,
+  to name the discovery fields and response headers, to record the client obligations and to
+  apply the maintainer's transaction-id choices. Design work only: it changes no code,
+  reserves no migration number and amends no accepted record.
 - **Referenced by:** [issue 775](https://github.com/datagen24/victual/issues/775) and
   [victual-kit PR 35](https://github.com/datagen24/victual-kit/pull/35) (client timeouts).
 - **Relationship:** applies accepted [ADR-0010](0010-workload-standard.md)'s rule that every
@@ -280,21 +282,23 @@ replay time. Consequences of reading rather than storing the response:
 `StockTransactions()` selects by `transaction_id` across all users, and `uniqid()` derives
 the id from the clock in microseconds. It is not unique across processes or pods, so two
 requests in the same microsecond can share an id. A booking response today would then show
-the other request's rows too; a replay adds a second reader with the same exposure. The
-maintainer selected both protections below on 2026-10-11:
+the other request's rows too; a replay would add a second reader with the same exposure. The
+maintainer selected both protections on 2026-10-11:
 
-- Filter the replay read by `stock_log.user_id` equal to the acting user. The key is per
-  user, so the user's own rows are the only ones the replay should return. This narrows the
-  replay alone and leaves the existing responses and undo as they are.
-- Record the collision as a pre-existing risk of `uniqid()` and replace it with a
-  higher-entropy id, such as `bin2hex(random_bytes(16))`, which manual consumption already
-  uses for request ids. This fixes every reader, including undo, and is a change to
-  `StockService` beyond this record's routes.
-- **Selected: both.** Filter the replay by acting user and replace `uniqid()` transaction
-  ids with `bin2hex(random_bytes(16))`. Existing stored transaction ids remain readable.
+- The replay read filters `stock_log` by `user_id` equal to the acting user. The key is per
+  user, so the user's own rows are the only ones a replay returns. This narrows the replay
+  alone; the existing booking responses and undo read as they do today.
+- `StockService` generates every new transaction id with `bin2hex(random_bytes(16))`, which
+  manual consumption already uses for request ids. This fixes the collision for every
+  reader, including undo. It changes the id's format; the "Transaction id format" section
+  below records what that touches. Stored ids stay valid and readable.
 
 The response carries `Idempotent-Replayed: true`. A keyed request that books carries
-`Idempotent-Replayed: false`, which tells the client the server honoured the key.
+`Idempotent-Replayed: false`, which tells the client the server honoured the key. A request
+without `Idempotency-Key` carries neither value. The 409 answers of decision 6 and the
+refusals of decision 8 carry no `Idempotent-Replayed` header, because no booking happened and
+none was replayed. The header name and its two values are the whole response-side contract;
+the body is the ordinary booking response.
 
 Another user presenting the same key value is in a separate key space. Their request books
 normally, and nothing in the response reveals that the key exists for someone else.
@@ -357,8 +361,61 @@ one that cannot tell it.
 | D. The response header alone | Arrives only on a successful response, so a client learns it after the first keyed write and must remember it per server. |
 
 The maintainer selected option A on 2026-10-11: `GET /api/system/info` names the feature
-and its retention in seconds. Option D's header confirms every keyed response. Version checks against `victual_version` are
-not recommended, because a named feature states the capability directly and a version number does not.
+and its retention in seconds. Option D's header confirms every keyed response. Version checks
+against `victual_version` are not recommended, because a named feature states the capability
+directly and a version number does not.
+
+The existing response is a flat object of snake_case keys: `victual_version` (an object with
+`Version` and `ReleaseDate`), `php_version`, `sqlite_version`, `database_engine`,
+`db_version`, `os` and `client`. `ApplicationService::GetSystemInfo` builds it, the About
+page reads it, and `tests/Pgsql/snapshots/contract-admin.json` records its shape. It carries
+no capability fields today. The only published capability precedent is
+`GET /api/consumption/capabilities`, which answers `contract_version` and a `features`
+array of names. `GET /api/user/capabilities` describes the acting credential and answers a
+different question.
+
+**Contract fields (proposed).** `GET /api/system/info` gains one top-level key,
+`stock_booking_idempotency`, whose value is an object:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `header` | string | The request header that carries the key. Always `Idempotency-Key`. |
+| `retention_seconds` | integer | How long after the original booking the server replays a key. 604800 (seven days). |
+| `operations` | array of strings | The operations a key protects: `purchase`, `consume`, `transfer`, `open`, `inventory`. |
+
+The key is absent on a server that does not implement the feature. A client must treat an
+absent `stock_booking_idempotency` as "keys are ignored" and must not retry a booking whose
+outcome is unknown. A client must read `retention_seconds` from the response and must not
+hard-code seven days, because the maintainer may change the constant. An example fragment:
+
+```json
+{
+  "victual_version": { "Version": "0.1.0", "ReleaseDate": "2026-10-12" },
+  "database_engine": "PostgreSQL 16.10",
+  "db_version": 307,
+  "stock_booking_idempotency": {
+    "header": "Idempotency-Key",
+    "retention_seconds": 604800,
+    "operations": ["purchase", "consume", "transfer", "open", "inventory"]
+  }
+}
+```
+
+The values come from server constants, not from a setting. The same constant sets each key
+row's `expires_at` and the published `retention_seconds`, so the two cannot drift.
+`victual.openapi.json` documents the object in the `/system/info` schema, and the contract
+snapshot adds `stock_booking_idempotency` with its three members.
+
+**Unit.** `retention_seconds` is recommended over a day count. The server's expiry is a
+duration added to a timestamp, so the published value is exact. A client timer and
+PostgreSQL `interval` arithmetic both work in seconds. A day count would force a client to
+guess whether a day means 24 hours or a calendar day across a clock change. Seconds also let
+the maintainer choose a window that is not a whole number of days without a field rename.
+
+**Headers.** `Idempotency-Key` is the request header, matching label operations.
+`Idempotent-Replayed` is `true` when the response is a replay and `false` when a keyed
+request booked (decision 7). Open question 5 asks whether the capability should sit under a
+shared `capabilities` container instead of at the top level.
 
 ### 12. Nested callers never take a key
 
@@ -367,6 +424,31 @@ The key belongs to the HTTP request. `RecipesService`, `ChoresService`,
 `StockService` directly and take no booking key. Manual consumption keeps its `request_id`
 and external events keep their path identity. Recipe consumption, chore execution, stock
 entry edits, measurements, weighing and undo are outside this record.
+
+## Client obligations
+
+These requirements bind any client of the API, including the Victual UI, victual-kit, the
+MCP sidecar and third-party scripts. Each row names the server behaviour that makes the
+obligation sound and the test that establishes that server half (Verification lists the
+tests in full). A client's own tests establish its half. This record does not require
+evidence from one client alone.
+
+| # | A client must | Server half and its test |
+|---|---|---|
+| 1 | Read `stock_booking_idempotency` from `GET /api/system/info` once per session, and send `Idempotency-Key` only to a server that publishes it. | The object is present with `header`, `retention_seconds` and `operations` (contract snapshot test). A server without it ignores the header, as it does today. |
+| 2 | Generate one key per intended booking before the first attempt, from a cryptographically secure random source such as UUIDv4, 8 to 128 characters of `[A-Za-z0-9._:-]`. | A malformed key is refused before any booking (grammar test). Uniqueness rests on the unique constraint, not on the client's randomness (two-user and subprocess race tests). |
+| 3 | Resend a byte-identical body, the same route (or the by-barcode route naming the same product and entry) and the same key on every retry. | A retry replays with `Idempotent-Replayed: true` and books once (per-operation replay test). Different contents answer 409 `idempotency_conflict` (conflict test). |
+| 4 | Never reuse a key for a different booking. | A reused key with a different body, product or entry answers 409 and books nothing (conflict test). Another user's identical key is a separate key space (two-user test). |
+| 5 | Stop automatic retries once `retention_seconds` has passed since it sent the first attempt, counting from that send and not from the last failure. | After expiry the same key books again (retention-boundary test), which is why the client must stop. The server never extends a key on replay. |
+| 6 | Treat the outcome as unknown when the key has expired, the server does not publish the capability, or no response arrived inside the window. Resolve it by reading stock or the journal, never by sending a new key. | A new key books again by design, and no server answer can reveal an earlier attempt (retention-boundary test). |
+| 7 | Treat 409 `idempotency_conflict` as a client defect: stop, do not resend, and do not assume either request booked. | Nothing is booked on 409 (conflict test). |
+| 8 | Treat 409 `idempotency_in_progress` as "wait": retry later with the same key and body, never with a new key. | The subprocess race test and the in-progress test, which covers a committed key row with no transaction id. |
+| 9 | Read `Idempotent-Replayed`. `true` means the response repeats an earlier booking and is not a second one. `false` means the server honoured the key. Absence on a keyed request means the server ignored the key. | Replay, first-booking and unkeyed tests assert `true`, `false` and absence. |
+| 10 | Treat a replay's rows as current state. `undone` may be set, redaction follows current permissions, and a 400 "No transaction was found" means "booked once, rows unreadable", never "retry". | The undo-then-replay test and the deleted-rows test. |
+| 11 | Treat a 403 on a keyed booking as possibly committed, and resend with the same key and body. | The `STOCK_VIEW` test: a committed booking whose re-read is refused replays the same 403 and books once. |
+
+A client that follows these rules does not create a second booking by retrying, and it never
+mistakes an unknown outcome for a known one.
 
 ## Options considered
 
@@ -410,6 +492,43 @@ entry edits, measurements, weighing and undo are outside this record.
 - The response to a replay can differ from the original response: `undone` may be set, and
   redaction follows current permissions. A client compares by transaction id, not by bytes.
 
+### Transaction id format
+
+New transaction ids change from `uniqid()` output, 13 hexadecimal characters derived from
+the clock, to `bin2hex(random_bytes(16))`, 32 hexadecimal characters. Checked on `master` at
+`8fd76607`:
+
+- `uniqid()` mints a transaction id at five `StockService` sites (`AddProduct`,
+  `ConsumeProduct`, `EditStockEntry`, `MeasureStockEntry` and `OpenProduct`) and at
+  `ChoresService::TrackChore`, which passes its id into `ConsumeProduct`. Transfer and
+  inventory reach the column through those methods. The implementing change should replace
+  the `ChoresService` site too, or chore consumption keeps the old format. `stock_id` and
+  `correlation_id` also use `uniqid()` and are outside this record.
+- `stock_log.transaction_id` is `TEXT` with no length constraint (migration `0095`, baseline
+  `01_tables.sql`). `consumption_events.transaction_id` and `linked_transaction_id` are
+  `TEXT`, as is `chores_log.stock_transaction_id` (migration `0291`).
+- `victual.openapi.json` types `transaction_id` as `string` or `null` with no `format`,
+  `pattern` or `maxLength`. A search of the PHP, JavaScript and SQL sources for length,
+  pattern and substring operations on a transaction id found none, and no test or fixture
+  asserts the id's length.
+- The Victual UI places the id in a URL path segment and in a single-quoted JavaScript string
+  (`consume.js`). Lowercase hexadecimal is safe in both, as 13-character ids are today.
+- `ConsumptionEventService` orders duplicate candidates by `at, transaction_id`. The id is
+  only the tie-break after `at`, so random ids change which of two same-instant candidates
+  lists first and nothing else. No query relies on a transaction id sorting by time.
+- `.devtools/parity/harness/lib/normalize.js` masks `transaction_id` as an opaque handle, so
+  the parity suite is unaffected. Test code that passes its own id, such as the `a40-`
+  prefix in `.devtools/adr0040/race-worker.php`, is unaffected because a supplied id is not
+  regenerated.
+- Existing ids remain valid. Undo, `GET /api/stock/transactions/{transactionId}` and replay
+  select by exact string match, so 13- and 32-character ids coexist.
+
+No documented contract fixes the id's format, so the change is additive for readers. A
+client that stored the old length in a column or validation pattern would fail. The
+implementing pull request should document the id as an opaque string. ADR-0024 requires
+coordination with a maintained client affected by a breaking change; victual-kit should
+confirm that it treats the id as opaque before release.
+
 ## Open questions and maintainer responses
 
 1. **How long does a key protect a booking from duplicate retries?**
@@ -444,16 +563,33 @@ entry edits, measurements, weighing and undo are outside this record.
    ADR-0024 still requires coordination when an existing maintained client is affected
    by a breaking change.
 
+5. **Where does the capability sit in `GET /api/system/info`?** The response has no
+   capability fields, so the shape is a new choice.
+
+   | Option | Effect |
+   |---|---|
+   | A. A top-level `stock_booking_idempotency` object | One additive key, named for the feature, with no nesting. A later feature adds its own key. |
+   | B. A `capabilities` object keyed by feature, holding `stock_booking_idempotency` | Groups future capabilities and separates them from the environment fields. The name resembles `GET /api/user/capabilities` and `GET /api/consumption/capabilities`, which answer different questions. |
+
+   Recommendation: option A. It adds one key without inventing a container for features that
+   do not exist yet, and it avoids a third meaning of "capabilities" in the API. If the
+   maintainer prefers option B, only the JSON path changes; the three members, the unit and
+   the headers stay as recorded. This record uses option A until the maintainer answers.
+
 ## Acceptance prerequisites
 
 1. Seven-day retention and discovery through `GET /api/system/info` are confirmed.
-   The implementing contract must name the capability and retention fields explicitly.
+   Decision 11 names the capability (`stock_booking_idempotency`), the retention field
+   (`retention_seconds`, in seconds) and decision 7 names the response header
+   (`Idempotent-Replayed`, `true` or `false`). Open question 5 asks the maintainer to
+   confirm the JSON path.
 2. The OpenAPI and CORS changes in the Consequences are reviewed as additive, with
    `victual.openapi.json` updated in the implementing pull request as ADR-0024 decision 1
    requires.
-3. The API documents and tests the client obligations in open question 4, including
-   unchanged retry contents and the retention boundary. Integration evidence from
-   victual-kit is useful but is not the only way to meet this gate.
+3. The API documents and tests the obligations in the Client obligations section, including
+   unchanged retry contents and the retention boundary. Verification lists the server-side
+   test for each obligation's server half. Integration evidence from victual-kit is useful
+   but is not the only way to meet this gate.
 
 ## Verification
 
@@ -475,7 +611,21 @@ the suite runs (`.devtools/pgsql/run-tests.sh`):
   the acting user's rows. New transactions use cryptographically random ids, and
   existing transaction ids remain readable and undoable.
 - PHPUnit: after the retention window, the same key books again, demonstrating that expiry is
-  real and that the published window is the limit.
+  real and that the published window is the limit. A companion case just inside the window
+  replays.
+- PHPUnit: a malformed key (fewer than 8 or more than 128 characters, or a character outside
+  `[A-Za-z0-9._:-]`) is refused before any booking. A request without the header books as
+  today and carries no `Idempotent-Replayed` header.
+- PHPUnit: a committed key row with no transaction id answers 409 `idempotency_in_progress`
+  and books nothing.
+- PHPUnit: delete the transaction's `stock_log` rows, then replay; the answer is 400 and
+  nothing is booked.
+- PHPUnit: a keyed booking that committed but whose re-read answers 403 (booking permission
+  without `STOCK_VIEW`) replays the same 403 and books once.
+- PHPUnit: a keyed first booking carries `Idempotent-Replayed: false`, and a 409 carries no
+  `Idempotent-Replayed` header.
+- PHPUnit: new transaction ids are 32 lowercase hexadecimal characters, and a pre-existing
+  13-character id remains readable and undoable.
 - PHPUnit: undo the transaction, then replay; the answer shows the rows with `undone` set and
   stock is not rebooked.
 - PHPUnit: a Grocycode consume, open and transfer through the by-barcode route, then a direct
@@ -485,6 +635,8 @@ the suite runs (`.devtools/pgsql/run-tests.sh`):
 - pgTAP: the table's unique constraint, the key and fingerprint checks, and the `expires_at`
   index, listed in `.devtools/pgtap/README.md`'s completeness list.
 - Contract snapshot (`tests/Pgsql/ContractTest.php`) updated for the header parameter, the 409
-  responses and the discovery field.
+  responses and the discovery object `stock_booking_idempotency` with `header`,
+  `retention_seconds` and `operations`. A PHPUnit check asserts that `retention_seconds`
+  equals the constant that sets `expires_at`.
 - A CORS preflight test, alongside the assertions in `tests/Pgsql/AuthStackTest.php` and
   `HttpBootTest.php`, showing `Idempotency-Key` allowed and `Idempotent-Replayed` exposed.
