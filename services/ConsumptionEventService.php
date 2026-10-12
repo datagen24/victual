@@ -359,7 +359,10 @@ class ConsumptionEventService extends BaseService
 
 		if ($reason === 'ambiguous_location' && $row['candidate_location_ids'] !== null)
 		{
-			$event['candidate_location_ids'] = array_map('intval', $this->ParseIntArray($row['candidate_location_ids']));
+			// A location deleted since the event was parked is not a choice any more; the array carries no foreign key.
+			$candidates = array_map('intval', $this->ParseIntArray($row['candidate_location_ids']));
+			$existing = count($candidates) === 0 ? [] : $this->Db()->query('SELECT id FROM locations WHERE id IN (' . implode(',', $candidates) . ')')->fetchAll(\PDO::FETCH_COLUMN);
+			$event['candidate_location_ids'] = array_values(array_filter($candidates, fn(int $id) => in_array($id, array_map('intval', $existing), true)));
 		}
 
 		if ($reason === 'unit_unconfirmed')
@@ -463,8 +466,8 @@ class ConsumptionEventService extends BaseService
 
 		if (count($states) > 0)
 		{
-			// `partially_undone` is a reason of needs_review, and `undone` can be derived, so both are matched
-			// after the derived state is known; the stored filter only narrows the candidates.
+			// `partially_undone` is a reason of needs_review, and `undone` can be derived, so the stored filter
+			// only narrows the candidates; the state a person sees is derived in SQL below, before the limit.
 			$sql .= ' AND state IN (' . implode(',', array_fill(0, count($states) + 2, '?')) . ')';
 			$parameters = array_merge($parameters, $states, ['booked', 'needs_review']);
 		}
@@ -475,23 +478,30 @@ class ConsumptionEventService extends BaseService
 			$parameters[] = self::Utc(self::ParseTime($since, 'since'));
 		}
 
-		$statement = $this->Db()->prepare($sql . ' ORDER BY updated_at DESC, id DESC LIMIT ' . (int)($limit * 2 + 50));
+		if (count($states) > 0)
+		{
+			// The same derivation as EffectiveState(), as one aggregate over stock_log per candidate, so a state
+			// filter and the limit see the state a person sees. A direct stock undo leaves updated_at alone,
+			// so deriving after the limit would drop an old event whose bookings were undone in the journal.
+			$sql = 'SELECT candidate.* FROM (' . $sql . ') candidate
+				LEFT JOIN LATERAL (SELECT count(*) AS total, count(*) FILTER (WHERE undone = 0) AS remaining
+					FROM stock_log WHERE transaction_id = candidate.transaction_id) counts ON true
+				WHERE (CASE
+					WHEN NOT ((candidate.state = \'booked\' OR (candidate.state = \'needs_review\' AND candidate.reason = \'partially_undone\')) AND candidate.transaction_id IS NOT NULL) THEN candidate.state
+					WHEN counts.total > 0 AND counts.remaining = 0 THEN \'undone\'
+					WHEN counts.remaining > 0 AND counts.remaining < counts.total THEN \'needs_review\'
+					ELSE \'booked\'
+				END) IN (' . implode(',', array_fill(0, count($states), '?')) . ')';
+			$parameters = array_merge($parameters, $states);
+		}
+
+		$statement = $this->Db()->prepare($sql . ' ORDER BY updated_at DESC, id DESC LIMIT ' . $limit);
 		$statement->execute($parameters);
 		$events = [];
 
 		foreach ($statement->fetchAll(\PDO::FETCH_ASSOC) as $row)
 		{
-			[$state] = $this->EffectiveState($row);
-
-			if (count($states) === 0 || in_array($state, $states, true))
-			{
-				$events[] = $this->Present($row);
-			}
-
-			if (count($events) >= $limit)
-			{
-				break;
-			}
+			$events[] = $this->Present($row);
 		}
 
 		return $events;
@@ -1429,6 +1439,25 @@ class ConsumptionEventService extends BaseService
 			throw self::Invalid('link needs a transaction_id');
 		}
 
+		// The product locks come before the bookings are judged, live or not: a direct undo of the target
+		// transaction takes the same locks (StockService::UndoTransaction) and re-checks `undone` under them,
+		// so a link that read the bookings first could attach an event to a transaction that was undone
+		// before the link committed, leaving no deduction for the dose. The products are read once without
+		// the lock to know which to take, and the bookings are read again under it.
+		$products = $this->Db()->prepare('SELECT DISTINCT product_id FROM stock_log WHERE transaction_id = ?');
+		$products->execute([$transactionId]);
+		$lock = array_map('intval', $products->fetchAll(\PDO::FETCH_COLUMN));
+
+		if ($live)
+		{
+			$lock = array_merge($lock, $this->ProductsOfTransaction($row['transaction_id']));
+		}
+
+		if (count($lock) > 0)
+		{
+			DatabaseService::GetInstance()->LockProductsStock(array_values(array_unique($lock)));
+		}
+
 		$bookings = $this->Db()->prepare('SELECT id, product_id, transaction_type, undone, user_id FROM stock_log WHERE transaction_id = ?');
 		$bookings->execute([$transactionId]);
 		$found = $bookings->fetchAll(\PDO::FETCH_ASSOC);
@@ -1505,16 +1534,31 @@ class ConsumptionEventService extends BaseService
 
 		if ($live)
 		{
-			DatabaseService::GetInstance()->LockProductsStock(array_values(array_unique(array_merge($booked, $this->ProductsOfTransaction($row['transaction_id'])))));
 			$this->LockAndUndo($row['transaction_id'], []);
 		}
 
 		$eventId = (int)$row['id'];
-		$this->Db()->prepare("UPDATE consumption_events SET state = 'linked', reason = NULL, linked_transaction_id = ?, candidate_location_ids = NULL, stock_error_message = NULL, updated_at = now() WHERE id = ?")
-			->execute([$transactionId, $eventId]);
+
+		try
+		{
+			$this->Db()->prepare("UPDATE consumption_events SET state = 'linked', reason = NULL, linked_transaction_id = ?, candidate_location_ids = NULL, stock_error_message = NULL, updated_at = now() WHERE id = ?")
+				->execute([$transactionId, $eventId]);
+		}
+		catch (\PDOException $exception)
+		{
+			// A concurrent link or booking took the transaction after the checks above: the unique indexes and
+			// the transaction-roles trigger (migration 0309) raise 23505. It is the same refusal as finding the
+			// holder first; the whole link, including the undo of the event's own booking, rolls back.
+			if (($exception->errorInfo[0] ?? $exception->getCode()) === '23505')
+			{
+				throw $refuse('That transaction cannot be linked');
+			}
+
+			throw $exception;
+		}
 		$this->Db()->prepare('DELETE FROM consumption_event_lines WHERE event_id = ?')->execute([$eventId]);
 		$insert = $this->Db()->prepare('INSERT INTO consumption_event_lines (event_id, product_id, amount, location_id, stock_log_id, used_date) VALUES (?, ?, ?, ?, ?, ?)');
-		$lines = $this->Db()->prepare('SELECT id, product_id, amount, location_id, used_date FROM stock_log WHERE transaction_id = ? ORDER BY id');
+		$lines = $this->Db()->prepare('SELECT id, product_id, amount, location_id, used_date FROM stock_log WHERE transaction_id = ? AND undone = 0 ORDER BY id');
 		$lines->execute([$transactionId]);
 
 		foreach ($lines->fetchAll(\PDO::FETCH_ASSOC) as $booking)

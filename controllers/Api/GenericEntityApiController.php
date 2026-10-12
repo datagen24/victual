@@ -278,6 +278,23 @@ class GenericEntityApiController extends BaseApiController
 				return $this->GenericErrorResponse($response, \Victual\Services\Database\StockLocationConstraint::DELETE_MESSAGE);
 			}
 
+			// A consumption mapping with a fixed location must keep naming one (its CHECK forbids clearing the
+			// column), so the delete is refused, and the person is told which mapping holds the location.
+			// Ids only: a mapping is private to its user and its medication reference is not for another's eyes.
+			if ($args['entity'] == 'locations')
+			{
+				$mappingIds = [];
+				foreach ($this->DB->consumption_mappings()->where('location_id', $row->id)->orderBy('id') as $mapping)
+				{
+					$mappingIds[] = $mapping->id;
+				}
+
+				if (count($mappingIds) > 0)
+				{
+					return $this->GenericErrorResponse($response, sprintf(self::MAPPING_LOCATION_REFUSAL_MESSAGE, implode(', ', $mappingIds)));
+				}
+			}
+
 			try
 			{
 				$row->delete();
@@ -653,6 +670,9 @@ class GenericEntityApiController extends BaseApiController
 	 * endpoints, whatever permission it holds. See WithoutServerOwnedColumns().
 	 */
 	private const SERVER_OWNED_COLUMNS = ['id', 'row_created_timestamp', 'import_epoch'];
+
+	/** DeleteObject()'s answer to a location that a consumption mapping names (migration 0306); %s is the mapping ids. */
+	private const MAPPING_LOCATION_REFUSAL_MESSAGE = 'Location is the fixed location of consumption mapping(s) %s; change or delete those mappings before deleting the location';
 
 	/**
 	 * DeleteObject()'s answer to an ordinary foreign-key delete refusal (audit finding M15 /
