@@ -68,25 +68,31 @@ On 2026-10-12 the maintainer started a cleanup of `victual.openapi.json`, tracke
 
 ### Decisions recorded 2026-10-12
 
-- **v0.5.0 scope (D5).** Keep ADR-0043 (#742), price correctness (ADR-0045, #774) and booking
-  idempotency (ADR-0046, #775). Fix #782 and #785 before release. Defer unrelated milestone work:
-  #654, #483, #86 and #80 leave the 0.5.0 milestone. #762 is undecided: it concerns assigning roles
-  when a user is created, which the explicit `MASTER_DATA_ADD` grant may touch.
-- **#782 (D6).** Product merge requires `MASTER_DATA_EDIT`.
-- **#785 (D6).** A booking route refuses a caller without `STOCK_VIEW` before it books.
-- **ADR-0045 Q8 to Q13, ADR-0046 Q5 and ADR-0043's release:** answered, recorded in PR
-  [831](https://github.com/datagen24/victual/pull/831).
-
-The milestone edits were not applied: the session's permission rules refused issue writes. The
-maintainer applies them.
+- **v0.5.0 boundary (D5).** Recorded in plan 22's header. Required: plan 22's work, ADR-0043 (#742),
+  ADR-0045 (#774), ADR-0046 (#775), fixes for #782 and #785, #783's disposition, #787 and #788, and
+  integrated verification (#703). Deferred: #762, #654, #483, #86, #80; #737 stays post-v0.5.0. The
+  OpenAPI audit (#796) gates only the contracts v0.5.0 changes or depends on. Milestone updated and
+  each issue commented on 2026-10-12.
+- **#782 (D6).** Revised later the same day: merge requires both `STOCK_EDIT` and `MASTER_DATA_EDIT`.
+  PR 833 (merged) added `MASTER_DATA_EDIT`; a follow-up adds `STOCK_EDIT`.
+- **#783 (D6).** Keep the item-permission rules for v0.5.0 and document them: PR
+  [835](https://github.com/datagen24/victual/pull/835).
+- **#785 (D6).** Check the booking permission and `STOCK_VIEW` before any mutation, including the
+  by-barcode wrappers and keyed requests; PR [834](https://github.com/datagen24/victual/pull/834).
+  ADR-0046 is updated to match.
+- **ADR-0043.** Ships in v0.5.0. Explicit `MASTER_DATA_ADD` grants; `MASTER_DATA_EDIT` keeps
+  conversion creation, edits and deletion; lookup without creation under `STOCK_VIEW`; batteries and
+  task categories unchanged; ownership deferred. An add-only account cannot create a conversion, so
+  #742's setup restriction is narrowed, not removed, and the native flow must handle that.
+- **D4.** Issue 702's acceptance text was rewritten on 2026-10-12 for the simulator evidence, with
+  the unverified behaviours named.
 
 | ID | Item | State | Blocks |
 |---|---|---|---|
-| A1 | Accept ADR-0043, ADR-0045 and ADR-0046 | Every open question is answered once PR 831 merges. Acceptance is a bookkeeping PR per record, by the maintainer | #742, #774, #775 implementation |
-| F1 | #782 merge gate and #785 up-front refusal | Implementation worker (2026-10-12), two branches | v0.5.0 |
-| D4 | Issue 702's text still names a real device | Maintainer | Closing #702 |
-| D7 | #762 in or out of v0.5.0 | Maintainer | #703 |
-| D8 | #783 shopping-list container rights | Maintainer; outside v0.5.0 unless added | — |
+| A1 | Accept ADR-0043, ADR-0045 and ADR-0046 | Responses recorded; ADR-0043 boundaries and ADR-0046's up-front refusal being written into the records (2026-10-12). Acceptance is a bookkeeping PR per record, by the maintainer | #742, #774, #775 implementation |
+| F1 | #782 both-rights follow-up; #785 by-barcode wrappers check first | Implementation worker (2026-10-12) | v0.5.0 |
+| N1 | `ConsumptionEventFixtureTest` fixture 11 step 5 failed once and passed on rerun; it reads two transaction rows in no guaranteed order | Not filed | — |
+| N2 | The chore merge item (`views/chores.blade.php:79`) lacks `permission-MASTER_DATA_EDIT` | Not filed | — |
 
 ## Specifications
 
