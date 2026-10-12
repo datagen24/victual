@@ -83,10 +83,12 @@ maintainer applies them.
 | ID | Item | State | Blocks |
 |---|---|---|---|
 | A1 | Accept ADR-0043, ADR-0045 and ADR-0046 | Every open question is answered once PR 831 merges. Acceptance is a bookkeeping PR per record, by the maintainer | #742, #774, #775 implementation |
-| F1 | #782 merge gate and #785 up-front refusal | Implementation worker (2026-10-12), two branches | v0.5.0 |
+| F1 | #782 merge gate and #785 up-front refusal | PRs [833](https://github.com/datagen24/victual/pull/833) and [834](https://github.com/datagen24/victual/pull/834): `rbac` failed before each fix (2 and 14 failures) and passes after on PostgreSQL 16 | v0.5.0 |
 | D4 | Issue 702's text still names a real device | Maintainer | Closing #702 |
 | D7 | #762 in or out of v0.5.0 | Maintainer | #703 |
 | D8 | #783 shopping-list container rights | Maintainer; outside v0.5.0 unless added | — |
+| N1 | `ConsumptionEventFixtureTest` fixture 11 step 5 failed once ("8.0 matches expected 10.0") and passed on rerun; it saves `0.id` from `GET /stock/transactions/{tx}`, which returns two rows in no guaranteed order | Not filed; needs an ordering fix in the fixture or the route | — |
+| N2 | The chore merge menu item (`views/chores.blade.php:79`) lacks `permission-MASTER_DATA_EDIT`, although its route requires it | Not filed | — |
 
 ## Specifications
 
