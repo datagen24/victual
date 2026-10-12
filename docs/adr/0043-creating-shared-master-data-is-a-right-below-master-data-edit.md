@@ -360,10 +360,19 @@ should move to `MASTER_DATA_EDIT`; that needs its own decision.
      - where a global conversion already covers the pair, one product-specific row is
        inserted and the global row is unchanged;
      - the consume and price rows the trigger inserted for the new product keep factor 1;
-     - a lookup factor of zero, a negative number, a non-numeric value or a non-finite value
-       (for example `"1e400"`) is refused, and no product, barcode or conversion row is
-       written;
+     - every global conversion and every conversion of another product is unchanged after
+       the lookup. The test compares their rows, ids and factors, before and after, as an
+       explicit assertion of its own;
+     - each of these lookup factors is refused, and no product, barcode or conversion row is
+       written: the string `"1e400"`, native `INF`, native `NAN`, zero, a negative number,
+       and a non-numeric value;
      - when the conversion write fails, the product and barcode rows roll back with it.
+
+   Acceptance needs the factor validation from
+   [issue 842](https://github.com/datagen24/victual/issues/842) merged first. The accepting
+   pull request then cites passing results for these tests and for every other gate in this
+   section: permissions, install, import and upgrade paths, the picture rules, the contract
+   snapshots and the migration check.
 4. The contract snapshots and `check-migrations.php` pass with the migration.
 
 ## Open questions
