@@ -1332,40 +1332,22 @@
 						},
 						"content": {
 							"image/jpeg": {
-								"schema": {
-									"type": "string",
-									"format": "binary"
-								}
+								"schema": {}
 							},
 							"image/png": {
-								"schema": {
-									"type": "string",
-									"format": "binary"
-								}
+								"schema": {}
 							},
 							"image/gif": {
-								"schema": {
-									"type": "string",
-									"format": "binary"
-								}
+								"schema": {}
 							},
 							"image/webp": {
-								"schema": {
-									"type": "string",
-									"format": "binary"
-								}
+								"schema": {}
 							},
 							"application/pdf": {
-								"schema": {
-									"type": "string",
-									"format": "binary"
-								}
+								"schema": {}
 							},
 							"application/octet-stream": {
-								"schema": {
-									"type": "string",
-									"format": "binary"
-								}
+								"schema": {}
 							}
 						}
 					},
@@ -1430,10 +1412,7 @@
 				"requestBody": {
 					"content": {
 						"application/octet-stream": {
-							"schema": {
-								"type": "string",
-								"format": "binary"
-							}
+							"schema": {}
 						}
 					}
 				},
@@ -8906,10 +8885,7 @@
 						"description": "Fetch an asset",
 						"content": {
 							"image/png": {
-								"schema": {
-									"type": "string",
-									"format": "binary"
-								}
+								"schema": {}
 							}
 						}
 					},
@@ -9181,10 +9157,7 @@
 						"description": "Fetch artifact bytes",
 						"content": {
 							"image/png": {
-								"schema": {
-									"type": "string",
-									"format": "binary"
-								}
+								"schema": {}
 							}
 						}
 					},
@@ -9224,10 +9197,7 @@
 						"description": "The rendered preview image",
 						"content": {
 							"image/png": {
-								"schema": {
-									"type": "string",
-									"format": "binary"
-								}
+								"schema": {}
 							}
 						}
 					},

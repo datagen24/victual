@@ -1458,6 +1458,8 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		$response = self::Send('GET', "/api/labels/assets/$assetId/bytes", null, self::$rendererKey);
 		self::assertSame(200, $response['status'], $response['body']);
 		self::assertSame("\x89PNG", substr($response['body'], 0, 4), 'the bytes are the exact stored ones');
+		self::assertSame("\x89PNG\r\n\x1a\n", substr($response['body'], 0, 8), 'the body is raw PNG bytes, not a JSON or base64 rendering');
+		self::assertSame('image/png', array_change_key_case($response['headers'])['content-type'] ?? null, 'and is declared as the image/png the document names');
 
 		$missing = self::Send('GET', '/api/labels/assets/999999/bytes', null, self::$rendererKey);
 		self::AssertRefusal($missing, 404, 'asset_id', 'not_found');
@@ -1482,6 +1484,8 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 		self::assertSame(200, $response['status'], substr($response['body'], 0, 200));
 		self::assertSame("\x89PNG", substr($response['body'], 0, 4));
+		self::assertSame("\x89PNG\r\n\x1a\n", substr($response['body'], 0, 8), 'the body is raw PNG bytes, not a JSON or base64 rendering');
+		self::assertSame('image/png', array_change_key_case($response['headers'])['content-type'] ?? null, 'and is declared as the image/png the document names');
 
 		self::assertSame(403, self::Send('GET', '/api/labels/artifacts/' . self::$locationArtifactId . '/image', null, self::$operatorKey)['status']);
 		self::AssertRefusal(self::Send('GET', '/api/labels/artifacts/999999/image', null, self::$adminKey), 422, 'artifact_id', 'not_found');
@@ -1516,6 +1520,8 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 		self::assertSame(200, $response['status'], substr($response['body'], 0, 200));
 		self::assertSame("\x89PNG", substr($response['body'], 0, 4));
+		self::assertSame("\x89PNG\r\n\x1a\n", substr($response['body'], 0, 8), 'the body is raw PNG bytes, not a JSON or base64 rendering');
+		self::assertSame('image/png', array_change_key_case($response['headers'])['content-type'] ?? null, 'and is declared as the image/png the document names');
 	}
 
 	#[Depends('testTheWorkerClaimsTheJobWhoseArtifactIsReady')]

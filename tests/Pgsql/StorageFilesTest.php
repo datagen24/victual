@@ -781,6 +781,81 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 	}
 
 	/**
+	 * Raw bytes are documented without a JSON Schema type (OAS 3.2 "Working with Binary
+	 * Data"): every image, application/pdf and application/octet-stream media type entry
+	 * has the empty schema, with neither type nor format. (A format: binary elsewhere, such
+	 * as a multipart/form-data part, would be legitimate and is not forbidden.)
+	 */
+	public function testRawBinaryPayloadsAreDocumentedWithAnEmptySchema(): void
+	{
+		$spec = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), true);
+		$rawEntries = [];
+		$walk = function ($node, string $path) use (&$walk, &$rawEntries): void
+		{
+			if (!is_array($node))
+			{
+				return;
+			}
+
+			if (isset($node['content']) && is_array($node['content']))
+			{
+				foreach ($node['content'] as $mediaType => $entry)
+				{
+					$isRaw = str_starts_with($mediaType, 'image/') || $mediaType === 'application/pdf' || $mediaType === 'application/octet-stream';
+
+					if ($isRaw)
+					{
+						$rawEntries[] = [$path . '/content/' . $mediaType, $entry['schema'] ?? null];
+					}
+				}
+			}
+
+			foreach ($node as $key => $child)
+			{
+				$walk($child, $path . '/' . $key);
+			}
+		};
+		$walk($spec, '');
+
+		self::assertGreaterThanOrEqual(10, count($rawEntries), 'the files and label byte endpoints are all seen');
+
+		foreach ($rawEntries as [$where, $schema])
+		{
+			self::assertSame([], $schema, "$where is raw bytes and has the empty schema");
+			self::assertArrayNotHasKey('type', (array)$schema, "$where carries no type");
+			self::assertArrayNotHasKey('format', (array)$schema, "$where carries no format");
+		}
+	}
+
+	/**
+	 * What goes in comes out unchanged: the bytes of a PNG, a PDF whose second line is
+	 * non-UTF-8, and a zip-like payload, through PUT then GET, with no JSON string or base64
+	 * transformation, compared exactly and by digest.
+	 */
+	#[DataProvider('backends')]
+	public function testNonTextBytesRoundTripByteForByte(string $backend): void
+	{
+		self::Storage($backend, ['productpictures', 'equipmentmanuals', 'userfiles']);
+		self::grant(['MASTER_DATA_EDIT', 'STOCK_VIEW', 'EQUIPMENT']);
+
+		$zipLike = "PK\x03\x04\xFF\x00\xFE\x80";
+		self::assertFalse(mb_check_encoding(self::$pdf, 'UTF-8'), 'the PDF fixture is not valid UTF-8');
+		self::assertFalse(mb_check_encoding($zipLike, 'UTF-8'), 'neither is the zip-like payload');
+
+		foreach ([['productpictures', 'raw.png', self::$png], ['equipmentmanuals', 'raw.pdf', self::$pdf], ['userfiles', 'raw.zip', $zipLike]] as [$group, $name, $bytes])
+		{
+			$this->expectStatus(fn () => self::$files->UploadFile(self::requestWithRawBody('PUT', $bytes), new Response(), ['group' => $group, 'fileName' => base64_encode($name)]), 204, "$name accepted");
+			$response = $this->expectStatus(fn () => self::$files->ServeFile(self::request(), new Response(), ['group' => $group, 'fileName' => base64_encode($name)]), 200, "$name served");
+			$body = (string)$response->getBody();
+
+			self::assertSame($bytes, $body, "$name comes back byte for byte");
+			self::assertSame(hash('sha256', $bytes), hash('sha256', $body), "$name comes back with the same digest");
+			self::assertNull(json_decode($body, true), "$name is not a JSON rendering of itself");
+			self::assertNotSame(base64_encode($bytes), $body, "$name is not base64 text");
+		}
+	}
+
+	/**
 	 * The second BASE64 name in the route argument is the name the download is offered
 	 * under; the stored file is still the first one.
 	 */
