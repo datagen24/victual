@@ -144,7 +144,11 @@ body, so a body field would have to be handled before that rewrite. The cost is 
 
 The key grammar should be the label grammar, 8 to 128 characters of `[A-Za-z0-9._:-]`, so
 that one validator serves both header-keyed mechanisms. Manual consumption's 1-to-128 grammar
-stays as it is. A UUID fits both.
+stays as it is. A UUID fits both. The maintainer requires cryptographically random keys. A client
+generates one key per intended booking before its first request and reuses that key
+for every retry. UUIDv4 generated with a cryptographically secure random source is
+suitable. Randomness makes accidental collisions negligible; the unique constraint
+and fingerprint checks still enforce the contract.
 
 ### 2. Storage: a new table holding the transaction id
 
@@ -313,9 +317,10 @@ that behaviour stands.
 | 24 hours | Retries within a session, a browser reload, a scanner reconnecting. Matches label operations. | A phone that queues a write offline across a night or a weekend loses protection. |
 | 7 days | The 24-hour cases, plus a phone away from home that retries when it reconnects days later. | More rows. At household scale this is hundreds of small rows a week. |
 
-Recommendation: 7 days, as a constant the server publishes (decision 11). victual-kit does
+The maintainer chose 7 days on 2026-10-11, as a constant the server publishes
+(decision 11). victual-kit does
 not queue writes today, so the longer window matters only once a client retries after a long
-offline period. The record leaves the choice to the maintainer.
+offline period. The retention choice is recorded in the response below.
 
 Expired rows are deleted lazily when a keyed request arrives, as `IdempotencyService::Begin`
 does, and a lookup ignores an expired row. Without keyed traffic, expired rows remain until
@@ -404,10 +409,28 @@ entry edits, measurements, weighing and undo are outside this record.
 - The response to a replay can differ from the original response: `undone` may be set, and
   redaction follows current permissions. A client compares by transaction id, not by bytes.
 
+## Open questions and maintainer responses
+
+1. **How long does a key protect a booking from duplicate retries?**
+
+   > **Response:** datagen24, 2026-10-11: Seven days works. Generate the key using
+   > cryptographically secure randomness so accidental collisions are negligible.
+
+   The client reuses the original key for retries. After seven days it must stop
+   automatic retries and treat an unresolved outcome as unknown. Randomness does not
+   extend retention or replace server-side uniqueness and fingerprint checks.
+
+2. **How does a client discover support and retention?** Decision 11 recommends a
+   field in `GET /api/system/info` and confirmation headers. The maintainer has not
+   selected the discovery field.
+3. **How are transaction-id collisions handled?** Decision 7 lists filtering replay
+   rows by user, replacing `uniqid()` with a higher-entropy identifier, or both.
+   Random request keys do not change transaction-id generation. This choice remains open.
+
 ## Acceptance prerequisites
 
-1. The maintainer chooses the retention window (decision 9) and the discovery field
-   (decision 11), and those choices are written into this record's Decision before acceptance.
+1. The seven-day retention window is confirmed (decision 9). The maintainer still
+   chooses the discovery field (decision 11) before acceptance.
 2. The OpenAPI and CORS changes in the Consequences are reviewed as additive, with
    `victual.openapi.json` updated in the implementing pull request as ADR-0024 decision 1
    requires.

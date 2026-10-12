@@ -135,7 +135,7 @@ intersection in PHP is complete; nothing needs pushing into the DB session.
 
 ## Decisions to record
 [ADR-0044](../adr/0044-api-keys-carry-a-subset-of-their-owners-permissions.md) decides: (a) subset-of-owner, not a separate role identity; (b) scope fixed at
-creation, changed by rotation; (c) roles are templates, not assignments; (d) read-only
+creation, changed by revocation and replacement; routine rotation preserves scope; (c) roles are templates, not assignments; (d) read-only
 composes with scope; (e) the `DELETE api_keys` rule. Cross-reference ADR-0018, ADR-0007,
 and amend `docs/mcp-interface-spec.md` §4.2 (the per-key boundary is no longer only
 `read_only`). Accepting it is its own bookkeeping pull request.

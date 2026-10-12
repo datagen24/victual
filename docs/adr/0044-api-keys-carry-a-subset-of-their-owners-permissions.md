@@ -46,6 +46,9 @@ a new kind of role.
 
 ## Decision (proposed)
 
+The maintainer confirmed per-key least privilege on 2026-10-11: the user selects
+only the permissions needed for the features that key serves. See the responses below.
+
 ### 1. A key is unscoped or scoped to a set of permissions
 
 An unscoped key behaves exactly as today and is what every existing key becomes. A scoped key
@@ -77,9 +80,10 @@ lifecycle (edit, delete, built-in codes) that must not silently move a live cred
 
 ### 5. Scope is fixed at creation; rotation copies it
 
-Changing a key's rights means issuing a successor, as with `read_only`. `RotateApiKey` copies
-the scope so that rotation cannot widen a key. `read_only` stays a separate, additional
-restriction and composes with scope.
+Changing a key's rights revokes the current key and generates a replacement with the
+new scope. Scope is never edited on a live key. Routine rotation copies the existing
+scope so that it cannot widen a key. `read_only` stays a separate, additional restriction
+and composes with scope. Future OAuth bearer-token design is separate work.
 
 ### 6. Creation never confers more than the creator holds
 
@@ -116,3 +120,18 @@ unscoped. The key type stays what it is; no new type is added for a bundle of ri
 - The MCP sidecar's tool list narrows to a key's scope with no sidecar change, since it reads
   `GET /api/user/capabilities`. The server still enforces on the forwarded call, as before.
 - Cost: one extra query per request made with a scoped key, bounded by the permission count.
+
+## Open questions and maintainer responses
+
+1. **Who chooses a key's scope?**
+
+   > **Response:** datagen24, 2026-10-11: API key scoping is per key. The user decides
+   > which features the key serves and grants only enough permission to do that job.
+
+2. **Can scope change on an existing key?**
+
+   > **Response:** datagen24, 2026-10-11: Changing permissions revokes the current key
+   > and generates a replacement. Routine rotation preserves scope. A future OAuth
+   > flow will change the bearer-token design separately.
+
+These answers do not accept this record or select a release.

@@ -92,8 +92,9 @@ except a new 403 name.
 ### 4. No role gains it by this record
 
 The seeded Admin role holds `ADMIN`, so it resolves the permission through the tree. Adult,
-Child and Guest do not get it. Giving it to Adult is a separate edit of `roles-seed.sql` plus a
-migration for installations that already seeded the role, and it is open question 1.
+Child and Guest do not get it. The maintainer confirmed explicit grants on 2026-10-11
+(open question 1).
+The existing role editor must expose the permission for an explicit role grant.
 
 ### 5. It cannot widen anyone
 
@@ -110,7 +111,10 @@ The record adds no owner or creator column. A created row is shared and indistin
 the rest, and its author gains no right to edit or delete it. Recipe ownership
 ([ADR-0040](0040-consumption-recipes-are-private-rows-with-scoped-shares.md)) grants no right
 over a product either. An owner-scoped edit would need a column, a backfill that cannot name
-the author of existing rows, and a migration, and it is out of scope here.
+the author of existing rows, and a migration. That design is not decided here.
+On 2026-10-11, the maintainer identified ownership markers
+as a direction for medication imports and finer permissions. No ownership-based right
+is authorized by that direction alone.
 
 ### 7. Chores and tasks are created and edited under their own domain permissions
 
@@ -288,6 +292,13 @@ should move to `MASTER_DATA_EDIT`; that needs its own decision.
    Adult role lets all adults add reference rows after upgrade, and the migration has to edit
    the existing role row because seeding does not. If no, adults get it only by explicit grant.
    *Lean: no.* Adding it to a seeded role is a separate decision from creating the permission.
+
+   > **Response:** datagen24, 2026-10-11: Explicit grant. Do not add the permission to
+   > the seeded Adult role automatically. Role creation and editing UI are required.
+
+   Role creation and editing already exist in `UsersController::RoleEditForm`,
+   `RolesApiController` and `views/roleform.blade.php`. The new permission must be
+   available through that existing permission picker.
 2. **Batteries and task categories.** Chores and tasks are decided in decision 7. Batteries
    and task categories still use `MASTER_DATA_EDIT`. The maintainer wants to revisit the battery
    module together with equipment, so the record leaves batteries alone. Task categories
@@ -299,6 +310,13 @@ should move to `MASTER_DATA_EDIT`; that needs its own decision.
    chore or task that another adult created and that is not assigned to a child; that needs a
    `created_by_user_id` column, no backfill is possible for existing rows, and it is a
    larger change than this record.
+
+   > **Response:** datagen24, 2026-10-11: Use the shared edit rule for now. Ownership
+   > markers are a direction to investigate for medication imports, where finer
+   > permissions may be needed.
+
+   This confirms shared editing of chores and tasks. It does not decide ownership
+   columns or creator-edit rights for shared products.
 3. **One permission or one per entity?** *Lean: one.*
 4. **Name.** `MASTER_DATA_CREATE` follows the existing `STOCK_*` suffix style. `MASTER_DATA_ADD`
    matches `SHOPPINGLIST_ITEMS_ADD`. *Lean: `MASTER_DATA_ADD`, to match the nearest sibling.*
