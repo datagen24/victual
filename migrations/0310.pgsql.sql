@@ -20,8 +20,18 @@
 -- are gone. Undoing such a row leaves the chore's fields as they are, which is what
 -- undo did before.
 --
+-- WHAT IT DOES NOT CHANGE. No existing column, view, function or trigger, and no existing row:
+-- both new columns start NULL on every row. No permission row and no index (UndoChoreExecution()
+-- reads the columns off the one row it already fetched by id).
+--
+-- DELETION. Neither column references another table. Deleting a user leaves a saved assignee id
+-- behind, as chores.rescheduled_next_execution_assigned_to_user_id does; UndoChoreExecution()
+-- checks that the user still exists and restores nothing when it does not.
+--
+-- RERUNNABLE. Both statements are guarded with IF NOT EXISTS, so a second run changes nothing.
+--
 -- PostgreSQL only, above DatabaseMigrationService::SQLITE_FROZEN_MIGRATION_ID, per
 -- ADR-0008's retirement.
 
-ALTER TABLE chores_log ADD COLUMN prior_rescheduled_date TIMESTAMPTZ;
-ALTER TABLE chores_log ADD COLUMN prior_rescheduled_next_execution_assigned_to_user_id INTEGER;
+ALTER TABLE chores_log ADD COLUMN IF NOT EXISTS prior_rescheduled_date TIMESTAMPTZ;
+ALTER TABLE chores_log ADD COLUMN IF NOT EXISTS prior_rescheduled_next_execution_assigned_to_user_id INTEGER;

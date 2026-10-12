@@ -16,9 +16,10 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *   not consumed, no STOCK_CONSUME is needed, and an empty stock does not refuse it.
  * - #865: undoing an execution restores the reschedule date and the reschedule assignee that
  *   tracking cleared, from chores_log.prior_rescheduled_date and
- *   chores_log.prior_rescheduled_next_execution_assigned_to_user_id (migration 0310) - but only
- *   onto the chore's most recent non-undone execution, and only into a field that is still
- *   empty, so a reschedule made after tracking is not overwritten.
+ *   chores_log.prior_rescheduled_next_execution_assigned_to_user_id (migration 0310), as a
+ *   pair or not at all: only when the undone row has the highest id among the chore's
+ *   non-undone executions (insertion order; tracked_time can be backdated), both reschedule
+ *   fields on the chore are empty, and the saved assignee still exists.
  *
  * Calls ChoresService directly, as ChoreExecutionStockUndoTest does, and asserts on the
  * `chores`, `chores_log`, `stock` and `stock_log` rows.
@@ -278,21 +279,124 @@ class ChoreSkipAndUndoRestoreTest extends PgsqlSchemaTestCase
 		self::assertSame(self::ASSIGNEE_B, (int)$afterUndo['next_execution_assigned_to_user_id']);
 	}
 
-	public function testOnlyTheFieldThatIsStillEmptyIsRestored(): void
+	public function testNothingIsRestoredWhenExactlyOneFieldIsSet(): void
 	{
-		$choreId = self::insertChore('Partial Restore');
+		// Only the assignee is set again after tracking: the saved date must not be
+		// half-restored next to it.
+		$choreId = self::insertChore('Pair Rule Assignee Set');
 		self::reschedule($choreId, '2026-11-01 08:00:00', self::ASSIGNEE_A);
-		$rescheduled = self::choreRow($choreId)['rescheduled_date'];
 		$executionId = self::$chores->TrackChore($choreId, '2026-09-28 09:00:00', 9000);
-
-		// Only the assignee is set again after tracking.
 		self::$db->exec('UPDATE chores SET rescheduled_next_execution_assigned_to_user_id = ' . self::ASSIGNEE_B . ' WHERE id = ' . $choreId);
 
 		self::$chores->UndoChoreExecution($executionId);
 
 		$afterUndo = self::choreRow($choreId);
-		self::assertSame($rescheduled, $afterUndo['rescheduled_date'], 'The empty date was restored');
+		self::assertNull($afterUndo['rescheduled_date'], 'The date was not restored next to a newer assignee');
 		self::assertSame(self::ASSIGNEE_B, (int)$afterUndo['rescheduled_next_execution_assigned_to_user_id'], 'The assignee set after tracking was kept');
+		self::assertSame(1, (int)self::logRow($executionId)['undone']);
+
+		// Only the date is set again after tracking.
+		$choreId = self::insertChore('Pair Rule Date Set');
+		self::reschedule($choreId, '2026-11-01 08:00:00', self::ASSIGNEE_A);
+		$executionId = self::$chores->TrackChore($choreId, '2026-09-28 09:00:00', 9000);
+		self::$db->exec("UPDATE chores SET rescheduled_date = '2026-12-24 18:00:00' WHERE id = " . $choreId);
+		$newerDate = self::choreRow($choreId)['rescheduled_date'];
+
+		self::$chores->UndoChoreExecution($executionId);
+
+		$afterUndo = self::choreRow($choreId);
+		self::assertSame($newerDate, $afterUndo['rescheduled_date'], 'The date set after tracking was kept');
+		self::assertNull($afterUndo['rescheduled_next_execution_assigned_to_user_id'], 'The assignee was not restored next to a newer date');
+	}
+
+	public function testOrderIsInsertionOrderEvenWhenTheSecondExecutionIsBackdated(): void
+	{
+		// R1, track E1, R2, track E2 backdated before E1. E2 is the later execution.
+		$choreId = self::insertChore('Backdated Undo Newest');
+		self::reschedule($choreId, '2026-11-01 08:00:00', self::ASSIGNEE_A);
+		$first = self::$chores->TrackChore($choreId, '2026-09-28 09:00:00', 9000);
+		self::reschedule($choreId, '2026-11-02 08:00:00', self::ASSIGNEE_B);
+		$secondDate = self::choreRow($choreId)['rescheduled_date'];
+		$second = self::$chores->TrackChore($choreId, '2026-09-20 09:00:00', 9000);
+
+		self::$chores->UndoChoreExecution($second);
+
+		$afterUndo = self::choreRow($choreId);
+		self::assertSame($secondDate, $afterUndo['rescheduled_date'], 'Undoing the backdated execution restored the reschedule it cleared');
+		self::assertSame(self::ASSIGNEE_B, (int)$afterUndo['rescheduled_next_execution_assigned_to_user_id']);
+
+		// Same history on a second chore, undoing E1 first: it is not the latest, so it
+		// must not resurrect R1; E2's undo then returns R2.
+		$choreId = self::insertChore('Backdated Undo Older First');
+		self::reschedule($choreId, '2026-11-01 08:00:00', self::ASSIGNEE_A);
+		$first = self::$chores->TrackChore($choreId, '2026-09-28 09:00:00', 9000);
+		self::reschedule($choreId, '2026-11-02 08:00:00', self::ASSIGNEE_B);
+		$secondDate = self::choreRow($choreId)['rescheduled_date'];
+		$second = self::$chores->TrackChore($choreId, '2026-09-20 09:00:00', 9000);
+
+		self::$chores->UndoChoreExecution($first);
+
+		$afterFirstUndo = self::choreRow($choreId);
+		self::assertNull($afterFirstUndo['rescheduled_date'], 'Undoing E1 while E2 is live resurrected nothing');
+		self::assertNull($afterFirstUndo['rescheduled_next_execution_assigned_to_user_id']);
+
+		self::$chores->UndoChoreExecution($second);
+
+		$afterSecondUndo = self::choreRow($choreId);
+		self::assertSame($secondDate, $afterSecondUndo['rescheduled_date']);
+		self::assertSame(self::ASSIGNEE_B, (int)$afterSecondUndo['rescheduled_next_execution_assigned_to_user_id']);
+	}
+
+	public function testASavedAssigneeWhoWasDeletedRestoresNothing(): void
+	{
+		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9813, 'chore-skip-undo-gone', 'fixture')");
+		$choreId = self::insertChore('Deleted Assignee');
+		self::reschedule($choreId, '2026-11-01 08:00:00', 9813);
+		$executionId = self::$chores->TrackChore($choreId, '2026-09-28 09:00:00', 9000);
+		self::$db->exec('DELETE FROM users WHERE id = 9813');
+
+		self::$chores->UndoChoreExecution($executionId);
+
+		$afterUndo = self::choreRow($choreId);
+		self::assertNull($afterUndo['rescheduled_date'], 'The pair is restored whole or not at all');
+		self::assertNull($afterUndo['rescheduled_next_execution_assigned_to_user_id']);
+		self::assertSame(1, (int)self::logRow($executionId)['undone']);
+	}
+
+	public function testUndoRefusedForLackOfStockEditChangesNothing(): void
+	{
+		self::grant('STOCK_CONSUME');
+		$product = self::insertProduct('Undo Refused Product');
+		self::stockUp($product, 5);
+		$choreId = self::insertChore('Undo Refused Chore', [
+			'consume_product_on_execution' => 1,
+			'product_id' => $product,
+			'product_amount' => 2,
+		]);
+		self::reschedule($choreId, '2026-11-01 08:00:00', self::ASSIGNEE_A);
+		$executionId = self::$chores->TrackChore($choreId, '2026-09-28 09:00:00', 9000);
+		self::$db->exec('DELETE FROM user_permissions WHERE user_id = 9000');
+
+		$choreBefore = self::choreRow($choreId);
+		$logBefore = self::logRow($executionId);
+		$ledgerBefore = self::stockLogRows($product);
+
+		$thrown = null;
+		try
+		{
+			self::$chores->UndoChoreExecution($executionId);
+		}
+		catch (\Exception $exception)
+		{
+			$thrown = $exception;
+		}
+
+		self::assertNotNull($thrown, 'The undo is refused without STOCK_EDIT');
+		self::assertStringContainsString('STOCK_EDIT', $thrown->getMessage());
+		self::assertSame($choreBefore, self::choreRow($choreId), 'The chore is unchanged');
+		self::assertSame($logBefore, self::logRow($executionId), 'The log row is unchanged');
+		self::assertSame($ledgerBefore, self::stockLogRows($product), 'The ledger is unchanged');
+		self::assertSame(3.0, self::stockAmount($product));
 	}
 
 	public function testUndoingAnOlderExecutionRestoresNothing(): void

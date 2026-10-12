@@ -263,9 +263,12 @@ const ACCEPTED = [
 		reference: 'services/ChoresService.php',
 		reason:
 			'Undoing a chore execution restores the chore\'s rescheduled_date and ' +
-			'rescheduled_next_execution_assigned_to_user_id that tracking cleared, when the undone row ' +
-			'is the chore\'s most recent live execution and the field is still empty. Upstream 4.6.0 ' +
-			'leaves both empty, so a chore read after the undo has them null there and set here. ' +
+			'rescheduled_next_execution_assigned_to_user_id that tracking cleared, together or not at ' +
+			'all: when the undone row is the chore\'s most recent live execution (by insertion order), ' +
+			'both fields are empty and the saved assignee still exists. If a person rescheduled after ' +
+			'tracking and cleared it again, the earlier reschedule still returns, because the undo ' +
+			'undoes what tracking cleared. Upstream 4.6.0 leaves both empty, so a chore read after the ' +
+			'undo has them null there and set here. ' +
 			'Maintainer decision of 2026-10-12, issue #865; the values are kept in ' +
 			'chores_log.prior_rescheduled_date and chores_log.prior_rescheduled_next_execution_assigned_to_user_id ' +
 			'(migration 0310).\n\n' +
