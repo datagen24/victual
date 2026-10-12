@@ -232,7 +232,7 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 
 	// --- #864 ---------------------------------------------------------------------------------
 
-	public function testALinkToATransactionWithAnUndoneBookingIsRefusedAndChangesNothing(): void
+	public function testALinkToAnUndoneTransactionIsRefusedAndChangesNothing(): void
 	{
 		$product = self::product('CEA link undone', 10);
 		$ref = self::map($product);
@@ -242,30 +242,81 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 		self::$events->Submit(self::ME, 'healthkit', $id, self::body($ref));
 		$before = self::eventRow($id);
 		$stockBefore = self::onHand($product);
-		$linesBefore = self::$db->query('SELECT count(*) FROM consumption_event_lines WHERE event_id = ' . (int)$before['id'])->fetchColumn();
 
 		$this->expectRefusal(fn() => self::$events->Resolve(self::ME, 'healthkit', $id, 'link', $manual), 422, 'invalid_link');
 
 		$after = self::eventRow($id);
 		self::assertSame([$before['state'], $before['transaction_id'], null], [$after['state'], $after['transaction_id'], $after['linked_transaction_id']]);
 		self::assertSame($stockBefore, self::onHand($product), 'the refused link undid nothing');
-		self::assertSame($linesBefore, self::$db->query('SELECT count(*) FROM consumption_event_lines WHERE event_id = ' . (int)$before['id'])->fetchColumn(), 'the event lines are the ones it had');
-		self::assertSame(0, (int)self::$db->query('SELECT count(*) FROM consumption_event_lines l JOIN stock_log s ON s.id = l.stock_log_id WHERE s.undone <> 0 AND l.event_id = ' . (int)$before['id'] . ' AND s.transaction_id = ' . self::$db->quote($manual))->fetchColumn(), 'no event line points at the undone transaction');
 	}
 
-	public function testALinkCopiesOnlyLiveBookingsAsLines(): void
+	/** A second connection: advisory locks are database-wide, so it needs no search path. */
+	private static function otherConnection(): PDO
 	{
-		$product = self::product('CEA link lines', 10);
+		return new PDO('pgsql:host=' . getenv('PGHOST') . ';port=' . getenv('PGPORT') . ';dbname=' . getenv('PHPUNIT_DB_NAME'), getenv('PGUSER'), getenv('PGPASSWORD'), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+	}
+
+	public function testALinkWaitsForTheProductLockOfTheTargetTransactionEvenWhenTheEventHoldsNoBooking(): void
+	{
+		$product = self::product('CEA link lock', 10);
 		$ref = self::map($product);
 		$manual = self::manualConsume($product);
 		$id = self::uid();
-		self::$events->Submit(self::ME, 'healthkit', $id, self::body($ref));
+		// `received`: no booking of its own, so the old code took no product lock at all for this link.
+		self::insertEvent('healthkit', $id, 'received', null, null, self::ME, $ref);
 
-		$linked = self::$events->Resolve(self::ME, 'healthkit', $id, 'link', $manual);
+		$holder = self::otherConnection();
+		$holder->beginTransaction();
+		$holder->prepare('SELECT pg_advisory_xact_lock(?, ?)')->execute([\Victual\Services\Database\PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $product]);
+		self::$db->exec("SET lock_timeout = '200ms'");
 
-		self::assertSame('linked', $linked['state']);
-		$lines = self::$db->query('SELECT s.undone, s.transaction_id FROM consumption_event_lines l JOIN stock_log s ON s.id = l.stock_log_id WHERE l.event_id = ' . (int)self::eventRow($id)['id'])->fetchAll(PDO::FETCH_ASSOC);
-		self::assertSame([['undone' => 0, 'transaction_id' => $manual]], array_map(fn($row) => ['undone' => (int)$row['undone']] + $row, $lines));
+		try
+		{
+			self::$events->Resolve(self::ME, 'healthkit', $id, 'link', $manual);
+			self::fail('the link did not wait for the product lock');
+		}
+		catch (\PDOException $exception)
+		{
+			self::assertSame('55P03', $exception->errorInfo[0], 'lock_not_available while the other connection holds the product');
+		}
+		finally
+		{
+			self::$db->exec('SET lock_timeout = 0');
+			$holder->rollBack();
+		}
+
+		$row = self::eventRow($id);
+		self::assertSame(['received', null], [$row['state'], $row['linked_transaction_id']], 'the event is unchanged');
+		self::assertSame(0, (int)self::$db->query('SELECT count(*) FROM consumption_event_lines WHERE event_id = ' . (int)$row['id'])->fetchColumn());
+	}
+
+	public function testABookingUndoneWhileTheLinkIsWrittenIsNotCopiedAsALine(): void
+	{
+		$product = self::product('CEA link under lock', 10);
+		$ref = self::map($product);
+		$manual = self::manualConsume($product);
+		$id = self::uid();
+		self::insertEvent('healthkit', $id, 'received', null, null, self::ME, $ref);
+
+		// Stands in for an undo that lands between the checks and the copy: when the event row is written as
+		// linked, the target transaction's booking becomes undone.
+		self::$db->exec('CREATE FUNCTION cea_undo_on_link() RETURNS TRIGGER AS $$ BEGIN
+			UPDATE stock_log SET undone = 1 WHERE transaction_id = NEW.linked_transaction_id; RETURN NEW; END; $$ LANGUAGE plpgsql');
+		self::$db->exec("CREATE TRIGGER cea_undo_on_link BEFORE UPDATE ON consumption_events FOR EACH ROW WHEN (NEW.state = 'linked') EXECUTE FUNCTION cea_undo_on_link()");
+
+		try
+		{
+			self::$events->Resolve(self::ME, 'healthkit', $id, 'link', $manual);
+		}
+		finally
+		{
+			self::$db->exec('DROP TRIGGER cea_undo_on_link ON consumption_events');
+			self::$db->exec('DROP FUNCTION cea_undo_on_link()');
+		}
+
+		$eventId = (int)self::eventRow($id)['id'];
+		self::assertSame(1, (int)self::$db->query('SELECT count(*) FROM stock_log WHERE undone = 1 AND transaction_id = ' . self::$db->quote($manual))->fetchColumn(), 'the booking was undone');
+		self::assertSame(0, (int)self::$db->query('SELECT count(*) FROM consumption_event_lines WHERE event_id = ' . $eventId)->fetchColumn(), 'and no line copies it');
 	}
 
 	public function testAUniqueViolationDuringTheLinkIsTheInvalidLinkRefusalAndRollsTheUndoBack(): void
@@ -375,12 +426,15 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 		self::$mappings->Put(self::ME, 'healthkit', $ref, ['product_id' => $product, 'unit_labels' => ['tablet'], 'default_quantity' => null,
 			'location' => ['mode' => 'fixed', 'location_id' => $location], 'effective_from' => '2026-01-01T00:00:00Z']);
 		$mappingId = (int)self::$db->query('SELECT id FROM consumption_mappings WHERE location_id = ' . $location)->fetchColumn();
+		$username = self::$db->query('SELECT username FROM users WHERE id = ' . self::ME)->fetchColumn();
 
 		$response = self::send('DELETE', '/api/objects/locations/' . $location);
 
 		self::assertSame(400, $response['status']);
 		self::assertStringContainsString('consumption mapping', $response['body']['error_message']);
-		self::assertStringContainsString((string)$mappingId, $response['body']['error_message']);
+		self::assertStringContainsString('1 consumption mapping', $response['body']['error_message']);
+		self::assertStringContainsString($username, $response['body']['error_message'], 'the owner is named');
+		self::assertStringNotContainsString($ref, $response['body']['error_message'], 'the medication is not');
 		self::assertSame(1, (int)self::$db->query("SELECT count(*) FROM locations WHERE id = $location")->fetchColumn(), 'the location is still there');
 		self::assertSame($location, (int)self::$db->query('SELECT location_id FROM consumption_mappings WHERE id = ' . $mappingId)->fetchColumn(), 'and so is the mapping');
 	}

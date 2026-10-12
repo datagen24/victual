@@ -6,7 +6,7 @@
 -- Linking, locking and the service's mapping of the violation are PHP and are covered by
 -- tests/Pgsql/ConsumptionEventsAuditTest.php.
 
-SELECT plan(12);
+SELECT plan(16);
 
 INSERT INTO users (username, password) VALUES ('c34 a', 'fixture'), ('c34 b', 'fixture');
 INSERT INTO locations (name) VALUES ('C34 location');
@@ -45,6 +45,16 @@ SELECT is((SELECT linked_transaction_id FROM consumption_events WHERE source_eve
 
 SELECT lives_ok(format($$UPDATE consumption_events SET state = 'dismissed', transaction_id = NULL WHERE user_id = %s AND source_event_id = 'booked-1'$$, pg_temp.u('a')),
 	'an update of other columns is not judged');
+
+-- Link also refuses a self-reference and a manual holder that is itself linked.
+SELECT throws_ok(format($$INSERT INTO consumption_events (user_id, source_system, source_event_id, state, transaction_id, linked_transaction_id, occurred_at)
+	VALUES (%s, 'healthkit', 'self-5', 'linked', 't34-5', 't34-5', now())$$, pg_temp.u('a')), '23505', NULL, 'an event cannot be linked to its own booking transaction');
+INSERT INTO consumption_events (user_id, source_system, source_event_id, state, transaction_id, linked_transaction_id, occurred_at)
+VALUES (pg_temp.u('a'), 'manual', 'manual-6', 'linked', 't34-6', 't34-6x', now());
+SELECT throws_ok(format($$INSERT INTO consumption_events (user_id, source_system, source_event_id, state, linked_transaction_id, occurred_at)
+	VALUES (%s, 'healthkit', 'link-6', 'linked', 't34-6', now())$$, pg_temp.u('a')), '23505', NULL, 'a manual holder that is itself linked is not a rule 9 holder');
+SELECT has_index('stock_log', 'ix_stock_log_transaction_id', 'stock_log is indexed by transaction id');
+SELECT has_index('stock_log', 'ix_stock_log_transaction_id', ARRAY['transaction_id'], 'on exactly that column');
 
 -- consumption_event_lines.location_id is history: deleting the location keeps the line.
 INSERT INTO locations (name) VALUES ('C34 line location');

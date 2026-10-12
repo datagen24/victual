@@ -279,19 +279,24 @@ class GenericEntityApiController extends BaseApiController
 			}
 
 			// A consumption mapping with a fixed location must keep naming one (its CHECK forbids clearing the
-			// column), so the delete is refused, and the person is told which mapping holds the location.
-			// Ids only: a mapping is private to its user and its medication reference is not for another's eyes.
+			// column), so the delete is refused, and the person is told how many mappings hold the location and
+			// whose they are. The mapping API addresses a mapping by source system and medication, which are
+			// private to the owner, so neither is named here.
 			if ($args['entity'] == 'locations')
 			{
-				$mappingIds = [];
-				foreach ($this->DB->consumption_mappings()->where('location_id', $row->id)->orderBy('id') as $mapping)
+				$mappingCount = 0;
+				$owners = [];
+				foreach ($this->DB->consumption_mappings()->where('location_id', $row->id) as $mapping)
 				{
-					$mappingIds[] = $mapping->id;
+					$mappingCount++;
+					$owners[$mapping->user_id] = $this->DB->users($mapping->user_id)->username;
 				}
 
-				if (count($mappingIds) > 0)
+				if ($mappingCount > 0)
 				{
-					return $this->GenericErrorResponse($response, sprintf(self::MAPPING_LOCATION_REFUSAL_MESSAGE, implode(', ', $mappingIds)));
+					sort($owners);
+
+					return $this->GenericErrorResponse($response, sprintf(self::MAPPING_LOCATION_REFUSAL_MESSAGE, $mappingCount, implode(', ', $owners)));
 				}
 			}
 
@@ -671,8 +676,8 @@ class GenericEntityApiController extends BaseApiController
 	 */
 	private const SERVER_OWNED_COLUMNS = ['id', 'row_created_timestamp', 'import_epoch'];
 
-	/** DeleteObject()'s answer to a location that a consumption mapping names (migration 0306); %s is the mapping ids. */
-	private const MAPPING_LOCATION_REFUSAL_MESSAGE = 'Location is the fixed location of consumption mapping(s) %s; change or delete those mappings before deleting the location';
+	/** DeleteObject()'s answer to a location that a consumption mapping names (migration 0306); %d is the mapping count and %s the owners' usernames. */
+	private const MAPPING_LOCATION_REFUSAL_MESSAGE = 'Location is the fixed location of %d consumption mapping(s), owned by: %s; ask the owner to change or delete them before deleting the location';
 
 	/**
 	 * DeleteObject()'s answer to an ordinary foreign-key delete refusal (audit finding M15 /
