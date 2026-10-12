@@ -3,6 +3,7 @@
 namespace Victual\Tests\Pgsql;
 
 use PDO;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Victual\Services\ApiKeyService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
@@ -36,6 +37,11 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *        #576 already fixed for "spoiled" and "allow_subproduct_substitution". A
  *        misread "false" subtracts the tare from a reading the caller meant as already net.
  *        Both now go through WireBooleans::RequireBoolean().
+ *   #786 AddProduct() passed any non-empty transaction_type through, and
+ *        StockService::AddProduct() compared it to 'self-production' with ==, for which
+ *        a JSON true is equal - so {"transaction_type": true} booked a stock_log row whose
+ *        transaction_type is outside the documented enum. Both routes now refuse a present,
+ *        non-empty transaction_type that is not a string, and the service compares strictly.
  *
  * Every case runs at HTTP level through tests/Pgsql/request-subprocess-helper.php, the same
  * harness ApiInputShapesTest.php/StockEntryEditContractTest.php use, so a refusal is proven
@@ -61,6 +67,7 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		$statement = self::$db->prepare('INSERT INTO user_permissions (user_id, permission_id) SELECT ' . self::USER_ID . ', id FROM permission_hierarchy WHERE name = ?');
 		foreach ([
 			'STOCK_PURCHASE',
+			'STOCK_CONSUME',
 			'STOCK_INVENTORY',
 			'STOCK_EDIT',
 			'STOCK_OPEN',
@@ -696,5 +703,131 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		$row = self::stockRow($stockRowId);
 		self::assertSame(1, (int)$row['open'], 'the entry must be opened');
 		self::assertEqualsWithDelta(0.7, (float)$row['opened_amount'], 0.0001, 'gross:true must still subtract the tare (1 - 0.3)');
+	}
+
+	// ================================================================================
+	// #786: transaction_type that is not a string
+	// ================================================================================
+
+	private static function stockLogTransactionTypes(int $productId): array
+	{
+		$statement = self::$db->prepare('SELECT transaction_type FROM stock_log WHERE product_id = ? ORDER BY id');
+		$statement->execute([$productId]);
+
+		return $statement->fetchAll(PDO::FETCH_COLUMN);
+	}
+
+	/** @return array<string, array{0: mixed}> */
+	public static function UnacceptableTransactionTypes(): array
+	{
+		return [
+			'JSON true' => [true],
+			'integer 1' => [1],
+			'unknown string' => ['gift'],
+			'array' => [['purchase']],
+		];
+	}
+
+	#[DataProvider('UnacceptableTransactionTypes')]
+	public function testAddProductWithUnacceptableTransactionTypeIsRefusedWithoutBooking(mixed $transactionType): void
+	{
+		[, $productId] = self::freshProduct('786 Add Bad Type');
+
+		$result = self::Request('POST', "/api/stock/products/$productId/add", [
+			'amount' => 1,
+			'transaction_type' => $transactionType,
+		]);
+
+		self::AssertRefused($result, 'add with transaction_type ' . json_encode($transactionType));
+		self::assertSame(0, self::stockLogCount($productId), 'a refused add must not write a stock_log row');
+		self::assertSame(0, self::stockCount($productId), 'a refused add must not book stock');
+	}
+
+	public function testAddProductByBarcodeWithJsonTrueTransactionTypeIsRefusedWithoutBooking(): void
+	{
+		[, $productId] = self::freshProduct('786 Add By Barcode Bad Type');
+		self::insertRow('product_barcodes', ['product_id' => $productId, 'barcode' => "786-$productId"]);
+
+		$result = self::Request('POST', "/api/stock/products/by-barcode/786-$productId/add", [
+			'amount' => 1,
+			'transaction_type' => true,
+		]);
+
+		self::AssertRefused($result, 'add by barcode with transaction_type true');
+		self::assertSame(0, self::stockLogCount($productId), 'a refused add must not write a stock_log row');
+	}
+
+	/** @return array<string, array{0: mixed, 1: string}> body value (or absent) => booked type */
+	public static function AcceptedAddTransactionTypes(): array
+	{
+		return [
+			'purchase' => ['purchase', 'purchase'],
+			'inventory-correction' => ['inventory-correction', 'inventory-correction'],
+			'self-production' => ['self-production', 'self-production'],
+			'absent' => [null, 'purchase'],
+			'empty string' => ['', 'purchase'],
+		];
+	}
+
+	#[DataProvider('AcceptedAddTransactionTypes')]
+	public function testAddProductWithAcceptedTransactionTypeBooksIt(?string $transactionType, string $expected): void
+	{
+		[, $productId] = self::freshProduct('786 Add Good Type');
+
+		$body = ['amount' => 1];
+		if ($transactionType !== null)
+		{
+			$body['transaction_type'] = $transactionType;
+		}
+
+		$result = self::Request('POST', "/api/stock/products/$productId/add", $body);
+
+		self::assertSame(200, $result['status'], "transaction_type '$transactionType' must still be accepted: {$result['body']}");
+		self::assertSame([$expected], self::stockLogTransactionTypes($productId));
+	}
+
+	#[DataProvider('UnacceptableTransactionTypes')]
+	public function testConsumeProductWithUnacceptableTransactionTypeIsRefusedWithoutBooking(mixed $transactionType): void
+	{
+		[$locationId, $productId] = self::freshProduct('786 Consume Bad Type');
+		$stockRowId = self::insertStock($productId, $locationId, 5);
+
+		$result = self::Request('POST', "/api/stock/products/$productId/consume", [
+			'amount' => 1,
+			'transaction_type' => $transactionType,
+		]);
+
+		self::AssertRefused($result, 'consume with transaction_type ' . json_encode($transactionType));
+		self::assertSame(0, self::stockLogCount($productId), 'a refused consume must not write a stock_log row');
+		self::assertSame(5.0, (float)self::stockRow($stockRowId)['amount'], 'a refused consume must not touch stock');
+	}
+
+	/** @return array<string, array{0: mixed, 1: string}> body value (or absent) => booked type */
+	public static function AcceptedConsumeTransactionTypes(): array
+	{
+		return [
+			'consume' => ['consume', 'consume'],
+			'inventory-correction' => ['inventory-correction', 'inventory-correction'],
+			'absent' => [null, 'consume'],
+			'empty string' => ['', 'consume'],
+		];
+	}
+
+	#[DataProvider('AcceptedConsumeTransactionTypes')]
+	public function testConsumeProductWithAcceptedTransactionTypeBooksIt(?string $transactionType, string $expected): void
+	{
+		[$locationId, $productId] = self::freshProduct('786 Consume Good Type');
+		self::insertStock($productId, $locationId, 5);
+
+		$body = ['amount' => 1];
+		if ($transactionType !== null)
+		{
+			$body['transaction_type'] = $transactionType;
+		}
+
+		$result = self::Request('POST', "/api/stock/products/$productId/consume", $body);
+
+		self::assertSame(200, $result['status'], "transaction_type '$transactionType' must still be accepted: {$result['body']}");
+		self::assertSame([$expected], self::stockLogTransactionTypes($productId));
 	}
 }

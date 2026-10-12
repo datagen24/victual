@@ -387,7 +387,7 @@ class StockService extends BaseService
 			}
 		}
 
-		if ($transactionType === self::TRANSACTION_TYPE_PURCHASE || $transactionType === self::TRANSACTION_TYPE_INVENTORY_CORRECTION || $transactionType == self::TRANSACTION_TYPE_SELF_PRODUCTION)
+		if ($transactionType === self::TRANSACTION_TYPE_PURCHASE || $transactionType === self::TRANSACTION_TYPE_INVENTORY_CORRECTION || $transactionType === self::TRANSACTION_TYPE_SELF_PRODUCTION)
 		{
 			if ($transactionId === null)
 			{
