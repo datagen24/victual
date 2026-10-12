@@ -63,20 +63,30 @@ Proposed until a separate acceptance pull request.
 ## Still open
 
 On 2026-10-12 the maintainer started a cleanup of `victual.openapi.json`, tracked by
-[issue 796](https://github.com/datagen24/victual/issues/796) and its sub-issues (799 to 806, 787, 648,
-and 798, linked 2026-10-12). OpenAPI work from this ledger moves to that tracking: PR 797 closes sub-issue
-787, and issue 798 waits for the cleanup. PR 810 changes two descriptions in the mapping schema.
+[issue 796](https://github.com/datagen24/victual/issues/796) and its sub-issues. PR 797 closed sub-issue
+787 and PR 810 closed issue 788; issue 798 waits for the cleanup.
+
+### Decisions recorded 2026-10-12
+
+- **v0.5.0 scope (D5).** Keep ADR-0043 (#742), price correctness (ADR-0045, #774) and booking
+  idempotency (ADR-0046, #775). Fix #782 and #785 before release. Defer unrelated milestone work:
+  #654, #483, #86 and #80 leave the 0.5.0 milestone. #762 is undecided: it concerns assigning roles
+  when a user is created, which the explicit `MASTER_DATA_ADD` grant may touch.
+- **#782 (D6).** Product merge requires `MASTER_DATA_EDIT`.
+- **#785 (D6).** A booking route refuses a caller without `STOCK_VIEW` before it books.
+- **ADR-0045 Q8 to Q13, ADR-0046 Q5 and ADR-0043's release:** answered, recorded in PR
+  [831](https://github.com/datagen24/victual/pull/831).
+
+The milestone edits were not applied: the session's permission rules refused issue writes. The
+maintainer applies them.
 
 | ID | Item | State | Blocks |
 |---|---|---|---|
-| G1 | ADR-0045 gates 1, 5 and 7 | Specified in PR [808](https://github.com/datagen24/victual/pull/808) (reviewed; fixes in `c0b53e70`). Open questions 8 to 13 need answers; Q8 recommends a per-row marker set inside the import transaction | Acceptance of ADR-0045, then #774 |
-| G2 | ADR-0046 gate 1 and client obligations | Specified in PR [807](https://github.com/datagen24/victual/pull/807) (reviewed; blocking fix in `0a77bbf6`: all nine transaction-id mint sites use one random helper). Open question 5: top-level `stock_booking_idempotency` key (recommended) or a `capabilities` object | Acceptance of ADR-0046, then #775 |
-| G3 | ADR-0043 gate 1: whether the feature ships and in which release | Maintainer | Acceptance of ADR-0043, then #742 |
+| A1 | Accept ADR-0043, ADR-0045 and ADR-0046 | Every open question is answered once PR 831 merges. Acceptance is a bookkeeping PR per record, by the maintainer | #742, #774, #775 implementation |
+| F1 | #782 merge gate and #785 up-front refusal | Implementation worker (2026-10-12), two branches | v0.5.0 |
 | D4 | Issue 702's text still names a real device | Maintainer | Closing #702 |
-| D5 | v0.5.0 scope | Maintainer | #703 |
-| D6 | 782: merge needs `MASTER_DATA_EDIT` or both rights; 783: a container right or document the item rights; 785: refuse callers without `STOCK_VIEW` up front, or answer them without the row read | Maintainer | 782, 783, 785 |
-| W1 | #787 inherited OpenAPI gaps and key-coverage leg 9d | PR [797](https://github.com/datagen24/victual/pull/797): the leg failed on master's document (148 undeclared keys) and passes; `contract`, `wirecontract` on PostgreSQL 16 and 15.19 and `genericquery` on 16 pass at `7082acba`. Other domains filed as [798](https://github.com/datagen24/victual/issues/798) | — |
-| W2 | #788 `quantity_factor` | PR [810](https://github.com/datagen24/victual/pull/810): OpenAPI description and default, manual example, an event-level test that fails when the factor or the conversion is ignored; `consumption` passes on PostgreSQL 16 and 15.19 at `5606c04a` | — |
+| D7 | #762 in or out of v0.5.0 | Maintainer | #703 |
+| D8 | #783 shopping-list container rights | Maintainer; outside v0.5.0 unless added | — |
 
 ## Specifications
 
