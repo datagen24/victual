@@ -169,6 +169,7 @@ class OpenApiController extends BaseApiController
 		$spec->servers[0]->url = $this->AppContainer->get('UrlManager')->ConstructUrl('/api');
 
 		$spec->components->schemas->ExposedEntity_IncludingUserEntities = clone $spec->components->schemas->StringEnumTemplate;
+		$spec->components->schemas->ExposedEntity_IncludingUserEntities->enum = []; // the template's own "" member is a placeholder, not an entity
 		;
 		foreach (UserfieldsService::GetInstance()->GetEntities() as $userEntity)
 		{
@@ -177,6 +178,7 @@ class OpenApiController extends BaseApiController
 		sort($spec->components->schemas->ExposedEntity_IncludingUserEntities->enum);
 
 		$spec->components->schemas->ExposedEntity_NotIncludingNotEditable = clone $spec->components->schemas->StringEnumTemplate;
+		$spec->components->schemas->ExposedEntity_NotIncludingNotEditable->enum = []; // the template's own "" member is a placeholder, not an entity
 		foreach ($spec->components->schemas->ExposedEntity->enum as $value)
 		{
 			if (!in_array($value, $spec->components->schemas->ExposedEntityNoEdit->enum))
@@ -187,6 +189,7 @@ class OpenApiController extends BaseApiController
 		sort($spec->components->schemas->ExposedEntity_NotIncludingNotEditable->enum);
 
 		$spec->components->schemas->ExposedEntity_IncludingUserEntities_NotIncludingNotEditable = clone $spec->components->schemas->StringEnumTemplate;
+		$spec->components->schemas->ExposedEntity_IncludingUserEntities_NotIncludingNotEditable->enum = []; // the template's own "" member is a placeholder, not an entity
 		foreach ($spec->components->schemas->ExposedEntity_IncludingUserEntities->enum as $value)
 		{
 			if (!in_array($value, $spec->components->schemas->ExposedEntityNoEdit->enum))
@@ -198,6 +201,7 @@ class OpenApiController extends BaseApiController
 		sort($spec->components->schemas->ExposedEntity_IncludingUserEntities_NotIncludingNotEditable->enum);
 
 		$spec->components->schemas->ExposedEntity_NotIncludingNotDeletable = clone $spec->components->schemas->StringEnumTemplate;
+		$spec->components->schemas->ExposedEntity_NotIncludingNotDeletable->enum = []; // the template's own "" member is a placeholder, not an entity
 		foreach ($spec->components->schemas->ExposedEntity->enum as $value)
 		{
 			if (!in_array($value, $spec->components->schemas->ExposedEntityNoDelete->enum))
@@ -208,6 +212,7 @@ class OpenApiController extends BaseApiController
 		sort($spec->components->schemas->ExposedEntity_NotIncludingNotDeletable->enum);
 
 		$spec->components->schemas->ExposedEntity_NotIncludingNotListable = clone $spec->components->schemas->StringEnumTemplate;
+		$spec->components->schemas->ExposedEntity_NotIncludingNotListable->enum = []; // the template's own "" member is a placeholder, not an entity
 		foreach ($spec->components->schemas->ExposedEntity->enum as $value)
 		{
 			if (!in_array($value, $spec->components->schemas->ExposedEntityNoListing->enum))
