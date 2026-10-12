@@ -39,37 +39,7 @@ if (getenv('VICTUAL_COVERAGE_DIR') === false)
 		return;
 	}
 
-	$filter = new \SebastianBergmann\CodeCoverage\Filter();
-
-	// The application, and only the application. Vendored code says nothing about this
-	// fork, and the .devtools scripts are the thing doing the measuring — including them
-	// would report the test tooling as well covered, which is true and worthless.
-	//
-	// Listed file by file rather than by directory: php-code-coverage 11 dropped
-	// Filter::includeDirectory(), and the file iterator it depends on is the same one it
-	// used internally before.
-	$directories = [];
-
-	foreach (['services', 'controllers', 'helpers', 'middleware', 'plugins'] as $directory)
-	{
-		if (is_dir($root . '/' . $directory))
-		{
-			$directories[] = $root . '/' . $directory;
-		}
-	}
-
-	if ($directories !== [])
-	{
-		$filter->includeFiles((new \SebastianBergmann\FileIterator\Facade())->getFilesAsArray($directories, '.php'));
-	}
-
-	foreach (['app.php', 'routes.php', 'config-dist.php'] as $file)
-	{
-		if (is_file($root . '/' . $file))
-		{
-			$filter->includeFile($root . '/' . $file);
-		}
-	}
+	$filter = (require __DIR__ . '/filter.php')($root);
 
 	try
 	{
@@ -83,6 +53,26 @@ if (getenv('VICTUAL_COVERAGE_DIR') === false)
 	}
 
 	$coverage = new \SebastianBergmann\CodeCoverage\CodeCoverage($driver, $filter);
+
+	// stop() parses every application file the process executed, to learn which of its
+	// lines are executable. Uncached, that is php-parser over the same sources in each of
+	// the suite's ~3,300 processes - the leading suspect for the suite taking 40 minutes
+	// with coverage and 16 without it (CI run 38255359626). run-tests.sh analyses every file in
+	// the filter once, before any phase, into this directory, so a process here only ever
+	// reads the cache.
+	//
+	// Only a directory that exists, so only a warmed one: php-code-coverage writes cache
+	// entries with a plain file_put_contents, and a cold cache shared by concurrent
+	// processes would let one read another's half-written entry. The notice unserialize()
+	// prints then lands on a subprocess helper's stdout in front of its JSON - the shape
+	// of the 2026-09-30 failures. A step run without the runner measures as it always did.
+	$analysisCache = $outputDir . '-analysis';
+
+	if (is_dir($analysisCache))
+	{
+		$coverage->cacheStaticAnalysis($analysisCache);
+	}
+
 	$coverage->start('suite');
 
 	register_shutdown_function(function () use ($coverage, $outputDir)
