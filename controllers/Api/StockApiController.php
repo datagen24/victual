@@ -1445,6 +1445,11 @@ class StockApiController extends BaseApiController
 				throw new \Exception('A gross_amount is required');
 			}
 
+			// array_key_exists() is true for a JSON null, and (float) turns null, "", "abc",
+			// true and arrays into 0.0 - which, at a vessel whose tare is 0, books a
+			// correction of its stock to zero (issue #813).
+			$this->RequireNumericAmount($requestBody, 'gross_amount');
+
 			$grossQuId = array_key_exists('gross_qu_id', $requestBody) && $requestBody['gross_qu_id'] !== null
 				? (int)$requestBody['gross_qu_id']
 				: null;
