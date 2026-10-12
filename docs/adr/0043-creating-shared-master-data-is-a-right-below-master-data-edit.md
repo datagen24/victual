@@ -60,7 +60,7 @@ shares" without widening any role.
 ### 1. One new permission, a child of `MASTER_DATA_EDIT`
 
 Add a permission to `permission_hierarchy` whose parent is `MASTER_DATA_EDIT`. This record
-uses the working name `MASTER_DATA_CREATE`; the name is an open question. Because the tree
+uses `MASTER_DATA_ADD`, selected by the maintainer on 2026-10-11. Because the tree
 resolves downward, every account that holds `MASTER_DATA_EDIT` or `ADMIN` holds it from the
 moment the row exists, with no backfill. No other account holds it until someone grants it.
 
@@ -77,7 +77,8 @@ entities: `products`, `product_barcodes`, `locations`, `quantity_units`, `produc
 - Userfield values and definitions, label subsystem writes, and merges keep their gates.
 - `external-lookup?add=true` accepts the new permission in place of `MASTER_DATA_EDIT`, in
   addition to its existing `STOCK_VIEW` check. It creates a product through the same service
-  as the generic route.
+  as the generic route. A newly created product may receive its fetched picture, but
+  that operation must not overwrite an existing shared picture.
 
 Chores and tasks do not use the new permission; see decision 7. Batteries and task categories
 are open question 2.
@@ -282,6 +283,8 @@ should move to `MASTER_DATA_EDIT`; that needs its own decision.
    - `CheckMayGrant` refuses a grant of the permission by an account that does not hold it;
    - an upgrade rehearsal shows no existing account gains or loses an effective permission
      except by holding `MASTER_DATA_EDIT` or `ADMIN`;
+   - a create-only external lookup can attach a new picture but cannot overwrite an
+     existing shared picture, including when the fetched filename collides;
    - a fresh install and a legacy import hold the permission row with the same parent as an
      upgraded installation (see "Permission rows on each install path").
 4. The contract snapshots and `check-migrations.php` pass with the migration.
@@ -317,9 +320,16 @@ should move to `MASTER_DATA_EDIT`; that needs its own decision.
 
    This confirms shared editing of chores and tasks. It does not decide ownership
    columns or creator-edit rights for shared products.
-3. **One permission or one per entity?** *Lean: one.*
+3. **One permission or one per entity?**
+
+   > **Response:** datagen24, 2026-10-11: One `MASTER_DATA_ADD` permission for the
+   > listed entity types. This does not create a permission per product or other row.
+
 4. **Name.** `MASTER_DATA_CREATE` follows the existing `STOCK_*` suffix style. `MASTER_DATA_ADD`
    matches `SHOPPINGLIST_ITEMS_ADD`. *Lean: `MASTER_DATA_ADD`, to match the nearest sibling.*
+
+   > **Response:** datagen24, 2026-10-11: Use `MASTER_DATA_ADD` as the permission name.
+
 5. **Does `external-lookup?add=true` store a picture for a holder of the new right?** The
    route writes a `productpictures` file, and replaces one of the same name, while uploading
    to that group needs `MASTER_DATA_EDIT` (see "Where external lookup stores a picture").
@@ -329,3 +339,10 @@ should move to `MASTER_DATA_EDIT`; that needs its own decision.
    without `add` needs it today. If decision 2 means `add=true` only, the check moves after
    `add` is read; if it means the whole lookup route, it does not. The record does not
    decide either point.
+
+   > **Response:** datagen24, 2026-10-11: Allow the newly created product to receive
+   > its fetched picture. Prevent this operation from overwriting an existing shared
+   > picture; it grants no general picture-editing right.
+
+   Lookup access without `add=true` remains undecided. The implementation must test
+   that a name collision leaves the existing picture unchanged.

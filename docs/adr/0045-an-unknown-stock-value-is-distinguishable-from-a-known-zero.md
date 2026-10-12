@@ -2,8 +2,8 @@
 
 - **Status:** **Proposed.** Nothing here constrains work until the maintainer accepts it in a
   separate pull request. The record presents options and a recommendation. The maintainer
-  confirmed zero, null and omission semantics on 2026-10-11. Existing-data treatment
-  and aggregate response behavior remain undecided.
+  confirmed zero, null and omission semantics on 2026-10-11. Option B, parent-only values, last-known-price fallback and client coordination
+  are confirmed. Import interpretation storage remains to be designed.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-11, against `master` at `d4960138`. Design work only: it changes no
@@ -147,14 +147,15 @@ exercise, not in whether the treatment is needed.
 
 ADR-0024 decision 1 allows a breaking change to the API only when a Victual-owned client is
 updated before or in coordination with it. The OpenAPI document and the contract snapshot
-change in the same pull request. The record does not say whether a change of meaning with
-no change of type is a breaking change. Open question 4 asks the maintainer.
+change in the same pull request. The maintainer confirmed in open question 4 that a
+semantic change also requires client coordination when its JSON type stays unchanged.
 
 ## Prerequisite decision P: what a stored price of 0 means
 
 The maintainer selected P2's meaning for prices on 2026-10-11: zero is a known zero,
-`null` is unknown, and an omitted price field is redacted. Existing zero-valued rows
-and imported data still need a treatment selected below. The alternatives remain
+`null` is unknown, and an omitted price field is redacted. Existing rows hold test data only. Imported legacy zeros default to unknown,
+with that interpretation disclosed and original booking values preserved. The storage
+mechanism for this interpretation remains to be designed. The alternatives remain
 for comparison; P1 is not the selected direction.
 
 **P1. Keep "0 means not entered" and add an explicit representation of "free".** Every
@@ -184,7 +185,10 @@ recipe position has no known price. No stock row in `.devtools/pgsql/view-tests/
 `03` is priced `0`. Whether `03_recipes.sql` has a position without a known price was not
 checked.
 
-Existing rows need one of four treatments. The constitution's data-integrity section says
+The following alternatives document the existing-data tradeoffs. The maintainer
+confirmed there is no production data to preserve; historical imports remain in scope.
+The selected import policy preserves original booking values and interprets legacy zeros
+as unknown by default. It does not authorize rewriting `stock_log`. The constitution's data-integrity section says
 the stock ledger is exact history, and `stock_log` is that ledger, so the treatments differ
 in whether they rewrite it:
 
@@ -208,8 +212,8 @@ in whether they rewrite it:
 A heuristic selection of rows, such as purchases dated before the release, was considered
 and set aside. It has the conversion's loss with less predictable results.
 
-Under P2, `bin/victual-db-import` must apply the same conversion to an imported SQLite
-database. Whether upstream grocy's purchase page also writes `0` for a blank price was not
+Under P2, `bin/victual-db-import` must disclose and record the selected interpretation
+of imported legacy zeros without rewriting original booking values. Whether upstream grocy's purchase page also writes `0` for a blank price was not
 checked. The web UI's `0` handling descends from upstream, so this is likely but
 unverified.
 
@@ -300,14 +304,15 @@ Consequences of option A:
 bound in case (b). Two booleans state whether the sum is complete:
 `CurrentStockResponse.value_incomplete` and `ProductDetailsResponse.stock_value_incomplete`.
 They follow `recipes_resolved.prices_incomplete`, which marks a recipe cost that ignores
-unpriced positions. `last_price`, `current_price` and `oldest_price` behave as in option A,
-because the document already types them `["number", "null"]` and the product card already
-renders `null` as "Unknown".
+unpriced positions. `last_price` behaves as in option A. `current_price` and its
+deprecated alias `oldest_price` retain the last-known-price fallback when the next entry
+is unpriced. They return `null` when neither the entry nor the fallback has a known price.
+OpenAPI must describe that fallback even while stock exists.
 
 | Case | `value` / `stock_value` | `*_incomplete` | `last_price` | `avg_price` | `current_price`, `oldest_price` |
 |---|---|---|---|---|---|
 | (a) | `0` | `true` | `null` | `null` | `null` |
-| (b) | sum of known prices | `true` | latest known price | mean of known prices | next entry's price, `null` if unpriced |
+| (b) | sum of known prices | `true` | latest known price | mean of known prices | next entry's price, otherwise last known price |
 | (c1) | no row / `0` | no row / `false` | `null` | `null` | `null` |
 | (c2) | no row / `0` | no row / `false` | latest known price | mean of known prices | latest known price |
 | (d) | sum | `false` | latest price | mean | next entry's price |
@@ -345,8 +350,8 @@ Consequences of option B:
   on it. If `stock_current` gains the flag as a column, `difftest.php` needs one more
   PostgreSQL-only strip line, the precedent `amount_measured` set for
   `migrations/0275.pgsql.sql`. If `StockService` computes the flag in PHP, the views phase
-  is untouched for `value`. The single-price rewrites are the same as option A's and need
-  the same ADR-0005 accepted difference or normalisation.
+  is untouched for `value`. The selected single-price rewrites need their own recorded ADR-0005 accepted
+  differences or normalisations; the current-price fallback is retained.
 - Parity suite: The flags are `extra-field` differences on every stock row, and the
   single-price `null`s are `type` differences as under option A. One `accepted.js` entry
   covers both.
@@ -360,25 +365,18 @@ Consequences of option B:
   unknown values requires reading the flags. The single-price fields change meaning:
   `last_price` and `current_price` become `null` where they are `0` today, and the apps
   read `nil` as "no permission". An app built before the change would hide a known-unknown
-  price as if the caller lacked the permission. Whether ADR-0024 decision 1 requires a
-  coordinated release for that change is open question 4.
+  price as if the caller lacked the permission. ADR-0024 decision 1 requires coordinated client changes for that semantic
+  change, as confirmed in open question 4.
 
-### Parent products under options A and B
+### Parent-product values under selected option B
 
-`stock_current`'s first branch sums `value` over the parent's own entries only, while
-`amount_aggregated` includes converted sub-product stock (open question 1). A parent whose
-stock is held entirely in sub-products therefore reports `value` `0`. Under option A that
-`0` reads as a known zero. Under option B it reads as `0` with `value_incomplete` `false`.
-Both are the false known zero issue 774 reports. Two ways to keep it out of this decision:
-
-- Define the answer for rows with `is_aggregated_amount` `true` in this record. For
-  example, option B sets `value_incomplete` to `true` whenever sub-product stock contributes
-  to `amount_aggregated`, because `value` omits it. Option A returns `null` in the same
-  case. The record then constrains the later answer to open question 1.
-- Make open question 1 an acceptance prerequisite, so the aggregation rule is settled
-  before either option is accepted.
-
-The record does not choose between them; acceptance prerequisite 6 asks the maintainer.
+Prices and values do not roll up from sub-products, as confirmed by the maintainer
+on 2026-10-11. A parent's `value` describes only its own stock; `amount_aggregated`
+may include sub-products. OpenAPI and client displays must identify those different scopes.
+The incompleteness flag considers only unpriced stock belonging to the parent itself.
+A parent with no direct stock has direct value zero and a false incompleteness flag,
+even when sub-products contribute to `amount_aggregated`. That zero makes no statement
+about the value of the sub-products.
 
 ### Option C: document the current behaviour
 
@@ -445,9 +443,10 @@ snapshot records no `value` key there.
 
 ## Maintainer response and remaining choices
 
-The following response fixes the three price states. It does not select how an
-aggregate reports a mixture of priced and unpriced stock, or how existing zeros
-are converted. Options A and B retain those aggregate tradeoffs for review.
+The maintainer selected P2 price semantics and option B aggregates on 2026-10-11.
+A mixed aggregate returns the known subtotal plus an incompleteness flag. Parent values
+exclude sub-products, and `current_price` retains its last-known-price fallback.
+The table below describes individual price states; aggregates also require their flag.
 
 | Price state | API representation |
 |---|---|
@@ -461,54 +460,36 @@ a single optional value that conflates them does not represent this contract.
 The specification and implementation must change together; this proposal does not
 claim that every existing price route already follows the selected semantics.
 
-## Recommendation for remaining choices
+## Rationale for the selected behavior
 
-P2's price semantics are selected. Option B remains a recommendation for aggregate
-values; open question 2's fallback behavior remains undecided.
+Option B preserves the known subtotal when some contributing prices are unknown.
+The value and its incompleteness flag must be redacted together. A client that ignores
+the flag can misrepresent a partial subtotal as a complete total, so semantic changes
+require client coordination even when JSON types remain unchanged.
 
-- P2 matches the writers that already distinguish. The add route, the stock entry edit
-  and the MCP tool already store `NULL` for "not entered". Issue 774's test list already
-  expects a price of `0` to report `0`. P1 adds a column, an API field and a form control,
-  and keeps two encodings of unknown. P3 leaves every blank web purchase reporting a false
-  zero.
-- P2's existing rows should be read as "not entered". The shipped purchase page stores the
-  same `0` for a typed zero and for a blank field, so no stored zero from the web UI can be
-  read as "free". The recommended treatment converts `stock` and records a watermark for
-  `stock_log`, which leaves the ledger as it was booked. Converting both tables is the
-  alternative if the maintainer prefers one rule for readers over an unchanged ledger. It
-  then needs the preflight and the converted-row report. Either loses any free entry
-  written through the API before the upgrade.
-- Option B changes no documented type, so no `victual-kit` decoder fails. It does not
-  avoid ADR-0005 work: P2's filters and the single-price rewrites need an accepted
-  difference or a normalisation under any option. Option B adds no further divergence on
-  `value`, while option A adds one that `01_stock_basics.sql` exercises.
-- Option B keeps the partial sum. In case (b) the known part of the value remains
-  available, which option A discards.
-- The single-price fields use `null`. The document already permits it, the product card
-  already renders it, and option A would make the same change.
-
-Option B has costs. A client must read two keys to display one value. A client that ignores
-the flag still shows `0.00` for unpriced stock. The flag and the value must be redacted
-together. The single-price `null`s still change meaning for `victual-kit` (open question
-4). Option A is the better choice if the maintainer wants a client that reads only `value`
-to be correct. Choosing option A adds a coordinated `victual-kit` release, a second
-ADR-0005 accepted difference or normalisation for `value`, and an Influx rule.
+The only live database is a UI test database with no valid production data, as confirmed
+by the maintainer on 2026-10-11. Historical grocy imports need an explicit policy because
+legacy zeros cannot reliably distinguish a free purchase from a price never entered.
+Treat them as unknown by default, disclose that interpretation during import, and preserve
+original booking values. The representation of that interpretation requires further design;
+no cutoff mechanism or ledger conversion is selected by this response.
 
 ## Open questions
 
-1. **Should a parent product's `value` include its sub-products?** In `stock_current`'s
-   first branch, `amount_aggregated` sums the parent's and its sub-products' stock through
-   unit conversion. `value` sums only the parent's own entries
-   (`SELECT ... FROM stock WHERE product_id = pr.parent_product_id`). A parent whose stock
-   is held entirely in sub-products reports `value` `0` with a positive
-   `amount_aggregated`. Under option A or B this reads as a complete, known zero. The
-   aggregation rule itself is outside this decision. Its effect on options A and B is set
-   out under "Parent products under options A and B", and acceptance prerequisite 6 asks
-   how the record handles it.
+1. **Should a parent product's `value` include its sub-products?** `amount_aggregated`
+   includes sub-product quantities, while the existing value query uses direct stock.
+
+   > **Response:** datagen24, 2026-10-11: Prices and values do not roll up. A parent
+   > product reports the value of its own stock only.
+
 2. **When the next-use entry is unpriced, is `current_price` `null` or the last known
    price?** Today it falls back to the last purchase price. The OpenAPI description
-   promises that fallback only when the product is not in stock. The recommendation is
-   `null`, following the description.
+   promises that fallback only when the product is not in stock. The selected answer
+   retains fallback, so the description must change.
+
+   > **Response:** datagen24, 2026-10-11: Keep the last-known-price fallback when the
+   > next entry is unpriced.
+
 3. **Should the `avg_price` description be corrected?** The document says "all stock
    entries currently in stock". `products_average_price` averages every non-undone
    purchase with a known price. This is handled by
@@ -521,37 +502,54 @@ ADR-0005 accepted difference or normalisation for `value`, and an Influx rule.
    change of meaning counts, option B also needs a `victual-kit` release in coordination
    with the server.
 
+
+   > **Response:** datagen24, 2026-10-11: Changes of meaning count for client coordination
+   > under ADR-0024, even when the JSON type is unchanged. The server defines the
+   > contract; affected maintained clients must interpret it correctly.
+
 5. **How are known zero, unknown and redacted prices represented?**
 
    > **Response:** datagen24, 2026-10-11: Agreed: `0` is known zero, `null` is unknown,
    > and an absent field is redacted. Document this response in the API specification
    > so it is implemented correctly.
 
-   No explicit redaction marker is introduced. Existing-data treatment, aggregate
-   completeness, parent-product valuation and the fallback in question 2 remain open.
+   No explicit redaction marker is introduced.
+
+6. **How are existing and imported zero prices treated?**
+
+   > **Response:** datagen24, 2026-10-11: The live database is a UI test database with
+   > no valid production data. Historical grocy imports are the relevant preservation
+   > concern. Treat imported legacy zeros as unknown by default, disclose that
+   > interpretation during import, and preserve original booking values.
+
+   The mechanism for storing the interpretation remains open.
+
+7. **How is a mixed priced/unpriced total represented?**
+
+   > **Response:** datagen24, 2026-10-11: Use the known subtotal with an added
+   > `*_incomplete` flag, as in option B.
 
 ## Acceptance prerequisites
 
-1. P2's price semantics are confirmed. The maintainer still chooses the treatment of
-   existing price-`0` rows and imported databases before this gate is met.
-2. The maintainer chooses option A, B or C, and answers open questions 2 and 4.
-3. A `victual-kit` change is identified for the chosen option, following ADR-0024
-   decision 1. Under option A it is a coordinated release that decodes the nullable
-   properties and tells an absent key from `null`. Under option B it reads the flags. Under
-   P2 it relies on PR 33's rule that `0` is a known zero only after the existing-row
-   conversion.
-4. Under option A: the record names the ADR-0005 accepted difference or the harness
-   normalisation for `stock_current.value` and `uihelper_stock_current_overview.value`, the
-   parity `accepted.js` entry, and the Influx publisher's rule for an unknown value.
+1. P2's semantics and the import interpretation policy are confirmed. Before acceptance,
+   the record must define how imported legacy zeros retain their original booking values
+   while readers distinguish their unknown interpretation from new, known zeros.
+2. Option B and the answers to open questions 2 and 4 are confirmed.
+3. A coordinated change for affected maintained clients is identified under ADR-0024.
+   Clients read option B's flags, preserve absent versus present-null fields, and rely on
+   zero meaning known zero only after legacy import interpretation is applied. This
+   includes victual-kit without making that client the authority for the API contract.
+4. Option A's additional value-normalisation and Influx requirements do not apply to
+   the selected option B. The applicable differences remain covered by gates 5 and 7.
 5. Under option B: the record names the flags' `permission_fields` rows, their
    `WireBooleans` entries, and whether `stock_current` or `StockService` computes them.
-6. The maintainer chooses how parent products are handled: the record defines the flag or
-   `null` for rows with `is_aggregated_amount` `true`, or open question 1 is answered first.
+6. Parent-only values and completeness are confirmed. The API descriptions must distinguish
+   that scope from `amount_aggregated`, as defined above.
 7. Under P2, or under option A or B: the record names the ADR-0005 accepted difference or
    difftest normalisation for each rewritten view (`products_price_history`,
    `products_average_price`, `products_last_purchased`, `products_current_price`,
-   `recipes_pos_resolved`, `recipes_resolved`, as applicable). Under P2 with a conversion
-   of `stock_log`, it also names the upgrade preflight and the converted-row report.
+   `recipes_pos_resolved`, `recipes_resolved`, as applicable). Import evidence must show
+   original booking values unchanged and the disclosed interpretation applied consistently.
 
 ## Verification
 
@@ -566,9 +564,9 @@ its pull request:
 - Write paths under P2: An API purchase with an absent, `null` or `""` price stores
   `NULL`. An inventory correction and a weighing for a product with no known price book
   `NULL`. A self-production from a recipe with `prices_incomplete` books `NULL`. A
-  migration test applies the existing-row treatment the maintainer chose, rebuilds both
-  price caches, and, if `stock_log` is converted, checks the preflight count against the
-  converted-row report. An import test applies the same treatment.
+  migration test checks both price caches against the selected semantics. Import tests
+  show that legacy zeros are interpreted as unknown, the importer discloses that policy,
+  original booking values remain unchanged, and new known-zero purchases remain known.
 - pgTAP for every view the change rewrites (`stock_current`, `products_last_purchased`,
   `products_price_history`, `products_average_price`, `products_current_price`,
   `recipes_resolved`), as `.devtools/pgtap/README.md`'s completeness list requires.
