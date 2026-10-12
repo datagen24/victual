@@ -131,6 +131,17 @@ To let a client map a new medication:
 A client that cannot create master data names the missing product or conversion and stops. See
 [External consumption events](external-consumption.md#mappings).
 
+## Shopping lists
+
+A shopping list and the items on it use the same permissions. Adding an item, creating a list and
+renaming a list need `SHOPPINGLIST_ITEMS_ADD`. Removing an item and deleting a list need
+`SHOPPINGLIST_ITEMS_DELETE`. There is no separate permission for lists themselves.
+
+The seeded Child role holds `SHOPPINGLIST_ITEMS_ADD` and not `SHOPPINGLIST_ITEMS_DELETE`. A
+Child account can therefore create and rename shopping lists but cannot delete them, or delete
+items from them. This is deliberate for v0.5.0. A separate permission for lists would need its own
+design decision.
+
 ## Permission reference
 
 `ADMIN` implies every other permission. The rest, by domain:
