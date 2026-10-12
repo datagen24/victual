@@ -2393,7 +2393,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		]);
 		self::assertSame(403, $refused['status'], "a non-admin writing userfields was answered {$refused['status']}: {$refused['body']}");
 
-		$allowed = self::sendAs(self::$masterDataKey, 'POST', '/api/objects/tasks', [], ['name' => 'GateProbeTask']);
+		// Not tasks: ADR-0043 decision 7 moved task create and edit to TASKS, which MASTER_DATA_EDIT
+		// does not resolve. Task categories are still gated by MASTER_DATA_EDIT alone.
+		$allowed = self::sendAs(self::$masterDataKey, 'POST', '/api/objects/task_categories', [], ['name' => 'GateProbeTaskCategory']);
 		self::assertSame(200, $allowed['status'], "the same caller writing an ungated entity was answered {$allowed['status']}: {$allowed['body']}");
 	}
 

@@ -146,6 +146,49 @@ class MasterDataAddMigrationTest extends PgsqlSchemaTestCase
 		self::assertSame(1, (int)$db->query('SELECT COUNT(*) FROM migrations WHERE migration = 308')->fetchColumn());
 	}
 
+	/**
+	 * ADR-0043 decision 7 moves create and edit of chores to CHORES and of tasks to TASKS
+	 * (they were MASTER_DATA_EDIT). The upgrade rehearsal lists the accounts whose effective
+	 * right changes. CHORES and TASKS are siblings of MASTER_DATA_EDIT under ADMIN, so the
+	 * change goes both ways: holders of CHORES / TASKS without MASTER_DATA_EDIT gain, holders
+	 * of MASTER_DATA_EDIT without them lose, and ADMIN resolves all three and keeps both.
+	 */
+	public function testDecisionSevenListsTheAccountsWhoseChoreAndTaskRightsChange(): void
+	{
+		DatabaseMigrationService::GetInstance()->MigrateDatabase();
+		$resolved = self::snapshotResolved();
+
+		$holders = static function (string $permission) use ($resolved): array
+		{
+			$ids = [];
+			foreach ($resolved as [$userId, $name])
+			{
+				if ($name === $permission && $userId >= 9600)
+				{
+					$ids[] = $userId;
+				}
+			}
+			sort($ids);
+			return $ids;
+		};
+
+		$before = $holders('MASTER_DATA_EDIT');
+		self::assertSame([9604, 9605, 9608], $before, 'Precondition: the fixture accounts that could create and edit chores and tasks before');
+
+		foreach (['CHORES', 'TASKS'] as $permission)
+		{
+			$after = $holders($permission);
+			self::assertSame([9601, 9605, 9608], $after, "Fixture accounts that create and edit under $permission afterwards: the Adult role, and the two ADMIN holders");
+			self::assertSame([9601], array_values(array_diff($after, $before)), "Fixture accounts that gain create and edit under $permission: the seeded Adult role holder");
+			self::assertSame([9604], array_values(array_diff($before, $after)), "Fixture accounts that lose create and edit under $permission: the MASTER_DATA_EDIT holder who holds no $permission");
+		}
+		foreach ([9602, 9603, 9606, 9607] as $userId)
+		{
+			self::assertArrayNotHasKey("$userId:CHORES", $resolved, "Account $userId (Child, Guest, STOCK_VIEW only, no grants) neither creates nor edits chores");
+			self::assertArrayNotHasKey("$userId:TASKS", $resolved, "Account $userId neither creates nor edits tasks");
+		}
+	}
+
 	public function testSeedFileIsIdempotentOnItsOwn(): void
 	{
 		// The importer replays the same file after every legacy import, onto a database

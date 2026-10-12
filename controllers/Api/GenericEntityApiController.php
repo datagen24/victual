@@ -18,15 +18,26 @@ use Psr\Http\Message\ServerRequestInterface as Request;
  * Userfields endpoints /api/userfields/{entity}/{objectId} for all entities
  * exposed through the OpenAPI spec (ExposedEntity* enums also control which
  * entities can be listed, edited, deleted or require admin rights).
+ *
+ * Write gates (ADR-0043): create of products, product_barcodes, locations,
+ * quantity_units, product_groups and shopping_locations needs MASTER_DATA_ADD, which
+ * MASTER_DATA_EDIT and ADMIN resolve; edit and delete of those, and create of every
+ * other entity without a domain gate, need MASTER_DATA_EDIT. Create and edit of chores
+ * need CHORES and of tasks TASKS, whoever created the row; deleting them needs
+ * MASTER_DATA_EDIT.
  */
 class GenericEntityApiController extends BaseApiController
 {
 	/**
 	 * POST /api/objects/{entity} - creates a new object from the JSON request body.
-	 * Requires an entity-dependent permission (shopping list, recipes, meal plan,
-	 * equipment or MASTER_DATA_EDIT as fallback; some entities additionally ADMIN),
-	 * answered with 403 when missing. As a side effect, creating a product may add
-	 * below-min-stock products to the shopping list (per user setting).
+	 * Requires an entity-dependent permission, answered with 403 when missing:
+	 * SHOPPINGLIST_ITEMS_ADD (shopping lists), RECIPES, RECIPES_MEALPLAN, EQUIPMENT,
+	 * CHORES (chores), TASKS (tasks), MASTER_DATA_ADD (products, product_barcodes,
+	 * locations, quantity_units, product_groups, shopping_locations; MASTER_DATA_EDIT
+	 * and ADMIN resolve it) and MASTER_DATA_EDIT for everything else, including
+	 * quantity_unit_conversions; some entities additionally ADMIN (ADR-0043).
+	 * As a side effect, creating a product may add below-min-stock products to the
+	 * shopping list (per user setting).
 	 * The columns the server owns (id, row_created_timestamp) are dropped from the body
 	 * before it is written - see WithoutServerOwnedColumns().
 	 * Returns { "created_object_id": int } (200) or a 400 error response
@@ -50,6 +61,18 @@ class GenericEntityApiController extends BaseApiController
 		elseif ($args['entity'] == 'equipment')
 		{
 			User::CheckPermission($request, User::PERMISSION_EQUIPMENT);
+		}
+		elseif ($args['entity'] == 'chores')
+		{
+			User::CheckPermission($request, User::PERMISSION_CHORES);
+		}
+		elseif ($args['entity'] == 'tasks')
+		{
+			User::CheckPermission($request, User::PERMISSION_TASKS);
+		}
+		elseif (in_array($args['entity'], ['products', 'product_barcodes', 'locations', 'quantity_units', 'product_groups', 'shopping_locations'], true))
+		{
+			User::CheckPermission($request, User::PERMISSION_MASTER_DATA_ADD);
 		}
 		else
 		{
@@ -330,8 +353,9 @@ class GenericEntityApiController extends BaseApiController
 
 	/**
 	 * PUT /api/objects/{entity}/{objectId} - updates the given object with the JSON
-	 * request body. Requires an entity-dependent permission (as in AddObject),
-	 * answered with 403 when missing. As a side effect, editing a product may add
+	 * request body. Requires an entity-dependent permission, answered with 403
+	 * when missing: as in AddObject, except that the six MASTER_DATA_ADD entities
+	 * need MASTER_DATA_EDIT (the new permission gates create only). As a side effect, editing a product may add
 	 * below-min-stock products to the shopping list (per user setting).
 	 * The columns the server owns (id, row_created_timestamp) are dropped from the body
 	 * before it is written - see WithoutServerOwnedColumns().
@@ -355,6 +379,14 @@ class GenericEntityApiController extends BaseApiController
 		elseif ($args['entity'] == 'equipment')
 		{
 			User::CheckPermission($request, User::PERMISSION_EQUIPMENT);
+		}
+		elseif ($args['entity'] == 'chores')
+		{
+			User::CheckPermission($request, User::PERMISSION_CHORES);
+		}
+		elseif ($args['entity'] == 'tasks')
+		{
+			User::CheckPermission($request, User::PERMISSION_TASKS);
 		}
 		else
 		{
