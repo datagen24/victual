@@ -18,6 +18,26 @@ evidence on 2026-10-11 (see its Executed section). Not complete: integrated veri
 is a schedule; the release record and signed tag follow verified implementation under
 [the release procedure](../releases/README.md).
 
+**v0.5.0 boundary, set by the maintainer on 2026-10-12.** Required for v0.5.0:
+
+- this plan's implemented work (issues 698 to 702);
+- [ADR-0043](../adr/0043-creating-shared-master-data-is-a-right-below-master-data-edit.md) and
+  issue 742, a `MASTER_DATA_ADD` right below `MASTER_DATA_EDIT`;
+- [ADR-0045](../adr/0045-an-unknown-stock-value-is-distinguishable-from-a-known-zero.md) and
+  issue 774, unknown prices distinguished from a known zero;
+- [ADR-0046](../adr/0046-stock-bookings-accept-an-optional-idempotency-key.md) and issue 775,
+  idempotency keys on stock bookings;
+- fixes for issues 782 (product merge needs `STOCK_EDIT` and `MASTER_DATA_EDIT`) and 785 (a
+  booking route refuses a caller without `STOCK_VIEW` before it books);
+- the disposition of issue 783 (shopping-list rights kept and documented);
+- the response-contract corrections of issues 787 and 788;
+- integrated release verification (issue 703).
+
+Deferred from v0.5.0: issues 762, 654, 483, 86 and 80. Issue 737 keeps its recorded post-v0.5.0
+disposition. The OpenAPI audit in issue 796 is not a release gate as a whole: v0.5.0 requires
+accurate contracts for the operations it changes or depends on. Each ADR is accepted in its own
+bookkeeping pull request once its prerequisites are met.
+
 **Dependencies:** [14](landed/14-contract-and-regression-scaffolding.md),
 [19](19-rbac.md), [23](landed/23-storage-classes.md), and the existing label subsystem
 ([25](25-label-infrastructure.md), [27](landed/27-label-templates-and-rendering.md),
