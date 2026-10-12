@@ -3,6 +3,8 @@
 namespace Victual\Tests\Pgsql;
 
 use PHPUnit\Framework\TestCase;
+use ReflectionClassConstant;
+use Victual\Middleware\Auth\BaseAuthMiddleware;
 use Victual\Services\ApiKeyService;
 use Victual\Services\Labels\LabelWorkerAuthorization;
 use Victual\Services\SessionService;
@@ -198,6 +200,17 @@ class OpenApiSecurityContractTest extends TestCase
 			$requirements = self::operations()[$key]['security'];
 			self::assertCount(count($schemes), $requirements, "$key: one alternative per accepted key type");
 			self::assertSame([], array_diff(self::referencedBy(self::operations()[$key]), $schemes), "$key offers nothing but its label credential");
+		}
+	}
+
+	public function testTheApiKeyDescriptionNamesEveryGetOperationAReadOnlyKeyIsRefusedOn(): void
+	{
+		$routes = (new ReflectionClassConstant(BaseAuthMiddleware::class, 'WRITING_GET_ROUTES'))->getValue();
+		self::assertNotEmpty($routes);
+		$description = self::schemes()['ApiKeyAuth']['description'];
+		foreach ($routes as $route)
+		{
+			self::assertStringContainsString('GET ' . substr($route, strlen('/api')), $description, "$route refuses read-only keys but ApiKeyAuth does not say so");
 		}
 	}
 
