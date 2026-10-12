@@ -57,7 +57,9 @@ A stock booking through the API also needs `STOCK_VIEW`, because its answer list
 `stock_log` rows it wrote. This covers purchase, consume, transfer, open and inventory, their
 by-barcode forms, editing or measuring a stock entry, and weighing a location. A caller that
 holds the booking permission but not `STOCK_VIEW` gets `403` and nothing is booked. Every seeded
-role holds `STOCK_VIEW`, so only an account with custom direct grants is affected.
+role holds `STOCK_VIEW`, so only an account with custom direct grants is affected. A by-barcode
+form checks both permissions before it looks the barcode up, so a caller that lacks either gets
+`403` whether or not the barcode exists.
 
 ## Consumption recipes
 

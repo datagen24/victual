@@ -393,10 +393,17 @@ class StockApiController extends BaseApiController
 	/**
 	 * POST /api/stock/products/by-barcode/{barcode}/add - resolves the barcode to a
 	 * product id and delegates to AddProduct (same body fields/responses);
-	 * 400 error response when the barcode is unknown.
+	 * Requires the delegate's permission and STOCK_VIEW, checked before the barcode is
+	 * resolved (403 otherwise); a 400 error response when the barcode is unknown.
 	 */
 	public function AddProductByBarcode(Request $request, Response $response, array $args)
 	{
+		// Both checked before the barcode is resolved (issue #785): an unknown barcode answers
+		// 400, so resolving it first told any caller which barcodes exist. The delegate checks
+		// both again.
+		User::CheckPermission($request, User::PERMISSION_STOCK_PURCHASE);
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
+
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
 			$args['productId'] = StockService::GetInstance()->GetProductIdFromBarcode($args['barcode']);
@@ -615,10 +622,17 @@ class StockApiController extends BaseApiController
 	 * POST /api/stock/products/by-barcode/{barcode}/consume - resolves the barcode to a
 	 * product id and delegates to ConsumeProduct; when the barcode is a Grocycode
 	 * carrying a stock entry id, that id is injected as the stock_entry_id body field.
-	 * 400 error response when the barcode is unknown.
+	 * Requires the delegate's permission and STOCK_VIEW, checked before the barcode is
+	 * resolved (403 otherwise); a 400 error response when the barcode is unknown.
 	 */
 	public function ConsumeProductByBarcode(Request $request, Response $response, array $args)
 	{
+		// Both checked before the barcode is resolved (issue #785): an unknown barcode answers
+		// 400, so resolving it first told any caller which barcodes exist. The delegate checks
+		// both again.
+		User::CheckPermission($request, User::PERMISSION_STOCK_CONSUME);
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
+
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
 			$args['productId'] = StockService::GetInstance()->GetProductIdFromBarcode($args['barcode']);
@@ -1000,10 +1014,17 @@ class StockApiController extends BaseApiController
 	/**
 	 * POST /api/stock/products/by-barcode/{barcode}/inventory - resolves the barcode to
 	 * a product id and delegates to InventoryProduct (same body fields/responses);
-	 * 400 error response when the barcode is unknown.
+	 * Requires the delegate's permission and STOCK_VIEW, checked before the barcode is
+	 * resolved (403 otherwise); a 400 error response when the barcode is unknown.
 	 */
 	public function InventoryProductByBarcode(Request $request, Response $response, array $args)
 	{
+		// Both checked before the barcode is resolved (issue #785): an unknown barcode answers
+		// 400, so resolving it first told any caller which barcodes exist. The delegate checks
+		// both again.
+		User::CheckPermission($request, User::PERMISSION_STOCK_INVENTORY);
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
+
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
 			$args['productId'] = StockService::GetInstance()->GetProductIdFromBarcode($args['barcode']);
@@ -1091,10 +1112,17 @@ class StockApiController extends BaseApiController
 	 * POST /api/stock/products/by-barcode/{barcode}/open - resolves the barcode to a
 	 * product id and delegates to OpenProduct; when the barcode is a Grocycode carrying
 	 * a stock entry id, that id is injected as the stock_entry_id body field.
-	 * 400 error response when the barcode is unknown.
+	 * Requires the delegate's permission and STOCK_VIEW, checked before the barcode is
+	 * resolved (403 otherwise); a 400 error response when the barcode is unknown.
 	 */
 	public function OpenProductByBarcode(Request $request, Response $response, array $args)
 	{
+		// Both checked before the barcode is resolved (issue #785): an unknown barcode answers
+		// 400, so resolving it first told any caller which barcodes exist. The delegate checks
+		// both again.
+		User::CheckPermission($request, User::PERMISSION_STOCK_OPEN);
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
+
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
 			$args['productId'] = StockService::GetInstance()->GetProductIdFromBarcode($args['barcode']);
@@ -1412,10 +1440,17 @@ class StockApiController extends BaseApiController
 	 * POST /api/stock/products/by-barcode/{barcode}/transfer - resolves the barcode to
 	 * a product id and delegates to TransferProduct; when the barcode is a Grocycode
 	 * carrying a stock entry id, that id is injected as the stock_entry_id body field.
-	 * 400 error response when the barcode is unknown.
+	 * Requires the delegate's permission and STOCK_VIEW, checked before the barcode is
+	 * resolved (403 otherwise); a 400 error response when the barcode is unknown.
 	 */
 	public function TransferProductByBarcode(Request $request, Response $response, array $args)
 	{
+		// Both checked before the barcode is resolved (issue #785): an unknown barcode answers
+		// 400, so resolving it first told any caller which barcodes exist. The delegate checks
+		// both again.
+		User::CheckPermission($request, User::PERMISSION_STOCK_TRANSFER);
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
+
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
 			$args['productId'] = StockService::GetInstance()->GetProductIdFromBarcode($args['barcode']);
