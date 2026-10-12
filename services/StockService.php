@@ -1383,7 +1383,7 @@ class StockService extends BaseService
 
 				// Add product to database and include new product id in output
 				$productData = $pluginOutput;
-				unset($productData['__barcode'], $productData['__qu_factor_purchase_to_stock'], $productData['__image_url']); // Virtual lookup plugin properties
+				unset($productData['__barcode'], $productData['__qu_factor_purchase_to_stock'], $productData['__image_url'], $productData['picture_file_name']); // Virtual lookup plugin properties, and the picture name only this method may set
 
 				// Download and save image if provided
 				if (isset($pluginOutput['__image_url']) && !empty($pluginOutput['__image_url']))
@@ -1535,6 +1535,8 @@ class StockService extends BaseService
 				// picture rather than failing the whole add.
 				if (isset($pictureFileName) && isset($pictureData))
 				{
+					$pictureCreated = false;
+
 					try
 					{
 						// Create, never Write: the name is derived from the looked-up
@@ -1542,6 +1544,7 @@ class StockService extends BaseService
 						// issue 742 / ADR-0043) a Write would let a barcode that collides
 						// with an existing picture replace that file.
 						FileStorage::GetInstance()->Create('productpictures', $pictureFileName, $pictureData);
+						$pictureCreated = true;
 						$newProductRow->update(['picture_file_name' => $pictureFileName]);
 					}
 					catch (FileAlreadyExistsException)
@@ -1552,7 +1555,20 @@ class StockService extends BaseService
 					}
 					catch (\Exception)
 					{
-						// Ignore
+						if ($pictureCreated)
+						{
+							// The file is this call's own (Create is exclusive), but the
+							// product never recorded it: remove it rather than leave an
+							// orphan that would also block the next add of this barcode.
+							try
+							{
+								FileStorage::GetInstance()->Delete('productpictures', $pictureFileName);
+							}
+							catch (\Exception)
+							{
+								// Ignore
+							}
+						}
 					}
 				}
 

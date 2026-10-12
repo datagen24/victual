@@ -4124,6 +4124,17 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	{
 		$pluginFile = self::writeUserLookupPlugin('Coverage Conv Inplace ', 3, 2, 'null', '4');
 
+		// Logs every insert and delete on quantity_unit_conversions, so "updated in place"
+		// is shown by the id the trigger gave the row and by the absence of any delete,
+		// not inferred from the final table alone.
+		self::$db->exec(
+			'CREATE TABLE coverage_conversion_log (op text, id integer, product_id integer, from_qu_id integer, to_qu_id integer);'
+			. 'CREATE FUNCTION coverage_log_conversion() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN '
+			. "IF TG_OP = 'DELETE' THEN INSERT INTO coverage_conversion_log VALUES ('DELETE', OLD.id, OLD.product_id, OLD.from_qu_id, OLD.to_qu_id); RETURN OLD; END IF; "
+			. "INSERT INTO coverage_conversion_log VALUES ('INSERT', NEW.id, NEW.product_id, NEW.from_qu_id, NEW.to_qu_id); RETURN NEW; END $$;"
+			. 'CREATE TRIGGER coverage_log_conversion AFTER INSERT OR DELETE ON quantity_unit_conversions FOR EACH ROW EXECUTE FUNCTION coverage_log_conversion()'
+		);
+
 		try
 		{
 			self::ensureGlobalAndOtherProductConversions('742a');
@@ -4133,6 +4144,16 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 			self::assertSame(200, $response['status'], $response['body']);
 			$productId = self::productIdByName('Coverage Conv Inplace 4000417743003');
 			self::assertNotNull($productId);
+
+			$log = self::$db->prepare('SELECT op, id, from_qu_id, to_qu_id FROM coverage_conversion_log WHERE product_id = ? ORDER BY id');
+			$log->execute([$productId]);
+			$log = $log->fetchAll(PDO::FETCH_ASSOC);
+			self::assertSame([], array_filter($log, fn ($entry) => $entry['op'] === 'DELETE'), 'no conversion of the new product was ever deleted');
+			$triggerInserted = array_values(array_filter($log, fn ($entry) => (int)$entry['from_qu_id'] === 3 && (int)$entry['to_qu_id'] === 2));
+			self::assertCount(1, $triggerInserted, 'the products trigger inserted the purchase->stock row exactly once');
+			$keptId = self::$db->prepare('SELECT id FROM quantity_unit_conversions WHERE product_id = ? AND from_qu_id = 3 AND to_qu_id = 2');
+			$keptId->execute([$productId]);
+			self::assertSame((int)$triggerInserted[0]['id'], (int)$keptId->fetchColumn(), 'and that same row, with that id, carries the plugin factor');
 
 			$new = self::assertOnlyTheNewProductsConversionsAdded($before, $productId);
 			self::assertCount(2, $new, 'exactly the purchase->stock row and its inverse appear');
@@ -4147,6 +4168,7 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		finally
 		{
 			@unlink($pluginFile);
+			self::$db->exec('DROP TRIGGER coverage_log_conversion ON quantity_unit_conversions; DROP FUNCTION coverage_log_conversion(); DROP TABLE coverage_conversion_log');
 		}
 	}
 
@@ -4313,7 +4335,7 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		$cases = [];
 		foreach (['filesystem', 'database'] as $backend)
 		{
-			foreach (['admin', 'add-only'] as $caller)
+			foreach (['admin', 'add-only', 'edit-only'] as $caller)
 			{
 				$cases["$caller on $backend storage"] = [$backend, $caller];
 			}
@@ -4384,9 +4406,14 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	#[Depends('testCreatesTheSubprocessApiKey')]
 	public function testTheLookupPictureIsCreatedNeverOverwritten(string $backend, string $caller): void
 	{
-		$key = $caller === 'admin' ? self::$apiKey : self::addOnlyKey();
+		$key = match ($caller)
+		{
+			'admin' => self::$apiKey,
+			'add-only' => self::addOnlyKey(),
+			'edit-only' => self::lookupKey('edit-only', 9513, ['MASTER_DATA_EDIT', 'STOCK_VIEW']),
+		};
 		$overrides = ['VICTUAL_FILE_STORAGE' => $backend];
-		$suffix = ($backend === 'database' ? '1' : '0') . ($caller === 'admin' ? '1' : '0');
+		$suffix = ($backend === 'database' ? '1' : '0') . ['admin' => '1', 'add-only' => '0', 'edit-only' => '2'][$caller];
 		$freshBarcode = '40004177440' . $suffix;
 		$takenBarcode = '40004177441' . $suffix;
 		$pluginFile = self::writeUserLookupPlugin('Coverage Picture Create ', 2, 2, "'" . self::PICTURE_GIF . "'");
@@ -4414,6 +4441,90 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 			@unlink($pluginFile);
 			self::removePicture($backend, $freshBarcode . '.gif');
 			self::removePicture($backend, $takenBarcode . '.gif');
+		}
+	}
+
+	/**
+	 * Create succeeded but recording the name on the product failed: the file is this call's
+	 * own, so it is removed rather than left to block the next add of the same barcode.
+	 */
+	#[DataProvider('backendProvider')]
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testAFailedPictureNameUpdateRemovesTheFileThisCallCreated(string $backend): void
+	{
+		$barcode = $backend === 'database' ? '4000417745011' : '4000417745001';
+		self::$db->exec(
+			'CREATE FUNCTION coverage_fail_picture_update() RETURNS trigger LANGUAGE plpgsql AS $$ '
+			. "BEGIN IF NEW.picture_file_name IS NOT NULL AND NEW.name LIKE 'Coverage Update Fail %' THEN RAISE EXCEPTION 'injected'; END IF; RETURN NEW; END \$\$;"
+			. 'CREATE TRIGGER coverage_fail_picture_update BEFORE UPDATE ON products FOR EACH ROW EXECUTE FUNCTION coverage_fail_picture_update()'
+		);
+		$overrides = ['VICTUAL_FILE_STORAGE' => $backend];
+		$pluginFile = self::writeUserLookupPlugin('Coverage Update Fail ', 2, 2, "'" . self::PICTURE_GIF . "'");
+
+		try
+		{
+			self::removePicture($backend, $barcode . '.gif');
+			$first = self::lookupAs(self::addOnlyKey(), $barcode, true, $overrides);
+			self::assertSame(200, $first['status'], 'the committed add still answers 200: ' . $first['body']);
+			$picture = self::$db->prepare('SELECT picture_file_name FROM products WHERE id = ?');
+			$picture->execute([json_decode($first['body'], true)['id']]);
+			self::assertNull($picture->fetchColumn(), 'the product has no picture');
+			self::assertNull(self::pictureBytes($backend, $barcode . '.gif'), 'and the file this call created is not left behind');
+
+			// The first product is renamed away and releases the barcode, as a user fixing it up
+			// would; the file name must be free again for the next add.
+			self::$db->prepare('DELETE FROM product_barcodes WHERE barcode = ?')->execute([$barcode]);
+			@unlink($pluginFile);
+			$pluginFile = self::writeUserLookupPlugin('Coverage Update Retry ', 2, 2, "'" . self::PICTURE_GIF . "'");
+			$second = self::lookupAs(self::addOnlyKey(), $barcode, true, $overrides);
+			self::assertSame(200, $second['status'], $second['body']);
+			$picture->execute([json_decode($second['body'], true)['id']]);
+			self::assertSame($barcode . '.gif', $picture->fetchColumn(), 'so a later add of the same barcode gets its picture');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+			self::$db->exec('DROP TRIGGER coverage_fail_picture_update ON products; DROP FUNCTION coverage_fail_picture_update()');
+			self::removePicture($backend, $barcode . '.gif');
+		}
+	}
+
+	/** @return array<string, array{0: string}> */
+	public static function backendProvider(): array
+	{
+		return ['filesystem storage' => ['filesystem'], 'database storage' => ['database']];
+	}
+
+	/** A plugin cannot name the picture: only the lookup itself sets picture_file_name. */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testAPluginCannotSetThePictureFileName(): void
+	{
+		$planted = "'picture_file_name' => 'planted.gif',";
+		$pluginFile = self::writeUserLookupPlugin('Coverage Planted Picture ', 2, 2, "'" . self::PICTURE_GIF . "'", '6', $planted);
+
+		try
+		{
+			self::putPicture('filesystem', '4000417745002.gif', 'sentinel picture bytes');
+			$taken = self::lookupAs(self::addOnlyKey(), '4000417745002', true);
+			self::assertSame(200, $taken['status'], $taken['body']);
+
+			$noImage = self::writeUserLookupPlugin('Coverage Planted Picture ', 2, 2, 'null', '6', $planted);
+			$none = self::lookupAs(self::addOnlyKey(), '4000417745003', true);
+			self::assertSame(200, $none['status'], $none['body']);
+
+			$picture = self::$db->prepare('SELECT picture_file_name FROM products WHERE id = ?');
+			foreach ([$taken, $none] as $response)
+			{
+				$picture->execute([json_decode($response['body'], true)['id']]);
+				self::assertNull($picture->fetchColumn(), 'the name the plugin proposed is not stored on the product');
+			}
+
+			self::assertSame('sentinel picture bytes', self::pictureBytes('filesystem', '4000417745002.gif'), 'and the taken file is untouched');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+			self::removePicture('filesystem', '4000417745002.gif');
 		}
 	}
 

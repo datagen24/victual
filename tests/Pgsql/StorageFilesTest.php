@@ -933,9 +933,8 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 		// A name that is already taken: the exclusive create is what stops one caller
 		// replacing another's picture by guessing its name.
 		$this->expectStatus(fn () => self::$files->UploadFile(self::requestWithRawBody('PUT', self::$png), new Response(), ['group' => 'productpictures', 'fileName' => base64_encode('taken.png')]), 204, 'First upload accepted');
-		// Suppressed: on the filesystem backend the refusal is a warning-emitting fopen
-		// inside the application, the same one testCreateRefusesATakenName... documents.
-		$this->expectStatus(fn () => @self::$files->UploadFile(self::requestWithRawBody('PUT', 'replacement'), new Response(), ['group' => 'productpictures', 'fileName' => base64_encode('taken.png')]), 400, 'Second upload of the same name refused');
+		$refused = $this->expectStatus(fn () => self::$files->UploadFile(self::requestWithRawBody('PUT', 'replacement'), new Response(), ['group' => 'productpictures', 'fileName' => base64_encode('taken.png')]), 400, 'Second upload of the same name refused');
+		self::assertSame(['error_message' => 'Error while creating file taken.png'], json_decode((string)$refused->getBody(), true), 'with the message the files API has always answered');
 		self::assertSame(self::$png, self::DurableBytes($backend, 'productpictures', 'taken.png'), 'and the first caller\'s bytes are untouched');
 
 		// A file name that is not one.

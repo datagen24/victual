@@ -68,6 +68,10 @@ class FilesystemStorage extends FileStorage
 		$fileHandle = @fopen($filePath, 'xb');
 		if ($fileHandle === false)
 		{
+			// The warning is suppressed above so a taken name is not noise; keep what PHP
+			// said, so a refusal that is not a collision stays diagnosable.
+			error_log('Victual FilesystemStorage::Create(' . $group . '/' . $name . ') fopen failed: ' . (error_get_last()['message'] ?? 'no diagnostic'));
+
 			if (file_exists($filePath))
 			{
 				throw new FileAlreadyExistsException("Error while creating file $name");
