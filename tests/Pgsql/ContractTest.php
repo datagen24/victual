@@ -58,6 +58,12 @@ use Victual\Tests\Support\RouteInventory;
  *     same vocabulary, carries either an x-visibility annotation or a permission_fields
  *     row - the completeness leg, which step 7 is structurally blind to because an
  *     unclassified field looks identical for both identities.
+ *  9b. testRecordedValuesAreMembersOfTheirDocumentedEnums(): every value a recorded Admin
+ *     body carries under a documented `enum` is a member of it, and the bodies carry every
+ *     StockService transaction type (issue #772).
+ *  9c. testTransactionTypeEnumsMatchStockService(): StockTransactionType is exactly the
+ *     TRANSACTION_TYPE_* constants, and the add/consume request enums are exactly what
+ *     AddProduct()/ConsumeProduct() accept (issue #772).
  *
  * The consumption recipe routes (ADR-0040) are invoked for the administrator, and only the list and
  * the by-id read are replayed for CHILD. A user with no share on a recipe gets 404 from every by-id
@@ -411,6 +417,31 @@ class ContractTest extends PgsqlSchemaTestCase
 			'qu_id_stock' => 2,
 		]);
 
+		// Issue #772: GET /api/stock/volatile answered four empty lists, so the snapshot
+		// never saw a missing_products entry or a due_products row. One product sits below
+		// its minimum stock amount with no stock at all (the case the embedded `product` of
+		// a missing_products entry exists for), and one is stocked in testStockOperations()
+		// with a due date inside the route's default five days. testStockOperations() then
+		// opens, edits and measures the second one, and testRecipesOperations() produces it,
+		// so the ledger holds every transaction type StockService declares.
+		self::$ids['product_missing'] = $createId('products', [
+			'name' => 'Contract Product Below Minimum',
+			'description' => 'Below its minimum stock amount and never stocked',
+			'location_id' => self::$ids['location'],
+			'qu_id_purchase' => 2,
+			'qu_id_stock' => 2,
+			'product_group_id' => self::$ids['product_group'],
+			'min_stock_amount' => 5,
+		]);
+		self::$ids['product_due'] = $createId('products', [
+			'name' => 'Contract Product Due Soon',
+			'description' => 'Due within the volatile route\'s default five days',
+			'location_id' => self::$ids['location'],
+			'qu_id_purchase' => 2,
+			'qu_id_stock' => 2,
+			'product_group_id' => self::$ids['product_group'],
+		]);
+
 		self::invokeAdmin('PUT /api/objects/{entity}/{objectId} (products)', fn() => $generic->EditObject(self::request('PUT', ['description' => 'Edited by the contract snapshot']), new Response(), ['entity' => 'products', 'objectId' => self::$ids['product']]));
 
 		// A real last_price, not null, so the Admin-vs-restricted leg can actually observe
@@ -445,6 +476,10 @@ class ContractTest extends PgsqlSchemaTestCase
 		// golden files record and the truthful type for an average.
 		self::invokeAdmin('POST /api/stock/products/{productId}/add', fn() => $stock->AddProduct(self::request('POST', ['amount' => 10, 'price' => 2.5, 'best_before_date' => '2030-01-01', 'purchased_date' => '2026-01-02']), new Response(), ['productId' => $productId]));
 		self::invokeAdmin('GET /api/stock', fn() => $stock->CurrentStock(self::request(), new Response(), []));
+		// One unit due in two days, so GET /api/stock/volatile has a due_products row; see
+		// testCreatesMasterData(). Booked after GET /api/stock is recorded so that route's
+		// own recording is unchanged.
+		self::invokeAdmin('POST /api/stock/products/{productId}/add (due soon)', fn() => $stock->AddProduct(self::request('POST', ['amount' => 1, 'price' => 1.5, 'best_before_date' => date('Y-m-d', strtotime('+2 days')), 'purchased_date' => '2026-01-02']), new Response(), ['productId' => self::$ids['product_due']]));
 		self::invokeAdmin('GET /api/stock/volatile', fn() => $stock->CurrentVolatileStock(self::request(), new Response(), []));
 		$entries = self::invokeAdmin('GET /api/stock/products/{productId}/entries', fn() => $stock->ProductStockEntries(self::request(), new Response(), ['productId' => $productId]));
 		self::$ids['stock_entry'] = (int)$entries[0]['id'];
@@ -496,6 +531,25 @@ class ContractTest extends PgsqlSchemaTestCase
 		self::invokeAdmin('POST /api/stock/shoppinglist/remove-product', fn() => $stock->RemoveProductFromShoppingList(self::request('POST', ['product_id' => $productId, 'product_amount' => 1]), new Response(), []));
 		self::invokeAdmin('POST /api/stock/shoppinglist/clear', fn() => $stock->ClearShoppingList(self::request('POST', []), new Response(), []));
 
+		// Issue #772: a price change (the stock-edit-old/-new pair) and a measurement (the
+		// stock-measured-old/-new pair) on the due-soon product's single unit, so the ledger
+		// the generic sweep reads carries both pairs. Last in this method, so every read
+		// recorded above sees the graph it saw before. A measurement needs one opened
+		// container (open = 1, amount = 1), which the open booking makes of that unit.
+		$dueProductId = self::$ids['product_due'];
+		self::invokeAdmin('POST /api/stock/products/{productId}/open (for measure)', fn() => $stock->OpenProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $dueProductId]));
+		$dueEntryId = (int)self::$db->query('SELECT MIN(id) FROM stock WHERE product_id = ' . $dueProductId)->fetchColumn();
+		$edited = self::invokeAdmin('PUT /api/stock/entry/{entryId} (price change)', fn() => $stock->EditStockEntry(self::request('PUT', ['amount' => 1, 'price' => 2]), new Response(), ['entryId' => $dueEntryId]));
+		$dueEntryId = (int)self::$db->query('SELECT MIN(id) FROM stock WHERE product_id = ' . $dueProductId)->fetchColumn();
+		$measured = self::invokeAdmin('POST /api/stock/entry/{entryId}/measure', fn() => $stock->MeasureStockEntry(self::request('POST', ['amount' => 0.5, 'qu_id' => 2]), new Response(), ['entryId' => $dueEntryId]));
+
+		$editTypes = array_column($edited ?? [], 'transaction_type');
+		sort($editTypes);
+		self::assertSame(['stock-edit-new', 'stock-edit-old'], $editTypes, 'The price change booked the stock-edit pair: ' . json_encode($edited));
+		$measureTypes = array_column($measured ?? [], 'transaction_type');
+		sort($measureTypes);
+		self::assertSame(['stock-measured-new', 'stock-measured-old'], $measureTypes, 'The measurement booked the stock-measured pair: ' . json_encode($measured));
+
 		self::assertArrayHasKey('stock_entry', self::$ids, 'At least one stock entry exists for the rest of the suite to read');
 	}
 
@@ -523,6 +577,16 @@ class ContractTest extends PgsqlSchemaTestCase
 		self::invokeAdmin('POST /api/recipes/{recipeId}/add-not-fulfilled-products-to-shoppinglist', fn() => $recipes->AddNotFulfilledProductsToShoppingList(self::request('POST', []), new Response(), ['recipeId' => self::$ids['recipe']]));
 		self::invokeAdmin('POST /api/recipes/{recipeId}/copy', fn() => $recipes->CopyRecipe(self::request('POST'), new Response(), ['recipeId' => self::$ids['recipe']]));
 		self::invokeAdmin('POST /api/recipes/{recipeId}/consume', fn() => $recipes->ConsumeRecipe(self::request('POST'), new Response(), ['recipeId' => self::$ids['recipe']]));
+
+		// Issue #772: a recipe that produces a product books one serving of it back in as
+		// self-production when consumed (RecipesService::ConsumeRecipe()). The consume
+		// answers 204, so the booking is read back by id to put it in a recorded body.
+		$producingResponse = self::invokeAdmin('POST /api/objects/{entity} (recipes, self-production)', fn() => $generic->AddObject(self::request('POST', ['name' => 'Contract Producing Recipe', 'desired_servings' => 1, 'product_id' => self::$ids['product_due']]), new Response(), ['entity' => 'recipes']));
+		$producingRecipeId = (int)$producingResponse['created_object_id'];
+		self::invokeAdmin('POST /api/recipes/{recipeId}/consume (self-production)', fn() => $recipes->ConsumeRecipe(self::request('POST'), new Response(), ['recipeId' => $producingRecipeId]));
+		$selfProductionBookingId = (int)self::$db->query("SELECT MAX(id) FROM stock_log WHERE transaction_type = 'self-production'")->fetchColumn();
+		self::assertGreaterThan(0, $selfProductionBookingId, 'Consuming the producing recipe booked self-production');
+		self::invokeAdmin('GET /api/stock/bookings/{bookingId} (self-production)', fn() => self::controller(StockApiController::class)->StockBooking(self::request(), new Response(), ['bookingId' => $selfProductionBookingId]));
 
 		self::assertGreaterThan(0, self::$ids['recipe'], 'Fixture recipe created');
 	}
@@ -1352,5 +1416,325 @@ class ContractTest extends PgsqlSchemaTestCase
 		}
 
 		self::assertSame([], $unannotated, 'OpenAPI schema properties matching the price/cost/value vocabulary with no x-visibility annotation: ' . implode(', ', $unannotated));
+	}
+
+	// ------------------------------------------------------------------------------
+	// 9b. Issue #772: every value a recorded response carries under a documented enum is
+	//     a member of it. A generated client refuses a value its enum does not list, so
+	//     a stock_log row carrying `transfer_to` made a successful transfer look like a
+	//     failure. The snapshot records types, not values, so this reads $adminBodies.
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * The component schema that documents each entity's rows, for the generic sweep keys.
+	 * GET /objects/{entity} documents an undiscriminated union that `stock_log` (and
+	 * several others) are not members of, so the union alone would leave the ledger
+	 * unchecked. The pairs are WireContractTest::COLUMN_SCHEMAS's, read the other way.
+	 */
+	private const SWEEP_ENTITY_SCHEMAS = [
+		'products' => 'Product',
+		'quantity_units' => 'QuantityUnit',
+		'locations' => 'Location',
+		'storage_classes' => 'StorageClass',
+		'shopping_locations' => 'ShoppingLocation',
+		'stock' => 'StockEntry',
+		'product_barcodes' => 'ProductBarcode',
+		'userfields' => 'Userfield',
+		'shopping_list' => 'ShoppingListItem',
+		'batteries' => 'Battery',
+		'battery_charge_cycles' => 'BatteryChargeCycleEntry',
+		'chores' => 'Chore',
+		'chores_log' => 'ChoreLogEntry',
+		'stock_log' => 'StockLogEntry',
+		'tasks' => 'Task',
+		'task_categories' => 'TaskCategory',
+		'roles' => 'Role',
+	];
+
+	/** The schema victual.openapi.json documents for a recorded key's response, or null when it documents none. */
+	private static function documentedResponseSchema(array $spec, string $key, int $status): ?array
+	{
+		if (preg_match('/^GET \/api\/objects\/\{entity\}(\/\{objectId\})? \(([a-z_]+)\)$/', $key, $m) && isset(self::SWEEP_ENTITY_SCHEMAS[$m[2]]))
+		{
+			$row = ['$ref' => '#/components/schemas/' . self::SWEEP_ENTITY_SCHEMAS[$m[2]]];
+			return $m[1] === '' ? ['type' => 'array', 'items' => $row] : $row;
+		}
+
+		// A key is "METHOD /api/path", optionally followed by " (what this call is for)".
+		if (!preg_match('/^([A-Z]+) \/api(\S+)/', $key, $m))
+		{
+			return null;
+		}
+
+		return $spec['paths'][$m[2]][strtolower($m[1])]['responses'][(string)$status]['content']['application/json']['schema'] ?? null;
+	}
+
+	/** Follows $ref until a schema with content of its own; $name is set to the last component followed. */
+	private static function resolveSchema(array $spec, array $schema, ?string &$name = null): ?array
+	{
+		$hops = 0;
+		while (isset($schema['$ref']))
+		{
+			if (++$hops > 16)
+			{
+				return null;
+			}
+			$name = substr($schema['$ref'], strlen('#/components/schemas/'));
+			$schema = $spec['components']['schemas'][$name] ?? null;
+			if (!is_array($schema))
+			{
+				return null;
+			}
+		}
+
+		return $schema;
+	}
+
+	/**
+	 * Walks a decoded body beside its documented schema and records every scalar that
+	 * lands on an `enum`: into $observed under the enum's name (the component when the
+	 * enum is a component of its own, such as StockTransactionType, otherwise
+	 * Schema.property), and into $violations when it is not a member. A oneOf/anyOf is
+	 * followed only into the one non-null member the value can be (by its `required`
+	 * keys); anything this cannot attribute is skipped rather than guessed at.
+	 */
+	private static function collectEnumValues(array $spec, array $schema, $value, string $label, string $key, array &$observed, array &$violations, int $depth = 0): void
+	{
+		if ($value === null || $depth > 24)
+		{
+			return;
+		}
+
+		$schema = self::resolveSchema($spec, $schema, $label);
+		if ($schema === null)
+		{
+			return;
+		}
+
+		if (isset($schema['enum']) && !is_array($value))
+		{
+			$observed[$label][] = $value;
+			if (!in_array($value, $schema['enum'], true))
+			{
+				$violations[] = "$key: $label sent " . json_encode($value) . ', which is not one of ' . json_encode($schema['enum']);
+			}
+		}
+
+		foreach ($schema['allOf'] ?? [] as $member)
+		{
+			self::collectEnumValues($spec, $member, $value, $label, $key, $observed, $violations, $depth + 1);
+		}
+
+		foreach (['oneOf', 'anyOf'] as $keyword)
+		{
+			if (!isset($schema[$keyword]))
+			{
+				continue;
+			}
+
+			$candidates = [];
+			foreach ($schema[$keyword] as $member)
+			{
+				$resolved = self::resolveSchema($spec, $member);
+				if ($resolved === null || ($resolved['type'] ?? null) === 'null')
+				{
+					continue;
+				}
+				if (is_array($value) && !array_is_list($value) && array_diff($resolved['required'] ?? [], array_keys($value)) !== [])
+				{
+					continue;
+				}
+				$candidates[] = $member;
+			}
+
+			if (count($candidates) === 1)
+			{
+				self::collectEnumValues($spec, $candidates[0], $value, $label, $key, $observed, $violations, $depth + 1);
+			}
+		}
+
+		if (is_array($value) && array_is_list($value) && isset($schema['items']) && is_array($schema['items']))
+		{
+			foreach ($value as $item)
+			{
+				self::collectEnumValues($spec, $schema['items'], $item, $label . '[]', $key, $observed, $violations, $depth + 1);
+			}
+		}
+		elseif (is_array($value) && isset($schema['properties']))
+		{
+			foreach ($value as $property => $propertyValue)
+			{
+				if (isset($schema['properties'][$property]) && is_array($schema['properties'][$property]))
+				{
+					self::collectEnumValues($spec, $schema['properties'][$property], $propertyValue, "$label.$property", $key, $observed, $violations, $depth + 1);
+				}
+			}
+		}
+	}
+
+	/** StockService::TRANSACTION_TYPE_* values, sorted. */
+	private static function declaredTransactionTypes(): array
+	{
+		$types = [];
+		foreach ((new \ReflectionClass(\Victual\Services\StockService::class))->getConstants() as $name => $value)
+		{
+			if (str_starts_with($name, 'TRANSACTION_TYPE_'))
+			{
+				$types[] = $value;
+			}
+		}
+		sort($types);
+
+		return $types;
+	}
+
+	/**
+	 * Depends on the sweep that fills $adminBodies, not on the golden comparison, so that
+	 * a golden-file difference does not skip it.
+	 */
+	#[Depends('testGenericEntitySweepAsAdmin')]
+	public function testRecordedValuesAreMembersOfTheirDocumentedEnums(): void
+	{
+		$spec = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), true);
+		$observed = [];
+		$violations = [];
+		$walked = 0;
+
+		foreach (self::$adminBodies as $key => $body)
+		{
+			$status = self::$adminSnapshot[$key]['status'];
+			if ($status < 200 || $status >= 300 || $body === null)
+			{
+				continue;
+			}
+
+			$schema = self::documentedResponseSchema($spec, $key, $status);
+			if ($schema === null)
+			{
+				continue;
+			}
+
+			$walked++;
+			self::collectEnumValues($spec, $schema, $body, $key, $key, $observed, $violations);
+		}
+
+		// The key-to-schema mapping is a thing that can be wrong; a mapping that found
+		// nothing would pass the membership check vacuously.
+		self::assertGreaterThan(120, $walked, 'Sanity: most recorded 2xx bodies should map to a documented response schema');
+
+		$violations = array_values(array_unique($violations));
+		self::assertSame([], $violations, "Recorded responses carry values their documented enum does not list:\n" . implode("\n", $violations));
+
+		// And the fixture graph reaches every transaction type the service declares, so the
+		// membership check above saw each of them rather than only the common four.
+		$seen = array_values(array_unique($observed['StockTransactionType'] ?? []));
+		sort($seen);
+		self::assertSame(self::declaredTransactionTypes(), $seen, 'The recorded bodies should carry every StockService::TRANSACTION_TYPE_* value under StockTransactionType');
+	}
+
+	// ------------------------------------------------------------------------------
+	// 9c. Issue #772: the transaction type enums are the service's own vocabulary. The
+	//     response enum is every TRANSACTION_TYPE_* constant, in both directions; the add
+	//     and consume request enums are what AddProduct()/ConsumeProduct() accept, found
+	//     by asking them rather than by a copy of their checks.
+	// ------------------------------------------------------------------------------
+
+	/** The request bodies whose transaction_type names each request enum. */
+	private const TRANSACTION_TYPE_REQUEST_BODIES = [
+		'/stock/products/{productId}/add' => 'StockAddTransactionType',
+		'/stock/products/by-barcode/{barcode}/add' => 'StockAddTransactionType',
+		'/stock/products/{productId}/consume' => 'StockConsumeTransactionType',
+		'/stock/products/by-barcode/{barcode}/consume' => 'StockConsumeTransactionType',
+	];
+
+	/**
+	 * Books each declared transaction type through AddProduct() and ConsumeProduct() on a
+	 * product of its own and sorts them by whether the service refused the type
+	 * ("Transaction type X is not valid (StockService.AddProduct)", StockService.php's
+	 * else branch of the check at AddProduct()/ConsumeProduct()). Any other exception is a
+	 * broken probe, not an answer, and propagates.
+	 *
+	 * @return array{0: string[], 1: string[]} the accepted add types and consume types, sorted
+	 */
+	private static function acceptedTransactionTypes(array $declared): array
+	{
+		$stock = \Victual\Services\StockService::GetInstance();
+		$unit = (int)self::$db->query('SELECT min(id) FROM quantity_units')->fetchColumn();
+		$location = (int)self::$db->query("INSERT INTO locations (name) VALUES ('Contract transaction type probe') RETURNING id")->fetchColumn();
+		$statement = self::$db->prepare('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price) VALUES (?, ?, ?, ?, ?, ?) RETURNING id');
+		$statement->execute(['Contract transaction type probe', $location, $unit, $unit, $unit, $unit]);
+		$product = (int)$statement->fetchColumn();
+		$stock->AddProduct($product, 20, '2999-12-31', \Victual\Services\StockService::TRANSACTION_TYPE_PURCHASE, '2026-01-01', null, $location);
+
+		$probe = function (string $method, callable $book) use ($declared): array
+		{
+			$accepted = [];
+			foreach ($declared as $type)
+			{
+				try
+				{
+					$book($type);
+					$accepted[] = $type;
+				}
+				catch (\Exception $ex)
+				{
+					if (preg_match('/^Transaction type .+ is not valid \(StockService\.' . $method . '\)$/', $ex->getMessage()) !== 1)
+					{
+						throw $ex;
+					}
+				}
+			}
+			sort($accepted);
+			return $accepted;
+		};
+
+		return [
+			$probe('AddProduct', fn(string $type) => $stock->AddProduct($product, 1, '2999-12-31', $type, '2026-01-01', null, $location)),
+			$probe('ConsumeProduct', fn(string $type) => $stock->ConsumeProduct($product, 1, false, $type)),
+		];
+	}
+
+	/**
+	 * Runs last and books on a product of its own, so the stock it adds reaches no
+	 * recorded snapshot; independent of the fixture graph, so it runs on its own too.
+	 */
+	public function testTransactionTypeEnumsMatchStockService(): void
+	{
+		$spec = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), true);
+		$schemas = $spec['components']['schemas'];
+		$failures = [];
+
+		$declared = self::declaredTransactionTypes();
+		self::assertCount(11, $declared, 'Sanity: StockService declares eleven TRANSACTION_TYPE_* constants (if one was added, this count and the document move together)');
+
+		$documented = $schemas['StockTransactionType']['enum'] ?? [];
+		sort($documented);
+		if ($documented !== $declared)
+		{
+			$failures[] = 'StockTransactionType is missing ' . json_encode(array_values(array_diff($declared, $documented)))
+				. ' and lists ' . json_encode(array_values(array_diff($documented, $declared))) . ' that StockService does not declare';
+		}
+
+		foreach (self::TRANSACTION_TYPE_REQUEST_BODIES as $path => $schemaName)
+		{
+			$ref = $spec['paths'][$path]['post']['requestBody']['content']['application/json']['schema']['properties']['transaction_type']['$ref'] ?? null;
+			if ($ref !== '#/components/schemas/' . $schemaName)
+			{
+				$failures[] = "POST $path transaction_type names " . json_encode($ref) . ", not $schemaName";
+			}
+		}
+
+		[$acceptedByAdd, $acceptedByConsume] = self::acceptedTransactionTypes($declared);
+		foreach (['StockAddTransactionType' => $acceptedByAdd, 'StockConsumeTransactionType' => $acceptedByConsume] as $schemaName => $accepted)
+		{
+			$enum = $schemas[$schemaName]['enum'] ?? [];
+			sort($enum);
+			if ($enum !== $accepted)
+			{
+				$failures[] = "$schemaName lists " . json_encode($enum) . ' but the service accepts ' . json_encode($accepted);
+			}
+		}
+
+		self::assertSame([], $failures, implode("\n", $failures));
 	}
 }
