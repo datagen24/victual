@@ -2140,9 +2140,11 @@ class StockService extends BaseService
 			// migrations/0225.sql), so a plain `> 0` needs an explicit numeric CAST to even
 			// type-check on PostgreSQL; CAST(... AS NUMERIC) rather than the PG-only `::` sugar
 			// keeps this valid under DatabaseDialect::SQLITE_TOOLING_ENV too, where the
-			// differential suite can run this same code path against SQLite. Nothing puts a
-			// CHECK on quantity_unit_conversions.factor, so a NEGATIVE factor can reach this
-			// cache table (a factor of exactly 0 cannot: quantity_unit_conversions_INS's own
+			// differential suite can run this same code path against SQLite. Migration 0308
+			// puts quantity_unit_conversions_factor_positive (factor > 0 AND factor < 'Infinity')
+			// on quantity_unit_conversions.factor, so on a migrated database a non-positive factor
+			// cannot reach this cache table; the guard stays for a database where the constraint
+			// was dropped (a factor of exactly 0 never could: quantity_unit_conversions_INS's own
 			// inverse-row computation divides by it and raises first - see MergeProducts()'s
 			// equivalent guard, StockService.php ~4177). Admitting a sub product on a
 			// non-positive factor would let SumStockEntriesInProductUnit()'s availability check
