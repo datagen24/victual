@@ -95,5 +95,3 @@ names, doses or real dates.
 
 No run sheet covers a skipped or snoozed dose beyond matrix 6.D, background delivery beyond spike
 step 5, or non-administrator keys for fixtures 16 and 17.
-</content>
-</invoke>
