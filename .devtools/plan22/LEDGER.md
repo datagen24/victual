@@ -14,7 +14,7 @@ read-only and static unless a row names a command that ran.
 | [702](https://github.com/datagen24/victual/issues/702) native acceptance | plan 22 | Maintainer decision 2026-10-11: closed on the current simulator evidence; no physical phone. Simulator UI round 1 on iOS 27.0 with administrator, Adult and Child keys against a Talos-hosted Victual stack with a disposable on-cluster database; unit tests; v0.4.0 live fixture replay (28 of 28; fixtures 16 and 17 with two administrators) | Change the gate wording in plan 22 (this branch) and issue 702 (maintainer); victual-kit matrix re-pin (client housekeeping) | — | None remaining | [NATIVE-ACCEPTANCE.md](NATIVE-ACCEPTANCE.md) | — | Accepted by the maintainer; limitation for the release record: real Health store behaviour (identifier changes on edit and delete, late and background delivery) is not observed |
 | [703](https://github.com/datagen24/victual/issues/703) release | plan 22 | Baseline suite at `d4960138` (see [baseline](#baseline)) | Every criterion; upgrade rehearsal from 0.4.0; rest of 0.5.0 milestone | 702, 742, 772, 774, 775 dispositions | Maintainer: 0.5.0 scope | Not started; evidence collection only | coordinator | Baseline only |
 | [742](https://github.com/datagen24/victual/issues/742) master-data rights | victual-kit wizard | `.devtools/issue742/RESULTS.md` (93 probes, 2026-10-10; static completion merged in PR [780](https://github.com/datagen24/victual/pull/780)); Proposed ADR-0043, revised for evidence in PR 780 | Choose option A, B or C (see [742](#742-master-data-rights)); implement if A or B | ADR-0043 decision | D3 | Options below | — | Not run |
-| [772](https://github.com/datagen24/victual/issues/772) OpenAPI drift | victual-kit #24 | Branch `claude/opus5_issue772-openapi-stock-drift-a9d9`: new `ContractTest` legs failed on master's document (`Failures: 2`) and pass on the fix; `contract` and `wirecontract` pass on PostgreSQL 16 and 15.19 at `e5a539c2`. Independent review approved; its four should-fix items are in `57f687e2`, which passes both phases on PostgreSQL 16 and 15.19. PR [791](https://github.com/datagen24/victual/pull/791) | Merge; follow-up gaps in [787](https://github.com/datagen24/victual/issues/787) | — | None | Done | implementation worker | Verified |
+| [772](https://github.com/datagen24/victual/issues/772) OpenAPI drift | victual-kit #24 | Closed by PR [791](https://github.com/datagen24/victual/pull/791), merged 2026-10-12: stock-route document and two `ContractTest` legs; `contract` and `wirecontract` passed on PostgreSQL 16 and 15.19 at `57f687e2` | Follow-up gaps in #787 | — | None | Done | implementation worker | Verified |
 | [774](https://github.com/datagen24/victual/issues/774) unknown price as 0 | victual-kit #29, #33 | Proposed ADR-0045, merged in PR [778](https://github.com/datagen24/victual/pull/778); P2 price semantics confirmed 2026-10-11 | Null versus zero per field; implementation | ADR-0045 decision; victual-kit coordination (ADR-0024) | D1a to D1e | ADR-0045 | — | Not run |
 | [775](https://github.com/datagen24/victual/issues/775) booking idempotency | victual-kit #35 | Proposed ADR-0046 merged in PR [779](https://github.com/datagen24/victual/pull/779) (reviewed; five should-fix items applied) | Implementation after acceptance; migration slot claimed then | ADR-0046 acceptance | D2a to D2c | ADR-0046 | — | Not run |
 | [737](https://github.com/datagen24/victual/issues/737) share enumeration | #698 review | Maintainer decision 2026-10-09: accepted for v0.5.0, fix wanted afterwards | All (post-v0.5.0) | — | None; disposition stands | Chosen fix in the issue | — | — |
@@ -29,45 +29,49 @@ release scope is decision D5.
 | F1. Product merge deletes a product under `STOCK_EDIT`, which the Adult role holds | [782](https://github.com/datagen24/victual/issues/782) | authorization (ADR-0006) | Read from source: `StockApiController.php:1538`, `StockService::MergeProducts`; upstream `c9b5e144` | Needs an authorization decision (D6) |
 | F2. `userpictures` writes are not scoped to the target user | sweep S6 | authorization | `FilesApiController.php:50` | Known; no new issue |
 | F3. Shopping-list containers use item permissions | [783](https://github.com/datagen24/victual/issues/783) | design question | `GenericEntityApiController` create, edit and delete gates | Needs a decision (D6) |
-| F4. Legacy import drops the three view leaves of migration 0299 | [784](https://github.com/datagen24/victual/issues/784) | defect | Reproduced: 12 failures in the `import` phase without the fix | Fix in PR [789](https://github.com/datagen24/victual/pull/789); `import` and `rbac` pass on PostgreSQL 16 and 15.19; reviewed |
+| F4. Legacy import drops the three view leaves of migration 0299 | [784](https://github.com/datagen24/victual/issues/784) | defect | Reproduced: 12 failures in the `import` phase without the fix | Fixed by PR [789](https://github.com/datagen24/victual/pull/789), merged; issue closed |
 | F5. A booking commits, then answers 403 without `STOCK_VIEW` | [785](https://github.com/datagen24/victual/issues/785) | authorization | `StockApiController.php:1301` after the service commits | Needs an authorization decision (D6) |
-| F6. Stock add accepts JSON `true` as `transaction_type` | [786](https://github.com/datagen24/victual/issues/786) | defect | Reproduced: JSON `true` answered 200 and wrote `"1"` | Fix in PR [792](https://github.com/datagen24/victual/pull/792); `wirecontract` passes on PostgreSQL 16 and 15.19 |
+| F6. Stock add accepts JSON `true` as `transaction_type` | [786](https://github.com/datagen24/victual/issues/786) | defect | Reproduced: JSON `true` answered 200 and wrote `"1"` | Fixed by PR [792](https://github.com/datagen24/victual/pull/792), merged; issue closed |
 | #772 follow-up: inherited schema gaps and a key-coverage check | [787](https://github.com/datagen24/victual/issues/787) | documentation | Recorded keys in `contract-admin.json` | Ready to assign after #772 merges |
 | `quantity_factor` next to `qu_id` on a mapping is undefined | [788](https://github.com/datagen24/victual/issues/788) | documentation | victual-kit matrix difference 7 | Ready to assign |
 | Possible stale average-price cache after an insert | not filed | unverified | R2 research: `trg_stock_log_INS` only upserts | Needs a reproduction before filing |
 
-## Open pull requests
+## Merged pull requests
 
-| PR | Issue | State |
+PRs 777 to 780, 789 to 792 and 794 merged by 2026-10-12. Code changes: 789 (issue 784, import
+restores the 0299 view leaves), 791 (issue 772, stock-route OpenAPI document and contract legs),
+792 (issue 786, strict `transaction_type`). Maintainer responses to ADRs 0043 to 0046 merged in
+PRs 793 and 795.
+
+## Decisions
+
+Recorded in the ADRs by the maintainer on 2026-10-11 (PRs 793 and 795). The three records stay
+Proposed until a separate acceptance pull request.
+
+| ID | Decision | Recorded answer |
 |---|---|---|
-| [789](https://github.com/datagen24/victual/pull/789) import view leaves | 784 | Reviewed; drift check added |
-| [792](https://github.com/datagen24/victual/pull/792) strict `transaction_type` | 786 | `wirecontract` failed before the fix (2 failures) and passes after, on PostgreSQL 16 and 15.19 |
-| [791](https://github.com/datagen24/victual/pull/791) OpenAPI stock drift | 772 | Reviewed; `contract` and `wirecontract` pass on PostgreSQL 16 and 15.19 at `57f687e2` |
+| D1a | ADR-0045: legacy and existing zeros | Imported legacy zeros are unknown by default; the import discloses this and keeps original booking values. The live database holds no production data |
+| D1b | ADR-0045: aggregates | Option B: the known subtotal plus an `*_incomplete` flag |
+| D1c | ADR-0045: parent products | No roll-up; a parent reports its own stock only |
+| D1d | ADR-0045: `current_price` with an unpriced next entry | Keep the last-known-price fallback |
+| D1e | ADR-0045: ADR-0024 and meaning changes | A change of meaning counts for client coordination |
+| D2a | ADR-0046: discovery | `GET /api/system/info` |
+| D2b | ADR-0046: `transaction_id` collisions | Both: filter replays by the acting user, and generate ids with cryptographically secure randomness |
+| D2c | ADR-0046: client evidence | The contract is documented and tested for any client; victual-kit evidence is not required |
+| D3 | ADR-0043 | One `MASTER_DATA_ADD` permission; explicit grants; external lookup attaches a fetched picture to the new product only, never overwriting an existing one |
 
-## Decisions needed from the maintainer
+## Still open
 
-Answered on 2026-10-11 and recorded in the ADRs (PR 793):
-
-- ADR-0043 open question 1: explicit grant, exposed in the role editor. Open question 2: the shared edit rule.
-- ADR-0045 open question 5: P2. `0` is a known zero, `null` is unknown, an omitted field is redacted.
-- ADR-0046 open question 1: seven days; keys come from a cryptographically secure random source.
-
-None of the three records is accepted.
-
-| ID | Remaining choice | Options; recommendation | Blocks |
+| ID | Item | State | Blocks |
 |---|---|---|---|
-| D1a | ADR-0045: existing price-`0` rows and imported databases | Convert `stock` only and record a watermark; convert `stock` and `stock_log` with a preflight and a converted-row report; convert nothing and record a watermark. Recommended: `stock` only with a watermark, which leaves the ledger unrewritten | #774 |
-| D1b | ADR-0045: how an aggregate reports mixed priced and unpriced stock | A: `null`; B: the value plus an `*_incomplete` flag. Recommended: B, which changes no existing type | #774 |
-| D1c | ADR-0045 open question 1: a parent's `value` | Include sub-products like `amount_aggregated`, or define the flag or `null` for aggregated rows | #774 |
-| D1d | ADR-0045 open question 2: `current_price` when the next-use entry is unpriced | `null`, or the last known price as today | #774 |
-| D1e | ADR-0045 open question 4: does ADR-0024 decision 1 cover a change of meaning with no change of type | Yes, so victual-kit ships in coordination; or no | #774 |
-| D2a | ADR-0046 open question 2: how a client discovers support and retention | A field in `GET /api/system/info` plus an `Idempotent-Replayed` header (recommended); or a capability route | #775 |
-| D2b | ADR-0046 open question 3: `transaction_id` collisions on replay | Filter replay rows by user; replace `uniqid()` with `random_bytes`; or both. Recommended: both | #775 |
-| D2c | ADR-0046 acceptance | After D2a, D2b and victual-kit's statement of how it uses the key (prerequisite 3) | #775 |
-| D3 | ADR-0043 open questions 3 (one permission or one per entity; lean: one), 4 (name) and 5 (whether `external-lookup?add=true` stores a picture for a holder of the new right); whether the feature ships and in which release | — | #742 |
-| D4 | Issue 702's text still names a real device | Edit criteria 1 and 6, or close the issue with a pointer to plan 22's Executed section | closing #702 |
-| D5 | v0.5.0 scope | Plan 22 items 742, 774, 775 and issues 782 to 788; non-plan-22 milestone items 762, 654, 483, 86, 80 | #703 |
-| D6 | Authorization choices | 782: merge needs `MASTER_DATA_EDIT` (as chore merge) or both rights; 783: a container right or document the item rights; 785: refuse callers without `STOCK_VIEW` up front, or answer them without the row read | 782, 783, 785 |
+| G1 | ADR-0045 gates 1, 5 and 7: the record must specify the legacy-zero mechanism, the flags' redaction and boolean entries and where they are computed, and the ADR-0005 treatment for each rewritten view | Revision being drafted (2026-10-12) | Acceptance of ADR-0045, then #774 |
+| G2 | ADR-0046 gate 1: the record must name the capability and retention fields | Revision being drafted (2026-10-12) | Acceptance of ADR-0046, then #775 |
+| G3 | ADR-0043 gate 1: whether the feature ships and in which release | Maintainer | Acceptance of ADR-0043, then #742 |
+| D4 | Issue 702's text still names a real device | Maintainer | Closing #702 |
+| D5 | v0.5.0 scope | Maintainer | #703 |
+| D6 | 782: merge needs `MASTER_DATA_EDIT` or both rights; 783: a container right or document the item rights; 785: refuse callers without `STOCK_VIEW` up front, or answer them without the row read | Maintainer | 782, 783, 785 |
+| W1 | #787 inherited OpenAPI gaps and a key-coverage leg | Implementation worker (2026-10-12) | — |
+| W2 | #788 `quantity_factor` | Read-only research (2026-10-12); the document edit follows #787 | — |
 
 ## Specifications
 
