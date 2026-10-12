@@ -1059,4 +1059,32 @@ class ConsumptionEventServiceTest extends PgsqlSchemaTestCase
 		self::assertSame('booked', $this->event($booked)['state']);
 		self::assertSame(9.0, self::onHand($product));
 	}
+
+	public function testAMappingBooksQuantityTimesFactorTimesTheEnteredConversion(): void
+	{
+		$bottle = (int)self::$db->query("INSERT INTO quantity_units (name) VALUES ('CE bottle " . ++self::$sequence . "') RETURNING id")->fetchColumn();
+		$product = self::product('CE factor', 100);
+		self::$db->prepare('INSERT INTO quantity_unit_conversions (from_qu_id, to_qu_id, factor, product_id) VALUES (?, ?, 30, ?)')->execute([$bottle, self::$tablet, $product]);
+
+		// A: no qu_id, so the quantity is in the stock unit; factor 2 books 1 x 2 = 2 tablets.
+		$id = self::uid();
+		$booked = $this->put($id, self::body(self::map($product, ['quantity_factor' => 2])))['event'];
+		self::assertSame('booked', $booked['state']);
+		self::assertSame([2.0], array_column($booked['lines'], 'amount'));
+		self::assertSame(98.0, self::onHand($product));
+
+		// B: qu_id is a bottle, 1 bottle = 30 tablets, factor 1; 1 x 1 x 30 = 30 tablets.
+		$id = self::uid();
+		$booked = $this->put($id, self::body(self::map($product, ['qu_id' => $bottle, 'quantity_factor' => 1])))['event'];
+		self::assertSame('booked', $booked['state']);
+		self::assertSame([30.0], array_column($booked['lines'], 'amount'));
+		self::assertSame(68.0, self::onHand($product));
+
+		// C: the same bottle with factor 0.5; 1 x 0.5 x 30 = 15 tablets.
+		$id = self::uid();
+		$booked = $this->put($id, self::body(self::map($product, ['qu_id' => $bottle, 'quantity_factor' => 0.5])))['event'];
+		self::assertSame('booked', $booked['state']);
+		self::assertSame([15.0], array_column($booked['lines'], 'amount'));
+		self::assertSame(53.0, self::onHand($product));
+	}
 }

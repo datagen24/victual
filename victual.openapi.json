@@ -15387,7 +15387,9 @@
 					},
 					"quantity_factor": {
 						"type": "number",
-						"exclusiveMinimum": 0
+						"exclusiveMinimum": 0,
+						"default": 1,
+						"description": "Product target only; a recipe target ignores it. A multiplier on the event quantity, which is expressed in qu_id (the stock unit when qu_id is null or absent). Absent or null means 1. The booked stock amount is quantity × quantity_factor × conversion, where the conversion is the entered factor from qu_id to the stock unit (1 for the stock unit). A finite number greater than 0. Use 1 unless one event should book a fixed multiple of its reported quantity."
 					},
 					"location": {
 						"type": "object",
@@ -15432,7 +15434,7 @@
 							"integer",
 							"null"
 						],
-						"description": "Product target only: the quantity unit the event quantity is expressed in. Null or absent means the product's stock unit. Needs an entered conversion to the stock unit, or the mapping is refused with 422 invalid_mapping."
+						"description": "Product target only: the quantity unit the event quantity is expressed in. Null or absent means the product's stock unit. Needs an entered conversion to the stock unit, or the mapping is refused with 422 invalid_mapping. The conversion and quantity_factor both multiply the event quantity."
 					}
 				},
 				"description": "Exactly one of recipe_id or product_id."
