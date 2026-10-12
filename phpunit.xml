@@ -165,6 +165,9 @@
 			<file>tests/Pgsql/GenericWriteAtomicityTest.php</file>
 			<file>tests/Pgsql/ObjectRoundTripTest.php</file>
 		</testsuite>
+		<testsuite name="openapidocument">
+			<file>tests/Pgsql/OpenApiDocumentTest.php</file>
+		</testsuite>
 		<testsuite name="recipeoperations">
 			<file>tests/Pgsql/RecipeOperationsTest.php</file>
 			<file>tests/Pgsql/ComposedOperationAtomicityTest.php</file>

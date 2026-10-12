@@ -2119,22 +2119,22 @@ class WireContractTest extends PgsqlSchemaTestCase
 			'ExposedEntity_NotIncludingNotListable' => 'ExposedEntityNoListing'
 		] as $derived => $excluded)
 		{
-			$expected = array_merge(
-				$template,
-				array_diff($committed['ExposedEntity']['enum'], $committed[$excluded]['enum'])
-			);
+			// The template's "" is a seed the controller empties, not a member (issue #799).
+			$expected = array_values(array_diff($committed['ExposedEntity']['enum'], $committed[$excluded]['enum']));
 			sort($expected);
 
 			self::assertSame($expected, $served[$derived]['enum'], "$derived is not $excluded subtracted from ExposedEntity");
 		}
 
-		// The user-entity variant reads the template and the userfields service rather than
-		// an exclusion list, so it is the one that would survive ExposedEntity going away.
+		// The user-entity variant reads the userfields service rather than an exclusion list.
+		// OpenApiDocumentTest pins its exact members; here it only has to be a clone of the
+		// template's shape with the template's placeholder emptied.
 		self::assertSame(
-			$template,
-			array_values(array_intersect($template, $served['ExposedEntity_IncludingUserEntities']['enum'])),
+			$committed['StringEnumTemplate']['type'],
+			$served['ExposedEntity_IncludingUserEntities']['type'],
 			'ExposedEntity_IncludingUserEntities was not cloned from StringEnumTemplate'
 		);
+		self::assertNotContains('', $served['ExposedEntity_IncludingUserEntities']['enum']);
 
 		// And the sixth, by the gate it drives. The caller here has ADMIN, so the refusal
 		// has to come from a caller that does not.
