@@ -24,6 +24,12 @@ const payload = '<img src=x onerror=window.__xss=1>';
 		const keys = [];
 		let epochRequests = 0;
 		let failNext = true;
+		// 'lost' commits nothing the probe can see but drops the response, as a timeout does.
+		let lostNext = false;
+		// What the server's fingerprint binding does: a key belongs to the first target it was
+		// seen with, and the same key for another target is refused 409 idempotency_conflict.
+		const keyTarget = new Map();
+		let conflicts = 0;
 
 		await page.route('**/api/labels/locations/*/context', async route => {
 			epochRequests++;
@@ -32,7 +38,20 @@ const payload = '<img src=x onerror=window.__xss=1>';
 
 		await page.route('**/api/labels/locations/*/print', async route => {
 			const request = route.request();
-			keys.push(request.headers()['idempotency-key']);
+			const key = request.headers()['idempotency-key'];
+			keys.push(key);
+			const target = request.url().match(/labels\/locations\/(\d+)\/print/)[1];
+			if (keyTarget.has(key) && keyTarget.get(key) !== target) {
+				conflicts++;
+				await route.fulfill({ status: 409, json: { field: 'idempotency_key', code: 'idempotency_conflict', error_message: 'Idempotency key was used for a different request' } });
+				return;
+			}
+			keyTarget.set(key, target);
+			if (lostNext) {
+				lostNext = false;
+				await route.abort('failed');
+				return;
+			}
 			const body = JSON.parse(request.postData() || '{}');
 			assert.equal(body.import_epoch, 7, 'the request carries the epoch it was composed at');
 			assert.ok(body.printer_id > 0, 'the request names a printer');
@@ -80,12 +99,12 @@ const payload = '<img src=x onerror=window.__xss=1>';
 		await status.getByText('The label was not requested', { exact: false }).waitFor();
 		assert.ok((await status.innerText()).includes('Printer is offline'), 'the refusal says what it was');
 
-		// The same intention, retried. The key must be the one the failed attempt used:
-		// nothing was created, so this is not a second deliberate print.
+		// A definitive refusal (422) means nothing was created and that intention is over, so
+		// the corrected retry is a new one with a key of its own.
 		await button.click();
 		await status.getByText('It prints once its image', { exact: false }).waitFor();
 		assert.equal(keys.length, 2, 'two requests');
-		assert.equal(keys[0], keys[1], 'a retry after a refusal reuses the key');
+		assert.notEqual(keys[0], keys[1], 'a retry after a definitive refusal gets a new key');
 
 		// A second deliberate print, after one succeeded, is a new intention.
 		await button.click();
@@ -95,6 +114,48 @@ const payload = '<img src=x onerror=window.__xss=1>';
 		assert.notEqual(keys[2], keys[1], 'a second deliberate print gets a new key');
 
 		assert.equal(epochRequests, 3, 'the epoch is read immediately before each request');
+
+		// The status region is emptied before each click below so a wait cannot be satisfied
+		// by the previous attempt's message.
+		const clearStatus = () => status.evaluate(el => el.replaceChildren());
+		const clickTarget = async (targetId) => {
+			await clearStatus();
+			await page.locator('.location-print-button[data-target-id="' + targetId + '"]').first().click();
+		};
+
+		// Two distinct targets: the seeded one and a plainly named one.
+		await page.request.post(base + '/api/objects/locations', { data: { name: 'print-probe-b' } });
+		await page.reload();
+		const idA = await page.locator('.location-print-button[data-target-name^="<img"]').first().getAttribute('data-target-id');
+		const idB = await page.locator('.location-print-button[data-target-name="print-probe-b"]').first().getAttribute('data-target-id');
+		assert.notEqual(idA, idB, 'two different print targets');
+
+		// A lost response, then a reload: the retry must reuse the key the lost attempt sent,
+		// so the server can answer with the job the first attempt created.
+		lostNext = true;
+		const before = keys.length;
+		await clickTarget(idA);
+		await status.getByText('The label was not requested', { exact: false }).waitFor();
+		assert.equal(keys.length, before + 1, 'the lost attempt was sent');
+		await page.reload();
+		await clickTarget(idA);
+		await status.getByText('It prints once its image', { exact: false }).waitFor();
+		assert.equal(keys.length, before + 2, 'the retry was sent');
+		assert.equal(keys[before + 1], keys[before], 'a reload after a lost response reuses the key');
+
+		// A lost response for target A must not poison target B.
+		lostNext = true;
+		await clickTarget(idA);
+		await status.getByText('The label was not requested', { exact: false }).waitFor();
+		const lostKey = keys[keys.length - 1];
+		await clickTarget(idB);
+		await status.getByText('It prints once its image', { exact: false }).waitFor();
+		assert.notEqual(keys[keys.length - 1], lostKey, 'another target does not reuse the lost attempt\'s key');
+		assert.equal(conflicts, 0, 'the server never saw one key for two targets');
+
+		// Leave the region showing the seeded location again for the S29 checks below.
+		await clickTarget(idA);
+		await status.getByText('It prints once its image', { exact: false }).waitFor();
 
 		// S29: whatever is stored reaches the region as text, and nothing executed.
 		assert.equal(await page.evaluate(() => window.__xss), undefined, 'no script ran');
