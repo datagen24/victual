@@ -154,4 +154,34 @@ class OpenApiDocumentTest extends PgsqlSchemaTestCase
 		// The committed derived schemas carry no enum at all; only the served copy does.
 		self::assertObjectNotHasProperty('enum', $spec->components->schemas->ExposedEntity_IncludingUserEntities);
 	}
+
+	/**
+	 * Hands the served document to the OAS 3.2 gate, which cannot be run from here.
+	 *
+	 * The committed document is held to the official OAS 3.2 schema by
+	 * .devtools/ci/check_openapi_document.py; the served one only exists once the application
+	 * has derived it, so this writes it to $SUITE_SCRATCH/served-openapi.json for the same
+	 * script to check (`python3 .devtools/ci/check_openapi_document.py
+	 * "$SUITE_SCRATCH/served-openapi.json"`).
+	 *
+	 * Why not validate here: opis/json-schema 2.6.0, the validator this repository ships,
+	 * cannot evaluate the OAS 3.2 schema. Its `parameters` definition combines `contains`
+	 * with `minContains: 0` and `maxContains: 1`, and Opis then rejects any operation whose
+	 * parameters are not a querystring one - it reports the first item's `in` failing
+	 * `const: querystring` - so every document with a path or query parameter is "invalid",
+	 * the committed one included, which Python's jsonschema 4.25.1 passes. Patching the
+	 * schema until Opis agreed would be validating against a different schema.
+	 */
+	public function testTheServedDocumentIsWrittenForTheOas32Gate(): void
+	{
+		$scratch = getenv('SUITE_SCRATCH');
+		if ($scratch === false || $scratch === '' || !is_dir($scratch))
+		{
+			$this->markTestSkipped('SUITE_SCRATCH is not set, so there is nowhere to leave the served document for the gate');
+		}
+
+		$file = rtrim($scratch, '/') . '/served-openapi.json';
+		self::assertNotFalse(file_put_contents($file, json_encode(self::$served, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"));
+		self::assertSame('3.2.0', json_decode(file_get_contents($file), true)['openapi']);
+	}
 }

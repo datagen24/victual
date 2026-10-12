@@ -1,0 +1,44 @@
+{
+  "openapi": "3.2.0",
+  "info": {
+    "version": "1"
+  },
+  "paths": {
+    "/x": {
+      "get": {
+        "parameters": [
+          {
+            "name": "a",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Good"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Good": {
+        "type": "string",
+        "enum": [
+          "a",
+          "b"
+        ]
+      }
+    }
+  }
+}
