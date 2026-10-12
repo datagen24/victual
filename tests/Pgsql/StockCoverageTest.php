@@ -1120,6 +1120,76 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * Issue #813: gross_amount was only checked for presence, so a JSON null, "", "abc",
+	 * true or an array was cast to 0.0 and, at a vessel whose tare is 0, booked a
+	 * correction of the vessel's stock to zero. Both routes must refuse each with the
+	 * same message the booking routes use for `amount`, before anything is booked;
+	 * numeric input (number or numeric string) keeps booking as before.
+	 */
+	#[Depends('testWeighingAVesselCorrectsItsOneEntryToTheNetReading')]
+	public function testWeighingRefusesANonNumericGrossAmountAtAZeroTareVessel(): void
+	{
+		$zeroTare = self::insertRow('locations', ['name' => 'Coverage Zero Tare Vessel', 'tare_weight' => 0.0, 'tare_qu_id' => self::$ids['gram']]);
+		$product = self::insertProduct('Coverage Zero Tare Rice', [
+			'location_id' => $zeroTare,
+			'qu_id_purchase' => self::$ids['kilogram'],
+			'qu_id_stock' => self::$ids['kilogram'],
+			'qu_id_consume' => self::$ids['kilogram'],
+			'qu_id_price' => self::$ids['kilogram'],
+		]);
+		self::$db->prepare('INSERT INTO quantity_unit_conversions (from_qu_id, to_qu_id, factor, product_id) VALUES (?, ?, ?, ?)')
+			->execute([self::$ids['gram'], self::$ids['kilogram'], 0.001, $product]);
+
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'location_id' => $zeroTare, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'The zero-tare vessel is filled'
+		);
+
+		$identity = new LabelIdentityService(DatabaseService::GetInstance()->GetDbConnectionRaw());
+		$epoch = (int)self::$db->query('SELECT epoch FROM label_import_state WHERE id = 1')->fetchColumn();
+		self::$db->beginTransaction();
+		$uid = $identity->IssueLocation($zeroTare, $epoch);
+		self::$db->commit();
+
+		$routes = [
+			'by id' => fn(array $body) => self::$stock->WeighLocation(self::request('POST', $body), new Response(), ['locationId' => $zeroTare]),
+			'by label' => fn(array $body) => self::$stock->WeighLocationByLabel(self::request('POST', $body), new Response(), ['code' => 'vctl:' . $uid]),
+		];
+
+		$refused = [
+			'null' => [null, 'The gross amount must be a number'],
+			'an empty string' => ['', 'The gross amount must be a number'],
+			'a word' => ['abc', 'The gross amount must be a number'],
+			'a boolean' => [true, 'The gross amount must be a number'],
+			'an array' => [[], 'The gross amount must be a number'],
+			// Numeric to is_numeric() but not finite: refused by the service's own finite-amount
+			// check before it books anything (StockService::CompareAmounts()).
+			'a non-finite number' => ['1e999', 'Stock amounts must be finite'],
+		];
+
+		foreach ($routes as $route => $weigh)
+		{
+			foreach ($refused as $label => [$value, $expectedMessage])
+			{
+				$decoded = $this->expectRefusalWithUntouchedLedger(
+					fn() => $weigh(['gross_amount' => $value]),
+					400,
+					"Weighing $route with gross_amount $label is refused"
+				);
+				self::assertSame($expectedMessage, $decoded['error_message'], "Weighing $route with gross_amount $label names the cause");
+				self::assertSame(2.0, self::stockAmount($product), "Weighing $route with gross_amount $label leaves the vessel's stock alone");
+			}
+		}
+
+		// Numeric strings stay accepted, exactly as for `amount`.
+		$this->expectStatus(fn() => $routes['by id'](['gross_amount' => '1000']), 200, 'A numeric string gross_amount is still accepted');
+		self::assertSame(1.0, self::stockAmount($product), '1000 g gross at zero tare is 1 kg net');
+		$this->expectStatus(fn() => $routes['by label'](['gross_amount' => 500]), 200, 'A numeric gross_amount is still accepted by label');
+		self::assertSame(0.5, self::stockAmount($product), '500 g gross at zero tare is 0.5 kg net');
+	}
+
 	#[Depends('testWeighingAVesselCorrectsItsOneEntryToTheNetReading')]
 	public function testWeighingByLabelResolvesTheVesselAndRefusesAnUnknownCode(): void
 	{
