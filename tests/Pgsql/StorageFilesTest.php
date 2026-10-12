@@ -684,6 +684,102 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 		self::assertSame('nosniff', $textResponse->getHeaderLine('X-Content-Type-Options'));
 	}
 
+	/** The documented 200 response of GET /files/{group}/{fileName}. */
+	private static function DocumentedServeResponse(): array
+	{
+		$spec = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), true);
+
+		return $spec['paths']['/files/{group}/{fileName}']['get']['responses']['200'];
+	}
+
+	/**
+	 * The document names every media type the controller can answer with, and no other:
+	 * the inline list plus the application/octet-stream every other file becomes. A client
+	 * picks its decoder from this map, so a type missing here has no documented branch.
+	 */
+	public function testTheDocumentedFileMediaTypesAreTheOnesTheControllerServes(): void
+	{
+		$inline = (new \ReflectionClassConstant(FilesApiController::class, 'INLINE_SERVED_TYPES'))->getValue();
+		$expected = array_merge($inline, ['application/octet-stream']);
+		$documented = self::DocumentedServeResponse();
+
+		$actual = array_keys($documented['content']);
+		sort($expected);
+		sort($actual);
+		self::assertSame($expected, $actual, 'The 200 content map is INLINE_SERVED_TYPES plus application/octet-stream, exactly');
+
+		foreach (['Content-Disposition', 'Cache-Control', 'X-Content-Type-Options'] as $header)
+		{
+			self::assertArrayHasKey($header, $documented['headers'] ?? [], "$header is documented on the 200 response");
+			self::assertSame('string', $documented['headers'][$header]['schema']['type']);
+		}
+
+		self::assertSame('private, no-store', $documented['headers']['Cache-Control']['schema']['example']);
+		self::assertSame('nosniff', $documented['headers']['X-Content-Type-Options']['schema']['example']);
+		self::assertArrayNotHasKey('Content-Type', $documented['headers'], 'Content-Type is described by the content map, not as a header object');
+	}
+
+	/**
+	 * What the controller sends for a PNG, a PDF and an ordinary file is what the document
+	 * says: the media type is a key of the content map, and the three headers match their
+	 * documented values, with the disposition following the inline/attachment rule.
+	 */
+	#[DataProvider('backends')]
+	public function testServedFilesMatchTheirDocumentedResponse(string $backend): void
+	{
+		self::Storage($backend, ['productpictures', 'equipmentmanuals', 'userfiles']);
+		self::grant(['MASTER_DATA_EDIT', 'STOCK_VIEW', 'EQUIPMENT']);
+		$documented = self::DocumentedServeResponse();
+
+		$cases = [
+			['productpictures', 'doc.png', self::$png, 'image/png', 'inline'],
+			['equipmentmanuals', 'doc.pdf', self::$pdf, 'application/pdf', 'inline'],
+			['userfiles', 'doc.txt', 'plain text, not a picture', 'application/octet-stream', 'attachment']
+		];
+
+		foreach ($cases as [$group, $name, $bytes, $type, $disposition])
+		{
+			$this->expectStatus(fn () => self::$files->UploadFile(self::requestWithRawBody('PUT', $bytes), new Response(), ['group' => $group, 'fileName' => base64_encode($name)]), 204, "$name accepted");
+			$response = $this->expectStatus(fn () => self::$files->ServeFile(self::request(), new Response(), ['group' => $group, 'fileName' => base64_encode($name)]), 200, "$name served");
+
+			self::assertSame($type, $response->getHeaderLine('Content-Type'), "$name is served as $type");
+			self::assertArrayHasKey($response->getHeaderLine('Content-Type'), $documented['content'], "$type is a documented media type");
+			self::assertSame($documented['headers']['Cache-Control']['schema']['example'], $response->getHeaderLine('Cache-Control'));
+			self::assertSame($documented['headers']['X-Content-Type-Options']['schema']['example'], $response->getHeaderLine('X-Content-Type-Options'));
+			self::assertSame($disposition . "; filename*=UTF-8''" . rawurlencode($name), $response->getHeaderLine('Content-Disposition'), "$name is $disposition");
+			self::assertStringContainsString($disposition, $documented['headers']['Content-Disposition']['description'], "The documentation names the $disposition case");
+		}
+	}
+
+	/**
+	 * A downscaled picture (force_serve_as=picture) is the same media type as its source,
+	 * served inline, and that type is one the document lists.
+	 */
+	#[DataProvider('backends')]
+	public function testAResizedPictureKeepsItsFormatAndIsDocumented(string $backend): void
+	{
+		self::Storage($backend, ['productpictures']);
+		self::grant(['MASTER_DATA_EDIT', 'STOCK_VIEW']);
+		$documented = self::DocumentedServeResponse();
+
+		$image = imagecreatetruecolor(400, 300);
+		imagefilledrectangle($image, 0, 0, 199, 149, imagecolorallocate($image, 230, 40, 40));
+		ob_start();
+		imagejpeg($image);
+		$jpeg = (string)ob_get_clean();
+
+		foreach ([['resize.png', self::MakePng(400, 300), 'image/png'], ['resize.jpg', $jpeg, 'image/jpeg']] as [$name, $bytes, $type])
+		{
+			$this->expectStatus(fn () => self::$files->UploadFile(self::requestWithRawBody('PUT', $bytes), new Response(), ['group' => 'productpictures', 'fileName' => base64_encode($name)]), 204, "$name accepted");
+			$response = $this->expectStatus(fn () => self::$files->ServeFile(self::request('GET', ['force_serve_as' => 'picture', 'best_fit_width' => '32']), new Response(), ['group' => 'productpictures', 'fileName' => base64_encode($name)]), 200, "$name resized");
+
+			self::assertSame(32, getimagesizefromstring((string)$response->getBody())[0], "$name was downscaled");
+			self::assertSame($type, $response->getHeaderLine('Content-Type'), "The resized $name keeps its source format");
+			self::assertArrayHasKey($response->getHeaderLine('Content-Type'), $documented['content']);
+			self::assertStringStartsWith('inline;', $response->getHeaderLine('Content-Disposition'));
+		}
+	}
+
 	/**
 	 * The second BASE64 name in the route argument is the name the download is offered
 	 * under; the stored file is still the first one.

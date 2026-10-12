@@ -258,11 +258,12 @@ class FilesApiController extends BaseApiController
 
 	/**
 	 * GET /api/files/{group}/{fileName} - streams the given file with a type from
-	 * INLINE_SERVED_TYPES when its content is one of those, and as a download otherwise,
-	 * with a 30 day Cache-Control header. {fileName} may also be two BASE64 encoded names
-	 * joined by "_" (actual file name + download file name). Query parameters
-	 * force_serve_as=picture with optional best_fit_height/best_fit_width serve a
-	 * downscaled image variant, at the nearest of ALLOWED_BEST_FIT_SIZES. A file that does
+	 * INLINE_SERVED_TYPES when its content is one of those (Content-Disposition: inline), and as
+	 * an application/octet-stream download otherwise (Content-Disposition: attachment). Always
+	 * sent with Cache-Control: private, no-store and X-Content-Type-Options: nosniff.
+	 * {fileName} may also be two BASE64 encoded names joined by "_" (actual file name +
+	 * download file name). Query parameters force_serve_as=picture with optional
+	 * best_fit_height/best_fit_width serve a downscaled image variant, at the nearest of ALLOWED_BEST_FIT_SIZES. A file that does
 	 * not exist is a 404; an invalid group or filename is a 400, which it was not before
 	 * wave 2 - every failure here used to be re-thrown as a 404, so "you asked wrongly"
 	 * and "it is not here" were the same answer.
