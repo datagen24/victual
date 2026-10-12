@@ -419,6 +419,10 @@
 							}
 						}
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {id} path parameter is an id beyond the integer range. A non-digit id never reaches the handler: it matches no route and the router answers 404"
+					},
 					"401": {
 						"$ref": "#/components/responses/Unauthorized",
 						"description": "Missing, invalid or expired API key"
@@ -8455,6 +8459,10 @@
 					"202": {
 						"description": "Job queued, awaiting_artifact"
 					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {id} path parameter is an id beyond the integer range. A non-digit id never reaches the handler: it matches no route and the router answers 404"
+					},
 					"401": {
 						"$ref": "#/components/responses/Unauthorized",
 						"description": "Missing, invalid or expired API key"
@@ -8531,6 +8539,10 @@
 								}
 							}
 						}
+					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {id} path parameter is an id beyond the integer range. A non-digit id never reaches the handler: it matches no route and the router answers 404"
 					},
 					"401": {
 						"$ref": "#/components/responses/Unauthorized",
@@ -9329,14 +9341,24 @@
 					},
 					"401": {
 						"$ref": "#/components/responses/Unauthorized",
-						"description": "Missing, unknown or expired renderer or worker credential"
+						"description": "Missing, unknown or expired renderer key. A worker key is refused on this route"
 					},
-					"422": {
-						"description": "A refusal carrying a field and a code",
+					"404": {
+						"description": "No such asset. The body is a LabelRefusal with field asset_id and code not_found",
 						"content": {
 							"application/json": {
 								"schema": {
-									"type": "object"
+									"$ref": "#/components/schemas/LabelRefusal"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code (LabelRefusal). This controller answers every refusal with 422, including unauthorized (the worker was deactivated after the key was checked), where the worker controller answers 401",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/LabelRefusal"
 								}
 							}
 						}
@@ -9419,14 +9441,14 @@
 					},
 					"401": {
 						"$ref": "#/components/responses/Unauthorized",
-						"description": "Missing, unknown or expired renderer or worker credential"
+						"description": "Missing, unknown or expired renderer key. A worker key is refused on this route"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
+						"description": "A refusal carrying a field and a code (LabelRefusal). This controller answers every refusal with 422, including unauthorized (the worker was deactivated after the key was checked), where the worker controller answers 401",
 						"content": {
 							"application/json": {
 								"schema": {
-									"type": "object"
+									"$ref": "#/components/schemas/LabelRefusal"
 								}
 							}
 						}
@@ -9485,14 +9507,14 @@
 					},
 					"401": {
 						"$ref": "#/components/responses/Unauthorized",
-						"description": "Missing, unknown or expired renderer or worker credential"
+						"description": "Missing, unknown or expired renderer key. A worker key is refused on this route"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
+						"description": "A refusal carrying a field and a code (LabelRefusal). This controller answers every refusal with 422, including unauthorized (the worker was deactivated after the key was checked), where the worker controller answers 401",
 						"content": {
 							"application/json": {
 								"schema": {
-									"type": "object"
+									"$ref": "#/components/schemas/LabelRefusal"
 								}
 							}
 						}
@@ -9551,14 +9573,14 @@
 					},
 					"401": {
 						"$ref": "#/components/responses/Unauthorized",
-						"description": "Missing, unknown or expired renderer or worker credential"
+						"description": "Missing, unknown or expired renderer key. A worker key is refused on this route"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
+						"description": "A refusal carrying a field and a code (LabelRefusal). This controller answers every refusal with 422, including unauthorized (the worker was deactivated after the key was checked), where the worker controller answers 401",
 						"content": {
 							"application/json": {
 								"schema": {
-									"type": "object"
+									"$ref": "#/components/schemas/LabelRefusal"
 								}
 							}
 						}
@@ -9617,14 +9639,14 @@
 					},
 					"401": {
 						"$ref": "#/components/responses/Unauthorized",
-						"description": "Missing, unknown or expired renderer or worker credential"
+						"description": "Missing, unknown or expired renderer key. A worker key is refused on this route"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
+						"description": "A refusal carrying a field and a code (LabelRefusal). This controller answers every refusal with 422, including unauthorized (the worker was deactivated after the key was checked), where the worker controller answers 401",
 						"content": {
 							"application/json": {
 								"schema": {
-									"type": "object"
+									"$ref": "#/components/schemas/LabelRefusal"
 								}
 							}
 						}
@@ -9670,14 +9692,14 @@
 					},
 					"401": {
 						"$ref": "#/components/responses/Unauthorized",
-						"description": "Missing, unknown or expired renderer or worker credential"
+						"description": "Missing, unknown or expired worker key. A renderer key is refused on this route"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
+						"description": "A refusal carrying a field and a code (LabelRefusal). This controller answers every refusal with 422: a forbidden refusal (field artifact_id, no live attempt of this worker carries the artifact) is answered 422 here, where the worker controller answers 403, and unauthorized (the worker was deactivated after the key was checked) is answered 422, where the worker controller answers 401",
 						"content": {
 							"application/json": {
 								"schema": {
-									"type": "object"
+									"$ref": "#/components/schemas/LabelRefusal"
 								}
 							}
 						}

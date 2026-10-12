@@ -7,7 +7,6 @@ use Victual\Controllers\Users\User;
 use Victual\Services\ApiKeyService;
 use Victual\Services\Storage\FileSizeLimit;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
-use Victual\Tests\Support\RouteInventory;
 
 /**
  * Issue 802: a declared 4xx/5xx response says what its body is.
@@ -25,6 +24,12 @@ use Victual\Tests\Support\RouteInventory;
  * answer to the schema the document gives for that operation and status, with Opis, and to
  * the exact key set and values. Opis alone is not enough: no error schema forbids extra
  * properties, so a body with an undocumented key would pass it.
+ *
+ * Issue 801 extends the same class from "what is the body" to "which statuses are declared": the
+ * last section checks that every operation behind authentication declares 401, every operation
+ * with an integer path parameter declares 400, PUT /files declares 413, the label conflicts and the
+ * renderer routes' 404/422 are declared, and the consumption gates carry the bodies they answer.
+ * Each has a runtime case that holds the real answer to the schema the document declares.
  *
  * Every request goes through labelapi-subprocess-helper.php for the reason LabelApiTest gives:
  * the worker routes are authenticated by a typed key BaseAuthMiddleware resolves, which a
@@ -577,18 +582,6 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 	// upload, the 409 of the label routes that map a conflict, and the right body schema on the
 	// consumption recipe and refill gates.
 
-	/**
-	 * The three operations whose route regex is {id:[0-9]+} (routes.php). A non-integer id misses
-	 * the route and gets a routing 404, so PathParameterMiddleware never sees it and no 400 can
-	 * be declared for it. The test derives this set from the route table and compares it with
-	 * this list, so neither can drift from routes.php unnoticed.
-	 */
-	private const INTEGER_PATH_ROUTE_REGEX = [
-		'GET /labels/{kind}/{id}/context',
-		'POST /labels/{kind}/{id}/print',
-		'POST /labels/{kind}/{id}/revised-print',
-	];
-
 	/** Operations whose 409 is a LabelRefusal, by "METHOD /path" and the codes the controller maps to 409. */
 	private const LABEL_CONFLICTS = [
 		'PUT /labels/templates/{templateId}/draft' => ['stale_revision'],
@@ -619,40 +612,26 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::assertSame([], $missing, count($missing) . " operations inherit security and declare no 401:\n" . implode("\n", $missing));
 	}
 
-	public function testEveryOperationWithAnUnconstrainedIntegerPathParameterDeclaresA400(): void
+	public function testEveryOperationWithAnIntegerPathParameterDeclaresA400(): void
 	{
-		[$unconstrained, $constrained] = self::IntegerPathParametersByRoute();
 		$missing = [];
-		$exempt = [];
 
 		foreach (self::Operations() as [$method, $path, $operation])
 		{
-			$key = "$method $path";
-
-			if (isset($constrained[$key]))
+			foreach ($operation['parameters'] ?? [] as $parameter)
 			{
-				$exempt[] = $key;
-			}
-
-			if (isset($unconstrained[$key]))
-			{
-				if (!isset($operation['responses']['400']))
+				if (($parameter['in'] ?? null) === 'path' && ($parameter['schema']['type'] ?? null) === 'integer' && !isset($operation['responses']['400']))
 				{
-					$missing[] = $key;
+					$missing[] = "$method $path";
+					break;
 				}
 			}
 		}
 
-		sort($exempt);
-		self::assertSame(self::INTEGER_PATH_ROUTE_REGEX, $exempt, 'The routes whose integer id is constrained by a route regex');
+		// The three {id:[0-9]+} routes are included: a non-digit id is a routing 404, but digits
+		// beyond PHP's integer range match the route and PathParameterMiddleware refuses them.
 		self::assertSame([], $missing, count($missing) . " operations take an integer path parameter and declare no 400:\n" . implode("\n", $missing));
 		self::assertSame(['$ref' => '#/components/schemas/Error400'], self::Spec()['components']['responses']['InvalidPathParameter']['content']['application/json']['schema'] ?? null);
-
-		foreach (self::INTEGER_PATH_ROUTE_REGEX as $key)
-		{
-			[$method, $path] = explode(' ', $key);
-			self::assertArrayNotHasKey('400', self::Spec()['paths'][$path][strtolower($method)]['responses'], "$key answers a routing 404 for a non-integer id, never a 400");
-		}
 	}
 
 	public function testAnUploadDeclaresThe413ItCanAnswer(): void
@@ -792,18 +771,64 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		}
 	}
 
-	public function testANonIntegerIdOnARegexConstrainedLabelRouteIsARoutingNotFound(): void
+	public function testTheRegexConstrainedLabelRoutesAnswer404ForANonDigitIdAnd400ForOneBeyondTheIntegerRange(): void
 	{
-		foreach ([['GET', '/api/labels/product/abc/context'], ['POST', '/api/labels/product/abc/print'], ['POST', '/api/labels/product/abc/revised-print']] as [$method, $url])
-		{
-			$response = self::Send($method, $url, $method === 'GET' ? null : [], self::$adminKey);
+		$routes = [
+			['GET', '/labels/{kind}/{id}/context', 'product', '/context'],
+			['POST', '/labels/{kind}/{id}/print', 'product', '/print'],
+			['POST', '/labels/{kind}/{id}/revised-print', 'product', '/revised-print'],
+		];
 
-			self::assertSame(404, $response['status'], "$method $url: " . $response['body']);
+		foreach ($routes as [$method, $documented, $kind, $suffix])
+		{
+			$body = $method === 'GET' ? null : [];
+
+			// Not digits: no route matches, so the router answers and no handler runs.
+			$notFound = self::Send($method, "/api/labels/$kind/abc$suffix", $body, self::$adminKey);
+			self::assertSame(404, $notFound['status'], "$method $documented abc: " . $notFound['body']);
+
+			// Digits that do not fit an integer match the route and are refused by the middleware.
+			$tooBig = self::Send($method, "/api/labels/$kind/99999999999999999999$suffix", $body, self::$adminKey);
+			self::AssertBody($tooBig, $method, $documented, 400, ['error_message' => 'Invalid path parameter: {id} has to be an integer']);
 		}
+	}
+
+	public function testAMissingAssetIsALabelRefusalNotFound(): void
+	{
+		$renderer = self::Send('POST', '/api/labels/workers/' . self::$ownerWorkerId . '/renderer-credentials', [], self::$adminKey);
+		self::assertSame(200, $renderer['status'], $renderer['body']);
+
+		$response = self::Send('GET', '/api/labels/assets/999999/bytes', null, $renderer['json']['credential']);
+
+		self::AssertBody($response, 'GET', '/labels/assets/{assetId}/bytes', 404, ['field' => 'asset_id', 'code' => 'not_found', 'error_message' => 'No such asset']);
+	}
+
+	public function testTheRendererAndByteRoutesDocumentTheir422AsALabelRefusal(): void
+	{
+		$routes = [
+			'POST /labels/render/claim', 'POST /labels/render/{requestId}/result', 'POST /labels/render/{requestId}/invalid',
+			'POST /labels/render/{requestId}/failed', 'GET /labels/assets/{assetId}/bytes', 'GET /labels/artifacts/{artifactId}/bytes',
+		];
+
+		foreach ($routes as $key)
+		{
+			[$method, $path] = explode(' ', $key);
+			$response = self::Spec()['paths'][$path][strtolower($method)]['responses']['422'];
+
+			self::assertSame(['$ref' => '#/components/schemas/LabelRefusal'], $response['content']['application/json']['schema'] ?? null, "$key 422");
+			self::assertStringContainsString('answers every refusal with 422', $response['description'], "$key 422 says unauthorized and forbidden are 422 here");
+		}
+
+		$artifact = self::Spec()['paths']['/labels/artifacts/{artifactId}/bytes']['get']['responses'];
+		self::assertStringContainsString('forbidden refusal', $artifact['422']['description']);
+		self::assertStringContainsString('worker key', $artifact['401']['description']);
+		self::assertStringContainsString('renderer key', self::Spec()['paths']['/labels/render/claim']['post']['responses']['401']['description']);
 	}
 
 	public function testAnUploadOverTheLimitAnswers413AnApiError(): void
 	{
+		// The limit is the smallest of FILE_STORAGE_MAX_SIZE_MB and the php.ini upload directives. The suite's PHP
+		// (memory_limit 128M) has upload_max_filesize 2M, so the body here is 2 MiB + 1, not 64 MB.
 		$response = self::Send('PUT', '/api/files/userfiles/' . base64_encode('oversized.txt'), null, self::$adminKey, str_repeat('a', FileSizeLimit::EffectiveMaxBytes() + 1));
 
 		self::assertSame(413, $response['status'], substr($response['body'], 0, 300));
@@ -834,55 +859,5 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		$refill = self::Send('GET', '/api/consumption/recipes/1/refill', null, self::$nobodyKey);
 
 		self::AssertBody($refill, 'GET', '/consumption/recipes/{recipeId}/refill', 403, ['error_message' => 'Permission missing: ' . User::PERMISSION_STOCK_VIEW]);
-	}
-
-	/**
-	 * The integer path parameters of each documented operation, split by whether the route
-	 * constrains them with a regex. Read from Slim's route table, which is where routes.php says
-	 * `{id:[0-9]+}`.
-	 *
-	 * @return array{0: array<string, list<string>>, 1: array<string, list<string>>} unconstrained, constrained, by "METHOD /path"
-	 */
-	private static function IntegerPathParametersByRoute(): array
-	{
-		$constraints = [];
-
-		foreach (RouteInventory::Api() as $route)
-		{
-			preg_match_all('~' . \FastRoute\RouteParser\Std::VARIABLE_REGEX . '~x', $route->Path, $matches, PREG_SET_ORDER);
-
-			foreach ($matches as $match)
-			{
-				$constraints[$route->Method . ' ' . \Victual\Middleware\PathParameterMiddleware::StripFastRouteConstraints($route->SpecPath())][$match[1]] = isset($match[2]) && $match[2] !== '';
-			}
-		}
-
-		$unconstrained = [];
-		$constrained = [];
-
-		foreach (self::Operations() as [$method, $path, $operation])
-		{
-			foreach ($operation['parameters'] ?? [] as $parameter)
-			{
-				if (($parameter['in'] ?? null) !== 'path' || ($parameter['schema']['type'] ?? null) !== 'integer')
-				{
-					continue;
-				}
-
-				$key = "$method $path";
-				self::assertArrayHasKey($key, $constraints, "$key is documented but not routed");
-
-				if ($constraints[$key][$parameter['name']] ?? false)
-				{
-					$constrained[$key][] = $parameter['name'];
-				}
-				else
-				{
-					$unconstrained[$key][] = $parameter['name'];
-				}
-			}
-		}
-
-		return [$unconstrained, $constrained];
 	}
 }
