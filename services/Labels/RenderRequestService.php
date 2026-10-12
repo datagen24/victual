@@ -179,7 +179,7 @@ class RenderRequestService extends LabelService
             try {
                 return $this->Input($request);
             } catch (LabelValidationException $refusal) {
-                $this->RecordInvalid((int)$request['id'], $token, $refusal->errorCode, $refusal->field, $refusal->getMessage());
+                $this->RecordInvalid((int)$request['id'], $token, $refusal->errorCode, null, $refusal->getMessage());
             }
         }
         return null;

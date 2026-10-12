@@ -228,7 +228,7 @@ class LabelRenderLifecycleTest extends PgsqlSchemaTestCase
 		$row = self::requestRow((int)$broken['id']);
 		self::assertSame('invalid', $row['state'], 'The unrenderable draft is settled as invalid');
 		self::assertSame('asset_unavailable', $row['error_code']);
-		self::assertSame('assets', $row['error_element']);
+		self::assertNull($row['error_element'], 'An asset names no template element, so none is recorded');
 		self::assertStringContainsString('Never Uploaded', (string)$row['error_detail'], 'The record names the missing asset');
 		self::assertSame(1, (int)$row['attempts'], 'The attempt the claim spent is persisted, not rolled back');
 		self::assertNull($row['generation_token'], 'No lease is left behind');
