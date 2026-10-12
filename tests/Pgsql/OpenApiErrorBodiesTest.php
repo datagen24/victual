@@ -5,7 +5,9 @@ namespace Victual\Tests\Pgsql;
 use PDO;
 use Victual\Controllers\Users\User;
 use Victual\Services\ApiKeyService;
+use Victual\Services\Storage\FileSizeLimit;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\RouteInventory;
 
 /**
  * Issue 802: a declared 4xx/5xx response says what its body is.
@@ -510,9 +512,14 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 	 *
 	 * @return array{status: int, body: string, headers: array<string, string>, json: mixed}
 	 */
-	private static function Send(string $method, string $path, ?array $body = null, ?string $key = null): array
+	private static function Send(string $method, string $path, ?array $body = null, ?string $key = null, ?string $rawBody = null): array
 	{
 		$spec = ['method' => $method, 'path' => $path];
+
+		if ($rawBody !== null)
+		{
+			$spec['raw_body'] = $rawBody;
+		}
 
 		if ($key !== null)
 		{
@@ -560,5 +567,322 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		$result['json'] = json_decode($result['body'], true);
 
 		return $result;
+	}
+
+	// ================================================================ issue 801: the known statuses
+	//
+	// #802 gave every declared error response a body. These checks are about which statuses are
+	// declared at all: a 401 on every operation behind authentication, a 400 on every operation
+	// whose integer path parameter PathParameterMiddleware validates, the 413 of an oversized
+	// upload, the 409 of the label routes that map a conflict, and the right body schema on the
+	// consumption recipe and refill gates.
+
+	/**
+	 * The three operations whose route regex is {id:[0-9]+} (routes.php). A non-integer id misses
+	 * the route and gets a routing 404, so PathParameterMiddleware never sees it and no 400 can
+	 * be declared for it. The test derives this set from the route table and compares it with
+	 * this list, so neither can drift from routes.php unnoticed.
+	 */
+	private const INTEGER_PATH_ROUTE_REGEX = [
+		'GET /labels/{kind}/{id}/context',
+		'POST /labels/{kind}/{id}/print',
+		'POST /labels/{kind}/{id}/revised-print',
+	];
+
+	/** Operations whose 409 is a LabelRefusal, by "METHOD /path" and the codes the controller maps to 409. */
+	private const LABEL_CONFLICTS = [
+		'PUT /labels/templates/{templateId}/draft' => ['stale_revision'],
+		'POST /labels/locations/{locationId}/print' => ['idempotency_conflict'],
+		'POST /labels/locations/{locationId}/revised-print' => ['idempotency_conflict'],
+		'POST /labels/{kind}/{id}/print' => ['idempotency_conflict'],
+		'POST /labels/{kind}/{id}/revised-print' => ['idempotency_conflict'],
+		'POST /labels/jobs/{jobId}/reprint' => ['idempotency_conflict'],
+		'POST /labels/artifacts/{artifactId}/promote' => ['idempotency_conflict'],
+		'POST /labels/jobs/{jobId}/cancel' => ['idempotency_conflict', 'already_claimed'],
+	];
+
+	public function testEveryOperationBehindAuthenticationDeclaresA401(): void
+	{
+		$root = self::Spec()['security'] ?? [];
+		$missing = [];
+
+		foreach (self::Operations() as [$method, $path, $operation])
+		{
+			$security = $operation['security'] ?? $root;
+
+			if ($security !== [] && !isset($operation['responses']['401']))
+			{
+				$missing[] = "$method $path";
+			}
+		}
+
+		self::assertSame([], $missing, count($missing) . " operations inherit security and declare no 401:\n" . implode("\n", $missing));
+	}
+
+	public function testEveryOperationWithAnUnconstrainedIntegerPathParameterDeclaresA400(): void
+	{
+		[$unconstrained, $constrained] = self::IntegerPathParametersByRoute();
+		$missing = [];
+		$exempt = [];
+
+		foreach (self::Operations() as [$method, $path, $operation])
+		{
+			$key = "$method $path";
+
+			if (isset($constrained[$key]))
+			{
+				$exempt[] = $key;
+			}
+
+			if (isset($unconstrained[$key]))
+			{
+				if (!isset($operation['responses']['400']))
+				{
+					$missing[] = $key;
+				}
+			}
+		}
+
+		sort($exempt);
+		self::assertSame(self::INTEGER_PATH_ROUTE_REGEX, $exempt, 'The routes whose integer id is constrained by a route regex');
+		self::assertSame([], $missing, count($missing) . " operations take an integer path parameter and declare no 400:\n" . implode("\n", $missing));
+		self::assertSame(['$ref' => '#/components/schemas/Error400'], self::Spec()['components']['responses']['InvalidPathParameter']['content']['application/json']['schema'] ?? null);
+
+		foreach (self::INTEGER_PATH_ROUTE_REGEX as $key)
+		{
+			[$method, $path] = explode(' ', $key);
+			self::assertArrayNotHasKey('400', self::Spec()['paths'][$path][strtolower($method)]['responses'], "$key answers a routing 404 for a non-integer id, never a 400");
+		}
+	}
+
+	public function testAnUploadDeclaresThe413ItCanAnswer(): void
+	{
+		$response = self::Spec()['paths']['/files/{group}/{fileName}']['put']['responses']['413'] ?? null;
+
+		self::assertIsArray($response, 'PUT /files/{group}/{fileName} declares no 413');
+		self::assertSame(['$ref' => '#/components/schemas/ApiError'], $response['content']['application/json']['schema'] ?? null);
+		self::assertStringContainsString('FILE_STORAGE_MAX_SIZE_MB', $response['description']);
+	}
+
+	public function testTheConsumptionRecipeAndRefillGatesAreDocumentedWithTheBodiesTheyAnswer(): void
+	{
+		$gateOnly = [
+			'GET /consumption/recipes', 'POST /consumption/recipes', 'GET /consumption/recipes/{recipeId}',
+			'GET /consumption/recipes/{recipeId}/events', 'GET /consumption/recipes/{recipeId}/refill',
+		];
+		$seen = 0;
+
+		foreach (self::Operations() as [$method, $path, $operation])
+		{
+			if (!str_starts_with($path, '/consumption/recipes'))
+			{
+				continue;
+			}
+
+			$seen++;
+			$key = "$method $path";
+			$unauthorized = self::ResolveResponse($operation['responses']['401'])['content']['application/json']['schema'] ?? null;
+			$forbidden = self::ResolveResponse($operation['responses']['403'])['content']['application/json']['schema'] ?? null;
+
+			// Only the middleware answers 401, and BaseAuthMiddleware sends no `error` member.
+			self::assertSame(['$ref' => '#/components/schemas/ApiError'], $unauthorized, "$key 401");
+
+			if (in_array($key, $gateOnly, true))
+			{
+				// Past the gate nothing on these routes raises a right_missing.
+				self::assertSame(['$ref' => '#/components/schemas/ApiError'], $forbidden, "$key 403 is the permission gate only");
+			}
+			else
+			{
+				self::assertSame(['anyOf' => [['$ref' => '#/components/schemas/ApiError'], ['$ref' => '#/components/schemas/ConsumptionError']]], $forbidden, "$key 403 is the gate or a missing right");
+			}
+		}
+
+		self::assertSame(20, $seen, 'the recipe and refill operations');
+	}
+
+	public function testTheLabelConflictsAreDocumentedAsLabelRefusals(): void
+	{
+		$declared = [];
+
+		foreach (self::Operations() as [$method, $path, $operation])
+		{
+			if (str_starts_with($path, '/labels') && isset($operation['responses']['409']))
+			{
+				$declared["$method $path"] = $operation['responses']['409'];
+			}
+		}
+
+		$expected = array_keys(self::LABEL_CONFLICTS);
+		$actual = array_keys($declared);
+		sort($expected);
+		sort($actual);
+		self::assertSame($expected, $actual, 'The label operations that declare a 409');
+
+		foreach ($declared as $key => $response)
+		{
+			self::assertSame(['$ref' => '#/components/schemas/LabelRefusal'], self::ResolveResponse($response)['content']['application/json']['schema'] ?? null, "$key 409");
+
+			foreach (self::LABEL_CONFLICTS[$key] as $code)
+			{
+				self::assertStringContainsString($code, $response['description'], "$key 409 names $code");
+			}
+		}
+	}
+
+	public function testAnonymousRequestsToTheNewlyDocumentedRoutesAnswerAnApiError(): void
+	{
+		$cases = [
+			['GET', '/api/labels/templates', '/labels/templates'],
+			['POST', '/api/labels/templates/1/publish', '/labels/templates/{templateId}/publish'],
+			['GET', '/api/labels/assets', '/labels/assets'],
+			['GET', '/api/labels/renders/1', '/labels/renders/{requestId}'],
+			['GET', '/api/labels/resolve/abc', '/labels/resolve/{code}'],
+			['GET', '/api/labels/locations/1/context', '/labels/locations/{locationId}/context'],
+			['POST', '/api/labels/locations/1/print', '/labels/locations/{locationId}/print'],
+			['POST', '/api/labels/jobs/1/cancel', '/labels/jobs/{jobId}/cancel'],
+			['POST', '/api/labels/workers/1/renderer-credentials', '/labels/workers/{workerId}/renderer-credentials'],
+			// The renderer's and the worker's own routes: the middleware answers before any handler.
+			['POST', '/api/labels/render/claim', '/labels/render/claim'],
+			['POST', '/api/labels/render/1/result', '/labels/render/{requestId}/result'],
+			['GET', '/api/labels/assets/1/bytes', '/labels/assets/{assetId}/bytes'],
+			['GET', '/api/labels/artifacts/1/bytes', '/labels/artifacts/{artifactId}/bytes'],
+			['GET', '/api/consumption/recipes', '/consumption/recipes'],
+			['GET', '/api/consumption/recipes/1/refill', '/consumption/recipes/{recipeId}/refill'],
+		];
+
+		foreach ($cases as [$method, $url, $documented])
+		{
+			self::AssertBody(self::Send($method, $url, $method === 'POST' ? [] : null), $method, $documented, 401, ['error_message' => 'Unauthorized']);
+		}
+	}
+
+	public function testARendererKeyThatIsNotValidForTheRouteAnswersAnApiError(): void
+	{
+		// A worker key on a renderer route is not a key the route accepts: the middleware
+		// answers an ApiError, not the LabelRefusal the worker routes use for a deactivated worker.
+		self::AssertBody(self::Send('POST', '/api/labels/render/claim', [], self::$ownerKey), 'POST', '/labels/render/claim', 401, ['error_message' => 'Unauthorized']);
+	}
+
+	public function testANonIntegerPathParameterIsAnErrorBody(): void
+	{
+		$renderer = self::Send('POST', '/api/labels/workers/' . self::$ownerWorkerId . '/renderer-credentials', [], self::$adminKey);
+		self::assertSame(200, $renderer['status'], $renderer['body']);
+
+		$cases = [
+			['GET', '/api/labels/templates/abc/draft', '/labels/templates/{templateId}/draft', 'templateId', self::$adminKey],
+			['POST', '/api/labels/jobs/abc/cancel', '/labels/jobs/{jobId}/cancel', 'jobId', self::$adminKey],
+			['POST', '/api/labels/locations/abc/print', '/labels/locations/{locationId}/print', 'locationId', self::$adminKey],
+			['GET', '/api/labels/locations/abc/context', '/labels/locations/{locationId}/context', 'locationId', self::$adminKey],
+			['PUT', '/api/labels/printers/abc', '/labels/printers/{printerId}', 'printerId', self::$adminKey],
+			['GET', '/api/consumption/recipes/abc', '/consumption/recipes/{recipeId}', 'recipeId', self::$adminKey],
+			['POST', '/api/consumption/recipes/1/events/abc/undo', '/consumption/recipes/{recipeId}/events/{eventId}/undo', 'eventId', self::$adminKey],
+			// A worker's and a renderer's routes pass the same middleware after their own authentication.
+			['POST', '/api/labels/attempts/abc/heartbeat', '/labels/attempts/{attemptId}/heartbeat', 'attemptId', self::$ownerKey],
+			['POST', '/api/labels/render/abc/result', '/labels/render/{requestId}/result', 'requestId', $renderer['json']['credential']],
+			['GET', '/api/labels/assets/abc/bytes', '/labels/assets/{assetId}/bytes', 'assetId', $renderer['json']['credential']],
+		];
+
+		foreach ($cases as [$method, $url, $documented, $name, $key])
+		{
+			self::AssertBody(
+				self::Send($method, $url, $method === 'GET' ? null : [], $key),
+				$method, $documented, 400, ['error_message' => 'Invalid path parameter: {' . $name . '} has to be an integer']
+			);
+		}
+	}
+
+	public function testANonIntegerIdOnARegexConstrainedLabelRouteIsARoutingNotFound(): void
+	{
+		foreach ([['GET', '/api/labels/product/abc/context'], ['POST', '/api/labels/product/abc/print'], ['POST', '/api/labels/product/abc/revised-print']] as [$method, $url])
+		{
+			$response = self::Send($method, $url, $method === 'GET' ? null : [], self::$adminKey);
+
+			self::assertSame(404, $response['status'], "$method $url: " . $response['body']);
+		}
+	}
+
+	public function testAnUploadOverTheLimitAnswers413AnApiError(): void
+	{
+		$response = self::Send('PUT', '/api/files/userfiles/' . base64_encode('oversized.txt'), null, self::$adminKey, str_repeat('a', FileSizeLimit::EffectiveMaxBytes() + 1));
+
+		self::assertSame(413, $response['status'], substr($response['body'], 0, 300));
+		self::assertSame(['error_message'], array_keys($response['json']));
+		self::assertStringContainsString('FILE_STORAGE_MAX_SIZE_MB', $response['json']['error_message']);
+		self::AssertMatchesDocumentedResponse($response['json'], 'PUT', '/files/{group}/{fileName}', 413);
+	}
+
+	public function testAStaleDraftRevisionIsALabelRefusalConflict(): void
+	{
+		$template = self::Send('POST', '/api/labels/templates', ['name' => 'Errbodies draft', 'entity_kind' => 'location'], self::$adminKey);
+		self::assertSame(200, $template['status'], $template['body']);
+
+		$response = self::Send('PUT', '/api/labels/templates/' . (int)$template['json']['id'] . '/draft', ['document' => [], 'revision_token' => 'stale'], self::$adminKey);
+
+		self::AssertBody($response, 'PUT', '/labels/templates/{templateId}/draft', 409, [
+			'field' => 'revision_token', 'code' => 'stale_revision',
+			'error_message' => 'The draft changed since it was read; reload it and reapply the edit',
+		]);
+	}
+
+	public function testTheConsumptionPermissionGateAnswersAnApiErrorTheDocumentAllows(): void
+	{
+		$response = self::Send('GET', '/api/consumption/recipes', null, self::$nobodyKey);
+
+		self::AssertBody($response, 'GET', '/consumption/recipes', 403, ['error_message' => 'Permission missing: ' . User::PERMISSION_STOCK_VIEW]);
+
+		$refill = self::Send('GET', '/api/consumption/recipes/1/refill', null, self::$nobodyKey);
+
+		self::AssertBody($refill, 'GET', '/consumption/recipes/{recipeId}/refill', 403, ['error_message' => 'Permission missing: ' . User::PERMISSION_STOCK_VIEW]);
+	}
+
+	/**
+	 * The integer path parameters of each documented operation, split by whether the route
+	 * constrains them with a regex. Read from Slim's route table, which is where routes.php says
+	 * `{id:[0-9]+}`.
+	 *
+	 * @return array{0: array<string, list<string>>, 1: array<string, list<string>>} unconstrained, constrained, by "METHOD /path"
+	 */
+	private static function IntegerPathParametersByRoute(): array
+	{
+		$constraints = [];
+
+		foreach (RouteInventory::Api() as $route)
+		{
+			preg_match_all('~' . \FastRoute\RouteParser\Std::VARIABLE_REGEX . '~x', $route->Path, $matches, PREG_SET_ORDER);
+
+			foreach ($matches as $match)
+			{
+				$constraints[$route->Method . ' ' . \Victual\Middleware\PathParameterMiddleware::StripFastRouteConstraints($route->SpecPath())][$match[1]] = isset($match[2]) && $match[2] !== '';
+			}
+		}
+
+		$unconstrained = [];
+		$constrained = [];
+
+		foreach (self::Operations() as [$method, $path, $operation])
+		{
+			foreach ($operation['parameters'] ?? [] as $parameter)
+			{
+				if (($parameter['in'] ?? null) !== 'path' || ($parameter['schema']['type'] ?? null) !== 'integer')
+				{
+					continue;
+				}
+
+				$key = "$method $path";
+				self::assertArrayHasKey($key, $constraints, "$key is documented but not routed");
+
+				if ($constraints[$key][$parameter['name']] ?? false)
+				{
+					$constrained[$key][] = $parameter['name'];
+				}
+				else
+				{
+					$unconstrained[$key][] = $parameter['name'];
+				}
+			}
+		}
+
+		return [$unconstrained, $constrained];
 	}
 }
