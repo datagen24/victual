@@ -259,6 +259,45 @@ const ACCEPTED = [
 	},
 
 	{
+		id: 'skipped-chore-consumes-nothing',
+		reference: 'services/ChoresService.php',
+		reason:
+			'A skipped chore execution (POST /chores/{id}/execute with skipped) consumes no product here ' +
+			'and needs no STOCK_CONSUME; upstream 4.6.0 consumes the chore\'s product on a skip as it ' +
+			'does on an execution. Maintainer decision of 2026-10-12, issue #856: a skip records that a ' +
+			'scheduled execution was passed over, not that the chore was performed.\n\n' +
+			'**The fork is the intended side and this must not be "fixed" towards upstream.** The ' +
+			'matcher is narrow: a numeric stock-amount difference on a /stock read where the fork holds ' +
+			'more than upstream. Any other stock difference, or the fork holding less, is still reported.',
+		match: ({ step, difference }) =>
+			difference.kind === 'value' &&
+			/^\/stock(\/|$)/.test(String(step.path)) &&
+			/\/(amount|amount_aggregated|stock_amount|stock_amount_aggregated)$/.test(difference.pointer) &&
+			Number(difference.victual) > Number(difference.upstream)
+	},
+
+	{
+		id: 'undo-restores-reschedule',
+		reference: 'services/ChoresService.php',
+		reason:
+			'Undoing a chore execution restores the chore\'s rescheduled_date and ' +
+			'rescheduled_next_execution_assigned_to_user_id that tracking cleared, when the undone row ' +
+			'is the chore\'s most recent live execution and the field is still empty. Upstream 4.6.0 ' +
+			'leaves both empty, so a chore read after the undo has them null there and set here. ' +
+			'Maintainer decision of 2026-10-12, issue #865; the values are kept in ' +
+			'chores_log.prior_rescheduled_date and chores_log.prior_rescheduled_next_execution_assigned_to_user_id ' +
+			'(migration 0310).\n\n' +
+			'**The fork is the intended side and this must not be "fixed" towards upstream.** The ' +
+			'matcher is narrow: those two chore fields, upstream null, the fork non-null, on a chore read.',
+		match: ({ step, difference }) =>
+			(difference.kind === 'type' || difference.kind === 'value') &&
+			/^\/(objects\/)?chores(\/\d+)?(\?|$)/.test(String(step.path)) &&
+			/\/(rescheduled_date|rescheduled_next_execution_assigned_to_user_id)$/.test(difference.pointer) &&
+			difference.upstream === null &&
+			difference.victual !== null
+	},
+
+	{
 		id: 'fork-only-entities',
 		reference: 'docs/plans/README.md',
 		reason:
@@ -660,6 +699,11 @@ const FORK_ADDED_FIELDS = new Map([
 	// to, on every table a label import writes.
 	['import_epoch', [...ROUTES.productRows, ...ROUTES.recipes, ...ROUTES.choresAndBatteries,
 		/^GET \/objects\/stock(\/\d+)?$/, /^GET \/stock\/locations\/\d+\/entries$/]],
+	// issue #865, migration 0310 — the reschedule values tracking cleared, kept on the
+	// execution row so an undo can restore them. Nullable, so a client that ignores them is
+	// unaffected.
+	['prior_rescheduled_date', [/^GET \/objects\/chores_log(\/\d+)?$/, /^POST \/chores\/\d+\/execute$/]],
+	['prior_rescheduled_next_execution_assigned_to_user_id', [/^GET \/objects\/chores_log(\/\d+)?$/, /^POST \/chores\/\d+\/execute$/]],
 	// plans 25/27/32 — the label subsystem's feature flag.
 	['FEATURE_FLAG_LABELS', ROUTES.systemConfig]
 ]);
