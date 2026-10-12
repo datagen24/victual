@@ -125,6 +125,25 @@ class StockApiController extends BaseApiController
 	}
 
 	/**
+	 * Validates a body field is a string before it reaches a service method that compares
+	 * it against string constants: a JSON true is loosely equal to any non-empty string in
+	 * PHP, so passing it through could select a branch meant for one specific value and
+	 * then write the raw value to the database (issue #786).
+	 *
+	 * @return string The validated string from $requestBody[$field]
+	 * @throws \Exception When $requestBody[$field] is not a string
+	 */
+	private function RequireString(array $requestBody, string $field): string
+	{
+		if (!is_string($requestBody[$field]))
+		{
+			throw new \Exception('The ' . str_replace('_', ' ', $field) . ' must be a string');
+		}
+
+		return $requestBody[$field];
+	}
+
+	/**
 	 * Validates a body field is a valid ISO 8601 date (Y-m-d) before it reaches a service
 	 * method: falling through to a default on an unreadable value would silently overwrite
 	 * whatever the column already stored (issue #519) instead of refusing the request.
@@ -346,7 +365,7 @@ class StockApiController extends BaseApiController
 			$transactionType = StockService::TRANSACTION_TYPE_PURCHASE;
 			if (array_key_exists('transaction_type', $requestBody) && !empty($requestBody['transaction_type']))
 			{
-				$transactionType = $requestBody['transaction_type'];
+				$transactionType = $this->RequireString($requestBody, 'transaction_type');
 			}
 
 			$stockLabelType = 0;
@@ -536,7 +555,7 @@ class StockApiController extends BaseApiController
 			$transactionType = StockService::TRANSACTION_TYPE_CONSUME;
 			if (array_key_exists('transaction_type', $requestBody) && !empty($requestBody['transaction_type']))
 			{
-				$transactionType = $requestBody['transaction_type'];
+				$transactionType = $this->RequireString($requestBody, 'transaction_type');
 			}
 
 			$specificStockEntryId = 'default';
