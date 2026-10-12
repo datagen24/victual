@@ -18,7 +18,7 @@
 -- loses one, and no grant row is written.
 --
 -- WHY THIS IS A FILE. migrations/0308.pgsql.php reads it, the way 0282 reads prices-seed.sql,
--- and DatabaseImporter replays it after every legacy import: bin/victual-db-import truncates
+-- and DatabaseImporter replays it after every legacy import that applies row migrations: bin/victual-db-import truncates
 -- permission_hierarchy and copies the source's rows in, and the SQLite line is frozen at
 -- 0265, so no source database can carry a row added after it. One file keeps a fresh
 -- install, an upgraded database and an imported one on the same statement.

@@ -37,7 +37,7 @@ RANDOM_BY_DESIGN = {
 # Rows the target's migrations 0289-0302 (and 0308's permission row) add or derive, measured on the first run and
 # explained in the evidence record. Anything else that changes is a failure.
 CHANGED_BY_LATER_MIGRATIONS = {
-    "migrations": "one row per migration 0289-0302 is added",
+    "migrations": "one row per migration added by this upgrade",
     "permission_hierarchy": "migration 0299 adds three permission rows and migration 0308 adds MASTER_DATA_ADD",
 }
 

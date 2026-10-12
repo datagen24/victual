@@ -450,23 +450,28 @@ class RbacTest extends PgsqlSchemaTestCase
 		// A custom role holding MASTER_DATA_ADD cannot be handed out through SetUserRoles by the same caller.
 		self::$db->exec("INSERT INTO roles (code, name, builtin) VALUES ('ADDER', 'Adder', 0)");
 		$adder = self::roleId('ADDER');
-		self::$db->exec("INSERT INTO role_permissions (role_id, permission_id) VALUES ($adder, $add)");
-		$this->expectStatus(fn() => self::$roleApi->SetUserRoles(self::request('PUT', ['roles' => [$adder]]), new Response(), ['userId' => 9001]), 403, 'USERS_EDIT without MASTER_DATA_ADD cannot assign a role that carries it');
+		try
+		{
+			self::$db->exec("INSERT INTO role_permissions (role_id, permission_id) VALUES ($adder, $add)");
+			$this->expectStatus(fn() => self::$roleApi->SetUserRoles(self::request('PUT', ['roles' => [$adder]]), new Response(), ['userId' => 9001]), 403, 'USERS_EDIT without MASTER_DATA_ADD cannot assign a role that carries it');
 
-		// A caller holding MASTER_DATA_EDIT resolves MASTER_DATA_ADD through the hierarchy.
-		self::grant(['USERS_EDIT', 'STOCK_VIEW', 'MASTER_DATA_EDIT']);
-		self::assertContains('MASTER_DATA_ADD', User::ResolvedPermissionNames(9000), 'MASTER_DATA_EDIT resolves MASTER_DATA_ADD');
-		$this->expectStatus(fn() => self::$userApi->SetPermissions(self::request('PUT', ['permissions' => [$add]]), new Response(), ['userId' => 9001]), 204, 'MASTER_DATA_EDIT holder can grant MASTER_DATA_ADD to a user');
-		$this->expectStatus(fn() => self::$roleApi->SetUserRoles(self::request('PUT', ['roles' => [$adder]]), new Response(), ['userId' => 9001]), 204, 'MASTER_DATA_EDIT holder can assign the role that carries it');
+			// A caller holding MASTER_DATA_EDIT resolves MASTER_DATA_ADD through the hierarchy.
+			self::grant(['USERS_EDIT', 'STOCK_VIEW', 'MASTER_DATA_EDIT']);
+			self::assertContains('MASTER_DATA_ADD', User::ResolvedPermissionNames(9000), 'MASTER_DATA_EDIT resolves MASTER_DATA_ADD');
+			$this->expectStatus(fn() => self::$userApi->SetPermissions(self::request('PUT', ['permissions' => [$add]]), new Response(), ['userId' => 9001]), 204, 'MASTER_DATA_EDIT holder can grant MASTER_DATA_ADD to a user');
+			$this->expectStatus(fn() => self::$roleApi->SetUserRoles(self::request('PUT', ['roles' => [$adder]]), new Response(), ['userId' => 9001]), 204, 'MASTER_DATA_EDIT holder can assign the role that carries it');
 
-		// ADMIN too.
-		self::grant(['USERS_EDIT', 'STOCK_VIEW', 'ADMIN']);
-		$this->expectStatus(fn() => self::$userApi->SetPermissions(self::request('PUT', ['permissions' => [$add]]), new Response(), ['userId' => 9001]), 204, 'ADMIN can grant MASTER_DATA_ADD to a user');
-		$this->expectStatus(fn() => self::$roleApi->SetPermissions(self::request('PUT', ['permissions' => [$add]]), new Response(), ['roleId' => $adder]), 204, 'ADMIN can set MASTER_DATA_ADD on a role');
-
-		// Restore the state the following tests were written against.
-		self::$db->exec("DELETE FROM user_roles WHERE role_id = $adder; DELETE FROM role_permissions WHERE role_id = $adder; DELETE FROM roles WHERE id = $adder; DELETE FROM user_permissions WHERE user_id = 9001");
-		self::$db->exec('INSERT INTO user_permissions (user_id, permission_id) VALUES (9001, ' . self::permissionId('STOCK_VIEW') . ')');
+			// ADMIN too.
+			self::grant(['USERS_EDIT', 'STOCK_VIEW', 'ADMIN']);
+			$this->expectStatus(fn() => self::$userApi->SetPermissions(self::request('PUT', ['permissions' => [$add]]), new Response(), ['userId' => 9001]), 204, 'ADMIN can grant MASTER_DATA_ADD to a user');
+			$this->expectStatus(fn() => self::$roleApi->SetPermissions(self::request('PUT', ['permissions' => [$add]]), new Response(), ['roleId' => $adder]), 204, 'ADMIN can set MASTER_DATA_ADD on a role');
+		}
+		finally
+		{
+			// Restore the state the following tests were written against.
+			self::$db->exec("DELETE FROM user_roles WHERE role_id = $adder; DELETE FROM role_permissions WHERE role_id = $adder; DELETE FROM roles WHERE id = $adder; DELETE FROM user_permissions WHERE user_id = 9001");
+			self::$db->exec('INSERT INTO user_permissions (user_id, permission_id) VALUES (9001, ' . self::permissionId('STOCK_VIEW') . ')');
+		}
 	}
 
 	#[Depends('testMasterDataAddGrantNeedsTheCallerToHoldIt')]

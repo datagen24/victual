@@ -115,6 +115,9 @@ Both PostgreSQL versions gave the same `verify.py` output.
 | Fixture reproducible | **Pass.** The two generations have identical manifests and 10,008 identical values. The comparison skips only values the source code takes from `uniqid()`, random tokens and password salts. |
 | Negative controls | **Pass.** `verify.py` detected each planted fault: a repeated hour read as the later instant, an instant moved by 1 µs, a changed best-before date, a lost ledger row, and a second run that writes. |
 
+
+Note, 2026-10-12: `verify.py` now also allows the `permission_hierarchy` row that migration 0308 adds (`MASTER_DATA_ADD`, ADR-0043) and the `migrations` row for 0308, which the "five named exceptions" above do not count. The measurements above were not repeated against a target that includes 0308, so they still describe the 0289 to 0302 span.
+
 **A refusal is not a return to 0.2.0-MVP.** Each migration commits on its own, so
 migrations 0289 to 0300 stayed applied, and the refused database was at migration 300. The
 operator page "Updating and migrations" now says this.

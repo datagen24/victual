@@ -5,7 +5,7 @@
 //
 // The statement lives in db/pgsql/master-data-add-seed.sql, which carries the reasoning (why
 // the row is a child of MASTER_DATA_EDIT and why no user_permissions backfill is written).
-// It is a file because DatabaseImporter replays it after every legacy import, and a file
+// It is a file because DatabaseImporter replays it after every legacy import that applies row migrations, and a file
 // read by both callers cannot drift from itself. This is the pattern of 0282.pgsql.php.
 //
 // A fresh installation runs this too: the baseline's permission rows come from
