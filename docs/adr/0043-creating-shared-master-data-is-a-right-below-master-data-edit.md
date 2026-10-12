@@ -13,8 +13,13 @@
   against `master` at `9bd1df91` to record the maintainer's release boundaries: the response
   under acceptance prerequisite 1 and under open questions 1, 2, 2a and 5, decision 2's
   lookup gate, and the consequences for conversion creation and issue 742. Revised again on
-  2026-10-12 to record the maintainer's answer on the lookup's conversion (open question 5,
-  decision 2 and prerequisite 3).
+  2026-10-12, against `master` at `b45f632d`, to record the maintainer's answer on the
+  lookup's conversion (open question 5, decision 2 and prerequisite 3). A review revision
+  the same day, against `master` at `1b05387f`, does four things:
+  - It reconciles the consequences with that answer.
+  - It states the answer's prohibition and the meaning of "validated" in decision 2.
+  - It names the cases prerequisite 3 tests.
+  - It labels the code reading under open question 5 as code reading.
 - **Referenced by:** [issue 742](https://github.com/datagen24/victual/issues/742) and its
   evidence, [`.devtools/issue742/RESULTS.md`](../../.devtools/issue742/RESULTS.md).
 - **Relationship:** compatible with accepted
@@ -85,7 +90,14 @@ entities: `products`, `product_barcodes`, `locations`, `quantity_units`, `produc
   itself: `external-lookup?add=true` may initialize the new product's purchase-to-stock
   conversion with the validated lookup factor, in the same transaction that creates the
   product, including by updating the conversion the creation trigger inserted (maintainer,
-  2026-10-12; see open question 5).
+  2026-10-12; see open question 5). It writes only that one conversion, purchase to stock,
+  of the product it creates. The database's conversion triggers then keep the matching
+  stock-to-purchase row of the same product at the inverse factor, as they do for any
+  conversion write. The lookup must not modify a global conversion or a conversion that
+  belongs to any other product. "Validated" means a finite number greater than zero. The
+  plugin check on `master` at `1b05387f` (`helpers/BaseBarcodeLookupPlugin.php:192-196`)
+  refuses zero, negative and non-numeric values but not a non-finite one, so the
+  implementation must add that check.
 - Userfield values and definitions, label subsystem writes, and merges keep their gates.
 - `GET /api/stock/barcodes/external-lookup/{barcode}` checks `STOCK_VIEW` alone for a lookup
   that creates nothing. With `add=true` it also requires `MASTER_DATA_ADD`, which every
@@ -192,11 +204,13 @@ no household has asked for. Open question 3 keeps it available.
   product name, or a duplicate, stays until a `MASTER_DATA_EDIT` holder changes it.
 - A holder can fill shared lists with rows every account sees. The right is a grant
   to a person the household trusts to add rows, not a quota.
-- Adding a product still writes factor-1 conversion rows through the trigger. A holder of this
-  right cannot correct their factor, because conversion edits stay with `MASTER_DATA_EDIT`.
-  A product created with a purchase, consume or price unit that differs from the stock unit
-  therefore needs a `MASTER_DATA_EDIT` holder to set the factor. Creating a product whose
-  units are all the same needs none.
+- Adding a product still writes factor-1 conversion rows through the trigger. Conversion edits
+  stay with `MASTER_DATA_EDIT`, so a holder of this right cannot correct those factors
+  afterwards. One factor is set at creation: `external-lookup?add=true` writes the new
+  product's purchase-to-stock factor from the lookup (decision 2). Any other factor that
+  differs from 1 needs a `MASTER_DATA_EDIT` holder to set it. That covers the consume and
+  price factors, and a purchase factor for a product created through
+  `POST /api/objects/products`. Creating a product whose units are all the same needs none.
 - Conversion creation stays with `MASTER_DATA_EDIT`, so an account that holds only
   `MASTER_DATA_ADD` can create a product and cannot create a conversion. A medication
   consumption mapping that names a unit other than the stock unit needs a conversion with the
@@ -342,7 +356,27 @@ should move to `MASTER_DATA_EDIT`; that needs its own decision.
    - an account that holds only `MASTER_DATA_ADD` and calls `external-lookup?add=true` gets
      the new product's purchase-to-stock conversion at the lookup factor, written in the same
      transaction as the product. Global conversions and every other product's conversions stay
-     unchanged, and a later edit of that conversion by the same account gets 403.
+     unchanged, and a later edit of that conversion by the same account gets 403. The
+     following cases are named separately:
+     - the row the trigger inserted is updated in place, with the same id and no second
+       purchase-to-stock row, and its trigger-maintained stock-to-purchase row holds the
+       inverse factor. These two are the only conversion rows that change;
+     - where a global conversion already covers the pair, one product-specific row is
+       inserted and the global row is unchanged;
+     - the consume and price rows the trigger inserted for the new product keep factor 1;
+     - every global conversion and every conversion of another product is unchanged after
+       the lookup. The test compares their rows, ids and factors, before and after, as an
+       explicit assertion of its own;
+     - each of these lookup factors is refused, and no product, barcode or conversion row is
+       written: the string `"1e400"`, native `INF`, native `NAN`, zero, a negative number,
+       and a non-numeric value;
+     - when the conversion write fails, the product and barcode rows roll back with it.
+
+   Acceptance needs the factor validation from
+   [issue 842](https://github.com/datagen24/victual/issues/842) merged first. The accepting
+   pull request then cites passing results for these tests and for every other gate in this
+   section: permissions, install, import and upgrade paths, the picture rules, the contract
+   snapshots and the migration check.
 4. The contract snapshots and `check-migrations.php` pass with the migration.
 
 ## Open questions
@@ -437,7 +471,8 @@ should move to `MASTER_DATA_EDIT`; that needs its own decision.
    > belonging to existing products. Subsequent conversion creation or editing still
    > requires MASTER_DATA_EDIT.
 
-   `StockService::ExternalBarcodeLookup()` writes this conversion with `add=true`: it updates
+   Code reading, not part of the response: `StockService::ExternalBarcodeLookup()` writes
+   this conversion with `add=true`. It updates
    the factor-1 row `products_default_qu_conversions_INS` inserted for the new product, or
    inserts a product-specific row when a global conversion already covered the pair (about
    line 1506 on `master` at `b45f632d`). The response keeps that step for an add-only
