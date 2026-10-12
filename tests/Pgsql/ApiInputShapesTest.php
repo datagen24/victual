@@ -4,6 +4,7 @@ namespace Victual\Tests\Pgsql;
 
 use PDO;
 use Victual\Services\ApiKeyService;
+use Victual\Services\Labels\LabelIdentityService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
 /**
@@ -120,6 +121,10 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 			'BATTERIES_TRACK_CHARGE_CYCLE',
 			'TASKS_MARK_COMPLETED',
 			'STOCK_CONSUME',
+			'STOCK_PURCHASE',
+			'STOCK_TRANSFER',
+			'STOCK_INVENTORY',
+			'STOCK_EDIT',
 			'STOCK_OPEN',
 			'STOCK_VIEW',
 			'TASKS_VIEW',
@@ -947,5 +952,141 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		$statement = self::$db->prepare("SELECT value FROM user_settings WHERE user_id = ? AND key = 'h9_round2_setting'");
 		$statement->execute([self::USER_ID]);
 		self::assertSame('original', $statement->fetchColumn(), 'a refused request must not have overwritten the setting with NULL');
+	}
+
+	// ================================================================================
+	// Group G: required fields of the stock-booking request bodies (issue #804, #796)
+	// ================================================================================
+
+	/**
+	 * Every inline request schema below omitted its object-level `required` list although
+	 * the controller refuses the field's absence with 400, so `{}` validated and generated
+	 * clients typed the field optional. The document half asserts the list and what it
+	 * means to a JSON Schema validator; the runtime half asserts the 400 text and that no
+	 * stock, ledger or shopping-list row was written. Defaulted fields (best_before_date,
+	 * price, location_id, stock_entry_id, spoiled, list_id, ...) are never required.
+	 *
+	 * Each entry: path, required list, a minimal valid body, the exact refusal text per
+	 * required field, and one body of optional fields only.
+	 *
+	 * @return array<string, array{0: string, 1: list<string>, 2: array, 3: array<string, string>, 4: array}>
+	 */
+	public static function requiredFieldRoutes(): array
+	{
+		$amount = ['amount' => 'An amount is required'];
+		$routes = [];
+
+		foreach (['{productId}' => '/stock/products/{productId}', '{barcode}' => '/stock/products/by-barcode/{barcode}'] as $base)
+		{
+			$routes[$base . '/add'] = [$base . '/add', ['amount'], ['amount' => 1], $amount, ['price' => 1]];
+			$routes[$base . '/consume'] = [$base . '/consume', ['amount'], ['amount' => 1], $amount, ['spoiled' => false]];
+			$routes[$base . '/open'] = [$base . '/open', ['amount'], ['amount' => 1], $amount, ['allow_subproduct_substitution' => false]];
+			$routes[$base . '/transfer'] = [$base . '/transfer', ['amount', 'location_id_from', 'location_id_to'], ['amount' => 1, 'location_id_from' => 1, 'location_id_to' => 2], $amount + [
+				'location_id_from' => 'A transfer from location is required',
+				'location_id_to' => 'A transfer to location is required',
+			], ['stock_entry_id' => 1]];
+			// The runtime text really does say "An new amount": asserted verbatim so a fix
+			// to the typo is a deliberate, visible change.
+			$routes[$base . '/inventory'] = [$base . '/inventory', ['new_amount'], ['new_amount' => 1], ['new_amount' => 'An new amount is required'], ['price' => 1]];
+		}
+
+		foreach (['/stock/locations/{locationId}/weigh', '/stock/locations/by-label/{code}/weigh'] as $path)
+		{
+			$routes[$path] = [$path, ['gross_amount'], ['gross_amount' => 1], ['gross_amount' => 'A gross_amount is required'], ['gross_qu_id' => 2]];
+		}
+
+		foreach (['/stock/shoppinglist/add-product', '/stock/shoppinglist/remove-product'] as $path)
+		{
+			$routes[$path] = [$path, ['product_id'], ['product_id' => 1], ['product_id' => 'No product id was supplied'], ['product_amount' => 1]];
+		}
+
+		return $routes;
+	}
+
+	private static function requestSchemaFor(string $path): object
+	{
+		$document = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), false, flags: JSON_THROW_ON_ERROR);
+
+		return $document->paths->{$path}->post->requestBody->content->{'application/json'}->schema;
+	}
+
+	private static function validatesAgainstRequestSchema(string $path, array $body): bool
+	{
+		// Fresh decode per validation, as assertCandidateAgreesWithServer() does: Opis is
+		// not guaranteed to leave a reused schema untouched. JSON_FORCE_OBJECT makes an
+		// empty body the object {} rather than the array [].
+		$data = json_decode(json_encode($body, JSON_FORCE_OBJECT));
+
+		return (new \Opis\JsonSchema\Validator())->validate($data, self::requestSchemaFor($path))->isValid();
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('requiredFieldRoutes')]
+	public function testRequestSchemaDocumentsTheRequiredFields(string $path, array $required, array $minimal, array $messages, array $optionalOnly): void
+	{
+		self::assertSame($required, self::requestSchemaFor($path)->required ?? null, "$path: the request schema's `required` list");
+
+		self::assertFalse(self::validatesAgainstRequestSchema($path, []), "$path: {} must not validate");
+		self::assertFalse(self::validatesAgainstRequestSchema($path, $optionalOnly), "$path: a body of optional fields only must not validate");
+		self::assertTrue(self::validatesAgainstRequestSchema($path, $minimal), "$path: the minimal body must validate");
+
+		foreach ($required as $field)
+		{
+			$without = $minimal;
+			unset($without[$field]);
+			self::assertFalse(self::validatesAgainstRequestSchema($path, $without), "$path: the minimal body without $field must not validate");
+		}
+	}
+
+	/** @return array{0: int, 1: int, 2: int} stock, stock_log and shopping_list row counts */
+	private static function bookingCounts(): array
+	{
+		return array_map(
+			fn(string $table) => (int)self::$db->query("SELECT count(*) FROM $table")->fetchColumn(),
+			['stock', 'stock_log', 'shopping_list']
+		);
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('requiredFieldRoutes')]
+	public function testOmittingARequiredFieldIsRefusedWithTheDocumentedMessageAndBooksNothing(string $path, array $required, array $minimal, array $messages, array $optionalOnly): void
+	{
+		$locationId = self::insertLocation('804 Required Fields Location ' . md5($path));
+		$productId = self::insertProduct('804 Required Fields Product ' . md5($path), $locationId);
+		self::insertStock($productId, $locationId, 3, date('Y-m-d', strtotime('+30 days')));
+		$barcode = '804-' . md5($path);
+		self::insertRow('product_barcodes', ['product_id' => $productId, 'barcode' => $barcode]);
+
+		$code = 'vctl:0000000000000';
+		if (str_contains($path, '/by-label/'))
+		{
+			$epoch = (int)self::$db->query('SELECT epoch FROM label_import_state WHERE id = 1')->fetchColumn();
+			self::$db->beginTransaction();
+			$code = 'vctl:' . (new LabelIdentityService(self::$db))->IssueLocation($locationId, $epoch);
+			self::$db->commit();
+		}
+
+		$url = '/api' . str_replace(['{productId}', '{barcode}', '{locationId}', '{code}'], [(string)$productId, $barcode, (string)$locationId, $code], $path);
+
+		// Transfer's valid-looking location ids must not matter: the refusal precedes any lookup.
+		$cases = ['{} (empty object)' => []];
+		$cases['optional fields only'] = $optionalOnly;
+		foreach ($required as $field)
+		{
+			$without = $minimal;
+			unset($without[$field]);
+			$cases["minimal body without $field"] = $without;
+		}
+
+		foreach ($cases as $label => $body)
+		{
+			$missing = array_values(array_filter($required, fn(string $field) => !array_key_exists($field, $body)));
+			$expected = $messages[$missing[0]];
+
+			$before = self::bookingCounts();
+			$result = self::RawRequest('POST', $url, json_encode($body, JSON_FORCE_OBJECT));
+			$decoded = self::AssertRefusedAsError400($result, "POST $path with $label");
+
+			self::assertSame($expected, $decoded['error_message'], "POST $path with $label: the controller's refusal text");
+			self::assertSame($before, self::bookingCounts(), "POST $path with $label: a refusal must write no stock, stock_log or shopping_list row");
+		}
 	}
 }

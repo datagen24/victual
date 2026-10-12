@@ -2919,6 +2919,9 @@
 						"application/json": {
 							"schema": {
 								"type": "object",
+								"required": [
+									"amount"
+								],
 								"properties": {
 									"amount": {
 										"type": "number",
@@ -3033,6 +3036,9 @@
 						"application/json": {
 							"schema": {
 								"type": "object",
+								"required": [
+									"amount"
+								],
 								"properties": {
 									"amount": {
 										"type": "number",
@@ -3145,6 +3151,11 @@
 						"application/json": {
 							"schema": {
 								"type": "object",
+								"required": [
+									"amount",
+									"location_id_from",
+									"location_id_to"
+								],
 								"properties": {
 									"amount": {
 										"type": "number",
@@ -3242,6 +3253,9 @@
 						"application/json": {
 							"schema": {
 								"type": "object",
+								"required": [
+									"new_amount"
+								],
 								"properties": {
 									"new_amount": {
 										"type": "number",
@@ -3347,6 +3361,9 @@
 						"application/json": {
 							"schema": {
 								"type": "object",
+								"required": [
+									"amount"
+								],
 								"properties": {
 									"amount": {
 										"type": "number",
@@ -3579,6 +3596,9 @@
 						"application/json": {
 							"schema": {
 								"type": "object",
+								"required": [
+									"amount"
+								],
 								"properties": {
 									"amount": {
 										"type": "number",
@@ -3671,6 +3691,9 @@
 						"application/json": {
 							"schema": {
 								"type": "object",
+								"required": [
+									"amount"
+								],
 								"properties": {
 									"amount": {
 										"type": "number",
@@ -3773,6 +3796,11 @@
 						"application/json": {
 							"schema": {
 								"type": "object",
+								"required": [
+									"amount",
+									"location_id_from",
+									"location_id_to"
+								],
 								"properties": {
 									"amount": {
 										"type": "number",
@@ -3860,6 +3888,9 @@
 						"application/json": {
 							"schema": {
 								"type": "object",
+								"required": [
+									"new_amount"
+								],
 								"properties": {
 									"new_amount": {
 										"type": "number",
@@ -3943,6 +3974,9 @@
 						"application/json": {
 							"schema": {
 								"type": "object",
+								"required": [
+									"amount"
+								],
 								"properties": {
 									"amount": {
 										"type": "number",
@@ -4091,6 +4125,9 @@
 						"application/json": {
 							"schema": {
 								"type": "object",
+								"required": [
+									"gross_amount"
+								],
 								"properties": {
 									"gross_amount": {
 										"type": "number",
@@ -4184,6 +4221,9 @@
 						"application/json": {
 							"schema": {
 								"type": "object",
+								"required": [
+									"gross_amount"
+								],
 								"properties": {
 									"gross_amount": {
 										"type": "number",
@@ -4520,6 +4560,9 @@
 						"application/json": {
 							"schema": {
 								"type": "object",
+								"required": [
+									"product_id"
+								],
 								"properties": {
 									"product_id": {
 										"type": "integer",
@@ -4602,6 +4645,9 @@
 						"application/json": {
 							"schema": {
 								"type": "object",
+								"required": [
+									"product_id"
+								],
 								"properties": {
 									"product_id": {
 										"type": "integer",
