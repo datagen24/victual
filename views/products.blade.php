@@ -25,7 +25,7 @@
 			</div>
 			<div class="related-links collapse d-md-flex order-2 width-xs-sm-100"
 				id="related-links">
-				<a class="btn btn-primary responsive-button m-1 mt-md-0 mb-md-0 float-right"
+				<a class="btn btn-primary responsive-button permission-MASTER_DATA_ADD m-1 mt-md-0 mb-md-0 float-right"
 					href="{{ $U('/product/new') }}">
 					{{ $__t('Add') }}
 				</a>

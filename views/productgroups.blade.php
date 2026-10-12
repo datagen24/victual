@@ -12,7 +12,7 @@
 			@include('components.list_collapse_toggles')
 			<div class="related-links collapse d-md-flex order-2 width-xs-sm-100"
 				id="related-links">
-				<a class="btn btn-primary responsive-button show-as-dialog-link m-1 mt-md-0 mb-md-0 float-right"
+				<a class="btn btn-primary responsive-button permission-MASTER_DATA_ADD show-as-dialog-link m-1 mt-md-0 mb-md-0 float-right"
 					href="{{ $U('/productgroup/new?embedded') }}">
 					{{ $__t('Add') }}
 				</a>
