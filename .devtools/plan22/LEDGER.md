@@ -15,8 +15,8 @@ read-only and static unless a row names a command that ran.
 | [703](https://github.com/datagen24/victual/issues/703) release | plan 22 | Baseline suite at `d4960138` (see [baseline](#baseline)) | Every criterion; upgrade rehearsal from 0.4.0; rest of 0.5.0 milestone | 702, 742, 772, 774, 775 dispositions | Maintainer: 0.5.0 scope | Not started; evidence collection only | coordinator | Baseline only |
 | [742](https://github.com/datagen24/victual/issues/742) master-data rights | victual-kit wizard | `.devtools/issue742/RESULTS.md` (93 probes, 2026-10-10; static completion merged in PR [780](https://github.com/datagen24/victual/pull/780)); Proposed ADR-0043, revised for evidence in PR 780 | Choose option A, B or C (see [742](#742-master-data-rights)); implement if A or B | ADR-0043 decision | D3 | Options below | — | Not run |
 | [772](https://github.com/datagen24/victual/issues/772) OpenAPI drift | victual-kit #24 | Branch `claude/opus5_issue772-openapi-stock-drift-a9d9`: new `ContractTest` legs failed on master's document (`Failures: 2`) and pass on the fix; `contract` and `wirecontract` pass on PostgreSQL 16 and 15.19 at `e5a539c2`. Independent review approved; its four should-fix items are in `57f687e2`, which passes both phases on PostgreSQL 16 and 15.19. PR [791](https://github.com/datagen24/victual/pull/791) | Merge; follow-up gaps in [787](https://github.com/datagen24/victual/issues/787) | — | None | Done | implementation worker | Verified |
-| [774](https://github.com/datagen24/victual/issues/774) unknown price as 0 | victual-kit #29, #33 | Proposed ADR-0045 in PR [778](https://github.com/datagen24/victual/pull/778) (reviewed; four should-fix items applied) | Null versus zero per field; implementation | ADR-0045 decision; victual-kit coordination (ADR-0024) | D1 | ADR-0045 | — | Not run |
-| [775](https://github.com/datagen24/victual/issues/775) booking idempotency | victual-kit #35 | Proposed ADR-0046 merged in PR [779](https://github.com/datagen24/victual/pull/779) (reviewed; five should-fix items applied) | Implementation after acceptance; migration slot claimed then | ADR-0046 acceptance | D2 | ADR-0046 | — | Not run |
+| [774](https://github.com/datagen24/victual/issues/774) unknown price as 0 | victual-kit #29, #33 | Proposed ADR-0045, merged in PR [778](https://github.com/datagen24/victual/pull/778); P2 price semantics confirmed 2026-10-11 | Null versus zero per field; implementation | ADR-0045 decision; victual-kit coordination (ADR-0024) | D1a to D1e | ADR-0045 | — | Not run |
+| [775](https://github.com/datagen24/victual/issues/775) booking idempotency | victual-kit #35 | Proposed ADR-0046 merged in PR [779](https://github.com/datagen24/victual/pull/779) (reviewed; five should-fix items applied) | Implementation after acceptance; migration slot claimed then | ADR-0046 acceptance | D2a to D2c | ADR-0046 | — | Not run |
 | [737](https://github.com/datagen24/victual/issues/737) share enumeration | #698 review | Maintainer decision 2026-10-09: accepted for v0.5.0, fix wanted afterwards | All (post-v0.5.0) | — | None; disposition stands | Chosen fix in the issue | — | — |
 
 ## Findings and filed issues
@@ -40,20 +40,33 @@ release scope is decision D5.
 
 | PR | Issue | State |
 |---|---|---|
-| [778](https://github.com/datagen24/victual/pull/778) ADR-0045 | 774 | Rebased onto master after PR 779 merged; review fixes in |
 | [789](https://github.com/datagen24/victual/pull/789) import view leaves | 784 | Reviewed; drift check added |
 | [792](https://github.com/datagen24/victual/pull/792) strict `transaction_type` | 786 | `wirecontract` failed before the fix (2 failures) and passes after, on PostgreSQL 16 and 15.19 |
 | [791](https://github.com/datagen24/victual/pull/791) OpenAPI stock drift | 772 | Reviewed; `contract` and `wirecontract` pass on PostgreSQL 16 and 15.19 at `57f687e2` |
 
 ## Decisions needed from the maintainer
 
-| ID | Decision | Options and recommendation | Blocks |
+Answered on 2026-10-11 and recorded in the ADRs (PR 793):
+
+- ADR-0043 open question 1: explicit grant, exposed in the role editor. Open question 2: the shared edit rule.
+- ADR-0045 open question 5: P2. `0` is a known zero, `null` is unknown, an omitted field is redacted.
+- ADR-0046 open question 1: seven days; keys come from a cryptographically secure random source.
+
+None of the three records is accepted.
+
+| ID | Remaining choice | Options; recommendation | Blocks |
 |---|---|---|---|
-| D1 | What a stored price of 0 means, and how responses mark an unknown value | ADR-0045: P1, P2 or P3; then A (`null`), B (`*_incomplete` flags) or C (document only); parent aggregation (prerequisite 6). The record recommends P2 with B, converting `stock` only and recording a watermark | #774 |
-| D2 | Accept ADR-0046 or not; retention 24 h or 7 days; how clients discover support | ADR-0046 recommends 7 days and a field in `GET /api/system/info` | #775 |
-| D3 | Master-data creation for medication setup | A: accept ADR-0043 (create-only right); B: a stock-only product endpoint in the medication flow; C: leave it with `MASTER_DATA_EDIT` and document it | #742 |
-| D4 | Issue 702's text still names a real device | Edit criteria 1 and 6 to match the 2026-10-11 decision, or close the issue with a pointer to plan 22's Executed section | closing #702 |
-| D5 | v0.5.0 scope | Plan 22 items 742, 772, 774, 775 and the new issues 782 to 788; non-plan-22 milestone items 762, 654, 483, 86, 80 | #703 |
+| D1a | ADR-0045: existing price-`0` rows and imported databases | Convert `stock` only and record a watermark; convert `stock` and `stock_log` with a preflight and a converted-row report; convert nothing and record a watermark. Recommended: `stock` only with a watermark, which leaves the ledger unrewritten | #774 |
+| D1b | ADR-0045: how an aggregate reports mixed priced and unpriced stock | A: `null`; B: the value plus an `*_incomplete` flag. Recommended: B, which changes no existing type | #774 |
+| D1c | ADR-0045 open question 1: a parent's `value` | Include sub-products like `amount_aggregated`, or define the flag or `null` for aggregated rows | #774 |
+| D1d | ADR-0045 open question 2: `current_price` when the next-use entry is unpriced | `null`, or the last known price as today | #774 |
+| D1e | ADR-0045 open question 4: does ADR-0024 decision 1 cover a change of meaning with no change of type | Yes, so victual-kit ships in coordination; or no | #774 |
+| D2a | ADR-0046 open question 2: how a client discovers support and retention | A field in `GET /api/system/info` plus an `Idempotent-Replayed` header (recommended); or a capability route | #775 |
+| D2b | ADR-0046 open question 3: `transaction_id` collisions on replay | Filter replay rows by user; replace `uniqid()` with `random_bytes`; or both. Recommended: both | #775 |
+| D2c | ADR-0046 acceptance | After D2a, D2b and victual-kit's statement of how it uses the key (prerequisite 3) | #775 |
+| D3 | ADR-0043 open questions 3 (one permission or one per entity; lean: one), 4 (name) and 5 (whether `external-lookup?add=true` stores a picture for a holder of the new right); whether the feature ships and in which release | — | #742 |
+| D4 | Issue 702's text still names a real device | Edit criteria 1 and 6, or close the issue with a pointer to plan 22's Executed section | closing #702 |
+| D5 | v0.5.0 scope | Plan 22 items 742, 774, 775 and issues 782 to 788; non-plan-22 milestone items 762, 654, 483, 86, 80 | #703 |
 | D6 | Authorization choices | 782: merge needs `MASTER_DATA_EDIT` (as chore merge) or both rights; 783: a container right or document the item rights; 785: refuse callers without `STOCK_VIEW` up front, or answer them without the row read | 782, 783, 785 |
 
 ## Specifications
