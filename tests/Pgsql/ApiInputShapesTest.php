@@ -384,7 +384,6 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn() > 0;
 	}
 
-	// =========================================================================
 	// ================================================================================
 	// Group A: the ten empty-body routes (#487 H9's own list)
 	// ================================================================================
@@ -1090,8 +1089,9 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 			self::assertSame($before, self::bookingCounts(), "POST $path with $label: a refusal must write no stock, stock_log or shopping_list row");
 		}
 	}
-=======
-	// Group G: request-body schemas of six more operations (issue #804)
+
+	// ================================================================================
+	// Group H: request-body schemas of eight more operations (issue #804)
 	//
 	// Each operation's requestBody schema in victual.openapi.json used to omit the fields the
 	// runtime refuses without (POST /users/{id}/permissions even named the field
@@ -1163,6 +1163,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 			'POST labels rotate' => ['/labels/credentials/rotate', 'post', ['material', 'rotation_request_id'], ['material' => $hex, 'rotation_request_id' => $hex], []],
 			'POST attempt result' => ['/labels/attempts/{attemptId}/result', 'post', ['outcome', 'detail'], ['outcome' => 'printed', 'detail' => new \stdClass()], []],
 			'POST product open' => ['/stock/products/{productId}/open', 'post', [], ['amount' => 1], []],
+			'POST entry measure' => ['/stock/entry/{entryId}/measure', 'post', ['amount', 'qu_id'], ['amount' => 1, 'qu_id' => 2], []],
 		];
 	}
 
@@ -1218,6 +1219,36 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::assertNotNull($validate('{"amount": 1, "qu_id": 2, "gross": true}'), 'gross true needs tare');
 		self::assertNull($validate('{"amount": 1, "qu_id": 2, "gross": true, "tare": 0.1}'));
 		self::assertNull(self::ValidateRequestBody('/stock/products/{productId}/open', 'post', '{"amount": 1}'), 'measurement itself stays optional');
+	}
+
+	/** The by-barcode open reads the same measurement object (OpenProductByBarcode delegates to OpenProduct), so documents it identically. */
+	public function testByBarcodeOpenDocumentsTheSameMeasurementAsOpen(): void
+	{
+		$path = '/stock/products/by-barcode/{barcode}/open';
+		$validate = static fn (string $measurement): ?string => self::ValidateRequestBody($path, 'post', '{"amount": 1, "measurement": ' . $measurement . '}');
+
+		self::assertNotNull($validate('{}'));
+		self::assertNotNull($validate('{"amount": 1}'));
+		self::assertNull($validate('{"amount": 1, "qu_id": 2}'));
+		self::assertNotNull($validate('{"amount": 1, "qu_id": 2, "gross": true}'));
+		self::assertNull($validate('{"amount": 1, "qu_id": 2, "gross": true, "tare": 0.1}'));
+
+		$document = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), true, flags: JSON_THROW_ON_ERROR);
+		self::assertSame(
+			$document['paths']['/stock/products/{productId}/open']['post']['requestBody']['content']['application/json']['schema']['properties']['measurement'],
+			$document['paths'][$path]['post']['requestBody']['content']['application/json']['schema']['properties']['measurement'],
+			'the two open operations document one measurement object'
+		);
+	}
+
+	public function testMeasureDocumentsTareForAGrossReading(): void
+	{
+		$validate = static fn (string $body): ?string => self::ValidateRequestBody('/stock/entry/{entryId}/measure', 'post', $body);
+
+		self::assertNull($validate('{"amount": 1, "qu_id": 2}'));
+		self::assertNull($validate('{"amount": 1, "qu_id": 2, "gross": false}'));
+		self::assertNotNull($validate('{"amount": 1, "qu_id": 2, "gross": true}'), 'gross true needs tare');
+		self::assertNull($validate('{"amount": 1, "qu_id": 2, "gross": true, "tare": 0.1}'));
 	}
 
 	// --- runtime half: users ------------------------------------------------------
@@ -1323,6 +1354,23 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 			self::assertSame($message, $decoded['error_message'], $label);
 			self::assertSame($digest, self::bookingDigest($productId), "$label: a refused open must write neither stock nor stock_log");
 		}
+	}
+
+	public function testMeasureOfAGrossReadingWithoutTareIsRefusedAndWritesNothing(): void
+	{
+		self::$db->exec('INSERT INTO user_permissions (user_id, permission_id) SELECT ' . self::USER_ID . ", id FROM permission_hierarchy WHERE name = 'STOCK_EDIT' ON CONFLICT DO NOTHING");
+		[$productId] = self::openMeasurementFixture('Measure Gross Without Tare');
+		self::$db->exec("UPDATE stock SET amount = 1, open = 1, opened_date = CURRENT_DATE WHERE product_id = $productId");
+		$digest = self::bookingDigest($productId);
+		$stockId = (int)self::$db->query("SELECT id FROM stock WHERE product_id = $productId")->fetchColumn();
+
+		$decoded = self::AssertRefusedAsError400(
+			self::JsonObjectRequest('POST', '/api/stock/entry/' . $stockId . '/measure', ['amount' => 1, 'qu_id' => 2, 'gross' => true]),
+			'POST .../measure gross without tare'
+		);
+
+		self::assertSame('A gross measurement requires a tare weight', $decoded['error_message']);
+		self::assertSame($digest, self::bookingDigest($productId), 'a refused measurement must write neither stock nor stock_log');
 	}
 
 	/** Positive control: the documented complete gross measurement opens the entry, so the refusals above came from the measurement checks. */

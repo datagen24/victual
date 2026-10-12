@@ -2546,6 +2546,21 @@
 									"amount",
 									"qu_id"
 								],
+								"if": {
+									"properties": {
+										"gross": {
+											"const": true
+										}
+									},
+									"required": [
+										"gross"
+									]
+								},
+								"then": {
+									"required": [
+										"tare"
+									]
+								},
 								"example": {
 									"amount": 1.2,
 									"qu_id": 2,
@@ -4027,6 +4042,47 @@
 									"allow_subproduct_substitution": {
 										"type": "boolean",
 										"description": "`rue` when any in stock sub product should be used when the given product is a parent product and currently not in stock"
+									},
+									"measurement": {
+										"type": "object",
+										"description": "Optional. Records the container's remaining contents as it is opened (ADR-0022). Requires stock_entry_id and amount = 1 - a measurement describes exactly one container.",
+										"properties": {
+											"amount": {
+												"type": "number",
+												"description": "The reading, in qu_id. Net contents unless gross is true"
+											},
+											"qu_id": {
+												"type": "integer",
+												"description": "The quantity unit the reading was taken in; must convert to the product's stock quantity unit"
+											},
+											"gross": {
+												"type": "boolean",
+												"description": "`true` when amount includes the container's own weight, which tare then subtracts. Default `false` (amount is already net)"
+											},
+											"tare": {
+												"type": "number",
+												"description": "Required when gross is `true`; the container weight, in the same unit as amount, subtracted before storage"
+											}
+										},
+										"required": [
+											"amount",
+											"qu_id"
+										],
+										"if": {
+											"properties": {
+												"gross": {
+													"const": true
+												}
+											},
+											"required": [
+												"gross"
+											]
+										},
+										"then": {
+											"required": [
+												"tare"
+											]
+										}
 									}
 								},
 								"example": {

@@ -684,16 +684,11 @@ class LabelApiTest extends PgsqlSchemaTestCase
 			self::Send('POST', '/api/labels/credentials/rotate', ['rotation_request_id' => 'short', 'material' => bin2hex(random_bytes(32))], self::$pairedKey),
 			422, 'rotation_request_id', 'value_out_of_range'
 		);
-	}
 
-	/**
-	 * Issue #804: `material` is required on pair, `material` and `rotation_request_id` on
-	 * rotate, and the schema in victual.openapi.json says so. A body missing one is refused
-	 * 422 naming that field, and neither route touches a session, a credential or a key.
-	 */
-	#[Depends('testRotationRefusesAMalformedRequestIdentifier')]
-	public function testPairAndRotateRefuseAMissingFieldAndWriteNothing(): void
-	{
+		// Issue #804: `material` is required on pair, `material` and `rotation_request_id` on
+		// rotate, and the schema in victual.openapi.json says so. A body missing one is
+		// refused 422 naming that field, and neither route touches a session, a credential
+		// or a key.
 		$digest = self::WorkerStateDigest();
 		$hex = bin2hex(random_bytes(32));
 
@@ -1639,12 +1634,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 		self::AssertRefusal(self::Send('POST', '/api/labels/attempts/' . self::$attemptId . '/result', ['outcome' => 'printed'], self::$workerKey),
 			422, 'detail', 'value_out_of_range');
-	}
 
-	/** Issue #804: `outcome` and `detail` are both required by the route, and the schema says so. */
-	#[Depends('testAResultOutcomeIsPrintedOrFailedAndNothingElse')]
-	public function testAResultMissingOutcomeOrDetailIsRefusedAndWritesNothing(): void
-	{
+		// Issue #804: `outcome` and `detail` are both required, and the schema says so. A
+		// refused report writes nothing on the attempt.
 		$path = '/api/labels/attempts/' . self::$attemptId . '/result';
 		$before = self::Row('SELECT * FROM print_attempts WHERE id = ?', [self::$attemptId]);
 		$counts = self::Counts();
@@ -1660,7 +1652,6 @@ class LabelApiTest extends PgsqlSchemaTestCase
 	// Reporting the outcome ends the attempt, so the two tests that read it while it is live
 	// - the foreign worker's refusal, and the owner's fetch of the bytes - are declared here.
 	#[Depends('testAResultOutcomeIsPrintedOrFailedAndNothingElse')]
-	#[Depends('testAResultMissingOutcomeOrDetailIsRefusedAndWritesNothing')]
 	#[Depends('testAnotherWorkersAttemptIsForbiddenOnEveryAttemptRoute')]
 	#[Depends('testTheClaimingWorkerCanNowFetchTheArtifactBytes')]
 	public function testTheWorkerReportsAPrintAndTheJobIsCompleted(): void
@@ -2409,7 +2400,6 @@ class LabelApiTest extends PgsqlSchemaTestCase
 	// tests that authenticate with it are declared rather than merely written above.
 	#[Depends('testRevokingAWorkerCredentialRefusesTheKeyAndKeepsThePrinterAssignment')]
 	#[Depends('testRotationRefusesAMalformedRequestIdentifier')]
-	#[Depends('testPairAndRotateRefuseAMissingFieldAndWriteNothing')]
 	#[Depends('testAnotherWorkersAttemptIsForbiddenOnEveryAttemptRoute')]
 	#[Depends('testThePrinterStatusRouteRefusesAPrinterThisWorkerDoesNotHold')]
 	public function testDeactivatingAWorkerRevokesItsSessionsToo(): void
