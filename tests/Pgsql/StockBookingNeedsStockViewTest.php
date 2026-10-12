@@ -85,6 +85,11 @@ class StockBookingNeedsStockViewTest extends PgsqlSchemaTestCase
 				$userId++;
 			}
 		}
+
+		// STOCK_VIEW and no booking permission at all.
+		$insertUser->execute([$userId, 'booking-view-view-only', 'fixture']);
+		$grant->execute([$userId, 'STOCK_VIEW']);
+		self::$keys['STOCK_VIEW'] = self::issueKey($userId);
 	}
 
 	public static function routes(): array
@@ -96,6 +101,18 @@ class StockBookingNeedsStockViewTest extends PgsqlSchemaTestCase
 		}
 
 		return $cases;
+	}
+
+	/** The five by-barcode wrappers, with the booking permission each one checks and a body it would accept. */
+	public static function barcodeRoutes(): array
+	{
+		return [
+			'add by barcode' => ['add', 'STOCK_PURCHASE', ['amount' => 1, 'best_before_date' => self::BEST_BEFORE]],
+			'consume by barcode' => ['consume', 'STOCK_CONSUME', ['amount' => 1]],
+			'transfer by barcode' => ['transfer', 'STOCK_TRANSFER', ['amount' => 1, 'location_id_from' => 1, 'location_id_to' => 2]],
+			'open by barcode' => ['open', 'STOCK_OPEN', ['amount' => 1]],
+			'inventory by barcode' => ['inventory', 'STOCK_INVENTORY', ['new_amount' => 5, 'best_before_date' => self::BEST_BEFORE]],
+		];
 	}
 
 	// ------------------------------------------------------------------------------
@@ -322,5 +339,53 @@ class StockBookingNeedsStockViewTest extends PgsqlSchemaTestCase
 		self::assertIsArray($response['body'], $route);
 		self::assertNotEmpty($response['body'], "$route: the answer lists the booking's stock_log rows");
 		self::assertGreaterThan($logRows, self::stockLogRows($productId), "$route: the booking wrote stock_log rows");
+	}
+
+	/**
+	 * Maintainer decision, 2026-10-12 (later the same day, on #785): a by-barcode wrapper checks
+	 * the booking permission and STOCK_VIEW before it resolves the barcode. An unknown barcode
+	 * used to answer 400 to any caller, so a caller with neither permission could learn
+	 * which barcodes exist.
+	 */
+	#[DataProvider('barcodeRoutes')]
+	public function testAByBarcodeRouteRefusesAMissingPermissionBeforeResolvingTheBarcode(string $action, string $permission, array $body): void
+	{
+		$path = '/api/stock/products/by-barcode/booking-view-no-such-barcode/' . $action;
+		$digest = self::wholeLedgerDigest();
+
+		$withoutView = self::send('POST', $path, self::$keys[$permission], $body);
+		self::assertSame(403, $withoutView['status'], "$action by barcode: $permission without STOCK_VIEW is refused before the barcode is looked up");
+		self::assertSame('Permission missing: STOCK_VIEW', $withoutView['body']['error_message'] ?? null, $action);
+
+		$withoutBooking = self::send('POST', $path, self::$keys['STOCK_VIEW'], $body);
+		self::assertSame(403, $withoutBooking['status'], "$action by barcode: STOCK_VIEW without $permission is refused before the barcode is looked up");
+		self::assertSame('Permission missing: ' . $permission, $withoutBooking['body']['error_message'] ?? null, $action);
+
+		self::assertSame($digest, self::wholeLedgerDigest(), "$action by barcode: a refused request changes no stock and writes no stock_log row");
+
+		// Control: with both permissions the same request reaches the barcode lookup, which
+		// refuses the unknown barcode with 400, so the 403s above came from the permission checks.
+		$withBoth = self::send('POST', $path, self::$keys[$permission . '+view'], $body);
+		self::assertSame(400, $withBoth['status'], "$action by barcode: an unknown barcode is still a 400 for a caller holding both permissions");
+	}
+
+	#[DataProvider('barcodeRoutes')]
+	public function testAByBarcodeRouteRefusesStockViewWithoutTheBookingPermissionForAKnownBarcode(string $action, string $permission, array $body): void
+	{
+		[$method, $path, $fixtureBody, $productId] = self::fixture($action . ' by barcode');
+		$digest = self::ledgerDigest($productId);
+
+		$response = self::send($method, $path, self::$keys['STOCK_VIEW'], $fixtureBody);
+
+		self::assertSame(403, $response['status'], "$action by barcode: STOCK_VIEW without $permission is refused");
+		self::assertSame('Permission missing: ' . $permission, $response['body']['error_message'] ?? null, $action);
+		self::assertSame($digest, self::ledgerDigest($productId), "$action by barcode: a refused booking changes nothing");
+	}
+
+	/** Every stock and stock_log row in the schema. */
+	private static function wholeLedgerDigest(): string
+	{
+		return (string)self::$db->query("SELECT md5(coalesce((SELECT string_agg(row_to_json(s)::text, ',' ORDER BY s.id) FROM stock s), '')"
+			. " || '|' || coalesce((SELECT string_agg(row_to_json(l)::text, ',' ORDER BY l.id) FROM stock_log l), ''))")->fetchColumn();
 	}
 }
