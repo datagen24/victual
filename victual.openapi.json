@@ -757,9 +757,24 @@
 							"application/json": {
 								"schema": {
 									"type": "array",
-									"description": "One element per row of the requested entity. The union is **undiscriminated** - the entity is in the path, not in the payload - so a generated client decodes it by trying each member and keeping the first that validates. Each member therefore declares `required` properties that separate it from the others. Where one entity's columns are a superset of another's, a property the larger one adds is `required` on it and forbidden (`not`) on the smaller, and the larger member comes first in this list: `UihelperShoppingListItem` before `ShoppingListItem`, `ProductBarcode` before `ProductBarcodeView`, so a client that decodes the first member that fits and ignores `not` still lands on the right one. Before that, `Product` had no required properties and so matched any JSON object, and every row of every entity decoded as a Product: `quantity_units` lost `name_plural`, `locations` lost `parent_location_id`. Issue #232. `stock_log`, `product_barcodes_view` and `uihelper_shopping_list` then decoded as `StockEntry`, `ProductBarcode` and `ShoppingListItem`, and each has a member of its own now. Issue #648.\n\n**A row of a listable entity that has no schema here matches no member and will not decode.** That is deliberate - a loud failure in place of the silent wrong answer it replaces. `ExposedEntity_NotIncludingNotListable` names every entity this route serves and only the thirteen below are described; the rest are undocumented rather than absent, and a client that needs one should read this route outside its generated code until a schema exists.",
+									"description": "One element per row of the requested entity. The union is **undiscriminated** and is an `anyOf`, not a `oneOf`: rows carry no type field (the entity is in the path, not in the payload), and more than one member can describe the same row. A `product_barcodes` row also satisfies `ProductBarcodeView`, and a `uihelper_shopping_list` row also satisfies `ShoppingListItem`, because a view that adds columns to a table satisfies the table's schema too. **A client decodes the response with the member `x-victual-entity-schemas` maps the requested `{entity}` to**, and does not try members in order. `Product` once had no required properties and matched any JSON object, so every row of every entity decoded as a Product: `quantity_units` lost `name_plural`, `locations` lost `parent_location_id`. Issue #232. Each member requires properties that keep the other entities' rows from satisfying it, so the entity's own member is always among those a row satisfies; `stock_log`, `product_barcodes_view` and `uihelper_shopping_list` once satisfied `StockEntry`, `ProductBarcode` and `ShoppingListItem` and nothing of their own, and each has a member now. Issue #648.\n\n**A row of a listable entity that has no schema here matches no member and will not decode.** That is deliberate - a loud failure in place of the silent wrong answer it replaces. `ExposedEntity_NotIncludingNotListable` names every entity this route serves and only the thirteen in `x-victual-entity-schemas` are described; the rest are undocumented rather than absent, and a client that needs one should read this route outside its generated code until a schema exists.",
 									"items": {
-										"oneOf": [
+										"x-victual-entity-schemas": {
+											"products": "Product",
+											"chores": "Chore",
+											"product_barcodes": "ProductBarcode",
+											"batteries": "Battery",
+											"locations": "Location",
+											"quantity_units": "QuantityUnit",
+											"shopping_list": "ShoppingListItem",
+											"userfields": "Userfield",
+											"stock": "StockEntry",
+											"locations_resolved": "LocationResolved",
+											"stock_log": "StockLogEntry",
+											"product_barcodes_view": "ProductBarcodeView",
+											"uihelper_shopping_list": "UihelperShoppingListItem"
+										},
+										"anyOf": [
 											{
 												"$ref": "#/components/schemas/Product"
 											},
@@ -937,8 +952,22 @@
 						"content": {
 							"application/json": {
 								"schema": {
-									"description": "The same undiscriminated union as the items of `GET /objects/{entity}`, in the same order, without `LocationResolved`, which has no single-object read. The row additionally carries a `userfields` map. See that operation for how the members are told apart. Issue #648.",
-									"oneOf": [
+									"x-victual-entity-schemas": {
+										"products": "Product",
+										"chores": "Chore",
+										"product_barcodes": "ProductBarcode",
+										"batteries": "Battery",
+										"locations": "Location",
+										"quantity_units": "QuantityUnit",
+										"shopping_list": "ShoppingListItem",
+										"userfields": "Userfield",
+										"stock": "StockEntry",
+										"stock_log": "StockLogEntry",
+										"product_barcodes_view": "ProductBarcodeView",
+										"uihelper_shopping_list": "UihelperShoppingListItem"
+									},
+									"description": "The same undiscriminated union as the items of `GET /objects/{entity}`, in the same order, without `LocationResolved`, which has no single-object read. The row additionally carries a `userfields` map. See that operation for how a client picks the member. Issue #648.",
+									"anyOf": [
 										{
 											"$ref": "#/components/schemas/Product"
 										},
@@ -14176,17 +14205,12 @@
 			},
 			"ProductBarcodeView": {
 				"type": "object",
-				"description": "A row of `product_barcodes_view`, which `GET /objects/product_barcodes_view` answers: every `product_barcodes` row, plus one grocycode row (`grcy:p:<id>`) per product. The view has no `row_created_timestamp`, and that is what separates it from `ProductBarcode`, which requires it. `not` says so outright to a validating client, and is used in place of `additionalProperties: false` so that a column the view gains later does not make a strict client refuse the row. A client that ignores `not` and takes the first member whose required properties are present still decodes this row correctly, because `ProductBarcode` comes first in the unions and requires a property this row lacks, while a `product_barcodes` row matches `ProductBarcode` before it reaches this member. Issue #648.",
+				"description": "A row of `product_barcodes_view`, which `GET /objects/product_barcodes_view` answers: every `product_barcodes` row, plus one grocycode row (`grcy:p:<id>`) per product. The view has no `row_created_timestamp`, which `ProductBarcode` requires, so this row is not a `ProductBarcode`. A `product_barcodes` row does satisfy this schema, because its required properties are a subset of that row's; the rows carry no type field, so a client selects the member by the entity it requested (see `x-victual-entity-schemas` on the entity unions), not by trying members. Issue #648.",
 				"required": [
 					"id",
 					"product_id",
 					"barcode"
 				],
-				"not": {
-					"required": [
-						"row_created_timestamp"
-					]
-				},
 				"properties": {
 					"id": {
 						"type": "integer"
@@ -14566,16 +14590,11 @@
 			},
 			"ShoppingListItem": {
 				"type": "object",
-				"description": "A row of `shopping_list`. `UihelperShoppingListItem` is a superset of it (the view selects `sl.*` and adds ten joined columns), so no property this row has separates the two; `not` makes the one the view adds, `qu_name_plural`, a disqualifier here, and the view's member comes first in the unions for a client that ignores `not`. Issue #648.",
+				"description": "A row of `shopping_list`. `UihelperShoppingListItem` (the `uihelper_shopping_list` view, which selects `sl.*` and adds ten joined columns) is a superset of it, so a `uihelper_shopping_list` row also satisfies this schema, while a `shopping_list` row lacks `qu_name_plural` and does not satisfy that one. The rows carry no type field, so a client selects the member by the entity it requested (see `x-victual-entity-schemas` on the entity unions). Issue #648.",
 				"required": [
 					"id",
 					"shopping_list_id"
 				],
-				"not": {
-					"required": [
-						"qu_name_plural"
-					]
-				},
 				"properties": {
 					"id": {
 						"type": "integer"
@@ -14635,7 +14654,7 @@
 			},
 			"UihelperShoppingListItem": {
 				"type": "object",
-				"description": "A row of `uihelper_shopping_list`, which `GET /objects/uihelper_shopping_list` answers: every `shopping_list` column (the view selects `sl.*`) plus ten joined columns. `qu_name_plural` is required because it is the one key a `shopping_list` row lacks and `ShoppingListItem` forbids, so the two members never both admit a row. This member comes first of the pair in the unions, because its required properties are a superset of `ShoppingListItem`'s and a client that ignores `not` takes the first member that fits. Issue #648.",
+				"description": "A row of `uihelper_shopping_list`, which `GET /objects/uihelper_shopping_list` answers: every `shopping_list` column (the view selects `sl.*`) plus ten joined columns. `qu_name_plural` is required because it is the one key a `shopping_list` row lacks, so a `shopping_list` row is not an `UihelperShoppingListItem`. This row also satisfies `ShoppingListItem`, whose required properties are a subset; a client selects the member by the entity it requested (see `x-victual-entity-schemas` on the entity unions). Issue #648.",
 				"required": [
 					"id",
 					"shopping_list_id",

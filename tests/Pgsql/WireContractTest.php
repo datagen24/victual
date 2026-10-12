@@ -25,10 +25,11 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *        that is stays. The renderings ADR-0027 decision 2 excepts - time_utc's UTC, that
  *        one RFC 3339 field, and the label surface's TIMESTAMPTZ values - are asserted to
  *        still be exceptions.
- *   #232 The GET /objects/{entity} union members are mutually exclusive. All fifty-seven
- *        listable entities are measured against every member of both unions, the list's and
- *        the single read's, and (issue #648) none of them is a candidate for a member that
- *        is not theirs.
+ *   #232 The GET /objects/{entity} union has a member for each entity it describes. All
+ *        fifty-seven listable entities are measured against every member of both unions,
+ *        the list's and the single read's, and (issue #648) the only member an entity
+ *        satisfies that is not its own is one of two documented superset overlaps. The
+ *        unions are anyOf with a machine-readable entity-to-member map.
  *   #233 GET /user's 200 is an array of UserDto, which is what it returns.
  *
  * And, from the same family, ADR-0028: the three write routes that take a timestamp
@@ -1436,14 +1437,14 @@ class WireContractTest extends PgsqlSchemaTestCase
 
 	// --------------------------------------------------------------------- issue #232
 
-	public function testTheGenericEntityUnionMembersAreMutuallyExclusive(): void
+	public function testTheGenericEntityUnionMembersOverlapOnlyWhereDocumented(): void
 	{
 		$spec = self::spec();
 		$schemas = $spec['components']['schemas'];
 
 		self::assertContains('LocationResolved', self::unionMembers($spec, false), 'the listable entity issue #232 found missing from the union');
 
-		$ambiguous = [];
+		$overlaps = [];
 		foreach ([false, true] as $single)
 		{
 			$members = self::unionMembers($spec, $single);
@@ -1465,17 +1466,23 @@ class WireContractTest extends PgsqlSchemaTestCase
 						"$other declares no required properties, so it matches any object"
 					);
 
-					// Closure-aware: `required` alone says the other member is a candidate,
-					// and a `not` (ProductBarcodeView, ShoppingListItem) is what rules it out.
 					if ($other !== $candidate && self::admitsKeys($schemas[$other], $keys, $schemas))
 					{
-						$ambiguous[] = ($single ? 'single: ' : 'list: ') . "a $candidate row would also match $other";
+						$overlaps[$single ? 'single' : 'list'][] = "$candidate -> $other";
 					}
 				}
 			}
 		}
 
-		self::assertSame([], $ambiguous, implode('; ', $ambiguous));
+		// A member's own rows also satisfy a member whose required properties are a subset
+		// of theirs. Exactly two pairs do (see EXPECTED_OVERLAPS, entity for member).
+		$expected = ['ProductBarcode -> ProductBarcodeView', 'UihelperShoppingListItem -> ShoppingListItem'];
+		foreach ($overlaps as &$found)
+		{
+			sort($found);
+		}
+		unset($found);
+		self::assertSame(['list' => $expected, 'single' => $expected], $overlaps);
 	}
 
 	public function testTheWriteBodiesDoNotShareTheReadUnion(): void
@@ -1516,27 +1523,25 @@ class WireContractTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * Which members of the GET /objects/{entity} union each listable entity's rows are a
-	 * *candidate* for, which is the member a client can select. Measured, not intended:
-	 * a member is a candidate when the row carries every property it requires and its
-	 * closure holds (see admitsKeys()). Every entity absent from this map is a candidate for
-	 * none, which is the loud failure ADR-0027 decision 3 is for.
+	 * The member each listable entity that has one is documented as, and the one a client
+	 * decodes its rows with. Every entity absent from this map has no member, which is the
+	 * loud failure ADR-0027 decision 3 is for. It is also what x-victual-entity-schemas on
+	 * both unions must say.
 	 *
-	 * The first ten are the pairings issue #232 made. The last three were the ones issue
-	 * #648 found decoding as a member that is not theirs: unmodelled entities whose rows
-	 * carry every property some member requires.
+	 * The first ten are the pairings issue #232 made. The last three were found by issue
+	 * #648 satisfying a member that is not theirs and none of their own:
 	 *
-	 *   stock_log              was StockEntry. It has no `open`, which StockEntry now
+	 *   stock_log              satisfied StockEntry. It has no `open`, which StockEntry now
 	 *                          requires, and it has `transaction_type`, which StockLogEntry
 	 *                          requires and nothing else carries.
-	 *   product_barcodes_view  was ProductBarcode. It has no row_created_timestamp, which
-	 *                          ProductBarcode now requires and ProductBarcodeView forbids.
-	 *   uihelper_shopping_list was ShoppingListItem. It selects sl.* plus ten joined
-	 *                          columns, so it is a superset of shopping_list and only a
-	 *                          property it adds can separate them: UihelperShoppingListItem
-	 *                          requires qu_name_plural and ShoppingListItem forbids it.
+	 *   product_barcodes_view  satisfied ProductBarcode. It has no row_created_timestamp,
+	 *                          which ProductBarcode now requires.
+	 *   uihelper_shopping_list satisfied ShoppingListItem. It selects sl.* plus ten joined
+	 *                          columns, so UihelperShoppingListItem requires qu_name_plural,
+	 *                          which a shopping_list row lacks. The reverse overlap remains
+	 *                          (EXPECTED_OVERLAPS).
 	 *
-	 * Every candidate response is also validated against its complete member schema.
+	 * Every row is also validated against its member's complete schema.
 	 */
 	private const UNION_MATCHES = [
 		'products' => ['Product'],
@@ -1552,6 +1557,27 @@ class WireContractTest extends PgsqlSchemaTestCase
 		'stock_log' => ['StockLogEntry'],
 		'product_barcodes_view' => ['ProductBarcodeView'],
 		'uihelper_shopping_list' => ['UihelperShoppingListItem']
+	];
+
+	/**
+	 * The only places a row satisfies a member that is not the entity's own, in both unions,
+	 * as "entity -> member". A view that selects every column of a table and adds more
+	 * satisfies the table's schema too, because `required` is a subset test and nothing
+	 * closes the table's schema:
+	 *
+	 *   product_barcodes       -> ProductBarcodeView: the view's required id, product_id and
+	 *                             barcode are all columns of product_barcodes.
+	 *   uihelper_shopping_list -> ShoppingListItem: the view is `sl.*` plus ten columns.
+	 *
+	 * The unions are `anyOf` and the rows carry no type field, so a client decodes with the
+	 * member x-victual-entity-schemas maps the requested entity to. `not` and
+	 * `additionalProperties: false` would remove these, and swift-openapi-generator supports
+	 * neither. A new overlap fails the test; stock_log, product_barcodes_view and
+	 * shopping_list match only their own member.
+	 */
+	private const EXPECTED_OVERLAPS = [
+		'product_barcodes -> ProductBarcodeView',
+		'uihelper_shopping_list -> ShoppingListItem'
 	];
 
 	/**
@@ -1577,8 +1603,8 @@ class WireContractTest extends PgsqlSchemaTestCase
 	 * against each other wherever both exist, so the fallback is not taken on trust. The
 	 * single read attaches userfields to every entity, so its key set has that key too.
 	 *
-	 * Issue #648's requirement is the first assertion: zero listable entities are a
-	 * candidate for a member that is not theirs, in either union.
+	 * Issue #648's requirement: each entity's own member admits it, and the only other
+	 * members an entity satisfies are EXPECTED_OVERLAPS, in either union.
 	 */
 	public function testEveryListableEntityIsMeasuredAgainstTheUnion(): void
 	{
@@ -1684,15 +1710,42 @@ class WireContractTest extends PgsqlSchemaTestCase
 				}
 			}
 
-			// Issue #648: zero listable entities are a candidate for a member that is not theirs.
-			self::assertSame([], $incorrect, "$label: entities that match a member that is not theirs: " . implode(', ', $incorrect));
+			// Issue #648: an entity's own member is always among its candidates, and the
+			// only candidates that are not its own are the two documented overlaps.
+			$missing = [];
+			foreach ($intended as $entity => $names)
+			{
+				foreach ($names as $name)
+				{
+					if (!in_array($name, $measured[$entity] ?? [], true))
+					{
+						$missing[] = "$entity -> $name";
+					}
+				}
+			}
+			self::assertSame([], $missing, "$label: entities whose own member does not admit them: " . implode(', ', $missing));
+			sort($incorrect);
+			self::assertSame(self::EXPECTED_OVERLAPS, $incorrect, "$label: entities that match a member that is not theirs");
 
-			// And each entity that has a member matches that one, and only that one. Both
-			// sides by entity name rather than in the enum's order: what is under test is
-			// which entities match which members, not where the document lists them.
-			ksort($intended);
-			ksort($measured);
-			self::assertSame($intended, $measured, $label);
+			foreach (['stock_log', 'product_barcodes_view', 'shopping_list'] as $exclusive)
+			{
+				self::assertSame(self::UNION_MATCHES[$exclusive], $measured[$exclusive], "$label: $exclusive matches only its own member");
+			}
+
+			// The map a client decodes by names the entity's own member, for exactly the
+			// entities that have one, and each is a member of this union.
+			self::assertSame(
+				array_map(fn (array $names) => $names[0], $intended),
+				self::unionSchema($spec, $single)['x-victual-entity-schemas'],
+				"$label: x-victual-entity-schemas"
+			);
+			foreach (self::unionSchema($spec, $single)['x-victual-entity-schemas'] as $entity => $name)
+			{
+				self::assertContains($name, $members, "$label: $entity maps to a schema that is not a member");
+			}
+
+			// Nothing that has no member matches one.
+			self::assertSame([], array_values(array_diff(array_keys($measured), array_keys($intended))), $label);
 		}
 
 		$failures = [];
@@ -1713,61 +1766,8 @@ class WireContractTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * The first member a Codable client would pick. swift-openapi-generator decodes an
-	 * undiscriminated oneOf by trying the members in order and keeping the first that
-	 * decodes, and a generated struct ignores `not` and `additionalProperties` - so for it
-	 * the question is only which member comes first among those whose required keys the
-	 * row carries. That has to be the entity's own member, or none for an entity that has
-	 * none, in both unions. `not` handles a validating client; this order handles a
-	 * decoding one.
-	 */
-	public function testACodableClientPicksTheEntitysOwnMember(): void
-	{
-		$spec = self::spec();
-		$schemas = $spec['components']['schemas'];
-		$columns = self::relationColumns();
-		$noListing = $schemas['ExposedEntityNoListing']['enum'];
-
-		$wrong = [];
-		foreach ($schemas['ExposedEntity']['enum'] as $entity)
-		{
-			if (in_array($entity, $noListing, true))
-			{
-				continue;
-			}
-
-			$rows = self::get("/api/objects/$entity");
-			$keys = $rows !== [] ? array_keys($rows[0]) : $columns[$entity];
-
-			foreach ([false, true] as $single)
-			{
-				$members = self::unionMembers($spec, $single);
-				$row = $single ? array_merge($keys, ['userfields']) : $keys;
-				$want = array_values(array_intersect(self::UNION_MATCHES[$entity] ?? [], $members))[0] ?? null;
-
-				$first = null;
-				foreach ($members as $member)
-				{
-					if (array_diff(self::requiredKeys($schemas[$member], $schemas), $row) === [])
-					{
-						$first = $member;
-						break;
-					}
-				}
-
-				if ($first !== $want)
-				{
-					$wrong[] = ($single ? 'single: ' : 'list: ') . "$entity decodes as " . ($first ?? 'no member') . ', not ' . ($want ?? 'no member');
-				}
-			}
-		}
-
-		self::assertSame([], $wrong, implode('; ', $wrong));
-	}
-
-	/**
 	 * The single read answers the three entities issue #648 gave members, and what it
-	 * answers - userfields included - validates against that member and against no other.
+	 * answers - userfields included - validates against that member.
 	 */
 	public function testTheSingleReadOfTheNewMembersValidatesAgainstThem(): void
 	{
@@ -1790,18 +1790,25 @@ class WireContractTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * The member names of the GET /objects/{entity} union (the list's `items.oneOf`) or of
+	 * The member names of the GET /objects/{entity} union (the list's `items.anyOf`) or of
 	 * the GET /objects/{entity}/{objectId} union, in document order.
 	 *
 	 * @return string[]
 	 */
+	private static function unionSchema(array $spec, bool $single): array
+	{
+		$schema = $spec['paths'][$single ? '/objects/{entity}/{objectId}' : '/objects/{entity}']['get']['responses']['200']['content']['application/json']['schema'];
+
+		return $single ? $schema : $schema['items'];
+	}
+
 	private static function unionMembers(array $spec, bool $single): array
 	{
 		$schema = $spec['paths'][$single ? '/objects/{entity}/{objectId}' : '/objects/{entity}']['get']['responses']['200']['content']['application/json']['schema'];
 
 		return array_map(
 			fn (array $ref) => substr($ref['$ref'], strlen('#/components/schemas/')),
-			($single ? $schema : $schema['items'])['oneOf']
+			($single ? $schema : $schema['items'])['anyOf']
 		);
 	}
 
