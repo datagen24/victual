@@ -5186,7 +5186,7 @@
 						}
 					}
 				},
-				"description": "Requires STOCK_VIEW. "
+				"description": "Requires STOCK_VIEW. With add=true it also requires MASTER_DATA_ADD (403 otherwise); MASTER_DATA_EDIT is not required. A picture the plugin names is stored only when no file of that name exists; if one does, the product is created without a picture and the existing file is left unchanged. A read-only API key is refused on this operation whether or not add is set."
 			}
 		},
 		"/recipes/{recipeId}/add-not-fulfilled-products-to-shoppinglist": {

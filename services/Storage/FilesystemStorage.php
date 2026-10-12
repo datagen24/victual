@@ -65,9 +65,14 @@ class FilesystemStorage extends FileStorage
 
 		$filePath = $this->GetFilePath($group, $name);
 
-		$fileHandle = fopen($filePath, 'xb');
+		$fileHandle = @fopen($filePath, 'xb');
 		if ($fileHandle === false)
 		{
+			if (file_exists($filePath))
+			{
+				throw new FileAlreadyExistsException("Error while creating file $name");
+			}
+
 			throw new \Exception("Error while creating file $name");
 		}
 

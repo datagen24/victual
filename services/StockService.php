@@ -8,6 +8,7 @@ use Victual\Helpers\Grocycode;
 use Victual\Services\Influx\BookingEventPublisher;
 use Victual\Services\Labels\LabelIdentityService;
 use Victual\Services\Labels\StockLabelRevivalService;
+use Victual\Services\Storage\FileAlreadyExistsException;
 use Victual\Services\Storage\FileStorage;
 
 /**
@@ -1536,8 +1537,18 @@ class StockService extends BaseService
 				{
 					try
 					{
-						FileStorage::GetInstance()->Write('productpictures', $pictureFileName, $pictureData);
+						// Create, never Write: the name is derived from the looked-up
+						// barcode, so for any caller allowed to add (MASTER_DATA_ADD,
+						// issue 742 / ADR-0043) a Write would let a barcode that collides
+						// with an existing picture replace that file.
+						FileStorage::GetInstance()->Create('productpictures', $pictureFileName, $pictureData);
 						$newProductRow->update(['picture_file_name' => $pictureFileName]);
+					}
+					catch (FileAlreadyExistsException)
+					{
+						// A file of that name is already stored. It is left exactly as it
+						// is and the new product is created without a picture; the add
+						// itself has already committed and does not fail.
 					}
 					catch (\Exception)
 					{
