@@ -71,7 +71,7 @@ Proposed until a separate acceptance pull request.
 | D5 | v0.5.0 scope | Maintainer | #703 |
 | D6 | 782: merge needs `MASTER_DATA_EDIT` or both rights; 783: a container right or document the item rights; 785: refuse callers without `STOCK_VIEW` up front, or answer them without the row read | Maintainer | 782, 783, 785 |
 | W1 | #787 inherited OpenAPI gaps and key-coverage leg 9d | PR [797](https://github.com/datagen24/victual/pull/797): the leg failed on master's document (148 undeclared keys) and passes; `contract`, `wirecontract` on PostgreSQL 16 and 15.19 and `genericquery` on 16 pass at `7082acba`. Other domains filed as [798](https://github.com/datagen24/victual/issues/798) | — |
-| W2 | #788 `quantity_factor` | Research done 2026-10-12: no defect. The booked amount is `quantity × quantity_factor × conversion`, default factor 1 (`ConsumptionMappingService.php:238`). Missing: an OpenAPI description, a manual example, an event-level test. Implementation started 2026-10-12; it edits only the mapping schema in `victual.openapi.json` | — |
+| W2 | #788 `quantity_factor` | PR [810](https://github.com/datagen24/victual/pull/810): OpenAPI description and default, manual example, an event-level test that fails when the factor or the conversion is ignored; `consumption` passes on PostgreSQL 16 and 15.19 at `5606c04a` | — |
 
 ## Specifications
 
