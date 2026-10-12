@@ -2765,7 +2765,20 @@
 								"schema": {
 									"type": "array",
 									"items": {
-										"$ref": "#/components/schemas/StockEntry"
+										"allOf": [
+											{
+												"$ref": "#/components/schemas/StockEntry"
+											},
+											{
+												"type": "object",
+												"properties": {
+													"priority": {
+														"type": "integer",
+														"description": "The order the entries are used in, from the stock_next_use view: -1 is the entry a consumption takes first, -2 the next, and so on (the default consume location first, then opened, then first due, then first purchased). Sent on this route only"
+													}
+												}
+											}
+										]
 									}
 								}
 							}
@@ -2885,7 +2898,7 @@
 										"description": "The due date of the product to add, when omitted, the current date is used"
 									},
 									"transaction_type": {
-										"$ref": "#/components/schemas/StockTransactionType"
+										"$ref": "#/components/schemas/StockAddTransactionType"
 									},
 									"price": {
 										"type": "number",
@@ -2994,7 +3007,7 @@
 										"description": "The amount to remove"
 									},
 									"transaction_type": {
-										"$ref": "#/components/schemas/StockTransactionType"
+										"$ref": "#/components/schemas/StockConsumeTransactionType"
 									},
 									"spoiled": {
 										"type": "boolean",
@@ -3545,7 +3558,7 @@
 										"description": "The due date of the product to add, when omitted, the current date is used"
 									},
 									"transaction_type": {
-										"$ref": "#/components/schemas/StockTransactionType"
+										"$ref": "#/components/schemas/StockAddTransactionType"
 									},
 									"price": {
 										"type": "number",
@@ -3632,7 +3645,7 @@
 										"description": "The amount to remove"
 									},
 									"transaction_type": {
-										"$ref": "#/components/schemas/StockTransactionType"
+										"$ref": "#/components/schemas/StockConsumeTransactionType"
 									},
 									"spoiled": {
 										"type": "boolean",
@@ -13120,6 +13133,11 @@
 						"format": "date-time",
 						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
 						"description": "When opened_amount was recorded, so a stale figure is visible as stale. Present exactly where opened_amount is. An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
+					},
+					"import_epoch": {
+						"type": "integer",
+						"minimum": 0,
+						"description": "A server-owned generation: label_current_import_epoch() when the row was written, which a legacy import bumps (migrations/0283.pgsql.php). Label issuance refuses a print request composed for an epoch an import has since replaced. Not sent by GET /stock/products/{productId}/entries, whose rows come from the stock_next_use view"
 					}
 				},
 				"example": {
@@ -13230,7 +13248,7 @@
 					},
 					"stock_value": {
 						"type": "number",
-						"description": "The total value of this product's stock currently held (price times amount, summed across stock entries)",
+						"description": "The value of the stock currently held: price times amount, summed over stock entries and rounded to two decimal places, an entry with no price counting as 0. For a parent product it is the parent's own entries only: its sub products' stock is not included, although `stock_amount_aggregated` counts it (migrations/0298.pgsql.sql). 0 when nothing is in stock",
 						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"next_due_date": {
@@ -13253,7 +13271,7 @@
 							"number",
 							"null"
 						],
-						"description": "The average price af all stock entries currently in stock of the corresponding product",
+						"description": "The amount-weighted average price per stock unit over this product's purchase, inventory-correction and self-production bookings that are not undone and carry a price above 0 and an amount above 0, so a negative inventory correction is not counted. For an edited entry its newest stock-edit-new booking stands in for the original, weighted by the entry's edited origin amount. It includes bookings whose stock has since been consumed, so it is not the average of what is in stock now (products_average_price, db/pgsql/baseline/04_views_l1a.sql). Null when there is no such booking",
 						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"current_price": {
@@ -13316,6 +13334,32 @@
 						"items": {
 							"$ref": "#/components/schemas/ProductSubstitutionResolved"
 						}
+					},
+					"stock_amount_aggregated": {
+						"type": "number",
+						"description": "This product's stock in its stock unit plus, for a parent product, its sub products' stock converted to that unit; a sub product with no positive conversion counts nothing (migrations/0298.pgsql.sql). The same as `stock_amount` for a product with no sub products, and 0 when nothing is in stock. `is_aggregated_amount` says whether sub products are counted"
+					},
+					"stock_amount_opened_aggregated": {
+						"type": "number",
+						"description": "The opened part of `stock_amount_aggregated`, by the same rule"
+					},
+					"default_consume_location": {
+						"description": "The location the product's default_consume_location_id names; null when it names none",
+						"anyOf": [
+							{
+								"$ref": "#/components/schemas/Location"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"default_shopping_location_id": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The product's default store (its shopping_location_id); null when it has none"
 					}
 				},
 				"example": {
@@ -14172,6 +14216,66 @@
 						"format": "date-time",
 						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
 						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
+					},
+					"correlation_id": {
+						"type": [
+							"string",
+							"null"
+						],
+						"description": "Shared by the two rows of a pair booked together: transfer_from and transfer_to, stock-edit-old and stock-edit-new, stock-measured-old and stock-measured-new. Null on a row booked alone"
+					},
+					"location_id": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The location of the stock the booking touched"
+					},
+					"opened_date": {
+						"type": [
+							"string",
+							"null"
+						],
+						"format": "date",
+						"description": "The opened date of the stock entry at the time of this booking, null when it was not open"
+					},
+					"recipe_id": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The recipe a consumption was booked for: set on the ingredient consume bookings of POST /recipes/{recipeId}/consume, and on a consume whose request body names a numeric recipe_id; null otherwise"
+					},
+					"shopping_location_id": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The store of the stock the booking touched"
+					},
+					"stock_row_id": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The id of the stock entry the booking acted on, on bookings that act on an existing entry (consume, open, transfer, edit, measurement); null on an addition. The entry may no longer exist: an entry consumed in full is deleted"
+					},
+					"undone": {
+						"type": "integer",
+						"description": "1 when the booking has been undone, otherwise 0. An integer flag like the rest of the API's flags, not a boolean (issue #230)"
+					},
+					"undone_timestamp": {
+						"type": [
+							"string",
+							"null"
+						],
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "When the booking was undone; null while it is not. An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
+					},
+					"user_id": {
+						"type": "integer",
+						"description": "The user who made the booking"
 					}
 				}
 			},
@@ -14243,7 +14347,7 @@
 					},
 					"value": {
 						"type": "number",
-						"description": "The total value of this product's stock currently held (price times amount, summed across stock entries)",
+						"description": "The value of the stock currently held: price times amount, summed over stock entries and rounded to two decimal places, an entry with no price counting as 0. For a parent product it is the parent's own entries only: its sub products' stock is not included, although `amount_aggregated` counts it (migrations/0298.pgsql.sql)",
 						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"best_before_date": {
@@ -14260,6 +14364,14 @@
 					},
 					"product": {
 						"$ref": "#/components/schemas/ProductWithoutUserfields"
+					},
+					"amount_measured": {
+						"type": "number",
+						"description": "ADR-0022, docs/plans/landed/28-open-container-measurement.md. The measured (not merely counted) contents across the opened, measured entries, in the stock unit; for a parent product its sub products' measured entries are converted and included, as in `amount_aggregated`. 0 when nothing is measured"
+					},
+					"due_type": {
+						"type": "integer",
+						"description": "The product's due type: 1 when its due date is a best-before date, 2 when it is an expiration date. `expired_products` on GET /stock/volatile lists due type 2 only"
 					}
 				}
 			},
@@ -14370,6 +14482,7 @@
 					"missing_products": {
 						"type": "array",
 						"items": {
+							"type": "object",
 							"properties": {
 								"id": {
 									"type": "integer"
@@ -14382,6 +14495,9 @@
 								},
 								"is_partly_in_stock": {
 									"type": "integer"
+								},
+								"product": {
+									"$ref": "#/components/schemas/ProductWithoutUserfields"
 								}
 							}
 						}
@@ -14899,11 +15015,36 @@
 			},
 			"StockTransactionType": {
 				"type": "string",
+				"description": "What kind of booking a stock_log row is: every StockService::TRANSACTION_TYPE_* value, which is what a response can carry. `purchase` and `self-production` add stock (`self-production` is the product a recipe produces, booked when the recipe is consumed). `consume` removes stock. `inventory-correction` adjusts a counted total, with a positive or negative amount. `product-opened` marks an entry, or part of one, opened and does not change the amount. `stock-edit-old` and `stock-edit-new` are an entry before and after an edit, `stock-measured-old` and `stock-measured-new` an opened container before and after a new measurement (ADR-0022), and `transfer_from` and `transfer_to` the source and destination side of a transfer; each pair shares a correlation_id. The request bodies that take a transaction type name the narrower StockAddTransactionType or StockConsumeTransactionType. Issue #772.",
 				"enum": [
 					"purchase",
 					"consume",
 					"inventory-correction",
-					"product-opened"
+					"product-opened",
+					"self-production",
+					"stock-edit-new",
+					"stock-edit-old",
+					"stock-measured-new",
+					"stock-measured-old",
+					"transfer_from",
+					"transfer_to"
+				]
+			},
+			"StockAddTransactionType": {
+				"type": "string",
+				"description": "The transaction types POST /stock/products/{productId}/add and POST /stock/products/by-barcode/{barcode}/add accept (StockService::AddProduct()). Any other string is answered with 400. Omitted, the booking is a `purchase`. Issue #772.",
+				"enum": [
+					"purchase",
+					"inventory-correction",
+					"self-production"
+				]
+			},
+			"StockConsumeTransactionType": {
+				"type": "string",
+				"description": "The transaction types POST /stock/products/{productId}/consume and POST /stock/products/by-barcode/{barcode}/consume accept (StockService::ConsumeProduct()). Any other value is answered with 400. Omitted, the booking is a `consume`. Issue #772.",
+				"enum": [
+					"consume",
+					"inventory-correction"
 				]
 			},
 			"FileGroups": {

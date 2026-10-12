@@ -683,7 +683,7 @@
         "shape": [
             {
                 "id": "integer",
-                "price": "number",
+                "price": "integer|number",
                 "product_id": "integer"
             }
         ]
@@ -753,7 +753,7 @@
                 "name": "string",
                 "not_check_shoppinglist": "integer",
                 "picture_file_name": "null",
-                "product_id": "null",
+                "product_id": "integer|null",
                 "row_created_timestamp": "string(date-time)",
                 "type": "string"
             }
@@ -869,14 +869,14 @@
                 "id": "integer",
                 "import_epoch": "integer",
                 "location_id": "integer",
-                "note": "null",
+                "note": "null|string",
                 "open": "integer",
-                "opened_amount": "null",
-                "opened_date": "null",
-                "opened_measured_at": "null",
-                "opened_qu_id": "null",
+                "opened_amount": "null|number",
+                "opened_date": "null|string(date)",
+                "opened_measured_at": "null|string(date-time)",
+                "opened_qu_id": "integer|null",
                 "opened_tare": "null",
-                "price": "null|number",
+                "price": "integer|null|number",
                 "product_id": "integer",
                 "purchased_date": "string(date)",
                 "row_created_timestamp": "string(date-time)",
@@ -907,13 +907,13 @@
                 "correlation_id": "null|string",
                 "id": "integer",
                 "location_id": "integer",
-                "note": "null",
-                "opened_amount": "null",
+                "note": "null|string",
+                "opened_amount": "null|number",
                 "opened_date": "null|string(date)",
-                "opened_measured_at": "null",
-                "opened_qu_id": "null",
+                "opened_measured_at": "null|string(date-time)",
+                "opened_qu_id": "integer|null",
                 "opened_tare": "null",
-                "price": "null|number",
+                "price": "integer|null|number",
                 "product_id": "integer",
                 "purchased_date": "string(date)",
                 "recipe_id": "integer|null",
@@ -1536,6 +1536,37 @@
             "user_id": "integer"
         }
     },
+    "GET /api/stock/bookings/{bookingId} (self-production)": {
+        "status": 200,
+        "shape": {
+            "amount": "integer",
+            "best_before_date": "string(date)",
+            "correlation_id": "null",
+            "id": "integer",
+            "location_id": "integer",
+            "note": "string",
+            "opened_amount": "null",
+            "opened_date": "null",
+            "opened_measured_at": "null",
+            "opened_qu_id": "null",
+            "opened_tare": "null",
+            "price": "integer",
+            "product_id": "integer",
+            "purchased_date": "string(date)",
+            "recipe_id": "null",
+            "row_created_timestamp": "string(date-time)",
+            "shopping_location_id": "null",
+            "spoiled": "boolean",
+            "stock_id": "string",
+            "stock_row_id": "null",
+            "transaction_id": "string",
+            "transaction_type": "string",
+            "undone": "integer",
+            "undone_timestamp": "null",
+            "used_date": "null",
+            "user_id": "integer"
+        }
+    },
     "GET /api/stock/entry/{entryId}": {
         "status": 200,
         "shape": {
@@ -1932,15 +1963,119 @@
     "GET /api/stock/volatile": {
         "status": 200,
         "shape": {
-            "due_products": {
-                "__empty_list__": true
-            },
+            "due_products": [
+                {
+                    "amount": "integer",
+                    "amount_aggregated": "integer",
+                    "amount_measured": "integer",
+                    "amount_opened": "integer",
+                    "amount_opened_aggregated": "integer",
+                    "best_before_date": "string(date)",
+                    "due_type": "integer",
+                    "is_aggregated_amount": "boolean",
+                    "product": {
+                        "active": "integer",
+                        "auto_reprint_stock_label": "integer",
+                        "calories": "null",
+                        "cumulate_min_stock_amount_of_sub_products": "integer",
+                        "default_best_before_days": "integer",
+                        "default_best_before_days_after_freezing": "integer",
+                        "default_best_before_days_after_open": "integer",
+                        "default_best_before_days_after_thawing": "integer",
+                        "default_consume_location_id": "null",
+                        "default_purchase_price_type": "integer",
+                        "default_refill_location_id_from": "null",
+                        "default_refill_location_id_to": "null",
+                        "default_shopping_list_id": "null",
+                        "default_stock_label_type": "integer",
+                        "description": "string",
+                        "disable_open": "integer",
+                        "due_type": "integer",
+                        "enable_tare_weight_handling": "integer",
+                        "hide_on_stock_overview": "integer",
+                        "id": "integer",
+                        "import_epoch": "integer",
+                        "location_id": "integer",
+                        "min_stock_amount": "integer",
+                        "move_on_open": "integer",
+                        "name": "string",
+                        "no_own_stock": "integer",
+                        "not_check_stock_fulfillment_for_recipes": "integer",
+                        "parent_product_id": "null",
+                        "picture_file_name": "null",
+                        "product_group_id": "integer",
+                        "qu_id_consume": "integer",
+                        "qu_id_price": "integer",
+                        "qu_id_purchase": "integer",
+                        "qu_id_stock": "integer",
+                        "quick_consume_amount": "integer",
+                        "quick_open_amount": "integer",
+                        "quick_refill_amount": "integer",
+                        "row_created_timestamp": "string(date-time)",
+                        "shopping_location_id": "null",
+                        "should_not_be_frozen": "integer",
+                        "tare_weight": "integer",
+                        "treat_opened_as_out_of_stock": "integer"
+                    },
+                    "product_id": "integer",
+                    "value": "number"
+                }
+            ],
             "expired_products": {
                 "__empty_list__": true
             },
-            "missing_products": {
-                "__empty_list__": true
-            },
+            "missing_products": [
+                {
+                    "amount_missing": "integer",
+                    "id": "integer",
+                    "is_partly_in_stock": "integer",
+                    "name": "string",
+                    "product": {
+                        "active": "integer",
+                        "auto_reprint_stock_label": "integer",
+                        "calories": "null",
+                        "cumulate_min_stock_amount_of_sub_products": "integer",
+                        "default_best_before_days": "integer",
+                        "default_best_before_days_after_freezing": "integer",
+                        "default_best_before_days_after_open": "integer",
+                        "default_best_before_days_after_thawing": "integer",
+                        "default_consume_location_id": "null",
+                        "default_purchase_price_type": "integer",
+                        "default_refill_location_id_from": "null",
+                        "default_refill_location_id_to": "null",
+                        "default_shopping_list_id": "null",
+                        "default_stock_label_type": "integer",
+                        "description": "string",
+                        "disable_open": "integer",
+                        "due_type": "integer",
+                        "enable_tare_weight_handling": "integer",
+                        "hide_on_stock_overview": "integer",
+                        "id": "integer",
+                        "import_epoch": "integer",
+                        "location_id": "integer",
+                        "min_stock_amount": "integer",
+                        "move_on_open": "integer",
+                        "name": "string",
+                        "no_own_stock": "integer",
+                        "not_check_stock_fulfillment_for_recipes": "integer",
+                        "parent_product_id": "null",
+                        "picture_file_name": "null",
+                        "product_group_id": "integer",
+                        "qu_id_consume": "integer",
+                        "qu_id_price": "integer",
+                        "qu_id_purchase": "integer",
+                        "qu_id_stock": "integer",
+                        "quick_consume_amount": "integer",
+                        "quick_open_amount": "integer",
+                        "quick_refill_amount": "integer",
+                        "row_created_timestamp": "string(date-time)",
+                        "shopping_location_id": "null",
+                        "should_not_be_frozen": "integer",
+                        "tare_weight": "integer",
+                        "treat_opened_as_out_of_stock": "integer"
+                    }
+                }
+            ],
             "overdue_products": {
                 "__empty_list__": true
             }
@@ -3025,6 +3160,12 @@
             "created_object_id": "integer"
         }
     },
+    "POST /api/objects/{entity} (recipes, self-production)": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "integer"
+        }
+    },
     "POST /api/objects/{entity} (recipes_pos)": {
         "status": 200,
         "shape": {
@@ -3063,6 +3204,10 @@
         "status": 204,
         "shape": "empty"
     },
+    "POST /api/recipes/{recipeId}/consume (self-production)": {
+        "status": 204,
+        "shape": "empty"
+    },
     "POST /api/recipes/{recipeId}/copy": {
         "status": 200,
         "shape": {
@@ -3079,6 +3224,39 @@
     "POST /api/stock/bookings/{bookingId}/undo": {
         "status": 204,
         "shape": "null"
+    },
+    "POST /api/stock/entry/{entryId}/measure": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string(date)",
+                "correlation_id": "string",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "opened_amount": "null|number",
+                "opened_date": "string(date)",
+                "opened_measured_at": "null|string(date-time)",
+                "opened_qu_id": "integer|null",
+                "opened_tare": "null",
+                "price": "integer",
+                "product_id": "integer",
+                "purchased_date": "string(date)",
+                "recipe_id": "null",
+                "row_created_timestamp": "string(date-time)",
+                "shopping_location_id": "null",
+                "spoiled": "boolean",
+                "stock_id": "string",
+                "stock_row_id": "integer",
+                "transaction_id": "string",
+                "transaction_type": "string",
+                "undone": "integer",
+                "undone_timestamp": "null",
+                "used_date": "null",
+                "user_id": "integer"
+            }
+        ]
     },
     "POST /api/stock/products/by-barcode/{barcode}/add": {
         "status": 200,
@@ -3282,6 +3460,39 @@
             }
         ]
     },
+    "POST /api/stock/products/{productId}/add (due soon)": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string(date)",
+                "correlation_id": "null",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "opened_amount": "null",
+                "opened_date": "null",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "number",
+                "product_id": "integer",
+                "purchased_date": "string(date)",
+                "recipe_id": "null",
+                "row_created_timestamp": "string(date-time)",
+                "shopping_location_id": "null",
+                "spoiled": "boolean",
+                "stock_id": "string",
+                "stock_row_id": "null",
+                "transaction_id": "string",
+                "transaction_type": "string",
+                "undone": "integer",
+                "undone_timestamp": "null",
+                "used_date": "null",
+                "user_id": "integer"
+            }
+        ]
+    },
     "POST /api/stock/products/{productId}/add (for undo)": {
         "status": 200,
         "shape": [
@@ -3415,6 +3626,39 @@
         ]
     },
     "POST /api/stock/products/{productId}/open": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string(date)",
+                "correlation_id": "null",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "opened_amount": "null",
+                "opened_date": "string(date)",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "number",
+                "product_id": "integer",
+                "purchased_date": "string(date)",
+                "recipe_id": "null",
+                "row_created_timestamp": "string(date-time)",
+                "shopping_location_id": "null",
+                "spoiled": "boolean",
+                "stock_id": "string",
+                "stock_row_id": "integer",
+                "transaction_id": "string",
+                "transaction_type": "string",
+                "undone": "integer",
+                "undone_timestamp": "null",
+                "used_date": "null",
+                "user_id": "integer"
+            }
+        ]
+    },
+    "POST /api/stock/products/{productId}/open (for measure)": {
         "status": 200,
         "shape": [
             {
@@ -3663,6 +3907,39 @@
         "shape": {
             "error_message": "string"
         }
+    },
+    "PUT /api/stock/entry/{entryId} (price change)": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string(date)",
+                "correlation_id": "string",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "opened_amount": "null",
+                "opened_date": "string(date)",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "integer|number",
+                "product_id": "integer",
+                "purchased_date": "string(date)",
+                "recipe_id": "null",
+                "row_created_timestamp": "string(date-time)",
+                "shopping_location_id": "null",
+                "spoiled": "boolean",
+                "stock_id": "string",
+                "stock_row_id": "integer",
+                "transaction_id": "string",
+                "transaction_type": "string",
+                "undone": "integer",
+                "undone_timestamp": "null",
+                "used_date": "null",
+                "user_id": "integer"
+            }
+        ]
     },
     "PUT /api/user/settings/{settingKey}": {
         "status": 204,
