@@ -137,11 +137,7 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 		$refused = null;
 		try
 		{
-			// The refusal itself is the application's: fopen($path, 'xb') emits a warning
-			// before returning false, and Create() turns that false into the exception
-			// under test. Suppressed here rather than fixed, because application code is
-			// out of scope for this work - see the hand-back note.
-			@$storage->Create($group, 'taken.png', 'replacement bytes');
+			$storage->Create($group, 'taken.png', 'replacement bytes');
 		}
 		catch (\Exception $ex)
 		{
