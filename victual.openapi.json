@@ -1306,8 +1306,61 @@
 				],
 				"responses": {
 					"200": {
-						"description": "The binary file contents (Content-Type header is automatically set based on the file type)",
+						"description": "The binary file contents. A file whose detected type is image/jpeg, image/png, image/gif, image/webp or application/pdf is served with that media type and `Content-Disposition: inline`; every other file is served as application/octet-stream with `Content-Disposition: attachment`. The Content-Type header is set from the file and is one of the keys of this content map.",
+						"headers": {
+							"Content-Disposition": {
+								"description": "`inline; filename*=UTF-8''<name>` when the file is served with one of the image or PDF media types above, `attachment; filename*=UTF-8''<name>` for every other file (served as `application/octet-stream`). The name is RFC 5987 percent-encoded; when `{fileName}` carries a second BASE64 name, that second name is used.",
+								"schema": {
+									"type": "string",
+									"example": "inline; filename*=UTF-8''photo.png"
+								}
+							},
+							"Cache-Control": {
+								"description": "Always `private, no-store`: the response is never cached by a shared cache or stored.",
+								"schema": {
+									"type": "string",
+									"example": "private, no-store"
+								}
+							},
+							"X-Content-Type-Options": {
+								"description": "Always `nosniff`, so a browser does not second-guess the declared media type.",
+								"schema": {
+									"type": "string",
+									"example": "nosniff"
+								}
+							}
+						},
 						"content": {
+							"image/jpeg": {
+								"schema": {
+									"type": "string",
+									"format": "binary"
+								}
+							},
+							"image/png": {
+								"schema": {
+									"type": "string",
+									"format": "binary"
+								}
+							},
+							"image/gif": {
+								"schema": {
+									"type": "string",
+									"format": "binary"
+								}
+							},
+							"image/webp": {
+								"schema": {
+									"type": "string",
+									"format": "binary"
+								}
+							},
+							"application/pdf": {
+								"schema": {
+									"type": "string",
+									"format": "binary"
+								}
+							},
 							"application/octet-stream": {
 								"schema": {
 									"type": "string",
