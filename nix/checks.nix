@@ -198,6 +198,8 @@ in
   #      FilesystemIterator that throws on a missing directory, and
   #      PostgresDialect::GetBaselineSchemaPath resolves to db/pgsql/baseline. Since plan
   #      10, SchemaVersionMiddleware enumerates the corpus on every request.
+  #    db/pgsql/*-seed.sql — migrations 0266 and 0282 and DatabaseImporter read these
+  #      by path; absent, the migration or bin/victual-db-import fails.
   #    viewcache/ — baked by nix/app.nix so the directory can be read-only.
   app-is-complete = runCommand "victual-check-app" { } ''
     for required in \
@@ -210,6 +212,9 @@ in
       views/layout/default.blade.php \
       migrations \
       db/pgsql/baseline \
+      db/pgsql/roles-seed.sql \
+      db/pgsql/prices-seed.sql \
+      db/pgsql/view-leaves-seed.sql \
       bin/victual-migrate \
       bin/victual-timestamp-preflight \
       bin/victual-publish-state \

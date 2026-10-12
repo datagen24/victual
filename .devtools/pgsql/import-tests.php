@@ -220,6 +220,18 @@ if (empty($policyBeforeImport))
 	Fail('the target has a price-visibility policy to keep', 'permission_fields is empty before any import - the target was not migrated past 0281');
 }
 
+// db/pgsql/view-leaves-seed.sql is migration 0299's statements carried for the importer, and
+// the migration cannot be changed to read the file the way 0282 reads prices-seed.sql, so the
+// two copies are held equal here. Comments and whitespace are not compared.
+$statementsOf = fn(string $path) => array_values(array_filter(array_map(
+	fn(string $statement) => trim(preg_replace('/\s+/', ' ', $statement)),
+	explode(';', preg_replace('/--[^\n]*/', '', file_get_contents($path))))));
+$seedStatements = $statementsOf(VICTUAL_ROOT_PATH . '/db/pgsql/view-leaves-seed.sql');
+$migrationStatements = $statementsOf(VICTUAL_ROOT_PATH . '/migrations/0299.pgsql.sql');
+Check('view-leaves-seed.sql matches migration 0299', $seedStatements === $migrationStatements && count($seedStatements) === 3,
+	count($migrationStatements) . ' identical statements',
+	$seedStatements === $migrationStatements ? count($seedStatements) . ' statements' : 'the statements differ');
+
 // --- The two ends of the span import at all ----------------------------------------
 //
 // --force because the runner migrated the target with bin/victual-migrate, which seeds a
@@ -330,6 +342,58 @@ foreach ([$min, $max] as $version)
 		WHERE child.name = 'STOCK_PRICES_VIEW'");
 	Check('STOCK_PRICES_VIEW hangs off STOCK_PURCHASE', $parent === 'STOCK_PURCHASE',
 		'STOCK_PURCHASE', $parent === false ? 'no parent row' : (string)$parent);
+
+	// Migration 0299's three read leaves, which the battery, calendar and equipment pages
+	// and APIs check (tests/Pgsql/ViewPermissionGatingTest.php). They are nested under their
+	// parents for the same reason as STOCK_PRICES_VIEW above, so every holder of the parent
+	// reaches them through permission_tree - ADMIN included, which holds no leaf directly.
+	// The SQLite line is frozen below 0299, so the source cannot carry these rows and the
+	// TRUNCATE ... CASCADE removes the ones the target's migration run made. Without the
+	// restore every user, ADMIN too, is refused those pages after an import.
+	$viewLeaves = ['BATTERIES_VIEW' => 'BATTERIES', 'CALENDAR_VIEW' => 'CALENDAR', 'EQUIPMENT_VIEW' => 'EQUIPMENT'];
+	$viewLeafList = "'" . implode("', '", array_keys($viewLeaves)) . "'";
+
+	foreach ($viewLeaves as $leaf => $expectedParent)
+	{
+		$parent = Scalar($target, "SELECT parent.name FROM permission_hierarchy child
+			JOIN permission_hierarchy parent ON parent.id = child.parent
+			WHERE child.name = '" . $leaf . "'");
+		Check($leaf . ' hangs off ' . $expectedParent, $parent === $expectedParent,
+			$expectedParent, $parent === false ? 'no row' : (string)$parent);
+	}
+
+	// user_permissions_resolved is what User::HasPermission() reads, so this is the check
+	// User::CheckPermission() makes on those pages.
+	$adminResolved = Scalar($target, "SELECT COUNT(DISTINCT permission_name) FROM user_permissions_resolved
+		WHERE user_id = (SELECT id FROM users WHERE username = 'admin') AND permission_name IN (" . $viewLeafList . ')');
+	Check('ADMIN resolves the three view leaves', (int)$adminResolved === 3, '3', (string)$adminResolved);
+
+	// A role holder reaches them through role_permissions. Adult holds all three parents in
+	// db/pgsql/roles-seed.sql; Child holds CALENDAR only, which keeps this from passing on a
+	// view that resolved every leaf for everyone. Rolled back so the rest of the phase sees
+	// the imported target unchanged.
+	$target->beginTransaction();
+
+	try
+	{
+		$target->exec("INSERT INTO users (username, password) VALUES ('import-test-adult', 'fixture'), ('import-test-child', 'fixture')");
+		$target->exec("DELETE FROM user_permissions WHERE user_id IN (SELECT id FROM users WHERE username IN ('import-test-adult', 'import-test-child'))");
+		$target->exec("INSERT INTO user_roles (user_id, role_id) SELECT u.id, r.id FROM users u JOIN roles r
+			ON (u.username, r.code) IN (('import-test-adult', 'ADULT'), ('import-test-child', 'CHILD'))");
+		$resolvedFor = fn(string $username) => implode(',', $target->query("SELECT permission_name FROM user_permissions_resolved
+			WHERE user_id = (SELECT id FROM users WHERE username = '" . $username . "') AND permission_name IN (" . $viewLeafList . ')
+			ORDER BY permission_name')->fetchAll(\PDO::FETCH_COLUMN));
+		$adultResolved = $resolvedFor('import-test-adult');
+		$childResolved = $resolvedFor('import-test-child');
+	}
+	finally
+	{
+		$target->rollBack();
+	}
+	Check('the Adult role resolves the three view leaves', $adultResolved === 'BATTERIES_VIEW,CALENDAR_VIEW,EQUIPMENT_VIEW',
+		'BATTERIES_VIEW,CALENDAR_VIEW,EQUIPMENT_VIEW', $adultResolved === '' ? 'none' : $adultResolved);
+	Check('the Child role resolves CALENDAR_VIEW only', $childResolved === 'CALENDAR_VIEW',
+		'CALENDAR_VIEW', $childResolved === '' ? 'none' : $childResolved);
 
 	// The two row transformations the target's own migration run could not see, because it
 	// ran against an empty database and the rows arrived afterwards.

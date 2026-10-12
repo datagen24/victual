@@ -108,9 +108,11 @@ use Victual\Services\StockService;
  *   - TARGET_ONLY_TABLES (`roles`, `role_permissions`, `user_roles`, `permission_fields`,
  *     `user_settings_defaults`, `system_db_changed_time`) are this engine's own configuration
  *     rather than a household's data, seeded fresh rather than carried from a source that (for
- *     several of them) predates their existence entirely; db/pgsql/roles-seed.sql and
- *     db/pgsql/prices-seed.sql restore what TRUNCATE ... CASCADE clears via a foreign key
- *     into a table that *is* replaced (see the `applyRowMigrations` branch below).
+ *     several of them) predates their existence entirely; db/pgsql/roles-seed.sql,
+ *     db/pgsql/prices-seed.sql and db/pgsql/view-leaves-seed.sql restore what TRUNCATE ...
+ *     CASCADE clears via a foreign key into a table that *is* replaced, and the
+ *     permission_hierarchy rows migrations added after the frozen SQLite line (see the
+ *     `applyRowMigrations` branch below).
  *   - Products imported with an unsupported multi-level parent chain (root -> middle -> leaf)
  *     are repaired the way migrations/0277.pgsql.sql repairs one on an in-place upgrade: the
  *     middle product's parent link is cleared, and the repair is named in the progress
@@ -865,6 +867,15 @@ class DatabaseImporter
 			{
 				$this->Target->exec(file_get_contents(__DIR__ . '/../../db/pgsql/prices-seed.sql'));
 			}
+
+			// And migration 0299's BATTERIES_VIEW, CALENDAR_VIEW and EQUIPMENT_VIEW leaves,
+			// which neither file above carries and no frozen source can. Without them the
+			// battery, calendar and equipment pages refuse every user including ADMIN, who
+			// reaches a leaf only through permission_tree. Every statement in the file is
+			// guarded with NOT EXISTS, so it adds nothing to a target that already has them.
+			// No to_regclass guard: the file touches permission_hierarchy alone, which every
+			// target has, and a missing parent makes its INSERT ... SELECT insert nothing.
+			$this->Target->exec(file_get_contents(__DIR__ . '/../../db/pgsql/view-leaves-seed.sql'));
 		}
 
 		return $report;
