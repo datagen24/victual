@@ -1251,6 +1251,27 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	#[Depends('testCreatesFixtures')]
 	public function testMergeRefusesUnusableProductPairs(): void
 	{
+		// A merge needs MASTER_DATA_EDIT as well as STOCK_EDIT (issue #782), and the
+		// permission checks run before the id checks this method is about. Granted for this
+		// method only, so every other method keeps acting with the stock leaves alone.
+		self::grant([
+			'STOCK_VIEW', 'STOCK_PURCHASE', 'STOCK_CONSUME', 'STOCK_OPEN', 'STOCK_TRANSFER',
+			'STOCK_INVENTORY', 'STOCK_EDIT', 'STOCK_PRICES_VIEW',
+			'SHOPPINGLIST_ITEMS_ADD', 'SHOPPINGLIST_ITEMS_DELETE', 'MASTER_DATA_EDIT',
+		]);
+
+		try
+		{
+			$this->expectMergeRefusals();
+		}
+		finally
+		{
+			self::grantStockAndList();
+		}
+	}
+
+	private function expectMergeRefusals(): void
+	{
 		$this->expectRefusalWithUntouchedLedger(
 			fn() => self::$stock->MergeProducts(self::request('POST'), new Response(), ['productIdToKeep' => 'not-an-id', 'productIdToRemove' => self::$ids['spare']]),
 			400,
