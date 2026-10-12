@@ -8,7 +8,8 @@
 - **Recorded:** 2026-10-10, against `master` at `0639a23d`. Design work only: it changes no
   code, reserves no migration number and amends no accepted record. Revised 2026-10-11
   against `master` at `d4960138` to add source evidence (section "Evidence added
-  2026-10-11"); the decision is unchanged.
+  2026-10-11"); the decision is unchanged. The revision also adds open question 5, adds
+  it to acceptance prerequisite 2, and adds a test to prerequisite 3.
 - **Referenced by:** [issue 742](https://github.com/datagen24/victual/issues/742) and its
   evidence, [`.devtools/issue742/RESULTS.md`](../../.devtools/issue742/RESULTS.md).
 - **Relationship:** compatible with accepted
@@ -199,8 +200,9 @@ The `*_VIEW` leaves are not in `InitialDataSeeder::PERMISSION_HIERARCHY`
 migration 0110 in that migration's order, so each permission keeps its id, and it ends at
 `MASTER_DATA_EDIT`. The leaves come from later files:
 
-- `db/pgsql/roles-seed.sql` (lines 1-6) creates `STOCK_VIEW`, `SHOPPINGLIST_VIEW`,
-  `CHORES_VIEW`, `TASKS_VIEW`, `RECIPES_VIEW` and `MEALPLAN_VIEW`, and the four built-in roles.
+- `db/pgsql/roles-seed.sql` creates `STOCK_VIEW`, `SHOPPINGLIST_VIEW`, `CHORES_VIEW`,
+  `TASKS_VIEW`, `RECIPES_VIEW` and `MEALPLAN_VIEW` (lines 1-6) and the four built-in roles
+  (lines 14-24).
   Migration 0266 runs it (`migrations/0266.pgsql.php`, line 10).
 - `STOCK_PRICES_VIEW` comes from migration 0281 and from `db/pgsql/prices-seed.sql`.
 - `BATTERIES_VIEW`, `CALENDAR_VIEW` and `EQUIPMENT_VIEW` come from migration 0299 alone.
@@ -223,8 +225,11 @@ An implementation of the new right has to change two places so that all three pa
 2. The same idempotent insert goes into a seed file the importer replays, as
    `prices-seed.sql` did for 0281 (its header explains why), or into a new file the importer
    also replays. Without it, a legacy import deletes the row. The leaves of migration 0299
-   appear in no file the importer replays; whether an imported database lacks them was not
-   tested, and it is outside this record.
+   were in no file the importer replays. That gap was reproduced: the test commit `fcc49e2c`
+   fails the import phase with 12 failures, and commit `489231d3` fixes it with
+   `db/pgsql/view-leaves-seed.sql`, replayed after `prices-seed.sql` (both on branch
+   `claude/opus5_import-restores-view-leaves-f3eb`, separate from this record). An
+   implementation of the new right must likewise add its row to a seed the importer replays.
 
 The upgrade rehearsal in the acceptance prerequisites then needs a counterpart for the other
 two paths: a fresh install, an upgraded installation and an imported database resolve the
@@ -234,7 +239,7 @@ permission for the same accounts.
 
 `GET /api/stock/barcodes/external-lookup/{barcode}?add=true` can store a product picture.
 `StockService::ExternalBarcodeLookup` (lines 1368-1553) fetches the plugin's `__image_url`
-(1387-1481), names the file `<barcode>.<extension>` (1472) and, after the product commits,
+(1387-1481), names the file after the plugin's `__barcode` and the extension (1472) and, after the product commits,
 calls `FileStorage::Write('productpictures', ...)` (1539). `Write` replaces a file of the same
 name (`services/Storage/FileStorage.php`, 103-109).
 
@@ -248,11 +253,6 @@ one of that name exists, which the upload route does not allow it to do. The cal
 choose the bytes; they come from the configured lookup source, under the extension allow-list
 and the outbound host policy. The same call is open to `MASTER_DATA_EDIT` holders today. Open
 question 5 asks whether that is acceptable.
-
-The controller checks `MASTER_DATA_EDIT` before it reads `add`
-(`StockApiController.php`, 853-859), so a lookup without `add` also needs it today. Decision 2
-names `add=true`. If it means that call only, the check moves after `add` is read; if it means
-the whole lookup route, it does not.
 
 ### Inventory and a separate finding
 
@@ -306,5 +306,8 @@ should move to `MASTER_DATA_EDIT`; that needs its own decision.
    route writes a `productpictures` file, and replaces one of the same name, while uploading
    to that group needs `MASTER_DATA_EDIT` (see "Where external lookup stores a picture").
    The options are to keep the picture step, to skip it for an account that lacks
-   `MASTER_DATA_EDIT`, or to refuse `add=true` to such an account. The record does not
-   decide.
+   `MASTER_DATA_EDIT`, or to refuse `add=true` to such an account. The controller also checks
+   `MASTER_DATA_EDIT` before it reads `add` (`StockApiController.php`, 853-859), so a lookup
+   without `add` needs it today. If decision 2 means `add=true` only, the check moves after
+   `add` is read; if it means the whole lookup route, it does not. The record does not
+   decide either point.

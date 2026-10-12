@@ -186,6 +186,15 @@ for delete (203-208). The seeded `CHILD` role holds `SHOPPINGLIST_ITEMS_ADD` but
 cannot delete one. Whether a list is an item or master data is a design question that no
 record decides.
 
+**F4. A legacy import dropped migration 0299's view leaves (reproduced; fix on another branch).**
+`DatabaseImporter` truncates `permission_hierarchy` and replayed only `roles-seed.sql` and
+`prices-seed.sql` (`services/Database/DatabaseImporter.php` 853 and 866), so `BATTERIES_VIEW`,
+`CALENDAR_VIEW` and `EQUIPMENT_VIEW`, which only migration 0299 inserted, were missing after an
+import. The test commit `fcc49e2c` fails the import phase with 12 failures, and commit
+`489231d3` adds `db/pgsql/view-leaves-seed.sql`, replayed after `prices-seed.sql`. Both are on
+branch `claude/opus5_import-restores-view-leaves-f3eb`. This finding was reproduced there, not
+on this branch.
+
 ### Minimum permissions to set up a medication today
 
 A member who sets up a medication for consumption mapping needs `MASTER_DATA_EDIT`,
