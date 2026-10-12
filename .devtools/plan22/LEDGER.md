@@ -64,8 +64,8 @@ Proposed until a separate acceptance pull request.
 
 | ID | Item | State | Blocks |
 |---|---|---|---|
-| G1 | ADR-0045 gates 1, 5 and 7: the record must specify the legacy-zero mechanism, the flags' redaction and boolean entries and where they are computed, and the ADR-0005 treatment for each rewritten view | Revision being drafted (2026-10-12) | Acceptance of ADR-0045, then #774 |
-| G2 | ADR-0046 gate 1: the record must name the capability and retention fields | Revision being drafted (2026-10-12) | Acceptance of ADR-0046, then #775 |
+| G1 | ADR-0045 gates 1, 5 and 7 | Specified in PR [808](https://github.com/datagen24/victual/pull/808) (reviewed; fixes in `c0b53e70`). Open questions 8 to 13 need answers; Q8 recommends a per-row marker set inside the import transaction | Acceptance of ADR-0045, then #774 |
+| G2 | ADR-0046 gate 1 and client obligations | Specified in PR [807](https://github.com/datagen24/victual/pull/807) (reviewed; blocking fix in `0a77bbf6`: all nine transaction-id mint sites use one random helper). Open question 5: top-level `stock_booking_idempotency` key (recommended) or a `capabilities` object | Acceptance of ADR-0046, then #775 |
 | G3 | ADR-0043 gate 1: whether the feature ships and in which release | Maintainer | Acceptance of ADR-0043, then #742 |
 | D4 | Issue 702's text still names a real device | Maintainer | Closing #702 |
 | D5 | v0.5.0 scope | Maintainer | #703 |
