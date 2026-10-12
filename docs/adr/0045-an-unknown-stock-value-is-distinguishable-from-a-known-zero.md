@@ -13,12 +13,12 @@
   [PR 33](https://github.com/datagen24/victual-kit/pull/33), which displays `0` as a known
   zero.
 - **Relationship:** [ADR-0005](0005-wire-contract-is-the-invariant.md) governs the engine
-  comparison that option A would disturb.
+  comparison that P2 and both wire-changing options disturb.
   [ADR-0024](0024-the-fork-writes-its-own-clients.md) decision 1 requires a Victual-owned
   client to be updated in coordination with a breaking change.
   [ADR-0027](0027-timestamps-are-local-strings-documented-booleans-are-booleans.md)
-  (Proposed) is the precedent for a deliberate wire change and for the boolean rendering
-  that option B relies on.
+  (Proposed) is a precedent for a deliberate wire change; this record does not depend on
+  its acceptance.
 
 ## Context
 
@@ -123,11 +123,12 @@ Case (a) and case (e) are indistinguishable on `value` and `stock_value`. In cas
 
 The MCP sidecar reads none of these fields (`mcp/src/victual/types.ts`).
 
-`victual-kit` reads the fields through a client generated from `victual.openapi.json`
-(ADR-0027, Context). A Swift optional decoded with `Codable` maps an absent key and a JSON
-`null` to the same `nil`. That is general `Codable` behaviour; `victual-kit`'s generated
-code was not inspected for it. The model's statement that `nil` means "no permission" is already
-inaccurate for `averagePrice` and for `lastPrice` on a never-purchased product.
+`victual-kit` reads the fields through a client generated from `victual.openapi.json`; PR 33
+changes `Sources/VictualAPI/openapi.json` and `Scripts/update-openapi.py`. A Swift optional
+decoded with `Codable` maps an absent key and a JSON `null` to the same `nil`. That is
+general `Codable` behaviour; `victual-kit`'s generated code was not inspected for it. The
+doc comment in `victual-kit`'s `ProductDetail.swift` says `nil` means "no permission". It
+is already inaccurate for `averagePrice`, and for `lastPrice` on a never-purchased product.
 
 ### Constraints from accepted records
 
@@ -136,9 +137,17 @@ date-only `chores.start_date`. Neither covers a deliberate change to what Postgr
 returns for an unpriced entry. `.devtools/pgsql/difftest.php` compares `stock_current`
 against the frozen SQLite definition, `IFNULL(price,0)` in `migrations/0233.sql`.
 
+Every view rewrite this record discusses changes PostgreSQL's answer while the frozen
+SQLite line keeps the old one. That holds for option A's `value`, for the single-price
+fields that options A and B share, and for P2's filters. Each rewrite therefore needs the
+same treatment: an ADR-0005 accepted difference, or a difftest normalisation that the
+implementing pull request records. The options differ in which rewrites today's fixtures
+exercise, not in whether the treatment is needed.
+
 ADR-0024 decision 1 allows a breaking change to the API only when a Victual-owned client is
 updated before or in coordination with it. The OpenAPI document and the contract snapshot
-change in the same pull request.
+change in the same pull request. The record does not say whether a change of meaning with
+no change of type is a breaking change. Open question 4 asks the maintainer.
 
 ## Prerequisite decision P: what a stored price of 0 means
 
@@ -164,21 +173,36 @@ paths change with it:
   needs `recipes_pos_resolved` to carry `NULL` for an unpriced ingredient.
 - The stock overview shows a last price of `0` instead of hiding it.
 
-The rewritten views diverge from the frozen SQLite line in the differential suite only where
-a row is priced `0` or a recipe position has no known price. No stock row in
-`.devtools/pgsql/view-tests/01` to `03` is priced `0`. Whether `03_recipes.sql` has a
-position without a known price was not checked.
+These rewritten views diverge from the frozen SQLite line whatever response option is
+chosen, so P2 needs the ADR-0005 treatment described under "Constraints from accepted
+records". Today's fixtures exercise the divergence only where a row is priced `0` or a
+recipe position has no known price. No stock row in `.devtools/pgsql/view-tests/01` to
+`03` is priced `0`. Whether `03_recipes.sql` has a position without a known price was not
+checked.
 
-Existing rows need one of three treatments:
+Existing rows need one of four treatments. The constitution's data-integrity section says
+the stock ledger is exact history, and `stock_log` is that ledger, so the treatments differ
+in whether they rewrite it:
 
 - Convert every stored `0` to `NULL` in `stock` and `stock_log`, and rebuild the two
-  price caches. A deliberately free entry written through the API before the migration
-  becomes unknown. The migration cannot tell those rows apart, because no column records
-  the writer.
-- Leave stored rows unchanged. Every blank web purchase made before the change then
-  reports a known price of `0`, which is the false statement issue 774 describes.
-- Convert only rows a heuristic selects, such as rows whose purchase date precedes
-  the release. This has the same loss as the first treatment with less predictable results.
+  price caches. This rewrites recorded bookings and cannot be undone after the migration
+  commits. A deliberately free entry written through the API becomes unknown, because no
+  column records the writer. If chosen, the upgrade needs a preflight that counts the rows
+  per table and product before any change. It also needs a report of every converted row
+  (table, id, product, date), written where an operator can read it after the upgrade.
+- Convert `stock` only and record the interpretation of `stock_log`. Current stock stops
+  reporting false zeros. The ledger keeps its recorded `0`s, and the migration records a
+  watermark, such as the highest `stock_log.id` at upgrade time. The history views read a
+  `0` at or below the watermark as unknown and a `0` above it as free. The ledger is
+  unchanged, at the cost of a second rule every reader of `stock_log` must apply.
+- Convert nothing and record the same watermark for both tables. No row changes, and every
+  reader of `stock` and `stock_log` applies the watermark rule.
+- Leave stored rows unchanged with no watermark. Every blank web purchase made before the
+  change then reports a known price of `0`, which is the false statement issue 774
+  describes.
+
+A heuristic selection of rows, such as purchases dated before the release, was considered
+and set aside. It has the conversion's loss with less predictable results.
 
 Under P2, `bin/victual-db-import` must apply the same conversion to an imported SQLite
 database. Whether upstream grocy's purchase page also writes `0` for a blank price was not
@@ -240,12 +264,14 @@ Consequences of option A:
   the frozen SQLite line returns `0`. `difftest.php` compares the normalised rows with
   `$ja === $jb`, so `stock_current` and `uihelper_stock_current_overview` (which selects
   `sc.value`) would both report `DIFF`. This is inferred from the SQL; the phase was not
-  run. ADR-0005 would need a third accepted difference, or the harness would need a
+  run. ADR-0005 would need an accepted difference, or the harness would need a
   normalisation that maps PostgreSQL's `NULL` to SQLite's `0` for these two columns.
-  Dropping `products_last_purchased`'s `COALESCE(..., 0)` also diverges from the frozen
-  line, for a product with purchases and none priced. `02_products_and_pricing.sql`
-  compares that view but prices every purchase, and `01_stock_basics.sql`, which has such a
-  product, does not compare it, so the divergence is not exercised.
+  The single-price rewrites diverge in the same way: dropping `products_last_purchased`'s
+  `COALESCE(..., 0)` for a product with purchases and none priced, and the
+  `products_current_price` rule of open question 2. `02_products_and_pricing.sql` compares
+  both views but prices every purchase, and `01_stock_basics.sql`, which has an unpriced
+  product, compares neither. These divergences are therefore not exercised today, but they
+  need the same treatment.
 - Parity suite: Upstream 4.6.0 sends `0` where the fork sends `null`, a `type`
   difference on `GET /api/stock` and both product detail routes for unpriced stock. `.devtools/parity/harness/lib/accepted.js`
   would need an entry. Whether the parity generator's data contains unpriced stock was not
@@ -303,19 +329,20 @@ Consequences of option B:
 
 - Redaction: Each flag needs a `permission_fields` row for `STOCK_PRICES_VIEW` in
   `db/pgsql/prices-seed.sql` and the migration that applies it. A flag reveals whether
-  prices were recorded, which is price information. `ContractTest::SENSITIVE_FIELD_PATTERN` matches `value_incomplete` and
-  `stock_value_incomplete`, so leg 8 fails until the rows exist. Leg 7 checks that CHILD
+  prices were recorded, which is price information. Two `ContractTest` methods check this.
+  `testSensitiveFieldVocabularyIsClassified()` fails for any recorded key matching
+  `SENSITIVE_FIELD_PATTERN` without a `permission_fields` row, and the pattern matches both
+  flag names. `testRestrictedMatchesAdminMinusRedactedFields()` checks that the CHILD role
   receives neither key.
 - Booleans: A view column holding `0`/`1` needs an entry in `services/WireBooleans.php`
-  and in `WireContractTest::DOCUMENTED_BOOLEANS`, as `prices_incomplete` has (ADR-0027
-  decision 1).
-- Differential suite: `value` keeps its number, so no engine disagreement arises on
-  it. If `stock_current` gains the flag as a column, `difftest.php` needs one more
+  and in `WireContractTest::DOCUMENTED_BOOLEANS`, as `prices_incomplete` has.
+  `WireContractTest::testEveryDocumentedBooleanIsAccountedFor()` fails until both exist.
+- Differential suite: `value` keeps its number, so the flag adds no engine disagreement
+  on it. If `stock_current` gains the flag as a column, `difftest.php` needs one more
   PostgreSQL-only strip line, the precedent `amount_measured` set for
   `migrations/0275.pgsql.sql`. If `StockService` computes the flag in PHP, the views phase
-  is untouched for `value`. Neither route needs an ADR-0005 accepted difference for the
-  flag. The `products_last_purchased` change is shared with option A and has the same
-  unexercised divergence.
+  is untouched for `value`. The single-price rewrites are the same as option A's and need
+  the same ADR-0005 accepted difference or normalisation.
 - Parity suite: The flags are `extra-field` differences on every stock row, and the
   single-price `null`s are `type` differences as under option A. One `accepted.js` entry
   covers both.
@@ -326,8 +353,28 @@ Consequences of option B:
   and `productcard.js`.
 - Inventory correction: As under option A.
 - `victual-kit`: No decoder fails, because no documented type changes. Showing
-  unknown values requires reading the flags, an ordinary client update. The single-price
-  `null`s change meaning for the apps, which treat `nil` as "no permission".
+  unknown values requires reading the flags. The single-price fields change meaning:
+  `last_price` and `current_price` become `null` where they are `0` today, and the apps
+  read `nil` as "no permission". An app built before the change would hide a known-unknown
+  price as if the caller lacked the permission. Whether ADR-0024 decision 1 requires a
+  coordinated release for that change is open question 4.
+
+### Parent products under options A and B
+
+`stock_current`'s first branch sums `value` over the parent's own entries only, while
+`amount_aggregated` includes converted sub-product stock (open question 1). A parent whose
+stock is held entirely in sub-products therefore reports `value` `0`. Under option A that
+`0` reads as a known zero. Under option B it reads as `0` with `value_incomplete` `false`.
+Both are the false known zero issue 774 reports. Two ways to keep it out of this decision:
+
+- Define the answer for rows with `is_aggregated_amount` `true` in this record. For
+  example, option B sets `value_incomplete` to `true` whenever sub-product stock contributes
+  to `amount_aggregated`, because `value` omits it. Option A returns `null` in the same
+  case. The record then constrains the later answer to open question 1.
+- Make open question 1 an acceptance prerequisite, so the aggregation rule is settled
+  before either option is accepted.
+
+The record does not choose between them; acceptance prerequisite 6 asks the maintainer.
 
 ### Option C: document the current behaviour
 
@@ -381,9 +428,11 @@ routes:
 
 The last row is 0 because `ContractTest::testStockOperations()` records `GET /api/stock` and
 `GET /api/stock/products/{productId}` after one add priced at 2.5. It records the by-barcode
-read after an inventory correction that inherits that price and a merge of a product with
-no stock. All recorded stock is priced when these reads run. This is read from the test
-code; the test was not run. An unpriced and a mixed product must be added to the fixture before
+read after an open, a transfer, an inventory correction from 9 to 8 at the first location,
+a consume and a merge of a product with no stock. The correction is downward, so it books a
+consumption and no new entry. All recorded stock is priced when these reads run.
+
+This is read from the test code; the test was not run. An unpriced and a mixed product must be added to the fixture before
 the snapshot shows either option's effect (Verification).
 
 `GET /api/stock/volatile` returns `CurrentStockResponse` rows in three of its lists, so it
@@ -400,13 +449,17 @@ This is a proposal; the maintainer has not decided.
   expects a price of `0` to report `0`. P1 adds a column, an API field and a form control,
   and keeps two encodings of unknown. P3 leaves every blank web purchase reporting a false
   zero.
-- P2's existing rows should convert `0` to `NULL`. The shipped purchase page stores the
+- P2's existing rows should be read as "not entered". The shipped purchase page stores the
   same `0` for a typed zero and for a blank field, so no stored zero from the web UI can be
-  read as "free". The conversion loses any free entry written through the API before the
-  migration.
-- Option B changes no documented type. No `victual-kit` decoder fails, so the server
-  change does not need a coordinated client release. The differential suite needs at most
-  a strip line with an existing precedent, and ADR-0005 needs no new exception.
+  read as "free". The recommended treatment converts `stock` and records a watermark for
+  `stock_log`, which leaves the ledger as it was booked. Converting both tables is the
+  alternative if the maintainer prefers one rule for readers over an unchanged ledger. It
+  then needs the preflight and the converted-row report. Either loses any free entry
+  written through the API before the upgrade.
+- Option B changes no documented type, so no `victual-kit` decoder fails. It does not
+  avoid ADR-0005 work: P2's filters and the single-price rewrites need an accepted
+  difference or a normalisation under any option. Option B adds no further divergence on
+  `value`, while option A adds one that `01_stock_basics.sql` exercises.
 - Option B keeps the partial sum. In case (b) the known part of the value remains
   available, which option A discards.
 - The single-price fields use `null`. The document already permits it, the product card
@@ -414,10 +467,10 @@ This is a proposal; the maintainer has not decided.
 
 Option B has costs. A client must read two keys to display one value. A client that ignores
 the flag still shows `0.00` for unpriced stock. The flag and the value must be redacted
-together. Option A is the better choice if the maintainer wants a client that reads only
-`value` to be correct. Choosing option A brings its own prerequisites: a coordinated
-`victual-kit` release, an ADR-0005 accepted difference or harness normalisation, and an
-Influx rule.
+together. The single-price `null`s still change meaning for `victual-kit` (open question
+4). Option A is the better choice if the maintainer wants a client that reads only `value`
+to be correct. Choosing option A adds a coordinated `victual-kit` release, a second
+ADR-0005 accepted difference or normalisation for `value`, and an Influx rule.
 
 ## Open questions
 
@@ -426,23 +479,31 @@ Influx rule.
    unit conversion. `value` sums only the parent's own entries
    (`SELECT ... FROM stock WHERE product_id = pr.parent_product_id`). A parent whose stock
    is held entirely in sub-products reports `value` `0` with a positive
-   `amount_aggregated`. Under option A or B this reads as a complete, known zero. This
-   question is outside this decision. Its answer affects how `value_incomplete` or a `null`
-   would be computed for a parent.
+   `amount_aggregated`. Under option A or B this reads as a complete, known zero. The
+   aggregation rule itself is outside this decision. Its effect on options A and B is set
+   out under "Parent products under options A and B", and acceptance prerequisite 6 asks
+   how the record handles it.
 2. **When the next-use entry is unpriced, is `current_price` `null` or the last known
    price?** Today it falls back to the last purchase price. The OpenAPI description
    promises that fallback only when the product is not in stock. The recommendation is
    `null`, following the description.
 3. **Should the `avg_price` description be corrected?** The document says "all stock
    entries currently in stock". `products_average_price` averages every non-undone
-   purchase with a known price. Correcting the description is a document-only change and
+   purchase with a known price. This is handled by
+   [issue 772](https://github.com/datagen24/victual/issues/772), a document-only change that
    does not depend on this decision.
+4. **Does ADR-0024 decision 1 cover a change of meaning with no change of type?** Under
+   either option, `last_price` and `current_price` become `null` where they are `0` today.
+   The document already permits `null`, so no decoder fails, but `victual-kit` reads `nil`
+   as "no permission". ADR-0024 speaks of a "breaking change" without defining it. If a
+   change of meaning counts, option B also needs a `victual-kit` release in coordination
+   with the server.
 
 ## Acceptance prerequisites
 
 1. The maintainer answers prerequisite decision P. Under P2, the answer includes the
    treatment of existing price-`0` rows and of imported databases.
-2. The maintainer chooses option A, B or C, and answers open question 2.
+2. The maintainer chooses option A, B or C, and answers open questions 2 and 4.
 3. A `victual-kit` change is identified for the chosen option, following ADR-0024
    decision 1. Under option A it is a coordinated release that decodes the nullable
    properties and tells an absent key from `null`. Under option B it reads the flags. Under
@@ -453,6 +514,13 @@ Influx rule.
    parity `accepted.js` entry, and the Influx publisher's rule for an unknown value.
 5. Under option B: the record names the flags' `permission_fields` rows, their
    `WireBooleans` entries, and whether `stock_current` or `StockService` computes them.
+6. The maintainer chooses how parent products are handled: the record defines the flag or
+   `null` for rows with `is_aggregated_amount` `true`, or open question 1 is answered first.
+7. Under P2, or under option A or B: the record names the ADR-0005 accepted difference or
+   difftest normalisation for each rewritten view (`products_price_history`,
+   `products_average_price`, `products_last_purchased`, `products_current_price`,
+   `recipes_pos_resolved`, `recipes_resolved`, as applicable). Under P2 with a conversion
+   of `stock_log`, it also names the upgrade preflight and the converted-row report.
 
 ## Verification
 
@@ -467,19 +535,22 @@ its pull request:
 - Write paths under P2: An API purchase with an absent, `null` or `""` price stores
   `NULL`. An inventory correction and a weighing for a product with no known price book
   `NULL`. A self-production from a recipe with `prices_incomplete` books `NULL`. A
-  migration test converts stored `0` rows as the maintainer decided and rebuilds both price
-  caches. An import test applies the same conversion.
+  migration test applies the existing-row treatment the maintainer chose, rebuilds both
+  price caches, and, if `stock_log` is converted, checks the preflight count against the
+  converted-row report. An import test applies the same treatment.
 - pgTAP for every view the change rewrites (`stock_current`, `products_last_purchased`,
   `products_price_history`, `products_average_price`, `products_current_price`,
   `recipes_resolved`), as `.devtools/pgtap/README.md`'s completeness list requires.
 - Contract snapshot: `ContractTest`'s fixture gains an unpriced product and a mixed
   product before the stock reads. `contract-admin.json` and `contract-restricted.json` are
-  regenerated, and legs 7 and 8 pass.
+  regenerated, and `testRestrictedMatchesAdminMinusRedactedFields()` and
+  `testSensitiveFieldVocabularyIsClassified()` pass.
 - `WireContractTest`: `CurrentStockResponse` and `ProductDetailsResponse` validate
   against a served response for case (a). Under option A the response carries `null`;
   under option B it carries the flags, and `DOCUMENTED_BOOLEANS` lists them.
-- Differential suite: The views phase passes with the strip line (option B) or the
-  recorded difference or normalisation (option A).
+- Differential suite: The views phase passes with the recorded differences or
+  normalisations of prerequisite 7, plus the strip line (option B) or the `value`
+  difference (option A).
 - Browser probe: A probe in `.devtools/frontend/` shows that the stock overview and the
   product card display an unknown value for case (a) and `0.00` for case (e). Under P2, it
   also shows that a blank purchase price is sent as `null`.
