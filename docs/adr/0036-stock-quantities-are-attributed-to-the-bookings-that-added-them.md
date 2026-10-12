@@ -1,7 +1,7 @@
 # ADR-0036: A stock row's quantity is attributed to the bookings that added it
 
-- **Status:** Accepted 2026-10-07. Acceptance prerequisites 2-15 are not met; see the
-  accepting pull request.
+- **Status:** Accepted 2026-10-07. All fifteen prerequisites have recorded evidence;
+  see [Implementation and gate evidence](#implementation-and-gate-evidence).
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-03, against `master` at `a7bf78a31d70f1351019aa6d6cc1e22479402b59`
@@ -12,12 +12,12 @@
   [ADR-0033](0033-stock-rows-merge-only-in-maintenance-for-non-expiring-rows.md)
   Consequences; evidence in [`.devtools/adr0036/RESULTS.md`](../../.devtools/adr0036/RESULTS.md).
 
-This record is design work. It changes no code, reserves no migration number, and does not
-accept ADR-0033. A Proposed record constrains nothing.
+[PR 669](https://github.com/datagen24/victual/pull/669) implemented this decision with
+migration 0304. Acceptance of this record does not accept ADR-0033.
 
 ## Context
 
-### What is decided, what is built, what is verified
+### Baseline at the 2026-10-03 design review
 
 | State | Fact | Source |
 |---|---|---|
@@ -592,6 +592,44 @@ not how many belong to which booking.
 origin tag and has no amounts. A merged row has many origins, and the table is keyed by the
 tags the old merge rewrote. Adding an amount column would put quantity in a table that three
 views read for price weighting. It stays as it is, and contributions are keyed by booking id.
+
+## Implementation and gate evidence
+
+Evidence reviewed 2026-10-11 against `c8b307480b37c6509fbd7e507c5928a122d480de`,
+the merge of [PR 669](https://github.com/datagen24/victual/pull/669).
+The implementation merged on 2026-10-07 at 17:03 UTC. Acceptance
+[PR 667](https://github.com/datagen24/victual/pull/667) merged at 17:08 UTC with its
+earlier unmet-gate checklist unchanged. The merged CI run completed after acceptance.
+The acceptance date remains 2026-10-07; the table below records the completed evidence.
+
+The [merged tests workflow](https://github.com/datagen24/victual/actions/runs/37655999331)
+passed `suite`, `suite-floor`, `frontend-security`, `lint`, `images` and `mcp`.
+The [merged prose workflow](https://github.com/datagen24/victual/actions/runs/37655998991)
+also passed. PR 669 records the local checks, changed regression assertions and their reasons.
+
+| Gate | State | Evidence |
+|---|---|---|
+| 1. Maintainer answers | Met | [PR 666](https://github.com/datagen24/victual/pull/666) records keeping merging and FIFO by addition booking. |
+| 2. Migration reservation | Met | PR 669 claimed PostgreSQL migration 0304 before adding it; the migration check passed. |
+| 3. Backfill | Met | `StockLineageBackfillTest` covers E/X/U/N using committed pre-0304 service history, unchanged source tables, repeat execution and rollback on corruption. |
+| 4. Writers | Met | `StockLineageService` covers the stock writers. `CrossOperationLedgerInvariantTest` checks I1–I3 with the original seed and two additional seeds, including merges. |
+| 5. Worked examples | Met | `StockLineageWorkedExamplesTest` covers examples 1–6, both purchase orders and unchanged state after refusal. |
+| 6. Merge | Met | Maintenance moves contributions without rewriting ledger identities. Tests cover interrupted rollback, repeated execution and merging transfer/open splits. |
+| 7. Concurrency | Met | PR 669 adds the concurrent consume case and extends the label/maintenance races with lineage invariants. |
+| 8. Unit conversion | Met | `MergeProductsTest` covers factors 1 and 0.001 and stock-unit changes; pgTAP 030 covers SQL rescaling. |
+| 9. Importer | Met | `ImporterIntegrityTest` covers truncation, backfill and refusal of a non-forced import into a non-empty target. |
+| 10. Wire contract | Met | OpenAPI and response snapshots are unchanged by PR 669; the contract phases passed. |
+| 11. Average price | Met | The merged-row edit test matches an unmerged control at remaining quantities 4, 2 and 1. |
+| 12. Regression coverage | Met | PR 669 lists each changed assertion and its reason; merged CI passed the regression suites. |
+| 13. Coverage | Met | Merged CI reports 12,149/12,547 executable lines, 96.82792699450069%. PR 669 records the per-file comparison and new-service coverage. |
+| 14. Browser probes | Met | The merged `frontend-security` job reports 15/15 undo scenarios passing. |
+| 15. Deployment | Met through the documented alternative | The release changelog and [upgrade manual](../manual/operator/updating-migrations.md#merging-is-not-scheduled) state that merging is not scheduled. No CronJob is required by this alternative. |
+
+To reproduce the evidence review, read `gh pr view 669` and
+`gh run view 37655999331 --log`. Compare the implementation merge with its first parent
+for `victual.openapi.json` and `tests/Pgsql/snapshots/`; neither path changed.
+This review inspected recorded results and did not rerun the application suite.
+Questions 3 and 4 remain open; neither is an acceptance prerequisite.
 
 ## Acceptance prerequisites
 
