@@ -721,6 +721,18 @@ class AuthStackTest extends PgsqlSchemaTestCase
 	}
 
 	/**
+	 * Issue #803: the calendar secret is read on GET /calendar/ical only. The sibling route
+	 * that hands out the sharing link is an ordinary user operation, so a valid calendar key
+	 * in its query string is not a credential there - and the refusal mints nothing.
+	 */
+	public function testTheCalendarSecretDoesNotAuthenticateTheSharingLinkRoute(): void
+	{
+		$response = self::send('GET', '/api/calendar/ical/sharing-link?secret=' . self::$calendarKey);
+
+		self::assertSame(401, $response['status'], $response['body']);
+	}
+
+	/**
 	 * The narrowing header can only take authority away (issue #208): a value naming a type
 	 * the key does not have refuses it, and a value that is not a user-issued type at all
 	 * narrows to nothing rather than widening to everything.
