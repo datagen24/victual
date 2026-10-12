@@ -13926,7 +13926,7 @@
 			"BatteryDetailsResponse": {
 				"type": "object",
 				"properties": {
-					"chore": {
+					"battery": {
 						"$ref": "#/components/schemas/Battery"
 					},
 					"last_charged": {
@@ -13954,14 +13954,14 @@
 				},
 				"example": {
 					"battery": {
-						"id": "1",
+						"id": 1,
 						"name": "Battery1",
 						"description": "Warranty ends 2023",
 						"used_in": "TV remote control",
-						"charge_interval_days": "0",
-						"row_created_timestamp": "2019-05-02 20:12:26"
+						"charge_interval_days": 0,
+						"row_created_timestamp": "2019-05-02T20:12:26.000000Z"
 					},
-					"last_charged": "2019-03-13T18:12:28.000000Z",
+					"last_charged": "2019-05-10T18:12:28.000000Z",
 					"charge_cycles_count": 4,
 					"next_estimated_charge_time": "2999-12-31T23:59:59.000000Z"
 				}
