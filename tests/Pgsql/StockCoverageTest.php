@@ -3642,6 +3642,29 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Seeds, if absent, a global (product_id IS NULL) conversion and a conversion belonging to
+	 * another product, so a "the rest of quantity_unit_conversions is unchanged" comparison is
+	 * made over rows that can actually be damaged. Issue #842.
+	 */
+	private static function ensureGlobalAndOtherProductConversions(string $suffix): void
+	{
+		if ((int)self::$db->query('SELECT COUNT(*) FROM quantity_unit_conversions WHERE product_id IS NULL')->fetchColumn() === 0)
+		{
+			$from = self::insertRow('quantity_units', ['name' => 'Cov842 G From ' . $suffix, 'name_plural' => 'Cov842 G From ' . $suffix . 's']);
+			$to = self::insertRow('quantity_units', ['name' => 'Cov842 G To ' . $suffix, 'name_plural' => 'Cov842 G To ' . $suffix . 's']);
+			self::$db->prepare('INSERT INTO quantity_unit_conversions (from_qu_id, to_qu_id, factor, product_id) VALUES (?, ?, 3, NULL)')->execute([$from, $to]);
+		}
+
+		if ((int)self::$db->query('SELECT COUNT(*) FROM quantity_unit_conversions WHERE product_id IS NOT NULL')->fetchColumn() === 0)
+		{
+			$from = self::insertRow('quantity_units', ['name' => 'Cov842 P From ' . $suffix, 'name_plural' => 'Cov842 P From ' . $suffix . 's']);
+			$to = self::insertRow('quantity_units', ['name' => 'Cov842 P To ' . $suffix, 'name_plural' => 'Cov842 P To ' . $suffix . 's']);
+			$other = self::insertProduct('Cov842 Other ' . $suffix);
+			self::$db->prepare('INSERT INTO quantity_unit_conversions (from_qu_id, to_qu_id, factor, product_id) VALUES (?, ?, 5, ?)')->execute([$from, $to, $other]);
+		}
+	}
+
 	/** @return array<string, array{0: string, 1: string}> Issue #842: factor expression written into the plugin source, and a barcode of its own. */
 	public static function nonFiniteOrUnusableLookupFactorProvider(): array
 	{
@@ -3681,6 +3704,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 
 		try
 		{
+			self::ensureGlobalAndOtherProductConversions('r' . $barcode);
+			self::assertGreaterThan(0, (int)self::$db->query('SELECT COUNT(*) FROM quantity_unit_conversions WHERE product_id IS NULL')->fetchColumn(), 'the comparison covers at least one global conversion');
+			self::assertGreaterThan(0, (int)self::$db->query('SELECT COUNT(*) FROM quantity_unit_conversions WHERE product_id IS NOT NULL')->fetchColumn(), 'and at least one other product\'s conversion');
+
 			$before = $snapshot();
 
 			$response = self::send('GET', '/api/stock/barcodes/external-lookup/' . $barcode . '?add=true', ['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin']);
@@ -3717,6 +3744,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 
 		try
 		{
+			self::ensureGlobalAndOtherProductConversions('g' . $barcode);
+			$allConversions = fn (): array => self::$db->query('SELECT * FROM quantity_unit_conversions ORDER BY id')->fetchAll(\PDO::FETCH_ASSOC);
+			$conversionsBefore = $allConversions();
+
 			$response = self::send('GET', '/api/stock/barcodes/external-lookup/' . $barcode . '?add=true', ['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin']);
 			self::assertSame(200, $response['status'], "the add succeeds: {$response['body']}");
 
@@ -3734,6 +3765,31 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 			$factors = $conversions->fetchAll(\PDO::FETCH_COLUMN);
 			self::assertCount(1, $factors, 'exactly one purchase->stock conversion');
 			self::assertSame(2.5, (float)$factors[0], 'at the factor the plugin found');
+
+			// The only differences in the whole table are this product's purchase->stock row and
+			// the inverse (stock->purchase) row quantity_unit_conversions_INS/_UPD maintain for it.
+			$conversionsAfter = $allConversions();
+			$beforeById = array_column($conversionsBefore, null, 'id');
+			$changed = [];
+			foreach ($conversionsAfter as $row)
+			{
+				if (!isset($beforeById[$row['id']]) || $beforeById[$row['id']] != $row)
+				{
+					$changed[] = $row;
+				}
+			}
+			self::assertCount(0, array_diff_key($beforeById, array_column($conversionsAfter, null, 'id')), 'no conversion row was removed');
+			self::assertCount(2, $changed, 'only the purchase->stock row and its inverse are new or updated');
+			foreach ($changed as $row)
+			{
+				self::assertSame((int)$productId, (int)$row['product_id'], 'each belongs to the created product');
+			}
+			$byDirection = [];
+			foreach ($changed as $row)
+			{
+				$byDirection[(int)$row['from_qu_id'] . '>' . (int)$row['to_qu_id']] = (float)$row['factor'];
+			}
+			self::assertEqualsWithDelta(['3>2' => 2.5, '2>3' => 0.4], $byDirection, 1e-9, 'the purchase->stock row carries the factor and its inverse its reciprocal');
 		}
 		finally
 		{
