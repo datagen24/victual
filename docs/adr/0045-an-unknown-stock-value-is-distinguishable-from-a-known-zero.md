@@ -2,7 +2,8 @@
 
 - **Status:** **Proposed.** Nothing here constrains work until the maintainer accepts it in a
   separate pull request. The record presents options and a recommendation. The maintainer
-  has not answered prerequisite decision P or chosen a response option.
+  confirmed zero, null and omission semantics on 2026-10-11. Existing-data treatment
+  and aggregate response behavior remain undecided.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-11, against `master` at `d4960138`. Design work only: it changes no
@@ -151,7 +152,10 @@ no change of type is a breaking change. Open question 4 asks the maintainer.
 
 ## Prerequisite decision P: what a stored price of 0 means
 
-The response options below need one answer to this question first.
+The maintainer selected P2's meaning for prices on 2026-10-11: zero is a known zero,
+`null` is unknown, and an omitted price field is redacted. Existing zero-valued rows
+and imported data still need a treatment selected below. The alternatives remain
+for comparison; P1 is not the selected direction.
 
 **P1. Keep "0 means not entered" and add an explicit representation of "free".** Every
 reader treats `0` as unknown, as the four read paths above already do. A free entry needs
@@ -439,10 +443,28 @@ the snapshot shows either option's effect (Verification).
 changes with `CurrentStockResponse`. The fixture leaves all four lists empty, and the
 snapshot records no `value` key there.
 
-## Recommendation
+## Maintainer response and remaining choices
 
-The recommendation is **P2 with option B**, with open question 2 answered as proposed.
-This is a proposal; the maintainer has not decided.
+The following response fixes the three price states. It does not select how an
+aggregate reports a mixture of priced and unpriced stock, or how existing zeros
+are converted. Options A and B retain those aggregate tradeoffs for review.
+
+| Price state | API representation |
+|---|---|
+| Known zero | Numeric `0` |
+| Unknown | JSON `null` |
+| Redacted from the caller | Field omitted |
+
+The implementing change must document these meanings on the affected properties in
+`victual.openapi.json`. Client models must preserve absent versus present-null fields;
+a single optional value that conflates them does not represent this contract.
+The specification and implementation must change together; this proposal does not
+claim that every existing price route already follows the selected semantics.
+
+## Recommendation for remaining choices
+
+P2's price semantics are selected. Option B remains a recommendation for aggregate
+values; open question 2's fallback behavior remains undecided.
 
 - P2 matches the writers that already distinguish. The add route, the stock entry edit
   and the MCP tool already store `NULL` for "not entered". Issue 774's test list already
@@ -499,10 +521,19 @@ ADR-0005 accepted difference or normalisation for `value`, and an Influx rule.
    change of meaning counts, option B also needs a `victual-kit` release in coordination
    with the server.
 
+5. **How are known zero, unknown and redacted prices represented?**
+
+   > **Response:** datagen24, 2026-10-11: Agreed: `0` is known zero, `null` is unknown,
+   > and an absent field is redacted. Document this response in the API specification
+   > so it is implemented correctly.
+
+   No explicit redaction marker is introduced. Existing-data treatment, aggregate
+   completeness, parent-product valuation and the fallback in question 2 remain open.
+
 ## Acceptance prerequisites
 
-1. The maintainer answers prerequisite decision P. Under P2, the answer includes the
-   treatment of existing price-`0` rows and of imported databases.
+1. P2's price semantics are confirmed. The maintainer still chooses the treatment of
+   existing price-`0` rows and imported databases before this gate is met.
 2. The maintainer chooses option A, B or C, and answers open questions 2 and 4.
 3. A `victual-kit` change is identified for the chosen option, following ADR-0024
    decision 1. Under option A it is a coordinated release that decodes the nullable
