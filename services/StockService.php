@@ -4995,6 +4995,31 @@ class StockService extends BaseService
 			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM quantity_unit_conversions quc_remove WHERE quc_remove.product_id = ' . $productIdToRemove . ' AND EXISTS (SELECT 1 FROM quantity_unit_conversions quc_keep WHERE quc_keep.product_id = ' . $productIdToKeep . ' AND quc_keep.from_qu_id = quc_remove.from_qu_id AND quc_keep.to_qu_id = quc_remove.to_qu_id)');
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE quantity_unit_conversions SET product_id = ' . $productIdToKeep . ' WHERE product_id = ' . $productIdToRemove);
 
+			// The consumption tables (migrations/0305.pgsql.sql, 0306.pgsql.sql) reference
+			// products ON DELETE CASCADE, so left alone the DELETE below destroyed the removed
+			// product's recipe lines (a one-line recipe became empty), mappings (later events
+			// became needs_mapping) and event lines (booked events lost their lines) (issue
+			// #848). They are repointed here, after the conversions above have moved: a line or
+			// mapping that names its own unit must still convert to the kept product's stock
+			// unit, and that is checked against the kept product's resolved conversions as they
+			// now stand. A unit that no longer converts (a conversion deleted after the row was
+			// written) refuses the merge, which the surrounding transaction rolls back whole.
+			$stockUnitOfKeptProduct = (int)$productToKeep->qu_id_stock;
+			$unconvertible = ' AND x.qu_id <> ' . $stockUnitOfKeptProduct . ' AND NOT EXISTS (SELECT 1 FROM cache__quantity_unit_conversions_resolved r WHERE r.product_id = ' . $productIdToKeep . ' AND r.from_qu_id = x.qu_id AND r.to_qu_id = ' . $stockUnitOfKeptProduct . ' AND CAST(r.factor AS DOUBLE PRECISION) > 0)';
+			if (DatabaseService::GetInstance()->ExecuteDbQuery('SELECT 1 FROM consumption_recipe_lines x WHERE x.product_id = ' . $productIdToRemove . $unconvertible . ' LIMIT 1')->fetch() !== false
+				|| DatabaseService::GetInstance()->ExecuteDbQuery('SELECT 1 FROM consumption_mappings x WHERE x.product_id = ' . $productIdToRemove . $unconvertible . ' LIMIT 1')->fetch() !== false)
+			{
+				throw new \Exception('Cannot merge: a consumption recipe line or mapping of $productIdToRemove uses a unit with no quantity unit conversion to $productIdToKeep\'s stock unit');
+			}
+
+			// Recipe lines carry their own unit and are converted at read time, so they only move.
+			// Event lines hold stock-unit amounts and rescale like stock_log above. A mapping
+			// without a unit holds its factor against the stock unit and rescales; one with its
+			// own unit converts through the conversion checked above and keeps its factor.
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE consumption_recipe_lines SET product_id = ' . $productIdToKeep . ' WHERE product_id = ' . $productIdToRemove);
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE consumption_event_lines SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE consumption_mappings SET product_id = ' . $productIdToKeep . ', quantity_factor = CASE WHEN qu_id IS NULL THEN quantity_factor * ' . $factor . ' ELSE quantity_factor END WHERE product_id = ' . $productIdToRemove);
+
 			// price_factor is a unitless cost multiplier applied on top of amount * price in
 			// the recipe costs columns (db/pgsql/baseline/05_views_l3.sql), not a per-unit
 			// price itself, so only amount - the ingredient quantity - is converted.
