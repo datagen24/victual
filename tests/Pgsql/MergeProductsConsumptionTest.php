@@ -171,46 +171,79 @@ class MergeProductsConsumptionTest extends PgsqlSchemaTestCase
 		self::assertEqualsWithDelta(100.0 - 2 * self::FACTOR, $onHand, 1e-9, 'Then: 2 A is 60 B, taken from the kept product');
 	}
 
-	public function testAMappingOrRecipeLineWhoseUnitNoLongerConvertsRefusesTheMergeAndChangesNothing(): void
+	/**
+	 * The refusal runs after MergeProducts() has already moved stock, ledger, barcodes and
+	 * conversions, so what proves "refused" is that the transaction rollback undid all of it.
+	 *
+	 * @return array<string, array<int, mixed>>
+	 */
+	private static function wholeState(int $keep, int $remove): array
 	{
-		foreach (['mapping', 'line'] as $kind)
+		$both = "$keep, $remove";
+
+		return [
+			'conversions' => self::rows("SELECT * FROM quantity_unit_conversions WHERE product_id IN ($both) ORDER BY id"),
+			'stock' => self::rows("SELECT * FROM stock WHERE product_id IN ($both) ORDER BY id"),
+			'stock_log' => self::rows("SELECT * FROM stock_log WHERE product_id IN ($both) ORDER BY id"),
+			'barcodes' => self::rows("SELECT * FROM product_barcodes WHERE product_id IN ($both) ORDER BY id"),
+			'average price cache' => self::rows("SELECT * FROM cache__products_average_price WHERE product_id IN ($both) ORDER BY product_id"),
+			'last purchased cache' => self::rows("SELECT * FROM cache__products_last_purchased WHERE product_id IN ($both) ORDER BY product_id"),
+			'consumption' => self::consumptionSnapshot(),
+		];
+	}
+
+	private function assertStaleUnitRefusesTheMerge(string $kind): void
+	{
+		[$keep, $remove] = self::pair();
+		StockService::GetInstance()->AddProduct($remove, 10, '2999-12-31', StockService::TRANSACTION_TYPE_PURCHASE, '2026-01-01', 2.0, self::$location);
+		self::$db->prepare('INSERT INTO product_barcodes (product_id, barcode) VALUES (?, ?)')->execute([$remove, 'mpc-' . bin2hex(random_bytes(4))]);
+
+		self::$db->exec('INSERT INTO quantity_unit_conversions (from_qu_id, to_qu_id, factor, product_id) VALUES (' . self::$unitC . ', ' . self::$unitA . ", 5, $remove)");
+		if ($kind === 'mapping')
 		{
-			[$keep, $remove] = self::pair();
-			self::$db->exec('INSERT INTO quantity_unit_conversions (from_qu_id, to_qu_id, factor, product_id) VALUES (' . self::$unitC . ', ' . self::$unitA . ", 5, $remove)");
-
-			if ($kind === 'mapping')
-			{
-				self::mapping('stale-', $remove, self::$unitC, 1.0);
-			}
-			else
-			{
-				self::recipe([['product_id' => $remove, 'amount' => 1, 'qu_id' => self::$unitC]]);
-			}
-
-			// The unit's conversion is removed afterwards, which nothing forbids: the row is
-			// stale and the merge must not carry it onto the kept product unchecked.
-			self::$db->exec("DELETE FROM quantity_unit_conversions WHERE product_id = $remove AND (from_qu_id = " . self::$unitC . ' OR to_qu_id = ' . self::$unitC . ')');
-			self::recipe([['product_id' => $remove, 'amount' => 3, 'qu_id' => self::$unitA]]);
-			self::event($remove, 4.0);
-
-			$before = self::consumptionSnapshot();
-			$stockBefore = self::rows("SELECT product_id, amount FROM stock WHERE product_id IN ($keep, $remove) ORDER BY id");
-
-			$caught = null;
-			try
-			{
-				StockService::GetInstance()->MergeProducts($keep, $remove);
-			}
-			catch (\Throwable $exception)
-			{
-				$caught = $exception;
-			}
-
-			self::assertNotNull($caught, "A $kind whose unit has no conversion for the kept product refuses the merge");
-			self::assertStringContainsString('Cannot merge', $caught->getMessage());
-			self::assertTrue(self::productExists($remove), 'Then: the removed product survives a refusal');
-			self::assertSame($before, self::consumptionSnapshot(), "Then: every consumption row is unchanged after a $kind refusal");
-			self::assertSame($stockBefore, self::rows("SELECT product_id, amount FROM stock WHERE product_id IN ($keep, $remove) ORDER BY id"), 'Then: stock is unchanged after the refusal');
+			self::mapping('stale-', $remove, self::$unitC, 1.0);
 		}
+		else
+		{
+			self::recipe([['product_id' => $remove, 'amount' => 1, 'qu_id' => self::$unitC]]);
+		}
+
+		// The unit's conversion is removed afterwards, which nothing forbids: the row is
+		// stale and the merge must not carry it onto the kept product unchecked.
+		self::$db->exec("DELETE FROM quantity_unit_conversions WHERE product_id = $remove AND (from_qu_id = " . self::$unitC . ' OR to_qu_id = ' . self::$unitC . ')');
+		self::recipe([['product_id' => $remove, 'amount' => 3, 'qu_id' => self::$unitA]]);
+		self::event($remove, 4.0);
+
+		$before = self::wholeState($keep, $remove);
+		self::assertNotSame([], $before['conversions'], 'Given: the removed product has conversions MergeProducts moves before the check');
+		self::assertNotSame([], $before['stock'], 'Given: the removed product has stock');
+		self::assertNotSame([], $before['stock_log'], 'Given: the removed product has ledger rows');
+		self::assertNotSame([], $before['barcodes'], 'Given: the removed product has a barcode');
+		self::assertNotSame([], $before['average price cache'], 'Given: the removed product has a price cache row');
+
+		$caught = null;
+		try
+		{
+			StockService::GetInstance()->MergeProducts($keep, $remove);
+		}
+		catch (\Throwable $exception)
+		{
+			$caught = $exception;
+		}
+
+		self::assertNotNull($caught, "A $kind whose unit has no conversion for the kept product refuses the merge");
+		self::assertStringContainsString('Cannot merge', $caught->getMessage());
+		self::assertTrue(self::productExists($remove), 'Then: the removed product survives a refusal');
+		self::assertSame($before, self::wholeState($keep, $remove), "Then: the rollback undid every write made before the $kind refusal");
+	}
+
+	public function testAStaleMappingUnitRefusesTheMergeAndTheRollbackUndoesEverything(): void
+	{
+		$this->assertStaleUnitRefusesTheMerge('mapping');
+	}
+
+	public function testAStaleRecipeLineUnitRefusesTheMergeAndTheRollbackUndoesEverything(): void
+	{
+		$this->assertStaleUnitRefusesTheMerge('line');
 	}
 }
