@@ -47,6 +47,12 @@ function toolErrorResult(error: unknown) {
       ? error
       : new VictualApiError("victual_error", error instanceof Error ? error.message : String(error));
   const retryable = apiError.category === "victual_unavailable";
+  const advice =
+    apiError.category === "outcome_unknown"
+      ? "the write may already have been applied; check the current state (the stock journal, stock overview or shopping list) before any retry; retrying will not help, and may book it twice, until you have checked"
+      : retryable
+        ? "retrying may help"
+        : "retrying will not help";
   const payload = {
     error: apiError.category,
     message: apiError.message,
@@ -57,7 +63,7 @@ function toolErrorResult(error: unknown) {
     content: [
       {
         type: "text" as const,
-        text: `${apiError.category}: ${apiError.message} — ${retryable ? "retrying may help" : "retrying will not help"}.`,
+        text: `${apiError.category}: ${apiError.message} — ${advice}.`,
       },
       { type: "text" as const, text: JSON.stringify(payload) },
     ],
