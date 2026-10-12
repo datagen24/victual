@@ -232,7 +232,8 @@ class LabelOperationsService extends LabelService
 
         // outcome IS NULL alongside cancelled_at IS NULL: a job can reach a terminal state
         // two ways before its render ever finishes - cancellation (cancelled_at) or a
-        // pre-render dead letter such as an unreadable payload (outcome) - and a renderer
+        // pre-render dead letter such as a deleted printer or a render request that ended
+        // invalid or failed (outcome) - and a renderer
         // result that outlives either must not resurrect a job that is already done.
         $jobs = $this->Query('SELECT * FROM print_jobs WHERE render_request_id=? AND artifact_id IS NULL AND cancelled_at IS NULL AND outcome IS NULL FOR UPDATE', [$renderRequestId])->fetchAll(\PDO::FETCH_ASSOC);
         if (!$jobs) {

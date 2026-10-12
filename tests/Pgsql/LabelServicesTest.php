@@ -1020,7 +1020,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		$row = self::requestRow((int)$request['id']);
 		self::assertSame('invalid', $row['state']);
 		self::assertSame('asset_unavailable', $row['error_code']);
-		self::assertNull($row['error_element']);
+		self::assertSame('title', $row['error_element']);
 		self::assertSame(1, (int)$row['attempts']);
 	}
 

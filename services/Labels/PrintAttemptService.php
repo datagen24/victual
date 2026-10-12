@@ -56,7 +56,10 @@ class PrintAttemptService extends LabelService
         // to fill the LIMIT below and crowd it out. "Retirement stops new claims" (plan 27
         // verification 10) is all this checks for - ADR-0019 dead-letters an unclaimed job only
         // for a payload no version can read or a deleted printer, never for merely being
-        // unclaimed, so a retired label's job is left exactly as queued as it was.
+        // unclaimed, so a retired label's job is left exactly as queued as it was. (A job whose
+        // render request ended invalid or terminally failed is dead-lettered too, but by
+        // RenderRequestService when the request ends, not here: such a job has no artifact and
+        // is never a candidate.)
         //
         // ADR-0037 section 9: a stock-entry label can turn live again when an undo revives it.
         // A job that existed when the label retired (id at or below the event's jobs_through_id)

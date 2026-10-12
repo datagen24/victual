@@ -179,7 +179,7 @@ class RenderRequestService extends LabelService
             try {
                 return $this->Input($request);
             } catch (LabelValidationException $refusal) {
-                $this->RecordInvalid((int)$request['id'], $token, $refusal->errorCode, null, $refusal->getMessage());
+                $this->RecordInvalid((int)$request['id'], $token, $refusal->errorCode, $this->UnavailableAssetElement($request, $refusal), $refusal->getMessage());
             }
         }
         return null;
@@ -280,6 +280,25 @@ class RenderRequestService extends LabelService
             $this->Refuse('generation_token', 'stale_generation', 'The render lease has moved on; this result belongs to a superseded generation');
         }
         return $request;
+    }
+
+    /**
+     * The id of the first element of a draft that names an asset which is not stored, so an
+     * `asset_unavailable` refusal points a designer at the element to fix (plan 27 piece 4).
+     * Null for any other refusal, and when no element references the missing asset.
+     */
+    private function UnavailableAssetElement(array $request, LabelValidationException $refusal): ?string
+    {
+        if ($refusal->errorCode !== 'asset_unavailable' || $request['purpose'] !== 'preview_draft') {
+            return null;
+        }
+        foreach (json_decode($request['draft_document'], true)['elements'] as $element) {
+            $name = $element['type'] === 'text' ? ($element['font_asset'] ?? null) : ($element['type'] === 'image' ? ($element['asset'] ?? null) : null);
+            if ($name !== null && !$this->Query('SELECT 1 FROM label_assets WHERE name=?', [$name])->fetchColumn()) {
+                return (string)$element['id'];
+            }
+        }
+        return null;
     }
 
     private static function AssetNames(array $document): array
