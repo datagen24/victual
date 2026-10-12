@@ -26,6 +26,7 @@
 			<file>tests/Pgsql/ViewPermissionGatingTest.php</file>
 			<file>tests/Pgsql/ViewPermissionMigrationTest.php</file>
 			<file>tests/Pgsql/MergeProductsPermissionTest.php</file>
+			<file>tests/Pgsql/StockBookingNeedsStockViewTest.php</file>
 		</testsuite>
 		<testsuite name="contract">
 			<file>tests/Pgsql/ContractTest.php</file>
