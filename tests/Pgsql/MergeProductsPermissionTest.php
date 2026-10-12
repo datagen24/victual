@@ -12,8 +12,10 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * which the seeded Adult role holds through STOCK. Deleting a product through
  * DELETE /api/objects/products/{id} needs MASTER_DATA_EDIT, and so does chore merge.
  *
- * Maintainer decision, 2026-10-12 (datagen24, on #782): product merge requires
- * MASTER_DATA_EDIT, as chore merge does.
+ * Maintainer decisions, 2026-10-12 (datagen24, on #782): product merge first required
+ * MASTER_DATA_EDIT, as chore merge does; later the same day, BOTH STOCK_EDIT and
+ * MASTER_DATA_EDIT, because a merge rewrites stock and irreversibly deletes shared master
+ * data. Both are checked before anything is changed.
  *
  * Every request is its own process (tests/Pgsql/request-subprocess-helper.php), for the
  * reason RecipeRouteAuthzTest gives: the authentication middleware define()s the acting
@@ -43,11 +45,15 @@ class MergeProductsPermissionTest extends PgsqlSchemaTestCase
 		self::$db->exec('INSERT INTO user_roles(user_id, role_id) SELECT 9700, id FROM roles WHERE code = \'ADULT\'');
 		self::$keys['adult-role'] = self::issueKey(9700);
 
-		// MASTER_DATA_EDIT and nothing else: the decision names MASTER_DATA_EDIT alone, so
-		// this caller merges without holding any stock permission.
+		// MASTER_DATA_EDIT and nothing else: no stock permission, so no merge.
 		$insertUser->execute([9701, 'merge-authz-master-data', 'fixture']);
 		self::$db->exec('INSERT INTO user_permissions (user_id, permission_id) SELECT 9701, id FROM permission_hierarchy WHERE name = \'MASTER_DATA_EDIT\'');
 		self::$keys['master-data-edit'] = self::issueKey(9701);
+
+		// STOCK_EDIT and MASTER_DATA_EDIT, each a direct grant and nothing else.
+		$insertUser->execute([9702, 'merge-authz-both', 'fixture']);
+		self::$db->exec('INSERT INTO user_permissions (user_id, permission_id) SELECT 9702, id FROM permission_hierarchy WHERE name IN (\'STOCK_EDIT\', \'MASTER_DATA_EDIT\')');
+		self::$keys['both'] = self::issueKey(9702);
 	}
 
 	// ------------------------------------------------------------------------------
@@ -154,14 +160,26 @@ class MergeProductsPermissionTest extends PgsqlSchemaTestCase
 		self::assertSame([$keep, $remove], self::existingProducts([$keep, $remove]), 'A refused merge leaves both products in place');
 	}
 
-	public function testMasterDataEditMergesProducts(): void
+	public function testMasterDataEditWithoutStockEditCannotMergeProducts(): void
 	{
 		$keep = self::insertProduct('Merge Authz Keep (master data)');
 		$remove = self::insertProduct('Merge Authz Remove (master data)');
 
 		$response = self::send('POST', "/api/stock/products/$keep/merge/$remove", self::$keys['master-data-edit']);
 
-		self::assertSame(204, $response['status'], 'MASTER_DATA_EDIT is the permission the merge requires: ' . json_encode($response['body'] ?? null));
+		self::assertSame(403, $response['status'], 'MASTER_DATA_EDIT alone must not merge: the merge also rewrites stock');
+		self::assertSame('Permission missing: STOCK_EDIT', $response['body']['error_message'] ?? null);
+		self::assertSame([$keep, $remove], self::existingProducts([$keep, $remove]), 'A refused merge leaves both products in place');
+	}
+
+	public function testStockEditAndMasterDataEditTogetherMergeProducts(): void
+	{
+		$keep = self::insertProduct('Merge Authz Keep (both)');
+		$remove = self::insertProduct('Merge Authz Remove (both)');
+
+		$response = self::send('POST', "/api/stock/products/$keep/merge/$remove", self::$keys['both']);
+
+		self::assertSame(204, $response['status'], 'STOCK_EDIT and MASTER_DATA_EDIT together merge: ' . json_encode($response['body'] ?? null));
 		self::assertSame([$keep], self::existingProducts([$keep, $remove]), 'The merged-away product is deleted');
 	}
 }
