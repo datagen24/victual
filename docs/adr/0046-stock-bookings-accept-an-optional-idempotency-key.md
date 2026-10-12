@@ -1,8 +1,8 @@
 # ADR-0046: Stock bookings accept an optional idempotency key
 
 - **Status:** **Proposed.** Nothing here constrains work until the maintainer accepts it in a
-  separate pull request. The maintainer has not yet decided that the feature is needed, its
-  retention window or its release.
+  separate pull request. The maintainer confirmed retention, discovery and collision handling on
+  2026-10-11. Release scheduling remains open.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-11, against `master` at `d4960138` and re-read at `3122b937`, which
@@ -126,8 +126,8 @@ under either answer.
 
 ## Decision (proposed)
 
-Each decision lists the options considered and a recommendation. The recommendations are
-proposals for the maintainer and decide nothing until acceptance.
+The sections distinguish options from the maintainer's confirmed choices. The record
+remains Proposed until its separate acceptance.
 
 ### 1. Transport: a request header
 
@@ -281,7 +281,7 @@ replay time. Consequences of reading rather than storing the response:
 the id from the clock in microseconds. It is not unique across processes or pods, so two
 requests in the same microsecond can share an id. A booking response today would then show
 the other request's rows too; a replay adds a second reader with the same exposure. The
-record does not decide between these options:
+maintainer selected both protections below on 2026-10-11:
 
 - Filter the replay read by `stock_log.user_id` equal to the acting user. The key is per
   user, so the user's own rows are the only ones the replay should return. This narrows the
@@ -290,7 +290,8 @@ record does not decide between these options:
   higher-entropy id, such as `bin2hex(random_bytes(16))`, which manual consumption already
   uses for request ids. This fixes every reader, including undo, and is a change to
   `StockService` beyond this record's routes.
-- Both. The filter protects the replay immediately; the identifier change removes the cause.
+- **Selected: both.** Filter the replay by acting user and replace `uniqid()` transaction
+  ids with `bin2hex(random_bytes(16))`. Existing stored transaction ids remain readable.
 
 The response carries `Idempotent-Replayed: true`. A keyed request that books carries
 `Idempotent-Replayed: false`, which tells the client the server honoured the key.
@@ -355,8 +356,8 @@ one that cannot tell it.
 | C. A feature list like `ConsumptionEventsApiController::FEATURES` with `contract_version` | A precedent for named features, but scoped to consumption routes. |
 | D. The response header alone | Arrives only on a successful response, so a client learns it after the first keyed write and must remember it per server. |
 
-Recommendation: option A, naming the feature and the retention in seconds, plus option D's
-header as confirmation on every keyed response. Version checks against `victual_version` are
+The maintainer selected option A on 2026-10-11: `GET /api/system/info` names the feature
+and its retention in seconds. Option D's header confirms every keyed response. Version checks against `victual_version` are
 not recommended, because a named feature states the capability directly and a version number does not.
 
 ### 12. Nested callers never take a key
@@ -421,21 +422,38 @@ entry edits, measurements, weighing and undo are outside this record.
    extend retention or replace server-side uniqueness and fingerprint checks.
 
 2. **How does a client discover support and retention?** Decision 11 recommends a
-   field in `GET /api/system/info` and confirmation headers. The maintainer has not
-   selected the discovery field.
+   field in `GET /api/system/info` and confirmation headers. This choice is confirmed below.
+
+   > **Response:** datagen24, 2026-10-11: Use `GET /api/system/info` for discovery.
 3. **How are transaction-id collisions handled?** Decision 7 lists filtering replay
    rows by user, replacing `uniqid()` with a higher-entropy identifier, or both.
-   Random request keys do not change transaction-id generation. This choice remains open.
+   Random request keys do not change transaction-id generation.
+
+   > **Response:** datagen24, 2026-10-11: Use both protections: filter replays by the
+   > acting user and generate transaction ids with cryptographically secure randomness.
+
+4. **Must acceptance depend on a statement from victual-kit?**
+
+   > **Response:** datagen24, 2026-10-11: Define the API contract for any client.
+   > victual-kit is one UI and happens to be the first. Require a documented and tested
+   > contract, not evidence from that client alone.
+
+   Every client must discover support and retention, generate one random key per intended
+   booking, reuse it with unchanged request contents, stop automatic retries after seven
+   days, and handle conflicts or unknown outcomes without silently creating another booking.
+   ADR-0024 still requires coordination when an existing maintained client is affected
+   by a breaking change.
 
 ## Acceptance prerequisites
 
-1. The seven-day retention window is confirmed (decision 9). The maintainer still
-   chooses the discovery field (decision 11) before acceptance.
+1. Seven-day retention and discovery through `GET /api/system/info` are confirmed.
+   The implementing contract must name the capability and retention fields explicitly.
 2. The OpenAPI and CORS changes in the Consequences are reviewed as additive, with
    `victual.openapi.json` updated in the implementing pull request as ADR-0024 decision 1
    requires.
-3. victual-kit states how it will use the key: which bookings send one, how it generates it,
-   and that it stops retrying at the published retention window.
+3. The API documents and tests the client obligations in open question 4, including
+   unchanged retry contents and the retention boundary. Integration evidence from
+   victual-kit is useful but is not the only way to meet this gate.
 
 ## Verification
 
@@ -453,7 +471,9 @@ the suite runs (`.devtools/pgsql/run-tests.sh`):
 - PHPUnit: a user loses the booking permission, then replays; the answer is 403 and nothing is
   booked. The same with `STOCK_VIEW` removed answers 403 from the re-read.
 - PHPUnit: two users send the same key value; both book, and neither response mentions the
-  other.
+  other. A fixture with a legacy transaction-id collision proves replay returns only
+  the acting user's rows. New transactions use cryptographically random ids, and
+  existing transaction ids remain readable and undoable.
 - PHPUnit: after the retention window, the same key books again, demonstrating that expiry is
   real and that the published window is the limit.
 - PHPUnit: undo the transaction, then replay; the answer shows the rows with `undone` set and
