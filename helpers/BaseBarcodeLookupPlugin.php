@@ -188,11 +188,15 @@ abstract class BaseBarcodeLookupPlugin
 
 		// A divisor in every conversion StockService::ExternalBarcodeLookup() makes with
 		// it, so zero, blank, non-numeric and negative are all refused - not just the
-		// first two, which is what empty() alone catches.
+		// first two, which is what empty() alone catches. Non-finite values are refused
+		// too (issue #842): is_numeric() accepts a float NAN and a string such as "1e400"
+		// (which casts to INF), and NAN <= 0 is false, so neither would be caught by the
+		// comparison; quantity_unit_conversions.factor is DOUBLE PRECISION, which would
+		// store NaN or Infinity and corrupt every later booking in the purchase unit.
 		$quFactor = $pluginOutput['__qu_factor_purchase_to_stock'];
-		if (!is_numeric($quFactor) || (float)$quFactor <= 0)
+		if (!is_numeric($quFactor) || !is_finite((float)$quFactor) || (float)$quFactor <= 0)
 		{
-			throw new \Exception('Provided __qu_factor_purchase_to_stock must be a number greater than zero');
+			throw new \Exception('Provided __qu_factor_purchase_to_stock must be a finite number greater than zero');
 		}
 
 		// __barcode is not just an identifier: services/StockService.php builds the stored
