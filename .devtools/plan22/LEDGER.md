@@ -71,7 +71,7 @@ Proposed until a separate acceptance pull request.
 | D5 | v0.5.0 scope | Maintainer | #703 |
 | D6 | 782: merge needs `MASTER_DATA_EDIT` or both rights; 783: a container right or document the item rights; 785: refuse callers without `STOCK_VIEW` up front, or answer them without the row read | Maintainer | 782, 783, 785 |
 | W1 | #787 inherited OpenAPI gaps and a key-coverage leg | Implementation worker (2026-10-12) | — |
-| W2 | #788 `quantity_factor` | Read-only research (2026-10-12); the document edit follows #787 | — |
+| W2 | #788 `quantity_factor` | Research done 2026-10-12: no defect. The booked amount is `quantity × quantity_factor × conversion`, default factor 1 (`ConsumptionMappingService.php:238`). Missing: an OpenAPI description, a manual example, an event-level test. Starts after W1, which also edits `victual.openapi.json` | — |
 
 ## Specifications
 
