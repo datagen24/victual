@@ -12,7 +12,9 @@
   it to acceptance prerequisite 2, and adds a test to prerequisite 3. Revised 2026-10-12
   against `master` at `9bd1df91` to record the maintainer's release boundaries: the response
   under acceptance prerequisite 1 and under open questions 1, 2, 2a and 5, decision 2's
-  lookup gate, and the consequences for conversion creation and issue 742.
+  lookup gate, and the consequences for conversion creation and issue 742. Revised again on
+  2026-10-12 to record the maintainer's answer on the lookup's conversion (open question 5,
+  decision 2 and prerequisite 3).
 - **Referenced by:** [issue 742](https://github.com/datagen24/victual/issues/742) and its
   evidence, [`.devtools/issue742/RESULTS.md`](../../.devtools/issue742/RESULTS.md).
 - **Relationship:** compatible with accepted
@@ -79,7 +81,11 @@ entities: `products`, `product_barcodes`, `locations`, `quantity_units`, `produc
   that already exists, and there is no owner to scope it to. The maintainer confirmed on
   2026-10-12 that conversion creation stays with `MASTER_DATA_EDIT`. An account that holds
   `MASTER_DATA_ADD` and not `MASTER_DATA_EDIT` can therefore create a product and gets 403 on
-  `POST /api/objects/quantity_unit_conversions`.
+  `POST /api/objects/quantity_unit_conversions`. One exception belongs to product creation
+  itself: `external-lookup?add=true` may initialize the new product's purchase-to-stock
+  conversion with the validated lookup factor, in the same transaction that creates the
+  product, including by updating the conversion the creation trigger inserted (maintainer,
+  2026-10-12; see open question 5).
 - Userfield values and definitions, label subsystem writes, and merges keep their gates.
 - `GET /api/stock/barcodes/external-lookup/{barcode}` checks `STOCK_VIEW` alone for a lookup
   that creates nothing. With `add=true` it also requires `MASTER_DATA_ADD`, which every
@@ -332,7 +338,11 @@ should move to `MASTER_DATA_EDIT`; that needs its own decision.
    - product creation, through `POST /api/objects/products` and through
      `external-lookup?add=true`, requires `MASTER_DATA_ADD` or a permission above it, and an
      account that holds only `MASTER_DATA_ADD` gets 403 on
-     `POST /api/objects/quantity_unit_conversions`.
+     `POST /api/objects/quantity_unit_conversions`;
+   - an account that holds only `MASTER_DATA_ADD` and calls `external-lookup?add=true` gets
+     the new product's purchase-to-stock conversion at the lookup factor, written in the same
+     transaction as the product. Global conversions and every other product's conversions stay
+     unchanged, and a later edit of that conversion by the same account gets 403.
 4. The contract snapshots and `check-migrations.php` pass with the migration.
 
 ## Open questions
@@ -419,3 +429,16 @@ should move to `MASTER_DATA_EDIT`; that needs its own decision.
    The permission check therefore moves after the controller reads `add`
    (`controllers/Api/StockApiController.php`, where on `master` at `9bd1df91` both checks run
    at lines 872-873, before `add` is read at 878). Decision 2 states the resulting gate.
+
+   > **Response:** datagen24, 2026-10-12: A MASTER_DATA_ADD holder may initialize the new
+   > product's purchase-to-stock conversion using the validated lookup factor, within the
+   > same creation transaction. This includes updating a conversion inserted by the
+   > product-creation trigger. It must not modify global conversions or conversions
+   > belonging to existing products. Subsequent conversion creation or editing still
+   > requires MASTER_DATA_EDIT.
+
+   `StockService::ExternalBarcodeLookup()` writes this conversion with `add=true`: it updates
+   the factor-1 row `products_default_qu_conversions_INS` inserted for the new product, or
+   inserts a product-specific row when a global conversion already covered the pair (about
+   line 1506 on `master` at `b45f632d`). The response keeps that step for an add-only
+   account and limits it to rows of the product being created.
