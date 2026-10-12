@@ -2606,7 +2606,7 @@ run_openapidocument_tests() {
 	PHPCONFIG
 
 	say ""
-	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" OPENAPI_SERVED_DUMP="$SUITE_SCRATCH/served-openapi.json" \
 		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite openapidocument; then
 		failures=$((failures + 1))
 	fi

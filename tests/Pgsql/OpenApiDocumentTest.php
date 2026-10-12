@@ -18,8 +18,9 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * and derives five `ExposedEntity_*` enums by cloning `StringEnumTemplate`. The template's
  * enum is `[""]` - a placeholder so the committed document is a valid schema on its own -
  * so a derivation that does not empty it advertises "" as an entity the API does not
- * accept. ContractTest and WireContractTest compare the served routes and schemas with the
- * committed ones; neither asserted what the served enums contain, so the stray "" shipped.
+ * accept. ContractTest compares the served routes and schemas with the committed ones, and
+ * WireContractTest even pinned the stray "" as the expected member; nothing asserted that
+ * a served enum holds only entities.
  *
  * The controller is called directly (GenericQueryTest's pattern) so the test sees the
  * decoded body exactly as the route writes it. Request handling does not read the served
@@ -100,6 +101,8 @@ class OpenApiDocumentTest extends PgsqlSchemaTestCase
 	public function testEachVariantIsExactlyItsDerivedSet(): void
 	{
 		$exposed = self::committedEnum('ExposedEntity');
+		// 'users' is the one special entity UserfieldsService::GetEntities() adds to the
+		// exposed list (services/UserfieldsService.php, $specialEntities); the rest is the fixture.
 		$withUsers = array_merge($exposed, ['users', self::USER_ENTITY]);
 		$minus = fn (array $set, string $excluded) => array_values(array_diff($set, self::committedEnum($excluded)));
 		$sorted = function (array $set) {
