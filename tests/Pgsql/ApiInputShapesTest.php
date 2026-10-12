@@ -1162,7 +1162,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 			'POST labels pair' => ['/labels/pair', 'post', ['material'], ['material' => $hex], []],
 			'POST labels rotate' => ['/labels/credentials/rotate', 'post', ['material', 'rotation_request_id'], ['material' => $hex, 'rotation_request_id' => $hex], []],
 			'POST attempt result' => ['/labels/attempts/{attemptId}/result', 'post', ['outcome', 'detail'], ['outcome' => 'printed', 'detail' => new \stdClass()], []],
-			'POST product open' => ['/stock/products/{productId}/open', 'post', [], ['amount' => 1], []],
+			'POST product open' => ['/stock/products/{productId}/open', 'post', ['amount'], ['amount' => 1], []],
 			'POST entry measure' => ['/stock/entry/{entryId}/measure', 'post', ['amount', 'qu_id'], ['amount' => 1, 'qu_id' => 2], []],
 		];
 	}
