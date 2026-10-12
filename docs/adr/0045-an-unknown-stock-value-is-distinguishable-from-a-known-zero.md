@@ -3,14 +3,15 @@
 - **Status:** **Proposed.** Nothing here constrains work until the maintainer accepts it in a
   separate pull request. The record presents options and a recommendation. The maintainer
   confirmed zero, null and omission semantics on 2026-10-11. Option B, parent-only values, last-known-price fallback and client coordination
-  are confirmed. Import interpretation storage remains to be designed.
+  are confirmed. Open questions 8 to 13 were answered on 2026-10-12.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-11, against `master` at `d4960138`. Design work only: it changes no
   code, reserves no migration number and amends no accepted record. Revised 2026-10-12
   against `master` at `8fd76607` to specify acceptance prerequisites 1, 5 and 7 (see
   [Specification of the gates](#specification-of-the-gates-2026-10-12)) and to add open
-  questions 8 to 13. No maintainer decision changed.
+  questions 8 to 13. No maintainer decision changed. The maintainer's answers to open
+  questions 8 to 13 were recorded on 2026-10-12.
 - **Referenced by:** [issue 774](https://github.com/datagen24/victual/issues/774), which
   asks for the change; [issue 702](https://github.com/datagen24/victual/issues/702), which
   issue 774 names as related; `victual-kit`
@@ -830,6 +831,13 @@ between that and a superseding record that adds the exceptions to ADR-0005.
    forms: the progress output alone, or that output plus a row in a new target-owned table
    recording the import time, the rule applied and the count per table. The recommendation is
    both, so that an operator can read the interpretation after the terminal is gone.
+
+   > **Response:** datagen24, 2026-10-12: Use the per-row marker on `stock` and
+   > `stock_log`. Preserve stored prices. Produce both terminal disclosure and a persistent
+   > import report containing the rule and counts. Constrain the marker to valid values and
+   > require marked prices to equal zero. Test propagation through splits, edits,
+   > compaction and undo.
+
 9. **What does the upgrade migration do with price-`0` rows that Victual wrote before this
    change?**
    - Read them as known zeros. No row changes. This option is nearest the maintainer's
@@ -844,6 +852,12 @@ between that and a superseding record that adds the exceptions to ADR-0005.
    The recommendation is unknown. Five write paths stored `0` for a blank price, the same
    evidence that set the import default. Under (a) the migration changes the marker column
    only.
+
+   > **Response:** datagen24, 2026-10-12: Treat pre-change zeros as unknown. Those rows
+   > contain the same ambiguity as imported zeros because blank prices previously became
+   > zero. Change only the marker and report counts. New explicit zeros mean known free
+   > prices.
+
 10. **What do routes that return raw `stock` and `stock_log` rows send for a marked price?**
     These are `GET /api/objects/stock`, `GET /api/objects/stock_log`,
     `GET /api/stock/entry/{entryId}`, the two `.../entries` routes,
@@ -855,17 +869,37 @@ between that and a superseding record that adds the exceptions to ADR-0005.
 
     The recommendation is `null`, because the table under "Maintainer response and remaining
     choices" defines unknown as `null`. The stored `0` stays readable in the database.
+
+    > **Response:** datagen24, 2026-10-12: Return `price: null` for a marked price and keep
+    > the marker internal. Apply price-permission redaction consistently; an unauthorized
+    > caller still receives an omitted field. Coordinate this semantic change with clients.
+
 11. **Can an operator choose to import legacy zeros as known zeros?** "Unknown by default"
     implies an alternative. The options are no override in this change, or a
     `bin/victual-db-import` option that leaves the marker unset and is named in the
     disclosure. The recommendation is the option, because only the operator knows whether
     the source recorded free items as `0`.
+
+    > **Response:** datagen24, 2026-10-12: Allow an explicit whole-import option to
+    > interpret zeros as known. Default to unknown. Record the chosen policy in the
+    > persistent report and explain that the override affects every zero, including
+    > potentially unentered prices.
+
 12. **Does `stock_current` (SQL) or `StockService` (PHP) compute the incompleteness flags?**
     The recommendation is `stock_current`, compared under gate 5.
+
+    > **Response:** datagen24, 2026-10-12: Compute incompleteness in `stock_current`, so
+    > API responses and the web overview use the same SQL rule.
+
 13. **Where are the accepted differences D1 to D4 recorded?** The options are this record,
     as ADR-0031 decision item 11 records its wire changes, or a superseding record that adds
     them to ADR-0005's exceptions. The recommendation is this record, with no difftest
     normalisation of values, compared under gate 7.
+
+    > **Response:** datagen24, 2026-10-12: Record D1 to D4 explicitly in ADR-0045, including
+    > its precise relationship to ADR-0005. Do not rewrite the historical decision. Require
+    > targeted tests exercising each difference; unchanged existing fixtures do not
+    > demonstrate the new semantics.
 
 ## Acceptance prerequisites
 
@@ -873,8 +907,8 @@ between that and a superseding record that adds the exceptions to ADR-0005.
    the record must define how imported legacy zeros retain their original booking values
    while readers distinguish their unknown interpretation from new, known zeros. Gate 1
    under [Specification of the gates](#specification-of-the-gates-2026-10-12) defines the
-   candidates, the write paths that must propagate the interpretation and its readers. The
-   gate is met when open questions 8 to 11 are answered.
+   candidates, the write paths that must propagate the interpretation and its readers. Open
+   questions 8 to 11 are answered (2026-10-12).
 2. Option B and the answers to open questions 2 and 4 are confirmed.
 3. A coordinated change for affected maintained clients is identified under ADR-0024.
    Clients read option B's flags, preserve absent versus present-null fields, and rely on
@@ -885,8 +919,8 @@ between that and a superseding record that adds the exceptions to ADR-0005.
 5. Under option B: the record names the flags' `permission_fields` rows, their
    `WireBooleans` entries, and whether `stock_current` or `StockService` computes them.
    Gate 5 names the flags, their rows and their entries in `WireBooleans`,
-   `DOCUMENTED_BOOLEANS` and `CONVERSION_COVERAGE`. The gate is met when open question 12
-   is answered.
+   `DOCUMENTED_BOOLEANS` and `CONVERSION_COVERAGE`. Open question 12 is answered:
+   `stock_current` computes the flags.
 6. Parent-only values and completeness are confirmed. The API descriptions must distinguish
    that scope from `amount_aggregated`, as defined above.
 7. Under P2, or under option A or B: the record names the ADR-0005 accepted difference or
@@ -895,8 +929,9 @@ between that and a superseding record that adds the exceptions to ADR-0005.
    `recipes_pos_resolved`, `recipes_resolved`, as applicable). Import evidence must show
    original booking values unchanged and the disclosed interpretation applied consistently.
    Gate 7 gives the result and treatment per view, including `stock_current` and the
-   `uihelper` views, and proposes accepted differences D1 to D4. The gate is met when open
-   question 13 is answered.
+   `uihelper` views, and proposes accepted differences D1 to D4. Open question 13 is
+   answered: D1 to D4 are recorded here, and each has a targeted test that exercises it,
+   because the existing fixtures do not.
 
 ## Verification
 

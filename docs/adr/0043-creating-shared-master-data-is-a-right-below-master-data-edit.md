@@ -274,6 +274,9 @@ should move to `MASTER_DATA_EDIT`; that needs its own decision.
 ## Acceptance prerequisites
 
 1. The maintainer decides the feature is needed and in which release it ships.
+
+   > **Response:** datagen24, 2026-10-12: Needed. It ships in v0.5.0.
+
 2. Open questions 1 to 3 and 5 are answered.
 3. Tests, each named in the accepting pull request:
    - an account holding only the new permission can create each entity in the set and gets 403

@@ -420,8 +420,7 @@ the maintainer choose a window that is not a whole number of days without a fiel
 
 **Headers.** `Idempotency-Key` is the request header, matching label operations.
 `Idempotent-Replayed` is `true` when the response is a replay and `false` when a keyed
-request booked (decision 7). Open question 5 asks whether the capability should sit under a
-shared `capabilities` container instead of at the top level.
+request booked (decision 7). The maintainer chose the top level on 2026-10-12 (open question 5).
 
 ### 12. Nested callers never take a key
 
@@ -841,8 +840,7 @@ the maintainer choose a window that is not a whole number of days without a fiel
 
 **Headers.** `Idempotency-Key` is the request header, matching label operations.
 `Idempotent-Replayed` is `true` when the response is a replay and `false` when a keyed
-request booked (decision 7). Open question 5 asks whether the capability should sit under a
-shared `capabilities` container instead of at the top level.
+request booked (decision 7). The maintainer chose the top level on 2026-10-12 (open question 5).
 
 ### 12. Nested callers never take a key
 
@@ -1011,13 +1009,18 @@ confirm that it treats the id as opaque before release.
    maintainer prefers option B, only the JSON path changes; the three members, the unit and
    the headers stay as recorded. The examples show option A.
 
+   > **Response:** datagen24, 2026-10-12: Option A: a top-level `stock_booking_idempotency`
+   > object in `/system/info`, with `header`, `retention_seconds` and `operations`. That is
+   > sufficient for the specified feature. Keep the seven-day retention and replay header
+   > already recorded.
+
 ## Acceptance prerequisites
 
 1. Seven-day retention and discovery through `GET /api/system/info` are confirmed.
    Decision 11 names the capability (`stock_booking_idempotency`) and the retention field
    (`retention_seconds`, in seconds). Decision 7 names the response header
-   (`Idempotent-Replayed`, `true` or `false`). Open question 5 asks the maintainer to
-   confirm the JSON path.
+   (`Idempotent-Replayed`, `true` or `false`). The maintainer confirmed the
+   top-level JSON path on 2026-10-12 (open question 5).
 2. The OpenAPI and CORS changes in the Consequences are reviewed as additive, with
    `victual.openapi.json` updated in the implementing pull request as ADR-0024 decision 1
    requires.
