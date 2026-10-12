@@ -57,6 +57,27 @@ class InfluxEventWriter
 	 */
 	private $LastError = null;
 
+	/**
+	 * The HTTP status of the last Write(), or null when it never got one - a refused
+	 * connection, a DNS failure, a timeout - and after a Write() that sent nothing.
+	 *
+	 * @var int|null
+	 */
+	private $LastStatus = null;
+
+	/**
+	 * The statuses InfluxDB answers with when it has understood the request and refused this
+	 * body: 400 (a line it cannot parse), 413 (a body over its size limit) and 422 (a line
+	 * it parsed and will not accept). Retrying the same lines gets the same answer, so these
+	 * are the only failures BookingEventPublisher::Drain() treats as a property of the data.
+	 *
+	 * Everything else is a property of the setup or the moment and stays retryable: 401 and
+	 * 403 (the token), 404 (the bucket or database), 408 and 429 (timing and load), 5xx, a
+	 * redirect, and a transport failure. Dead-lettering on those would turn a wrong token into
+	 * a pile of discarded events, which is the opposite of what the outbox is for.
+	 */
+	public const ROW_LEVEL_REJECTION_STATUSES = [400, 413, 422];
+
 	public static function IsEnabled(): bool
 	{
 		return defined('VICTUAL_INFLUXDB_ENABLED') && VICTUAL_INFLUXDB_ENABLED === true;
@@ -88,11 +109,17 @@ class InfluxEventWriter
 	 * something in front of InfluxDB that returns a body on success, this is the check to
 	 * loosen, deliberately and with the endpoint named.
 	 *
+	 * A failure leaves the HTTP status it was answered with in GetLastStatus() - null when
+	 * there was none - so the caller can tell a body InfluxDB refused from an endpoint that
+	 * could not be reached or is not configured right. What is sent is not affected.
+	 *
 	 * @param string[] $lines
 	 * @return bool True when the write endpoint acknowledged the batch
 	 */
 	public function Write(array $lines): bool
 	{
+		$this->LastStatus = null;
+
 		if (count($lines) === 0)
 		{
 			return true;
@@ -137,6 +164,7 @@ class InfluxEventWriter
 			$response = $client->request('POST', $url, $options);
 
 			$status = $response->getStatusCode();
+			$this->LastStatus = $status;
 
 			if ($status < 200 || $status > 299)
 			{
@@ -255,6 +283,23 @@ class InfluxEventWriter
 		}
 
 		return ': ' . (strlen($text) > 200 ? substr($text, 0, 200) . '…' : $text);
+	}
+
+	/**
+	 * The HTTP status the last Write() was answered with, or null when it was not answered.
+	 */
+	public function GetLastStatus(): ?int
+	{
+		return $this->LastStatus;
+	}
+
+	/**
+	 * Whether the last Write() failed because InfluxDB refused the body itself
+	 * (ROW_LEVEL_REJECTION_STATUSES), as opposed to anything that a retry could change.
+	 */
+	public function WasRowLevelRejection(): bool
+	{
+		return $this->LastStatus !== null && in_array($this->LastStatus, self::ROW_LEVEL_REJECTION_STATUSES, true);
 	}
 
 	/**

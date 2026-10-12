@@ -366,7 +366,22 @@ class BookingEventPublisher
 	 * the process dying mid-drain - leaves the rows exactly where they were, still claimed by
 	 * nobody once this transaction is gone.
 	 *
-	 * @return bool True when a batch was delivered
+	 * **A rejected write is told apart by its status** (issue #854). A failure that says
+	 * nothing about the data - a timeout, an unreachable server, a 401 or 403 for the token, a
+	 * 404 for the bucket, a 429, a 5xx, a redirect - fails the whole batch with
+	 * RecordFailure() as before, and nothing is ever dead-lettered on its account, because a
+	 * misconfigured token must not discard committed events. A 400, 413 or 422 is InfluxDB
+	 * refusing the body itself, and the same body is refused on every retry, so the batch is
+	 * bisected (IsolateRejection()) within this call: rows InfluxDB accepts are delivered, a
+	 * row it refuses on its own is dead-lettered with the status and its error text, and a
+	 * single-row batch refused that way is dead-lettered directly. If a retryable failure
+	 * turns up during the bisection the walk stops, what was resolved stays resolved, and the
+	 * rest are recorded as failed and retried by the next drain.
+	 *
+	 * Lines are built per row, so a row that cannot be built is dead-lettered on its own
+	 * instead of failing the whole batch.
+	 *
+	 * @return bool True when at least one event was delivered
 	 */
 	public static function Drain(): bool
 	{
@@ -423,43 +438,89 @@ class BookingEventPublisher
 					return false;
 				}
 
-				$ids = array_column($deliverable, 'id');
+				// Lines are built per row, not per batch, so that a row which cannot be built
+				// is a row-sized problem and so that a rejected batch can be split along row
+				// boundaries below.
+				$rows = [];
 
-				try
+				foreach ($deliverable as $event)
 				{
-					$lines = self::BuildLines(array_column($deliverable, 'payload'));
-				}
-				catch (\Throwable $ex)
-				{
-					// One line for the whole drain rather than one per event
-					error_log('Victual: could not build the InfluxDB event batch, nothing was delivered: ' . $ex->getMessage());
-					$outbox->RecordFailure($ids, $ex->getMessage());
-
-					return false;
+					try
+					{
+						$rows[] = ['id' => $event['id'], 'lines' => self::BuildLines([$event['payload']])];
+					}
+					catch (\Throwable $ex)
+					{
+						// DescribeUnreadable() passed it, so this is something it did not
+						// foresee. Rebuilding it will throw the same way, so it is set aside
+						// like an unreadable row instead of being retried in front of every
+						// row behind it.
+						$reason = 'could not build the InfluxDB lines: ' . $ex->getMessage();
+						error_log('Victual: outbox row ' . $event['id'] . ' cannot be delivered to InfluxDB and has been set aside: ' . $reason);
+						$outbox->DeadLetter([$event['id']], $reason);
+					}
 				}
 
 				// A readable event can still produce no lines - one whose bookings were all
 				// undone and whose products left stock entirely. It is delivered rather than
 				// retried forever: there is nothing to send and nothing wrong with it.
-				if (count($lines) === 0)
+				$empty = [];
+				$withLines = [];
+
+				foreach ($rows as $row)
 				{
-					$outbox->MarkDelivered($ids);
+					if (count($row['lines']) === 0)
+					{
+						$empty[] = $row['id'];
+					}
+					else
+					{
+						$withLines[] = $row;
+					}
+				}
+
+				$outbox->MarkDelivered($empty);
+
+				if (count($withLines) === 0)
+				{
+					return count($empty) > 0;
+				}
+
+				$writer = new InfluxEventWriter();
+				$lines = [];
+
+				foreach ($withLines as $row)
+				{
+					array_push($lines, ...$row['lines']);
+				}
+
+				if ($writer->Write($lines))
+				{
+					$outbox->MarkDelivered(array_column($withLines, 'id'));
 
 					return true;
 				}
 
-				$writer = new InfluxEventWriter();
-
-				if (!$writer->Write($lines))
+				if (!$writer->WasRowLevelRejection())
 				{
-					$outbox->RecordFailure($ids, $writer->GetLastError() ?? 'the write was rejected');
+					// A timeout, an unreachable server, a wrong token or bucket, a 5xx, a
+					// redirect: nothing about the rows, so all of them stay in the queue.
+					$outbox->RecordFailure(array_column($withLines, 'id'), $writer->GetLastError() ?? 'the write was rejected');
 
 					return false;
 				}
 
-				$outbox->MarkDelivered($ids);
+				if (count($withLines) === 1)
+				{
+					self::SetAsideRejected($outbox, $withLines[0]['id'], $writer);
 
-				return true;
+					return count($empty) > 0;
+				}
+
+				// null: a retryable failure stopped it, which is a failed drain
+				$resolved = self::IsolateRejection($withLines, $writer, $outbox);
+
+				return $resolved === null ? false : ($resolved || count($empty) > 0);
 			});
 		}
 		catch (\Throwable $ex)
@@ -468,6 +529,109 @@ class BookingEventPublisher
 
 			return false;
 		}
+	}
+
+	/**
+	 * Finds the row(s) InfluxDB refused in a batch it refused as a whole, by bisection.
+	 *
+	 * The caller has just had the whole of $rows rejected with a row-level status (see
+	 * InfluxEventWriter::ROW_LEVEL_REJECTION_STATUSES). Each half is written on its own: a
+	 * half InfluxDB accepts is delivered, a half it rejects the same way is split again, and a
+	 * single row rejected that way is dead-lettered with the status and InfluxDB's error text.
+	 * Bisection rather than one request per row because the usual case is one bad row among up
+	 * to DRAIN_BATCH_SIZE, which this resolves in about twice log2(n) writes instead of n.
+	 *
+	 * A half rejected with anything else - a timeout, a 500, a 401 - stops the walk: the rows
+	 * resolved so far stay resolved, every row not yet resolved gets RecordFailure() and stays
+	 * in the queue, and the drain reports no delivery. Such a failure says nothing about the
+	 * rows, so none of them may be set aside on its account.
+	 *
+	 * Re-sending rows that a partly applied 400 already stored is harmless: a point with the
+	 * same measurement, tag set and timestamp overwrites the one in the series, and every
+	 * point's identity (event_id, transaction_id, product_id, booking_id) comes from the
+	 * payload, so the second write replaces the first rather than adding to it.
+	 *
+	 * @param array<int, array{id: int, lines: string[]}> $rows Two or more rows, every one with lines
+	 * @return bool|null True when at least one row was delivered, false when none was, null when
+	 *                   a retryable failure stopped the walk before every row was resolved
+	 */
+	private static function IsolateRejection(array $rows, InfluxEventWriter $writer, OutboxService $outbox): ?bool
+	{
+		$delivered = false;
+		$halves = array_chunk($rows, (int)ceil(count($rows) / 2));
+
+		foreach ($halves as $position => $half)
+		{
+			$lines = [];
+
+			foreach ($half as $row)
+			{
+				array_push($lines, ...$row['lines']);
+			}
+
+			if ($writer->Write($lines))
+			{
+				$outbox->MarkDelivered(array_column($half, 'id'));
+				$delivered = true;
+
+				continue;
+			}
+
+			if (!$writer->WasRowLevelRejection())
+			{
+				// Not about the rows: this half and everything after it stays queued
+				$unresolved = $half;
+
+				foreach (array_slice($halves, $position + 1) as $rest)
+				{
+					$unresolved = array_merge($unresolved, $rest);
+				}
+
+				$outbox->RecordFailure(array_column($unresolved, 'id'), $writer->GetLastError() ?? 'the write was rejected');
+
+				return null;
+			}
+
+			if (count($half) === 1)
+			{
+				self::SetAsideRejected($outbox, $half[0]['id'], $writer);
+
+				continue;
+			}
+
+			$inner = self::IsolateRejection($half, $writer, $outbox);
+
+			if ($inner === null)
+			{
+				// The inner walk recorded its own unresolved rows; the halves after this one
+				// have not been tried
+				$unresolved = [];
+
+				foreach (array_slice($halves, $position + 1) as $rest)
+				{
+					$unresolved = array_merge($unresolved, $rest);
+				}
+
+				$outbox->RecordFailure(array_column($unresolved, 'id'), $writer->GetLastError() ?? 'the write was rejected');
+
+				return null;
+			}
+
+			$delivered = $delivered || $inner;
+		}
+
+		return $delivered;
+	}
+
+	/**
+	 * Dead-letters one row InfluxDB refused, keeping the status and its error text.
+	 */
+	private static function SetAsideRejected(OutboxService $outbox, int $id, InfluxEventWriter $writer): void
+	{
+		$reason = 'InfluxDB rejected this event permanently (HTTP ' . $writer->GetLastStatus() . '): ' . ($writer->GetLastError() ?? 'no reason given');
+
+		error_log('Victual: outbox row ' . $id . ' cannot be delivered to InfluxDB and has been set aside: ' . $reason);
+		$outbox->DeadLetter([$id], $reason);
 	}
 
 	/**
