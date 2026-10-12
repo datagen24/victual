@@ -53,6 +53,13 @@ class OpenApiExamplesTest extends TestCase
 	/** Keys whose value is instance data. Never descended into: it may contain a key called `example`. */
 	private const DATA_KEYS = ['example', 'examples', 'default', 'enum', 'const'];
 
+	/**
+	 * Example pointer => keys the example may carry although the schema does not declare
+	 * them. Deliberately empty: a schema that really allows extra keys says so with
+	 * `additionalProperties`, and an example should not rely on keys nobody documented.
+	 */
+	private const ALLOWED_UNDECLARED_KEYS = [];
+
 	public function testEveryExampleInTheDocumentIsValidAgainstItsSchema(): void
 	{
 		[$checked, $failures] = self::validateExamples(self::loadDocument());
@@ -79,11 +86,22 @@ class OpenApiExamplesTest extends TestCase
 		self::assertStringContainsString('/id', $failures[0]);
 	}
 
-	public function testDateTimeValuesAreHeldToTheWireFormat(): void
+	public function testDateTimeFormatIsEnforcedNotJustThePattern(): void
 	{
-		// Opis enforces `format: date-time`, and the property's own `pattern` adds the wire
-		// format's six fractional digits and `Z`, so the SQL-style timestamp these examples
-		// used to carry is rejected.
+		// Matches the property's `pattern` exactly (six fractional digits and `Z`) but is not
+		// a date, so only Opis enforcing `format: date-time` can reject it.
+		$document = self::loadDocument();
+		$document->components->schemas->Product->example->row_created_timestamp = '2019-13-45T00:00:00.000000Z';
+
+		[, $failures] = self::validateExamples($document);
+
+		self::assertCount(1, $failures, implode("\n", $failures));
+		self::assertStringContainsString('/row_created_timestamp', $failures[0]);
+		self::assertStringContainsString("must match the 'date-time' format", $failures[0]);
+	}
+
+	public function testDateTimePatternIsEnforced(): void
+	{
 		$document = self::loadDocument();
 		$document->components->schemas->Product->example->row_created_timestamp = '2019-05-02 20:12:26';
 
@@ -91,6 +109,194 @@ class OpenApiExamplesTest extends TestCase
 
 		self::assertCount(1, $failures, implode("\n", $failures));
 		self::assertStringContainsString('/row_created_timestamp', $failures[0]);
+	}
+
+	public function testAnExampleKeyTheSchemaDoesNotDeclareIsReported(): void
+	{
+		$document = self::loadDocument();
+		$document->components->schemas->StockLocation->example->name = 'Fridge';
+
+		[, $failures] = self::validateExamples($document);
+
+		self::assertCount(1, $failures, implode("\n", $failures));
+		self::assertStringStartsWith('/components/schemas/StockLocation/example:', $failures[0]);
+		self::assertStringContainsString('/name is not declared', $failures[0]);
+	}
+
+	/**
+	 * The document holds no Parameter, Header, MediaType, Example Object or allOf example
+	 * today, so the count of 40 does not exercise those branches. This synthetic document
+	 * carries one of each: valid, it must yield four examples and no failure; with every
+	 * value broken, each location must be reported by its own pointer.
+	 */
+	public function testWalkerReachesHeadersMediaTypesExampleObjectsAndAllOf(): void
+	{
+		[$checked, $failures] = self::validateExamples(self::syntheticDocument(false));
+		self::assertSame(4, $checked);
+		self::assertSame([], $failures);
+
+		[$checked, $failures] = self::validateExamples(self::syntheticDocument(true));
+		self::assertSame(4, $checked);
+		$expected = [
+			'/paths/~1things/get/responses/200/headers/X-Total/example:' => '/ The data (string) must match the type: integer',
+			'/paths/~1things/get/responses/200/content/application~1json/example:' => '/id The data (string) must match the type: integer',
+			'/paths/~1things/get/responses/200/content/application~1json/examples/one/value:' => '/id The data (string) must match the type: integer',
+			'/components/schemas/Both/example:' => '/id The data (string) must match the type: integer',
+		];
+		foreach ($expected as $prefix => $detail)
+		{
+			$line = array_values(array_filter($failures, static fn (string $f) => str_starts_with($f, $prefix)));
+			self::assertCount(1, $line, "$prefix not reported in:\n" . implode("\n", $failures));
+			self::assertStringContainsString($detail, $line[0]);
+		}
+		// The allOf member's key set is the union of both members, so `extra` is the only stray.
+		self::assertStringContainsString('/extra is not declared', implode("\n", $failures));
+		self::assertStringNotContainsString('/name is not declared', implode("\n", $failures));
+		self::assertCount(4, $failures);
+	}
+
+	private static function syntheticDocument(bool $broken): object
+	{
+		$id = $broken ? '"1"' : '1';
+		$both = $broken ? '{"id":"1","name":"x","extra":true}' : '{"id":1,"name":"x"}';
+
+		return json_decode('{
+			"openapi": "3.1.0",
+			"paths": {"/things": {"get": {"responses": {"200": {
+				"description": "ok",
+				"headers": {"X-Total": {"schema": {"type": "integer"}, "example": ' . $id . '}},
+				"content": {"application/json": {
+					"schema": {"$ref": "#/components/schemas/Thing"},
+					"example": {"id": ' . $id . '},
+					"examples": {"one": {"value": {"id": ' . $id . '}}}
+				}}
+			}}}}},
+			"components": {"schemas": {
+				"Thing": {"type": "object", "properties": {"id": {"type": "integer"}}},
+				"Both": {
+					"allOf": [{"$ref": "#/components/schemas/Thing"}, {"type": "object", "properties": {"name": {"type": "string"}}}],
+					"example": ' . $both . '
+				}
+			}}
+		}', false, flags: JSON_THROW_ON_ERROR);
+	}
+
+	/**
+	 * Resolves a local `$ref` chain. A pointer token is percent-decoded and then
+	 * un-escaped, the reverse of escape().
+	 */
+	private static function resolve(object $document, object $schema): object
+	{
+		for ($hops = 0; isset($schema->{'$ref'}) && $hops < 16; $hops++)
+		{
+			$schema = self::pointerGet($document, substr($schema->{'$ref'}, 1));
+		}
+
+		return $schema;
+	}
+
+	private static function pointerGet(object $document, string $pointer): object
+	{
+		$node = $document;
+		foreach (array_filter(explode('/', $pointer), static fn (string $t) => $t !== '') as $token)
+		{
+			$token = str_replace(['~1', '~0'], ['/', '~'], rawurldecode($token));
+			$node = is_array($node) ? $node[(int)$token] : $node->{$token};
+		}
+
+		return $node;
+	}
+
+	/** Every member schema a value may be validated against: the schema itself plus its allOf, anyOf and oneOf members. */
+	private static function members(object $document, object $schema, int $depth = 0): array
+	{
+		$schema = self::resolve($document, $schema);
+		$all = [$schema];
+		if ($depth < 8)
+		{
+			foreach (['allOf', 'anyOf', 'oneOf'] as $keyword)
+			{
+				foreach ($schema->{$keyword} ?? [] as $member)
+				{
+					$all = array_merge($all, self::members($document, $member, $depth + 1));
+				}
+			}
+		}
+
+		return $all;
+	}
+
+	/**
+	 * The property names a schema declares, across its allOf/anyOf/oneOf members, or null
+	 * when it cannot say: it declares no properties at all (a free-form object), or it
+	 * says extra keys are welcome with an explicit `additionalProperties` that is not false.
+	 */
+	private static function declaredKeys(object $document, object $schema): ?array
+	{
+		$names = [];
+		foreach (self::members($document, $schema) as $member)
+		{
+			if (isset($member->additionalProperties) && $member->additionalProperties !== false)
+			{
+				return null;
+			}
+			foreach (array_keys(get_object_vars($member->properties ?? new \stdClass())) as $name)
+			{
+				$names[$name] = true;
+			}
+		}
+
+		return $names === [] ? null : array_keys($names);
+	}
+
+	/**
+	 * Appends one line for every key in $value (recursively, following the declared
+	 * property and item schemas) that the schema does not declare. An undeclared key is a
+	 * field the wire does not have, or one the document forgot to describe; either way a
+	 * reader is misled, and Opis cannot say so because object schemas are open by default.
+	 */
+	private static function undeclaredKeys(object $document, object $schema, mixed $value, string $path, string $pointer, array &$into, int $depth = 0): void
+	{
+		if ($depth > 24)
+		{
+			return;
+		}
+		if (is_array($value))
+		{
+			foreach ($value as $index => $item)
+			{
+				foreach (self::members($document, $schema) as $member)
+				{
+					if (isset($member->items) && is_object($member->items))
+					{
+						self::undeclaredKeys($document, $member->items, $item, "$path/$index", $pointer, $into, $depth + 1);
+					}
+				}
+			}
+
+			return;
+		}
+		if (!is_object($value))
+		{
+			return;
+		}
+
+		$declared = self::declaredKeys($document, $schema);
+		foreach ($value as $key => $child)
+		{
+			if ($declared !== null && !in_array($key, $declared, true) && !in_array($key, self::ALLOWED_UNDECLARED_KEYS[$pointer] ?? [], true))
+			{
+				$into[] = "$path/$key is not declared by the schema";
+				continue;
+			}
+			foreach (self::members($document, $schema) as $member)
+			{
+				if (isset($member->properties->{$key}) && is_object($member->properties->{$key}))
+				{
+					self::undeclaredKeys($document, $member->properties->{$key}, $child, "$path/$key", $pointer, $into, $depth + 1);
+				}
+			}
+		}
 	}
 
 	private static function loadDocument(): object
@@ -121,14 +327,16 @@ class OpenApiExamplesTest extends TestCase
 			$base->{'$ref'} = '#' . $schemaPointer;
 
 			$result = $validator->validate(json_decode(json_encode($value)), $base);
-			if ($result->isValid())
-			{
-				continue;
-			}
-
 			$leaves = [];
-			self::leafErrors($result->error(), $leaves);
-			$failures[] = $examplePointer . ': ' . implode('; ', array_unique($leaves));
+			if (!$result->isValid())
+			{
+				self::leafErrors($result->error(), $leaves);
+			}
+			self::undeclaredKeys($document, self::pointerGet($document, $schemaPointer), $value, '', $examplePointer, $leaves);
+			if ($leaves !== [])
+			{
+				$failures[] = $examplePointer . ': ' . implode('; ', array_unique($leaves));
+			}
 		}
 
 		return [count($found), $failures];

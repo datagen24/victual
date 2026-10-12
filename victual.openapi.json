@@ -12828,7 +12828,6 @@
 					"tare_weight": 0,
 					"not_check_stock_fulfillment_for_recipes": 0,
 					"shopping_location_id": null,
-					"userfields": null,
 					"should_not_be_frozen": 1,
 					"default_consume_location_id": 5,
 					"move_on_open": 1,
@@ -13226,7 +13225,8 @@
 					"product_id": 3,
 					"amount": 2,
 					"location_id": 1,
-					"name": "Fridge"
+					"location_name": "Fridge",
+					"location_is_freezer": 0
 				}
 			},
 			"StockEntry": {
@@ -13611,8 +13611,7 @@
 						"default_best_before_days_after_open": 0,
 						"enable_tare_weight_handling": 0,
 						"tare_weight": 0,
-						"not_check_stock_fulfillment_for_recipes": 0,
-						"last_shopping_location_id": null
+						"not_check_stock_fulfillment_for_recipes": 0
 					},
 					"product_barcodes": [
 						{
@@ -13903,24 +13902,24 @@
 				},
 				"example": {
 					"chore": {
-						"id": 0,
-						"name": "string",
-						"description": "string",
-						"period_type": "manually",
-						"period_days": 0,
-						"row_created_timestamp": "2019-05-04T11:31:04.563000Z"
+						"id": 1,
+						"name": "Take out the trash",
+						"description": "Bins go to the kerb on Thursday evening",
+						"period_type": "daily",
+						"period_days": 1,
+						"row_created_timestamp": "2019-05-02T20:12:26.000000Z"
 					},
 					"last_tracked": "2019-05-04T11:31:04.563000Z",
-					"track_count": 0,
+					"track_count": 1,
 					"last_done_by": {
-						"id": 0,
-						"username": "string",
-						"first_name": "string",
-						"last_name": "string",
-						"display_name": "string",
-						"row_created_timestamp": "2019-05-04T11:31:04.564000Z"
+						"id": 1,
+						"username": "admin",
+						"first_name": "Ada",
+						"last_name": "Lovelace",
+						"display_name": "Ada Lovelace",
+						"row_created_timestamp": "2019-05-02T20:12:25.000000Z"
 					},
-					"next_estimated_execution_time": "2019-05-04T11:31:04.564000Z"
+					"next_estimated_execution_time": "2019-05-05T11:31:04.563000Z"
 				}
 			},
 			"BatteryDetailsResponse": {
