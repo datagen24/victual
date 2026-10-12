@@ -12541,7 +12541,7 @@
 					},
 					"disable_open": {
 						"type": "integer",
-						"description": "0 or 1. When 1, stock of this product cannot be marked opened."
+						"description": "0 or 1. When 1, stock of this product cannot be marked opened: StockService::OpenProduct() refuses it with \"Product can't be opened\"."
 					},
 					"default_purchase_price_type": {
 						"type": "integer",
@@ -12793,7 +12793,7 @@
 					},
 					"disable_open": {
 						"type": "integer",
-						"description": "0 or 1. When 1, stock of this product cannot be marked opened."
+						"description": "0 or 1. When 1, stock of this product cannot be marked opened: StockService::OpenProduct() refuses it with \"Product can't be opened\"."
 					},
 					"default_purchase_price_type": {
 						"type": "integer",
