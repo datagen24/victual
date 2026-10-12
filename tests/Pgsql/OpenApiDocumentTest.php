@@ -40,6 +40,9 @@ class OpenApiDocumentTest extends PgsqlSchemaTestCase
 	/** @var array<string,mixed> what the route serves */
 	private static array $served;
 
+	/** The route's response body, byte for byte, for the OAS 3.2 gate (see the dump test). */
+	private static string $servedBody;
+
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -59,7 +62,8 @@ class OpenApiDocumentTest extends PgsqlSchemaTestCase
 		$request = (new \Slim\Psr7\Factory\ServerRequestFactory())->createServerRequest('GET', 'https://victual.example/api/openapi/specification');
 		$response = self::$controller->DocumentationSpec($request, new Response(), []);
 		self::assertSame(200, $response->getStatusCode());
-		self::$served = json_decode((string)$response->getBody(), true, flags: JSON_THROW_ON_ERROR);
+		self::$servedBody = (string)$response->getBody();
+		self::$served = json_decode(self::$servedBody, true, flags: JSON_THROW_ON_ERROR);
 	}
 
 	private static function committedEnum(string $schema): array
@@ -181,7 +185,11 @@ class OpenApiDocumentTest extends PgsqlSchemaTestCase
 		$file = getenv('OPENAPI_SERVED_DUMP');
 		self::assertTrue($file !== false && $file !== '' && is_dir(dirname($file)), 'OPENAPI_SERVED_DUMP is not set to a path in an existing directory, so there is nowhere to leave the served document for the gate');
 
-		self::assertNotFalse(file_put_contents($file, json_encode(self::$served, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"), "could not write $file");
-		self::assertSame(self::$served, json_decode(file_get_contents($file), true), 'the dump is not the served document');
+		// The body as served, not self::$served re-encoded: decoding to arrays turns every
+		// empty object into an empty list, so a re-encoded dump carries `"schema": []` where
+		// the route sent `"schema": {}` - the raw-binary responses' empty schemas - and the
+		// gate fails on a document nobody served.
+		self::assertNotFalse(file_put_contents($file, self::$servedBody), "could not write $file");
+		self::assertSame(self::$servedBody, file_get_contents($file), 'the dump is not the served document');
 	}
 }
