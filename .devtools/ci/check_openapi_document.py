@@ -10,8 +10,10 @@ Three checks, because the schema alone is not enough:
      checks the shape of every object and rejects unknown keys, but it does not check
      Schema Object keywords or that a reference points at anything.
   2. Reference targets: every local $ref (`#/...` or `#anchor`) must resolve inside the
-     document. The metaschema only checks that a $ref is a string.
-  3. Placeholder enums: no string enum may contain "". The served document is derived from
+     document, and a non-local $ref is reported because its target cannot be checked. The
+     metaschema only checks that a $ref is a string. Subtrees that hold data (example,
+     examples, default, const) are not walked.
+  3. Placeholder enums: no enum may contain "" or be empty. The served document is derived from
      StringEnumTemplate, whose committed enum is [""], and a derivation that forgets to
      empty it advertises "" as a valid value (issue #799). The template itself is the one
      place the placeholder is meant to live.
@@ -57,10 +59,19 @@ def structure_findings(document, metaschema):
     return sorted((pointer(error.absolute_path), error.message) for error in validator.iter_errors(document))
 
 
+# Keywords whose value is data, not document structure: a payload may contain a "$ref" or
+# an enum-shaped object without being either.
+DATA_KEYS = {"example", "examples", "default", "const"}
+# ...unless the key is a property or schema *name* in one of these maps.
+NAME_MAPS = {"properties", "patternProperties", "dependentSchemas", "$defs", "schemas", "headers", "responses", "paths"}
+
+
 def _walk(node, path):
     yield path, node
     if isinstance(node, dict):
         for key, value in node.items():
+            if key in DATA_KEYS and not (path and path[-1] in NAME_MAPS):
+                continue
             yield from _walk(value, path + [key])
     elif isinstance(node, list):
         for index, value in enumerate(node):
@@ -100,7 +111,9 @@ def reference_findings(document):
     for path, node in _walk(document, []):
         if isinstance(node, dict) and isinstance(node.get("$ref"), str):
             target = node["$ref"]
-            if target.startswith("#") and not _resolves(document, target[1:], anchors):
+            if not target.startswith("#"):
+                findings.append((pointer(path + ["$ref"]), f"reference {target} is not local, so its target cannot be checked"))
+            elif not _resolves(document, target[1:], anchors):
                 findings.append((pointer(path + ["$ref"]), f"unresolved reference {target}"))
     return sorted(findings)
 
@@ -108,10 +121,14 @@ def reference_findings(document):
 def empty_enum_findings(document):
     findings = []
     for path, node in _walk(document, []):
-        if isinstance(node, dict) and isinstance(node.get("enum"), list) and "" in node["enum"]:
+        if isinstance(node, dict) and isinstance(node.get("enum"), list):
             where = pointer(path + ["enum"])
-            if where not in EMPTY_ENUM_ALLOWED:
+            if where in EMPTY_ENUM_ALLOWED:
+                continue
+            if "" in node["enum"]:
                 findings.append((where, 'enum contains "", a placeholder that is not a value'))
+            elif not node["enum"]:
+                findings.append((where, "enum is empty, so no value can satisfy it"))
     return sorted(findings)
 
 

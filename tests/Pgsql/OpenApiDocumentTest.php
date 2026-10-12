@@ -176,11 +176,12 @@ class OpenApiDocumentTest extends PgsqlSchemaTestCase
 	 */
 	public function testTheServedDocumentIsWrittenForTheOas32Gate(): void
 	{
-		$scratch = getenv('SUITE_SCRATCH');
-		self::assertTrue($scratch !== false && $scratch !== '' && is_dir($scratch), 'SUITE_SCRATCH is not a directory, so there is nowhere to leave the served document for the gate');
+		// run-tests.sh passes the location explicitly: SUITE_SCRATCH is only a shell variable
+		// there unless the caller exported it, so reading it here would depend on the caller.
+		$file = getenv('OPENAPI_SERVED_DUMP');
+		self::assertTrue($file !== false && $file !== '' && is_dir(dirname($file)), 'OPENAPI_SERVED_DUMP is not set to a path in an existing directory, so there is nowhere to leave the served document for the gate');
 
-		$file = rtrim($scratch, '/') . '/served-openapi.json';
-		self::assertNotFalse(file_put_contents($file, json_encode(self::$served, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"));
-		self::assertSame('3.2.0', json_decode(file_get_contents($file), true)['openapi']);
+		self::assertNotFalse(file_put_contents($file, json_encode(self::$served, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"), "could not write $file");
+		self::assertSame(self::$served, json_decode(file_get_contents($file), true), 'the dump is not the served document');
 	}
 }

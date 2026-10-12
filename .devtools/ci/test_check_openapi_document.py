@@ -18,6 +18,8 @@ NEGATIVE_CONTROLS = {
     "unknown-operation-key": "/paths/~1x/get",
     "dangling-ref": "/paths/~1x/get/responses/200/content/application~1json/schema/$ref",
     "enum-empty-string": "/components/schemas/Bad/enum",
+    "enum-empty-list": "/components/schemas/Bad/enum",
+    "external-ref": "/paths/~1x/get/responses/200/content/application~1json/schema/$ref",
 }
 
 
@@ -44,6 +46,20 @@ class OpenApiGateTests(unittest.TestCase):
         self.assertEqual(gate.check_document(document), [])
         document["components"]["schemas"]["Derived"] = {"type": "string", "enum": [""]}
         self.assertEqual([where for where, _ in gate.check_document(document)], ["/components/schemas/Derived/enum"])
+
+    def test_payload_data_is_not_mistaken_for_structure(self):
+        document = load("valid-minimal")
+        schemas = document["components"]["schemas"]
+        schemas["Good"]["example"] = {"$ref": "#/nowhere", "enum": [""]}
+        schemas["Good"]["default"] = {"$ref": "https://example.com/x"}
+        self.assertEqual(gate.check_document(document), [])
+
+    def test_a_property_named_like_a_data_keyword_is_still_walked(self):
+        document = load("valid-minimal")
+        document["components"]["schemas"]["Holder"] = {
+            "type": "object", "properties": {"default": {"$ref": "#/nowhere"}}}
+        self.assertEqual([where for where, _ in gate.check_document(document)],
+                         ["/components/schemas/Holder/properties/default/$ref"])
 
     def test_an_anchor_reference_resolves_only_when_the_anchor_exists(self):
         document = load("valid-minimal")
