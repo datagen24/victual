@@ -32,6 +32,7 @@ class User
 	const PERMISSION_CHORE_TRACK_EXECUTION = 'CHORE_TRACK_EXECUTION';
 	const PERMISSION_CHORE_UNDO_EXECUTION = 'CHORE_UNDO_EXECUTION';
 	const PERMISSION_EQUIPMENT = 'EQUIPMENT';
+	const PERMISSION_MASTER_DATA_ADD = 'MASTER_DATA_ADD';
 	const PERMISSION_MASTER_DATA_EDIT = 'MASTER_DATA_EDIT';
 	const PERMISSION_RECIPES = 'RECIPES';
 	const PERMISSION_RECIPES_MEALPLAN = 'RECIPES_MEALPLAN';
@@ -139,7 +140,7 @@ class User
 	 * The resolved permission names held by the given user.
 	 *
 	 * Resolved, so a parent permission is counted along with everything it implies -
-	 * USERS_CREATE resolves to USERS_EDIT and USERS_READ, and ADMIN to all thirty. That
+	 * USERS_CREATE resolves to USERS_EDIT and USERS_READ, and ADMIN to every permission in permission_hierarchy. That
 	 * is what makes a set comparison over these the right question to ask about who may
 	 * administer whom.
 	 *
