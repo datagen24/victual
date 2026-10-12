@@ -361,16 +361,23 @@ foreach ([$min, $max] as $version)
 	// view that resolved every leaf for everyone. Rolled back so the rest of the phase sees
 	// the imported target unchanged.
 	$target->beginTransaction();
-	$target->exec("INSERT INTO users (username, password) VALUES ('import-test-adult', 'fixture'), ('import-test-child', 'fixture')");
-	$target->exec("DELETE FROM user_permissions WHERE user_id IN (SELECT id FROM users WHERE username IN ('import-test-adult', 'import-test-child'))");
-	$target->exec("INSERT INTO user_roles (user_id, role_id) SELECT u.id, r.id FROM users u JOIN roles r
-		ON (u.username, r.code) IN (('import-test-adult', 'ADULT'), ('import-test-child', 'CHILD'))");
-	$resolvedFor = fn(string $username) => implode(',', $target->query("SELECT permission_name FROM user_permissions_resolved
-		WHERE user_id = (SELECT id FROM users WHERE username = '" . $username . "') AND permission_name IN (" . $viewLeafList . ')
-		ORDER BY permission_name')->fetchAll(\PDO::FETCH_COLUMN));
-	$adultResolved = $resolvedFor('import-test-adult');
-	$childResolved = $resolvedFor('import-test-child');
-	$target->rollBack();
+
+	try
+	{
+		$target->exec("INSERT INTO users (username, password) VALUES ('import-test-adult', 'fixture'), ('import-test-child', 'fixture')");
+		$target->exec("DELETE FROM user_permissions WHERE user_id IN (SELECT id FROM users WHERE username IN ('import-test-adult', 'import-test-child'))");
+		$target->exec("INSERT INTO user_roles (user_id, role_id) SELECT u.id, r.id FROM users u JOIN roles r
+			ON (u.username, r.code) IN (('import-test-adult', 'ADULT'), ('import-test-child', 'CHILD'))");
+		$resolvedFor = fn(string $username) => implode(',', $target->query("SELECT permission_name FROM user_permissions_resolved
+			WHERE user_id = (SELECT id FROM users WHERE username = '" . $username . "') AND permission_name IN (" . $viewLeafList . ')
+			ORDER BY permission_name')->fetchAll(\PDO::FETCH_COLUMN));
+		$adultResolved = $resolvedFor('import-test-adult');
+		$childResolved = $resolvedFor('import-test-child');
+	}
+	finally
+	{
+		$target->rollBack();
+	}
 	Check('the Adult role resolves the three view leaves', $adultResolved === 'BATTERIES_VIEW,CALENDAR_VIEW,EQUIPMENT_VIEW',
 		'BATTERIES_VIEW,CALENDAR_VIEW,EQUIPMENT_VIEW', $adultResolved === '' ? 'none' : $adultResolved);
 	Check('the Child role resolves CALENDAR_VIEW only', $childResolved === 'CALENDAR_VIEW',

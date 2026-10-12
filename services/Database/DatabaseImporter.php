@@ -865,6 +865,13 @@ class DatabaseImporter
 			{
 				$this->Target->exec(file_get_contents(__DIR__ . '/../../db/pgsql/prices-seed.sql'));
 			}
+
+			// And migration 0299's BATTERIES_VIEW, CALENDAR_VIEW and EQUIPMENT_VIEW leaves,
+			// which neither file above carries and no frozen source can. Without them the
+			// battery, calendar and equipment pages refuse every user including ADMIN, who
+			// reaches a leaf only through permission_tree. Every statement in the file is
+			// guarded with NOT EXISTS, so it adds nothing to a target that already has them.
+			$this->Target->exec(file_get_contents(__DIR__ . '/../../db/pgsql/view-leaves-seed.sql'));
 		}
 
 		return $report;
