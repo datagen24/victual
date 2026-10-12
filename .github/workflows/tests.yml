@@ -245,6 +245,16 @@ jobs:
           SUITE_COVERAGE_CLOVER: clover.xml
         run: .devtools/pgsql/run-tests.sh
 
+      # The served OpenAPI document only exists once the application has derived it, and
+      # opis/json-schema cannot evaluate the OAS 3.2 schema, so OpenApiDocumentTest leaves
+      # it in the scratch directory for the same script that gates the committed document.
+      # A missing file is a failure (the script reports it unreadable), so a skipped or
+      # renamed test cannot pass this step.
+      - name: Check the served OpenAPI document
+        run: |
+          pip install --quiet jsonschema==4.25.1
+          python3 .devtools/ci/check_openapi_document.py "$SUITE_SCRATCH/served-openapi.json"
+
       # Node is on the runner, and the differential half of this needs it: the ECMAScript
       # oracle is correct by construction and a PHP reimplementation of it would only be a
       # second thing to be wrong.

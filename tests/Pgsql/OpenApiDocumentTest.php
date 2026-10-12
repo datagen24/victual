@@ -162,7 +162,9 @@ class OpenApiDocumentTest extends PgsqlSchemaTestCase
 	 * .devtools/ci/check_openapi_document.py; the served one only exists once the application
 	 * has derived it, so this writes it to $SUITE_SCRATCH/served-openapi.json for the same
 	 * script to check (`python3 .devtools/ci/check_openapi_document.py
-	 * "$SUITE_SCRATCH/served-openapi.json"`).
+	 * "$SUITE_SCRATCH/served-openapi.json"`). The `suite` job in tests.yml does so after
+	 * run-tests.sh, and fails if the file is absent, so this test failing, skipping or being
+	 * renamed cannot pass the gate silently.
 	 *
 	 * Why not validate here: opis/json-schema 2.6.0, the validator this repository ships,
 	 * cannot evaluate the OAS 3.2 schema. Its `parameters` definition combines `contains`
@@ -175,10 +177,7 @@ class OpenApiDocumentTest extends PgsqlSchemaTestCase
 	public function testTheServedDocumentIsWrittenForTheOas32Gate(): void
 	{
 		$scratch = getenv('SUITE_SCRATCH');
-		if ($scratch === false || $scratch === '' || !is_dir($scratch))
-		{
-			$this->markTestSkipped('SUITE_SCRATCH is not set, so there is nowhere to leave the served document for the gate');
-		}
+		self::assertTrue($scratch !== false && $scratch !== '' && is_dir($scratch), 'SUITE_SCRATCH is not a directory, so there is nowhere to leave the served document for the gate');
 
 		$file = rtrim($scratch, '/') . '/served-openapi.json';
 		self::assertNotFalse(file_put_contents($file, json_encode(self::$served, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"));
