@@ -26,15 +26,7 @@ metadata:
   labels:
     app.kubernetes.io/name: victual-mcp
 data:
-  # Victual's own Service, from deploy/k3s/victual.yaml — in-cluster HTTP by design (§8:
-  # TLS is the ingress's job; the sidecar never disables verification, it just never
-  # leaves the cluster network).
-  VICTUAL_BASE_URL: "http://victual:8080"
-  # `all-read` is the six §5 tools. A comma-separated list narrows it; an unknown name
-  # stops the container at startup rather than being ignored.
-  MCP_ENABLED_TOOLS: "all-read"
-  MCP_REQUEST_TIMEOUT_MS: "10000"
-  LOG_LEVEL: "info"
+  {{- include "victual.mcpConfig" . | nindent 2 }}
 ---
 apiVersion: v1
 kind: Service
@@ -66,6 +58,9 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: victual-mcp
+      annotations:
+        # envFrom is read once, at container start: a changed ConfigMap rolls the pods (issue #852).
+        checksum/config: {{ include "victual.mcpConfig" . | sha256sum }}
     spec:
       # Nothing here talks to the Kubernetes API.
       automountServiceAccountToken: false

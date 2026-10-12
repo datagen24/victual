@@ -34,6 +34,8 @@ spec:
       labels:
         app.kubernetes.io/name: victual-publish-state
     spec:
+      # Nothing here talks to the Kubernetes API (issue #861).
+      automountServiceAccountToken: false
       restartPolicy: Never
       os:
         name: linux
