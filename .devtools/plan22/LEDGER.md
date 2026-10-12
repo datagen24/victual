@@ -62,9 +62,10 @@ Proposed until a separate acceptance pull request.
 
 ## Still open
 
-On 2026-10-12 the maintainer started a major cleanup of `victual.openapi.json`. No new work from
-this ledger edits that file until the cleanup lands; issue 798 waits for it. PRs 797 and 810 already
-edit it.
+On 2026-10-12 the maintainer started a cleanup of `victual.openapi.json`, tracked by
+[issue 796](https://github.com/datagen24/victual/issues/796) and its sub-issues (799 to 806, 787, 648,
+and 798, linked 2026-10-12). OpenAPI work from this ledger moves to that tracking: PR 797 closes sub-issue
+787, and issue 798 waits for the cleanup. PR 810 changes two descriptions in the mapping schema.
 
 | ID | Item | State | Blocks |
 |---|---|---|---|
