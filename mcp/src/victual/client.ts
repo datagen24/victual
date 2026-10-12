@@ -12,6 +12,7 @@ export type ToolErrorCategory =
   | "not_found"
   | "invalid_request"
   | "victual_unavailable"
+  | "outcome_unknown"
   | "victual_error";
 
 export class VictualApiError extends Error {
@@ -24,12 +25,42 @@ export class VictualApiError extends Error {
   }
 }
 
-function categorize(status: number): ToolErrorCategory {
+function categorize(status: number, method: string): ToolErrorCategory {
   if (status === 401) return "unauthorized";
   if (status === 403) return "forbidden";
   if (status === 404) return "not_found";
   if (status >= 400 && status < 500) return "invalid_request";
+  // 503 is what SchemaVersionMiddleware answers before any handler runs (rolling update,
+  // schema mismatch): nothing was applied, so retrying is safe for every method.
+  if (status === 503) return "victual_unavailable";
+  // A gateway in front of Victual answering 502/504 says nothing about whether the
+  // upstream finished the request, so a write may have been applied.
+  if ((status === 502 || status === 504) && method !== "GET") return "outcome_unknown";
+  if (status === 502 || status === 504) return "victual_unavailable";
   return "victual_error";
+}
+
+/**
+ * Error codes fetch reports when the TCP connection was never established, so the request
+ * cannot have reached Victual. Anything else that fails a write (abort or timeout, reset,
+ * a socket closed mid-flight) may have happened after Victual started processing it.
+ */
+const NEVER_SENT_CODES = new Set([
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+
+function neverSent(error: unknown, depth = 0): boolean {
+  if (typeof error !== "object" || error === null || depth > 4) return false;
+  const { code, cause, errors } = error as { code?: unknown; cause?: unknown; errors?: unknown };
+  if (typeof code === "string" && NEVER_SENT_CODES.has(code)) return true;
+  // Node tries each resolved address and reports the failures as an AggregateError.
+  if (Array.isArray(errors) && errors.length > 0 && errors.every((inner) => neverSent(inner, depth + 1))) return true;
+  return neverSent(cause, depth + 1);
 }
 
 /**
@@ -72,14 +103,15 @@ export class VictualClient {
     try {
       response = await fetch(url, { ...init, signal: controller.signal });
     } catch (cause) {
-      throw new VictualApiError("victual_unavailable", `could not reach Victual: ${String(cause)}`);
+      const category = init.method !== "GET" && !neverSent(cause) ? "outcome_unknown" : "victual_unavailable";
+      throw new VictualApiError(category, `could not reach Victual: ${String(cause)}`);
     } finally {
       clearTimeout(timeout);
     }
 
     if (!response.ok) {
       throw new VictualApiError(
-        categorize(response.status),
+        categorize(response.status, init.method ?? "GET"),
         `Victual answered ${response.status} for ${path}`,
         response.status,
       );
