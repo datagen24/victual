@@ -42,6 +42,28 @@ abstract class BaseBarcodeLookupPlugin
 	private const FETCH_MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 
 	/**
+	 * Refuses a float that is not finite anywhere in $value, naming the dotted key path
+	 * and never the value.
+	 *
+	 * @throws \Exception
+	 */
+	private static function AssertAllNumbersAreFinite($value, string $path): void
+	{
+		if (is_float($value) && !is_finite($value))
+		{
+			throw new \Exception("Plugin output contains a non-finite number at $path");
+		}
+
+		if (is_array($value))
+		{
+			foreach ($value as $key => $child)
+			{
+				self::AssertAllNumbersAreFinite($child, $path === '' ? (string)$key : "$path.$key");
+			}
+		}
+	}
+
+	/**
 	 * Guzzle's 'on_headers' callback: called once the response's headers have arrived but
 	 * before its body downloads. Throwing here aborts the transfer - Guzzle surfaces the
 	 * exception as (or wrapped in) a GuzzleHttp\Exception\RequestException, which both of
@@ -162,7 +184,16 @@ abstract class BaseBarcodeLookupPlugin
 		// Of the required properties, the four ids/factor below are all value-checked;
 		// name is not, so a source that found a product with no name would otherwise pass
 		// straight through to the row services/StockService.php writes.
-		if (empty($pluginOutput['name']))
+		//
+		// A string, not just truthy: empty() let 123 and a non-empty array through to the
+		// row, and refused the legal name "0".
+		$name = $pluginOutput['name'];
+		if ($name !== null && !is_string($name))
+		{
+			throw new \Exception('Provided name must be a string');
+		}
+
+		if ($name === null || trim($name) === '')
 		{
 			throw new \Exception('Provided name is empty');
 		}
@@ -198,6 +229,13 @@ abstract class BaseBarcodeLookupPlugin
 		{
 			throw new \Exception('Provided __qu_factor_purchase_to_stock must be a finite number greater than zero');
 		}
+
+		// Issue #844: every other field is written as sent too, and a float INF or NAN
+		// (a plugin's json_decode('1e400'), a division) is accepted by PostgreSQL's numeric
+		// and double columns but cannot be json_encode()d, so ApiResponse() would answer
+		// 500 after the rows had committed. Refused here, anywhere in the output, before
+		// anything is written. After the factor check so that one keeps its own message.
+		self::AssertAllNumbersAreFinite($pluginOutput, '');
 
 		// __barcode is not just an identifier: services/StockService.php builds the stored
 		// picture's file name from it directly, so every source has to agree on what a safe
