@@ -17,6 +17,14 @@
 // label. A new deliberate print gets a new key. The key travels as a header rather than in the
 // body, which also keeps it out of the fingerprint the server takes of the body.
 //
+// The server binds a key to a fingerprint of route, arguments and body (printer included), so
+// "one action" means one (kind, target, printer): a key reused for another target or printer
+// is answered 409 idempotency_conflict, and would be on every click after. Pending keys are
+// therefore held per (kind, target, printer) and kept in sessionStorage, which is what lets a
+// reload after a lost response retry with the key the first attempt used.
+// Changing the printer does not clear anything: each printer has its own slot, and a slot whose
+// response was lost must survive a trip to another printer and back, or that retry prints twice.
+//
 // AGENTS.md's two frontend sink rules hold throughout: DOM-derived strings reach jQuery via
 // $(document).find(sel), and every piece of markup here is built as nodes rather than
 // concatenated into .html() - a target's name is household data, and this is the path sweep
@@ -55,7 +63,91 @@ Victual.LabelPrinting.Wire = function (options)
 		return kind === 'location' ? 'labels/locations/' + targetId + '/print' : 'labels/' + kind + '/' + targetId + '/print';
 	}
 
-	var pendingKey = null;
+	// Pending keys by 'kind|target|printer'. sessionStorage is tab-scoped, so a key outlives a
+	// reload but not the tab. memoryKeys always holds the latest map. Once a write has thrown
+	// (quota, old Safari private mode: getItem works, setItem throws) storage is stale, so
+	// storageBroken makes memoryKeys authoritative; otherwise every read would see {} and every
+	// click would mint a fresh key. In that state only a reload loses the keys.
+	var STORAGE_NAME = 'victual.labelprint.pendingKeys';
+	var memoryKeys = {};
+	var storageBroken = false;
+
+	function readKeys()
+	{
+		if (storageBroken)
+		{
+			return memoryKeys;
+		}
+
+		try
+		{
+			var stored = JSON.parse(window.sessionStorage.getItem(STORAGE_NAME) || '{}');
+			return (stored !== null && typeof stored === 'object') ? stored : {};
+		}
+		catch (error)
+		{
+			return memoryKeys;
+		}
+	}
+
+	function writeKeys(keys)
+	{
+		memoryKeys = keys;
+		try
+		{
+			window.sessionStorage.setItem(STORAGE_NAME, JSON.stringify(keys));
+		}
+		catch (error)
+		{
+			storageBroken = true;
+		}
+	}
+
+	function slotOf(targetId, printerId)
+	{
+		return kind + '|' + targetId + '|' + printerId;
+	}
+
+	function keyFor(targetId, printerId)
+	{
+		var keys = readKeys();
+		var slot = slotOf(targetId, printerId);
+
+		if (typeof keys[slot] !== 'string')
+		{
+			keys[slot] = kind + '-' + targetId + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+			writeKeys(keys);
+		}
+
+		return keys[slot];
+	}
+
+	function spendKey(targetId, printerId)
+	{
+		var keys = readKeys();
+		delete keys[slotOf(targetId, printerId)];
+		writeKeys(keys);
+	}
+
+	// Whether a refusal says the request was understood and will never succeed as sent, so its
+	// key is finished. 408 and 429 are 4xx but say "try again"; 409 is handled by the caller.
+	function isDefinitiveRefusal(xhr)
+	{
+		var status = (xhr && xhr.status) || 0;
+		return status >= 400 && status < 500 && status !== 408 && status !== 409 && status !== 429;
+	}
+
+	function codeOf(xhr)
+	{
+		try
+		{
+			return JSON.parse((xhr && xhr.responseText) || '{}').code || '';
+		}
+		catch (error)
+		{
+			return '';
+		}
+	}
 
 	function report(kind, text)
 	{
@@ -102,10 +194,7 @@ Victual.LabelPrinting.Wire = function (options)
 	{
 		var printerId = parseInt(printerSelect.value, 10);
 
-		if (pendingKey === null)
-		{
-			pendingKey = kind + '-' + targetId + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
-		}
+		var key = keyFor(targetId, printerId);
 
 		report('info', __t('Requesting a label for %s...', targetName));
 
@@ -123,7 +212,7 @@ Victual.LabelPrinting.Wire = function (options)
 					{
 						// The action happened, so the key is spent: a later click is a second
 						// deliberate print and gets a key of its own.
-						pendingKey = null;
+						spendKey(targetId, printerId);
 
 						if (job.state === 'awaiting_artifact')
 						{
@@ -136,15 +225,34 @@ Victual.LabelPrinting.Wire = function (options)
 					},
 					function (xhr)
 					{
-						// The key is kept. Nothing was created, so a retry is the same
-						// intention rather than a new one.
+						if (xhr && xhr.status === 409 && codeOf(xhr) === 'idempotency_conflict')
+						{
+							// The server holds this key for a different request. Resending it
+							// would be refused the same way, so it is dropped; the user's next
+							// click starts afresh rather than the page doing it unasked.
+							spendKey(targetId, printerId);
+							report('danger', __t('The label was not requested: %s', __t('this request conflicts with an earlier one. Try again.')));
+							return;
+						}
+
+						if (isDefinitiveRefusal(xhr))
+						{
+							// Refused outright, so nothing was created and the intention is
+							// over; a corrected retry is a new one.
+							spendKey(targetId, printerId);
+						}
+
+						// Otherwise the outcome is unknown (a lost response, a timeout, a 5xx,
+						// an in-progress original) and the first attempt may have committed.
+						// The key is kept so a retry returns that job instead of printing again.
 						report('danger', __t('The label was not requested: %s', messageOf(xhr)));
 					},
-					{ 'Idempotency-Key': pendingKey });
+					{ 'Idempotency-Key': key });
 			},
 			function (xhr)
 			{
-				pendingKey = null;
+				// The context read creates nothing and carries no key. Any key kept from an
+				// earlier lost response stays: the server decides on retry whether it was spent.
 				report('danger', __t('The label was not requested: %s', messageOf(xhr)));
 			});
 	}
