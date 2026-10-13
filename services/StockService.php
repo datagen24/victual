@@ -5045,6 +5045,11 @@ class StockService extends BaseService
 			// always its own column.
 			$units = [];
 
+			// Units of single-unit recipes_pos rows: the view reads a missing conversion as 1.0
+			// (COALESCE(qucr.factor, 1.0), 05_views_l3.sql :164, :174), so no conversion for the
+			// removed product means a factor of 1, which is compared rather than skipped.
+			$unitsReadAsOneWhenMissing = [];
+
 			// Consumption lines and mappings: a unit that does not reach the kept stock unit is
 			// refused further down with its own message, so a missing path is not refused here.
 			// For recipes_pos (only rows with the single-unit flag read their unit, 05_views_l3.sql)
@@ -5060,6 +5065,10 @@ class StockService extends BaseService
 				foreach (DatabaseService::GetInstance()->GetDbConnectionRaw()->query($sql)->fetchAll(\PDO::FETCH_COLUMN) as $quId)
 				{
 					$units[(int)$quId] = ($units[(int)$quId] ?? false) || $refuseIfMissing;
+					if (str_contains($sql, 'FROM recipes_pos'))
+					{
+						$unitsReadAsOneWhenMissing[(int)$quId] = true;
+					}
 				}
 			}
 			$removedStockUnit = (int)$productToRemove->qu_id_stock;
@@ -5118,6 +5127,11 @@ class StockService extends BaseService
 			{
 				$beforeFactors = $removedBefore[$quId];
 				$afterFactors = $keptAfter[$quId];
+
+				if ($beforeFactors === [] && isset($unitsReadAsOneWhenMissing[$quId]))
+				{
+					$beforeFactors = [1.0];
+				}
 
 				if ($beforeFactors === [])
 				{

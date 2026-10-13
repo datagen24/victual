@@ -138,6 +138,12 @@ class MergeProductsConversionConflictTest extends PgsqlSchemaTestCase
 		return null;
 	}
 
+	/** The whole number as a token: a digit or decimal point of a longer number does not count. */
+	private static function assertToken(string $token, string $message, string $what): void
+	{
+		self::assertMatchesRegularExpression('/(?<![\d.])' . preg_quote($token, '/') . '(?!\d|\.\d)/', $message, $what);
+	}
+
 	/** Asserts the conflict refusal, names, and that nothing at all changed. */
 	private function assertConflictRefusal(int $keep, int $remove, array $unitIds, string $expectFactorB, string $expectFactorA): void
 	{
@@ -147,14 +153,14 @@ class MergeProductsConversionConflictTest extends PgsqlSchemaTestCase
 
 		self::assertNotNull($message, 'Then: the merge is refused');
 		self::assertStringContainsString('Cannot merge', $message);
-		self::assertStringContainsString((string)$keep, $message, 'Then: the message names the kept product id');
-		self::assertStringContainsString((string)$remove, $message, 'Then: the message names the removed product id');
+		self::assertToken((string)$keep, $message, 'Then: the message names the kept product id');
+		self::assertToken((string)$remove, $message, 'Then: the message names the removed product id');
 		foreach ($unitIds as $unitId)
 		{
-			self::assertStringContainsString((string)$unitId, $message, 'Then: the message names the unit id');
+			self::assertToken((string)$unitId, $message, 'Then: the message names the unit id');
 		}
-		self::assertStringContainsString($expectFactorB, $message, 'Then: the message gives the removed product\'s factor');
-		self::assertStringContainsString($expectFactorA, $message, 'Then: the message gives the kept product\'s factor');
+		self::assertToken($expectFactorB, $message, 'Then: the message gives the removed product\'s factor');
+		self::assertToken($expectFactorA, $message, 'Then: the message gives the kept product\'s factor');
 		self::assertDoesNotMatchRegularExpression('/\b(change|edit|adjust|update|set)\b/i', $message, 'Then: the message does not tell the operator to alter a conversion');
 		self::assertTrue(self::productExists($remove), 'Then: the removed product still exists');
 		self::assertSame($before, self::snapshot(), 'Then: no row of any table changed');
@@ -496,5 +502,19 @@ class MergeProductsConversionConflictTest extends PgsqlSchemaTestCase
 		self::recipeLine($remove, 1, $tablet);
 
 		$this->assertConflictRefusal($keep, $remove, [$tablet], '0.1', '0.2');
+	}
+
+	public function testASingleUnitRecipesPosRowWithNoConversionForTheRemovedProductIsReadAtOne(): void
+	{
+		$box = self::unit('MPCC box');
+		$tablet = self::unit('MPCC tablet');
+		$keep = self::product('MPCC keep', $tablet);
+		$remove = self::product('MPCC remove', $tablet);
+		// The removed product has no box conversion, so the view reads the row at COALESCE 1.0;
+		// the kept product would read 25.
+		self::conversion($box, $tablet, 25, $keep);
+		self::recipesPos($remove, 1, $box, 1);
+
+		$this->assertConflictRefusal($keep, $remove, [$box], '1', '25');
 	}
 }

@@ -61,6 +61,7 @@
 - Fixed that the "This means _n QU_ will be removed/added from stock"-hint on the inventory page wasn't updated when changing the quantity unit only
 - Fixed that the product open button on the stock overview page wasn't disabled after opening the last unit
 - Fixed that when changing a product name to one that already exists, no corresponding error message was shown on the product edit page
+- Merging two products is now refused with `400` when a row of the removed product that carries its own quantity unit (a consumption recipe line or mapping, a recipe ingredient that only checks a single unit, a barcode amount) or one of its sub products would convert to a different stock amount through the kept product's conversions. Nothing is changed when it refuses
 
 ### Shopping list
 
