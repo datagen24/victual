@@ -25,6 +25,7 @@ class ArtifactService extends LabelService
     /** ADR-0021 prerequisite 2, settled: PNG colour type 3 at bit depth 2 over the profile palette. */
     public const FORM = 'raster/png-indexed;v=1';
     public const MIME_TYPE = 'image/png';
+    private const FILE_LOCK_CLASS = 1986618177;
 
     /**
      * Verifies a rendered artifact and commits it.
@@ -171,6 +172,21 @@ class ArtifactService extends LabelService
      *
      * The render queue's claim calls this on every poll with a $limit, so a large backlog is
      * worked off a batch at a time rather than inside one request.
+     *
+     * Nothing here waits for another claim (#899). The rows are taken SKIP LOCKED, and the
+     * decision whether the stored bytes are still shared is made under a per-file advisory
+     * try-lock. Without it, two claims holding two previews of one file would each see the
+     * other's row still uncollected (the other's update is uncommitted), both keep the
+     * bytes, and nobody ever deletes them. With it, the claim that loses the try-lock leaves
+     * its row uncollected, and a later claim collects it once the holder has committed.
+     * Promote() takes the same row lock, so a row it holds is skipped here and, once
+     * promoted, is no longer a preview.
+     *
+     * Lock order inside one claim: ReapExpired's rows, ExpirePending's rows (SKIP LOCKED),
+     * these rows (SKIP LOCKED), the per-file try-locks (never wait), then the settle loop's
+     * rows (SKIP LOCKED). Only the first can wait, so the try-locks cannot join a cycle.
+     *
+     * @return int The artifacts collected; rows skipped because another claim holds them are not counted.
      */
     public function CollectExpiredPreviews(?int $limit = null): int
     {
@@ -181,10 +197,14 @@ class ArtifactService extends LabelService
               AND r.expires_at IS NOT NULL AND r.expires_at<=CURRENT_TIMESTAMP
               AND NOT EXISTS (SELECT 1 FROM print_jobs j WHERE j.artifact_id=a.id)
             ORDER BY a.id" . ($limit === null ? '' : ' LIMIT ' . $limit) . "
-            FOR UPDATE OF a")->fetchAll(\PDO::FETCH_ASSOC);
+            FOR UPDATE OF a SKIP LOCKED")->fetchAll(\PDO::FETCH_ASSOC);
 
         $store = new LabelByteStore($this->db);
+        $collected = 0;
         foreach ($rows as $row) {
+            if (!$this->TryLockFile($row['file_group'], $row['file_name'])) {
+                continue;
+            }
             // Reference-aware over the bytes as well as over the row: another manifest may
             // point at the same picture, and collecting this one must not take that one's
             // bytes with it.
@@ -197,8 +217,20 @@ class ArtifactService extends LabelService
             // existed and was retained until a stated date, which is what makes an
             // unexplained print explainable afterwards.
             $this->Query('UPDATE label_artifacts SET collected_at=CURRENT_TIMESTAMP WHERE id=?', [$row['id']]);
+            $collected++;
         }
-        return count($rows);
+        return $collected;
+    }
+
+    /**
+     * Takes the transaction-scoped advisory lock on one stored file without waiting.
+     *
+     * The class id is "vicA" (0x76696341), apart from PostgresDialect's "vicS" stock lock; the
+     * object id is a hash of the file, so a collision only causes one extra skip.
+     */
+    private function TryLockFile(string $group, string $name): bool
+    {
+        return (bool)$this->Query('SELECT pg_try_advisory_xact_lock(?::int, hashtext(?))', [self::FILE_LOCK_CLASS, $group . '/' . $name])->fetchColumn();
     }
 
     private function AssertLength(int $height, array $profile): void
