@@ -5087,8 +5087,8 @@ class StockService extends BaseService
 			}
 
 			// A child is aggregated into its parent through the child's own conversion to the parent's
-			// stock unit. With none, stock_current (migration 0298) counts the child as 0 in its parent
-			// and the baseline-era readers fall back to 1.0. The removed
+			// stock unit. With none, stock_current (migration 0298) and the recipe cost and calorie views
+			// (migration 0300) count the child as nothing. The removed
 			// product's children are repointed to the kept product by the merge; the kept product's
 			// own children keep their parent. Rules (maintainer, #901): readable on both sides ->
 			// compare; readable before and not after, or not before and readable after -> refuse; none
@@ -5182,12 +5182,16 @@ class StockService extends BaseService
 				if ($check['child'] && $before === [] && $after === [])
 				{
 					// Allowed only when the scale is 1 under the tolerance (maintainer decisions, #901 and
-					// the one on #921): a child with no conversion has the same (unconverted) contribution
+					// the ones on #921): a child with no conversion has the same (unconverted) contribution
 					// on both sides, so it is unaffected exactly when the parent's stock unit is the same
-					// unit relationship after the merge. That is either the identical unit, or two units
-					// an actual resolved conversion (global or the removed product's own) joins at 1. A
-					// missing conversion's fallback of 1 is never evidence of equivalence, so a factor
-					// that did not come from a resolved row is refused here even at 1.
+					// unit relationship after the merge. That is the identical unit, or two units whose
+					// GOVERNING conversion is 1 both before and after: before, the removed product's
+					// resolved stock-unit pair ($conversion: its own row over a global one, in the
+					// removed -> kept direction); after, the kept product's resolved pair in the
+					// proposed merged state ($keptAfter: which rows survive the dedupe, the kept
+					// product's own row over a global one). A 1 on a row that does not govern - shadowed
+					// by precedence, deleted by the dedupe, or only in the inverse direction - does not
+					// count, and a missing conversion's fallback of 1 is never evidence of equivalence.
 					if (!$agree(1.0, 1.0, $scale))
 					{
 						throw $refusal($who . ' has no quantity unit conversion to its parent\'s stock unit before or after the merge, but the merge scales stock by ' . $fmt($scale) . ' so it would be counted differently');

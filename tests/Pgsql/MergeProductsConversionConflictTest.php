@@ -932,6 +932,97 @@ class MergeProductsConversionConflictTest extends PgsqlSchemaTestCase
 		$this->assertRefusalNaming($keep, $remove, [$child, $piece, $each, 1, 2]);
 	}
 
+	/** The factors the cache holds for one product and unit pair. */
+	private static function governing(int $productId, int $from, int $to): array
+	{
+		return array_map('floatval', self::$db->query("SELECT factor FROM cache__quantity_unit_conversions_resolved WHERE product_id = $productId AND from_qu_id = $from AND to_qu_id = $to")->fetchAll(PDO::FETCH_COLUMN));
+	}
+
+	/*
+	 * Maintainer, 2026-10-13: product-specific 1:1 conversions may count, but only when they govern the
+	 * removed -> kept stock unit pair both before and after the merge, respecting precedence,
+	 * direction and which rows survive the dedupe. Finding a 1 on either product is not enough.
+	 */
+	public function testARemovedProductOneToOneBeatsAConflictingGlobalFactorBeforeAndAfterTheMerge(): void
+	{
+		$strip = self::unit('MPCC strip');
+		$piece = self::unit('MPCC piece');
+		$each = self::unit('MPCC each');
+		self::conversion($piece, $each, 2, null);
+		$keep = self::product('MPCC keep', $each);
+		$remove = self::product('MPCC remove', $piece);
+		self::conversion($piece, $each, 1, $remove);
+		$child = self::product('MPCC child', $strip, $remove);
+		self::assertSame([1.0], self::governing($remove, $piece, $each), 'Given: the removed product\'s own 1 governs before the merge');
+
+		self::assertNull(self::merge($keep, $remove));
+
+		self::assertSame([1.0], self::governing($keep, $piece, $each), 'Then: the surviving row governs the kept product at 1');
+		self::assertSame($keep, (int)self::$db->query("SELECT parent_product_id FROM products WHERE id = $child")->fetchColumn());
+	}
+
+	public function testAKeptProductOneToOneAloneDoesNotJoinTheStockUnitsBeforeTheMerge(): void
+	{
+		$strip = self::unit('MPCC strip');
+		$piece = self::unit('MPCC piece');
+		$each = self::unit('MPCC each');
+		$keep = self::product('MPCC keep', $each);
+		$remove = self::product('MPCC remove', $piece);
+		self::conversion($piece, $each, 1, $keep);
+		self::product('MPCC child', $strip, $remove);
+
+		$before = self::snapshot();
+		$message = self::merge($keep, $remove);
+
+		self::assertNotNull($message, 'Then: the removed product has no conversion of its own to use');
+		self::assertStringContainsString('no quantity unit conversion exists', $message);
+		self::assertSame($before, self::snapshot());
+	}
+
+	public function testAKeptProductOneToOneDoesNotCountWhenAGlobalFactorOfTwoGovernsTheRemovedProduct(): void
+	{
+		$strip = self::unit('MPCC strip');
+		$piece = self::unit('MPCC piece');
+		$each = self::unit('MPCC each');
+		self::conversion($piece, $each, 2, null);
+		$keep = self::product('MPCC keep', $each);
+		$remove = self::product('MPCC remove', $piece);
+		self::conversion($piece, $each, 1, $keep);
+		$child = self::product('MPCC child', $strip, $remove);
+
+		$this->assertRefusalNaming($keep, $remove, [$child, 2]);
+	}
+
+	public function testBothProductsOwnOneToOneMergeBecauseTheKeptRowSurvivesTheDedupe(): void
+	{
+		$strip = self::unit('MPCC strip');
+		$piece = self::unit('MPCC piece');
+		$each = self::unit('MPCC each');
+		$keep = self::product('MPCC keep', $each);
+		$remove = self::product('MPCC remove', $piece);
+		self::conversion($piece, $each, 1, $remove);
+		self::conversion($piece, $each, 1, $keep);
+		self::product('MPCC child', $strip, $remove);
+
+		self::assertNull(self::merge($keep, $remove));
+		self::assertSame([1.0], self::governing($keep, $piece, $each));
+	}
+
+	public function testTheInverseDirectionOfAOneToOneIsTheSameGoverningPair(): void
+	{
+		$strip = self::unit('MPCC strip');
+		$piece = self::unit('MPCC piece');
+		$each = self::unit('MPCC each');
+		$keep = self::product('MPCC keep', $each);
+		$remove = self::product('MPCC remove', $piece);
+		// Defined as each -> piece; saving it also stores the inverse piece -> each, so the removed -> kept pair resolves to 1.
+		self::conversion($each, $piece, 1, $remove);
+		self::product('MPCC child', $strip, $remove);
+		self::assertSame([1.0], self::governing($remove, $piece, $each), 'Given: the inverse row exists, so the direction cannot differ');
+
+		self::assertNull(self::merge($keep, $remove));
+	}
+
 	public function testAChildWhoseConversionSurvivesThroughTheEquivalenceIsNotAffected(): void
 	{
 		$strip = self::unit('MPCC strip');
