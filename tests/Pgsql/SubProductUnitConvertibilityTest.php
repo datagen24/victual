@@ -258,11 +258,24 @@ class SubProductUnitConvertibilityTest extends PgsqlSchemaTestCase
 		$badUnit = self::quantityUnit('Non-Positive Factor Unit');
 		$parentId = self::product('Non-Positive Factor Parent', $locationA, 2);
 		$childId = self::product('Non-Positive Factor Child', $locationA, $badUnit, $parentId);
-		self::conversion($childId, 2, $badUnit, -3.0);
-		self::stockRow($childId, 4, $locationA);
+		// Migration 0309 (issue #868) now refuses such a row with
+		// quantity_unit_conversions_factor_positive, so this test removes that constraint for its
+		// own duration to keep exercising the read-side guard, and restores it afterwards.
+		self::$db->exec('ALTER TABLE quantity_unit_conversions DROP CONSTRAINT quantity_unit_conversions_factor_positive');
 
-		// When: listing this product's stock entries with substitution allowed.
-		$productIds = array_map(fn($row) => (int)$row->product_id, iterator_to_array(self::$stock->GetProductStockEntries($parentId, false, true)));
+		try
+		{
+			self::conversion($childId, 2, $badUnit, -3.0);
+			self::stockRow($childId, 4, $locationA);
+
+			// When: listing this product's stock entries with substitution allowed.
+			$productIds = array_map(fn($row) => (int)$row->product_id, iterator_to_array(self::$stock->GetProductStockEntries($parentId, false, true)));
+		}
+		finally
+		{
+			self::$db->prepare('DELETE FROM quantity_unit_conversions WHERE product_id = ?')->execute([$childId]);
+			self::$db->exec("ALTER TABLE quantity_unit_conversions ADD CONSTRAINT quantity_unit_conversions_factor_positive CHECK (factor > 0 AND factor < 'Infinity')");
+		}
 
 		// Then: the child holding the negative-factor conversion is excluded entirely, exactly
 		// as a sub product with no resolved conversion at all would be.
