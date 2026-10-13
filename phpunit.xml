@@ -93,6 +93,7 @@
 			<file>tests/Pgsql/LabelResolveSchemaTest.php</file>
 			<file>tests/Pgsql/OpenApiErrorBodiesTest.php</file>
 			<file>tests/Pgsql/BatteryLabelViewPermissionTest.php</file>
+			<file>tests/Pgsql/LabelWorkerRoute403Test.php</file>
 		</testsuite>
 		<testsuite name="labelservices">
 			<file>tests/Pgsql/LabelServicesTest.php</file>
