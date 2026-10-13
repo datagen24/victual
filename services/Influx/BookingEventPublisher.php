@@ -331,7 +331,7 @@ class BookingEventPublisher
 	 * next batch, and the queue empties over a handful of them. An operator who wants the
 	 * whole backlog gone now runs `bin/victual-publish-state --drain`, which loops.
 	 *
-	 * @return bool True when a batch was delivered
+	 * @return bool True when the drain made progress, as Drain() defines it
 	 */
 	public static function WriteForRequestEnd(): bool
 	{
@@ -366,7 +366,33 @@ class BookingEventPublisher
 	 * the process dying mid-drain - leaves the rows exactly where they were, still claimed by
 	 * nobody once this transaction is gone.
 	 *
-	 * @return bool True when a batch was delivered
+	 * **A rejected write is told apart by its status** (issue #854). A failure that says
+	 * nothing about the data - a timeout, an unreachable server, a 401 or 403 for the token, a
+	 * 404 for the bucket, a 429, a 5xx, a redirect - fails the whole batch with
+	 * RecordFailure() as before, and nothing is ever dead-lettered on its account, because a
+	 * misconfigured token must not discard committed events. A 400, 413 or 422 is InfluxDB
+	 * refusing the body, so ResolveRefusedBatch() works out within this call which rows are at
+	 * fault, in a bounded number of writes (at most 2 + ceil(log2(n)) when the endpoint refuses everything, about
+	 * twice log2(n) when one row among many is bad): rows InfluxDB accepts are delivered, and
+	 * a row it refuses on its own is collected.
+	 *
+	 * **A refused row is dead-lettered only if another row was accepted in the same drain.**
+	 * That is the proof that the endpoint takes Victual's lines, so the refusal is about the
+	 * row. Without it - every row refused, or a one-row batch refused - the same answer comes
+	 * from a proxy, a bucket with an explicit schema, a field-type conflict with another
+	 * writer or a series limit, and dead-lettering would discard the whole backlog with no
+	 * way back. Those rows stay queued with attempts advanced and the status in last_error;
+	 * there is no attempts cap, since a queue nothing can be written to loses nothing by
+	 * waiting. A bad row is isolated by a later drain that claims it beside a good one. If a
+	 * retryable failure turns up during the bisection the walk stops, what was resolved stays
+	 * resolved (the same proof rule applies to rows refused before it), and the rest are
+	 * recorded as failed.
+	 *
+	 * Lines are built per row, so a row that cannot be built is dead-lettered on its own
+	 * instead of failing the whole batch.
+	 *
+	 * @return bool True when the call made progress: an event was delivered, or set aside
+	 *              because another was (always false when nothing could be written)
 	 */
 	public static function Drain(): bool
 	{
@@ -423,43 +449,135 @@ class BookingEventPublisher
 					return false;
 				}
 
-				$ids = array_column($deliverable, 'id');
+				// Lines are built per row, not per batch, so that a row which cannot be built
+				// is a row-sized problem and so that a rejected batch can be split along row
+				// boundaries below.
+				$rows = [];
 
-				try
+				foreach ($deliverable as $event)
 				{
-					$lines = self::BuildLines(array_column($deliverable, 'payload'));
-				}
-				catch (\Throwable $ex)
-				{
-					// One line for the whole drain rather than one per event
-					error_log('Victual: could not build the InfluxDB event batch, nothing was delivered: ' . $ex->getMessage());
-					$outbox->RecordFailure($ids, $ex->getMessage());
-
-					return false;
+					try
+					{
+						$rows[] = ['id' => $event['id'], 'attempts' => (int)($event['attempts'] ?? 0), 'lines' => self::BuildLines([$event['payload']])];
+					}
+					catch (\Throwable $ex)
+					{
+						// DescribeUnreadable() passed it, so this is something it did not
+						// foresee. Rebuilding it will throw the same way, so it is set aside
+						// like an unreadable row instead of being retried in front of every
+						// row behind it.
+						$reason = 'could not build the InfluxDB lines: ' . $ex->getMessage();
+						error_log('Victual: outbox row ' . $event['id'] . ' cannot be delivered to InfluxDB and has been set aside: ' . $reason);
+						$outbox->DeadLetter([$event['id']], $reason);
+					}
 				}
 
 				// A readable event can still produce no lines - one whose bookings were all
 				// undone and whose products left stock entirely. It is delivered rather than
 				// retried forever: there is nothing to send and nothing wrong with it.
-				if (count($lines) === 0)
+				$empty = [];
+				$withLines = [];
+
+				foreach ($rows as $row)
 				{
-					$outbox->MarkDelivered($ids);
+					if (count($row['lines']) === 0)
+					{
+						$empty[] = $row['id'];
+					}
+					else
+					{
+						$withLines[] = $row;
+					}
+				}
+
+				$outbox->MarkDelivered($empty);
+
+				if (count($withLines) === 0)
+				{
+					return count($empty) > 0;
+				}
+
+				$writer = new InfluxEventWriter();
+				$lines = [];
+
+				foreach ($withLines as $row)
+				{
+					array_push($lines, ...$row['lines']);
+				}
+
+				if ($writer->Write($lines))
+				{
+					$outbox->MarkDelivered(array_column($withLines, 'id'));
 
 					return true;
 				}
 
-				$writer = new InfluxEventWriter();
-
-				if (!$writer->Write($lines))
+				if (!$writer->WasRowLevelRejection())
 				{
-					$outbox->RecordFailure($ids, $writer->GetLastError() ?? 'the write was rejected');
+					// A timeout, an unreachable server, a wrong token or bucket, a 5xx, a
+					// redirect: nothing about the rows, so all of them stay in the queue.
+					$outbox->RecordFailure(array_column($withLines, 'id'), $writer->GetLastError() ?? 'the write was rejected');
 
 					return false;
 				}
 
-				$outbox->MarkDelivered($ids);
+				// InfluxDB refused the body. Whether that is the fault of a row or of every
+				// row alike cannot be told from this one answer, so find out below.
+				// What the endpoint said to the whole batch, kept for the log and for the
+				// reasons recorded below: the walk's own writes overwrite the writer's state.
+				$refusalStatus = $writer->GetLastStatus();
+				$refusalError = $writer->GetLastError() ?? 'no reason given';
+				$state = [
+					'delivered' => false, 'deliveredRows' => 0, 'rejected' => [], 'failed' => [], 'unresolved' => [],
+					'error' => null, 'untriedReason' => null, 'refusalStatus' => $refusalStatus
+				];
 
-				return true;
+				self::ResolveRefusedBatch($withLines, $writer, $outbox, $state);
+
+				// A row refused on its own is dead-lettered only when some other row of this
+				// drain was accepted, which is what shows the endpoint takes Victual's lines
+				// and so that the refusal is about that row. With no accepted row the same
+				// answer comes just as readily from a proxy answering 400, a bucket with an
+				// explicit schema, a field-type conflict with another writer or a series
+				// limit - all of which would dead-letter the whole backlog, irrecoverably.
+				// Those rows stay queued with the failure recorded; a genuinely bad row is
+				// isolated by a later drain that claims it beside a good one.
+				foreach ($state['rejected'] as $id => $reason)
+				{
+					if ($state['delivered'])
+					{
+						error_log('Victual: outbox row ' . $id . ' cannot be delivered to InfluxDB and has been set aside: ' . $reason);
+						$outbox->DeadLetter([$id], $reason);
+					}
+					else
+					{
+						$outbox->RecordFailure([$id], $reason);
+					}
+				}
+
+				// Rows that met a failure that was not about them, and rows the walk never got to
+				if (count($state['failed']) > 0)
+				{
+					$outbox->RecordFailure($state['failed'], $state['error'] ?? 'the write was rejected');
+				}
+
+				if (count($state['unresolved']) > 0)
+				{
+					$outbox->RecordFailure($state['unresolved'], $state['untriedReason'] ?? $state['error'] ?? 'the write was rejected');
+				}
+
+				// One line for the whole walk: its writes were not logged one by one
+				error_log('Victual: InfluxDB refused a batch of ' . count($withLines) . ' events (HTTP ' . $refusalStatus . ': ' . $refusalError . '): '
+					. $state['deliveredRows'] . ' delivered, '
+					. ($state['delivered'] ? count($state['rejected']) : 0) . ' set aside, '
+					. ($state['delivered'] ? 0 : count($state['rejected'])) . ' kept after refusal, '
+					. count($state['failed']) . ' kept after a retryable failure'
+					. ($state['error'] !== null && count($state['failed']) > 0 ? ' (' . $state['error'] . ')' : '') . ', '
+					. count($state['unresolved']) . ' not tried');
+
+				// Progress is a row delivered, or a row dead-lettered because one was
+				// delivered, which is the same condition. --drain stops on false.
+				return $state['delivered'] || count($empty) > 0;
 			});
 		}
 		catch (\Throwable $ex)
@@ -468,6 +586,290 @@ class BookingEventPublisher
 
 			return false;
 		}
+	}
+
+	/**
+	 * Decides what a batch refused with a row-level status means, in a bounded number of writes.
+	 *
+	 * The whole batch was refused, and one answer cannot say whether a row or the endpoint is
+	 * at fault: a proxy answering 400, a bucket with an explicit schema, a field-type conflict
+	 * with another writer or a series limit refuse every row alike. A bisection that walked on
+	 * regardless would make 2n-1 writes - 399 for a full batch of 200, inside the claim
+	 * transaction, on every request, for ever. So the first row is tried alone:
+	 *
+	 * - **Accepted**: the endpoint takes Victual's lines, so the refusal is about some row of
+	 *   the rest. They are bisected (IsolateRejection()), which isolates one bad row among
+	 *   many in about twice log2(n) writes.
+	 * - **Refused**: it may be the only bad row, or one of several, or the endpoint may be
+	 *   refusing everything. Up to ceil(log2(n)) other rows are tried alone, at evenly spaced
+	 *   positions across the batch. The first one accepted is the proof: the refused rows seen
+	 *   so far are collected, and the rows still untried are bisected (IsolateRejection()), so
+	 *   a few bad rows at the head of the queue are isolated and the good rows behind them
+	 *   delivered. If every sampled row is refused too, nothing has been shown about any row
+	 *   and the walk stops: nothing is dead-lettered and every row is recorded as failed and
+	 *   stays queued. That is at most 2 + ceil(log2(n)) writes per drain, counting the
+	 *   whole-batch write - 10 for 200 rows - when no proof is found. Once a row is accepted
+	 *   the bisection of the rest costs about twice log2(n) writes per bad row left in it, so
+	 *   it grows with the number of bad rows. The sample positions are rotated by the first
+	 *   row's attempts, so a batch whose samples all happened to be bad is sampled differently
+	 *   by the next drain. What stays blocked is a batch in which the first
+	 *   row and every sampled row are all refused, which in practice is an endpoint-wide
+	 *   refusal.
+	 *
+	 * Trying the first row, rather than descending to it, is the same test for one write
+	 * instead of log2(n). The oldest row is the one a bad row blocks the queue as, so it is the
+	 * row that has to be able to be isolated: a walk that stopped at the first refusal without
+	 * looking past it would leave a bad row at the head of the queue there for ever.
+	 *
+	 * A failure that is not row-level (a timeout, a 500, a 401) stops the walk wherever it
+	 * happens: rows resolved so far stay resolved and the rest go to $state['unresolved'].
+	 *
+	 * @param array<int, array{id: int, attempts: int, lines: string[]}> $rows One or more rows, every one with lines
+	 * @param array{delivered: bool, deliveredRows: int, rejected: array<int, string>, unresolved: int[], error: string|null} $state
+	 */
+	private static function ResolveRefusedBatch(array $rows, InfluxEventWriter $writer, OutboxService $outbox, array &$state): void
+	{
+		$first = array_slice($rows, 0, 1);
+		$rest = array_slice($rows, 1);
+
+		if (count($rest) === 0)
+		{
+			// The batch that was refused is this one row
+			$state['rejected'][$first[0]['id']] = self::DescribeRejection($writer);
+
+			return;
+		}
+
+		$outcome = self::WriteQuietly($first, $writer, $outbox, $state);
+
+		if ($outcome === 'failed')
+		{
+			array_push($state['unresolved'], ...array_column($rest, 'id'));
+
+			return;
+		}
+
+		if ($outcome === 'accepted')
+		{
+			// The whole was refused and the first row was not, so the rest hold the bad row
+			self::ResolveRemainder($rest, $writer, $outbox, $state);
+
+			return;
+		}
+
+		$state['rejected'][$first[0]['id']] = self::DescribeRejection($writer);
+
+		// Look for proof among the rest: ceil(log2(n)) single rows, evenly spaced across the
+		// batch. The positions are rotated by the first row's attempts: the claim is
+		// ORDER BY id LIMIT, so an unchanged batch comes back identical after a failed drain,
+		// and fixed positions would sample the same rows - all bad, say - for ever. Each failed
+		// drain advances the first row's attempts, so the next one samples different rows.
+		$count = count($rows);
+		$samples = (int)ceil(log($count, 2));
+		$positions = [];
+
+		for ($i = 1; $i <= $samples; $i++)
+		{
+			$base = min($count - 1, intdiv($i * $count, $samples));
+			$positions[1 + (($base - 1 + $first[0]['attempts']) % ($count - 1))] = true;
+		}
+
+		$refused = [];
+
+		foreach (array_keys($positions) as $position)
+		{
+			$outcome = self::WriteQuietly([$rows[$position]], $writer, $outbox, $state);
+
+			if ($outcome === 'refused')
+			{
+				$refused[$rows[$position]['id']] = self::DescribeRejection($writer);
+
+				continue;
+			}
+
+			$tried = array_keys($refused);
+			$tried[] = $rows[$position]['id'];
+			$untried = array_values(array_filter($rest, function ($row) use ($tried)
+			{
+				return !in_array($row['id'], $tried, true);
+			}));
+
+			if ($outcome === 'failed')
+			{
+				array_push($state['unresolved'], ...array_column($untried, 'id'));
+				// The sampled rows refused before it are rows nothing was proven about
+				foreach ($refused as $id => $reason)
+				{
+					$state['rejected'][$id] = $reason;
+				}
+
+				return;
+			}
+
+			// Proof. The sampled rows refused on their own are refused rows like any other
+			$state['rejected'] += $refused;
+			self::ResolveRemainder($untried, $writer, $outbox, $state);
+
+			return;
+		}
+
+		// Every sampled row was refused as well: stop, and keep everything
+		$state['rejected'] += $refused;
+		$state['error'] = self::DescribeRejection($writer);
+		$state['untriedReason'] = 'not tried: the batch was refused (HTTP ' . $state['refusalStatus']
+			. ') and no row was accepted to prove the endpoint takes Victual\'s lines';
+		array_push($state['unresolved'], ...array_column(array_filter($rest, function ($row) use ($refused)
+		{
+			return !array_key_exists($row['id'], $refused);
+		}), 'id'));
+	}
+
+	/**
+	 * Resolves rows that are known to hold the refused one(s), once a row has been delivered.
+	 *
+	 * @param array<int, array{id: int, lines: string[]}> $rows Zero or more rows
+	 * @param array{delivered: bool, deliveredRows: int, rejected: array<int, string>, unresolved: int[], error: string|null} $state
+	 */
+	private static function ResolveRemainder(array $rows, InfluxEventWriter $writer, OutboxService $outbox, array &$state): void
+	{
+		if (count($rows) === 0)
+		{
+			return;
+		}
+
+		if (count($rows) === 1)
+		{
+			if (self::WriteQuietly($rows, $writer, $outbox, $state) === 'refused')
+			{
+				$state['rejected'][$rows[0]['id']] = self::DescribeRejection($writer);
+			}
+
+			return;
+		}
+
+		self::IsolateRejection($rows, $writer, $outbox, $state);
+	}
+
+	/**
+	 * One write of the walk, not logged by the writer: delivers the rows on success and records
+	 * a failure that is not about the rows. Row-level refusals are left to the caller.
+	 *
+	 * @param array<int, array{id: int, lines: string[]}> $rows
+	 * @param array{delivered: bool, deliveredRows: int, rejected: array<int, string>, unresolved: int[], error: string|null} $state
+	 * @return string 'accepted', 'refused' (row-level status) or 'failed' (anything else)
+	 */
+	private static function WriteQuietly(array $rows, InfluxEventWriter $writer, OutboxService $outbox, array &$state): string
+	{
+		$lines = [];
+
+		foreach ($rows as $row)
+		{
+			array_push($lines, ...$row['lines']);
+		}
+
+		if ($writer->Write($lines, false))
+		{
+			$outbox->MarkDelivered(array_column($rows, 'id'));
+			$state['delivered'] = true;
+			$state['deliveredRows'] += count($rows);
+
+			return 'accepted';
+		}
+
+		if ($writer->WasRowLevelRejection())
+		{
+			return 'refused';
+		}
+
+		$state['error'] = $writer->GetLastError() ?? 'the write was rejected';
+		$state['untriedReason'] = $state['error'];
+		array_push($state['failed'], ...array_column($rows, 'id'));
+
+		return 'failed';
+	}
+
+	/**
+	 * Finds the row(s) InfluxDB refused in a batch it refused as a whole, by bisection.
+	 *
+	 * The caller has just had the whole of $rows rejected with a row-level status (see
+	 * InfluxEventWriter::ROW_LEVEL_REJECTION_STATUSES). Each half is written on its own: a
+	 * half InfluxDB accepts is marked delivered, a half it rejects the same way is split
+	 * again, and a single row rejected that way is collected in $state['rejected'] with the
+	 * status and InfluxDB's error text. Bisection rather than one request per row because the
+	 * usual case is one bad row among up to DRAIN_BATCH_SIZE, which this resolves in about
+	 * twice log2(n) writes instead of n.
+	 *
+	 * Only reached once a row has been delivered in this drain (ResolveRefusedBatch() sees to
+	 * that), so a refusal here is evidence about the row and the walk may go the whole way.
+	 *
+	 * The writes of the walk are not logged one by one (InfluxEventWriter::Write()'s
+	 * $logRejection); Drain() logs one summary line.
+	 *
+	 * Nothing is dead-lettered here: whether a rejected row is dead-lettered or kept depends
+	 * on whether any row was accepted anywhere in the drain, which is only known once the
+	 * walk is over (see Drain()).
+	 *
+	 * A half failing in any other way - a timeout, a 500, a 401 - stops the walk. Rows
+	 * resolved so far stay resolved, and every row not yet tried goes to $state['unresolved']
+	 * to be recorded as failed and retried by the next drain. Such a failure says nothing
+	 * about the rows.
+	 *
+	 * Re-sending rows that a partly applied 400 already stored is harmless: a point with the
+	 * same measurement, tag set and timestamp overwrites the one in the series, and every
+	 * point's identity (event_id, transaction_id, product_id, booking_id) comes from the
+	 * payload, so the second write replaces the first rather than adding to it.
+	 *
+	 * @param array<int, array{id: int, lines: string[]}> $rows Two or more rows, every one with lines
+	 * @param array{delivered: bool, deliveredRows: int, rejected: array<int, string>, unresolved: int[], error: string|null} $state
+	 */
+	private static function IsolateRejection(array $rows, InfluxEventWriter $writer, OutboxService $outbox, array &$state): void
+	{
+		foreach (array_chunk($rows, (int)ceil(count($rows) / 2)) as $half)
+		{
+			if ($state['error'] !== null)
+			{
+				// Stopped by a failure that is not about the rows: not tried
+				array_push($state['unresolved'], ...array_column($half, 'id'));
+
+				continue;
+			}
+
+			$lines = [];
+
+			foreach ($half as $row)
+			{
+				array_push($lines, ...$row['lines']);
+			}
+
+			if ($writer->Write($lines, false))
+			{
+				$outbox->MarkDelivered(array_column($half, 'id'));
+				$state['delivered'] = true;
+				$state['deliveredRows'] += count($half);
+			}
+			elseif (!$writer->WasRowLevelRejection())
+			{
+				$state['error'] = $writer->GetLastError() ?? 'the write was rejected';
+				$state['untriedReason'] = $state['error'];
+				array_push($state['failed'], ...array_column($half, 'id'));
+			}
+			elseif (count($half) === 1)
+			{
+				$state['rejected'][$half[0]['id']] = self::DescribeRejection($writer);
+			}
+			else
+			{
+				self::IsolateRejection($half, $writer, $outbox, $state);
+			}
+		}
+	}
+
+	/**
+	 * What a row refused on its own is recorded as: the status and InfluxDB's error text.
+	 */
+	private static function DescribeRejection(InfluxEventWriter $writer): string
+	{
+		return 'InfluxDB rejected this event (HTTP ' . $writer->GetLastStatus() . '): ' . ($writer->GetLastError() ?? 'no reason given');
 	}
 
 	/**
