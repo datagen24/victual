@@ -14355,10 +14355,6 @@
 					},
 					"tracked_count": {
 						"type": "integer",
-						"description": "How often this chore was tracked so far. This is the key the server sends (ChoresService::GetChoreDetails()); track_count below is never sent."
-					},
-					"track_count": {
-						"type": "integer",
 						"description": "How often this chore was tracked so far"
 					},
 					"last_done_by": {
@@ -14408,7 +14404,7 @@
 						"row_created_timestamp": "2019-05-02T20:12:26.000000Z"
 					},
 					"last_tracked": "2019-05-04T11:31:04.563000Z",
-					"track_count": 1,
+					"tracked_count": 1,
 					"last_done_by": {
 						"id": 1,
 						"username": "admin",
@@ -14417,7 +14413,9 @@
 						"display_name": "Ada Lovelace",
 						"row_created_timestamp": "2019-05-02T20:12:25.000000Z"
 					},
-					"next_estimated_execution_time": "2019-05-05T11:31:04.563000Z"
+					"next_estimated_execution_time": "2019-05-05T11:31:04.563000Z",
+					"next_execution_assigned_user": null,
+					"average_execution_frequency_hours": null
 				}
 			},
 			"BatteryDetailsResponse": {

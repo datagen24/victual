@@ -2014,4 +2014,64 @@ class ContractTest extends PgsqlSchemaTestCase
 		$unreached = array_values(array_diff(self::UNDECLARED_KEY_COVERED_SCHEMAS, array_keys($reachedAnywhere)));
 		self::assertSame([], $unreached, 'Covered schemas no recorded 2xx body reached, so the check above says nothing about them');
 	}
+
+	/**
+	 * The reverse of the check above (issue #922): a schema must not declare a property
+	 * no recorded body ever carries, because a generated client then exposes a field
+	 * that is always absent. ChoreDetailsResponse declared track_count while the server
+	 * only ever sent tracked_count.
+	 *
+	 * Only the schemas below are checked. A general reverse check would flag every
+	 * optional key that is legitimately absent from a particular recorded body; these
+	 * are built by one service method that emits every key every time (null when there
+	 * is no value), so a declared key that is never recorded is a stale declaration, not
+	 * an absent optional.
+	 */
+	private const SERVER_ALWAYS_SENDS_EVERY_DECLARED_KEY = ['ChoreDetailsResponse'];
+
+	#[Depends('testGenericEntitySweepAsAdmin')]
+	public function testSchemasDeclareNoKeyThatIsNeverSent(): void
+	{
+		$spec = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), true);
+		$sent = [];
+
+		foreach (self::$adminBodies as $key => $body)
+		{
+			$status = self::$adminSnapshot[$key]['status'];
+			if ($status < 200 || $status >= 300 || !is_array($body) || array_is_list($body))
+			{
+				continue;
+			}
+
+			$schema = self::documentedResponseSchema($spec, $key, $status);
+			if ($schema === null)
+			{
+				continue;
+			}
+
+			$ambiguous = [];
+			foreach (self::schemaMembers($spec, $schema, $body, $ambiguous) as [, $name])
+			{
+				if ($name !== null && in_array($name, self::SERVER_ALWAYS_SENDS_EVERY_DECLARED_KEY, true))
+				{
+					$sent[$name] = ($sent[$name] ?? []) + array_fill_keys(array_keys($body), true);
+				}
+			}
+		}
+
+		$violations = [];
+		foreach (self::SERVER_ALWAYS_SENDS_EVERY_DECLARED_KEY as $name)
+		{
+			self::assertArrayHasKey($name, $sent, "No recorded 2xx body reached $name, so its declared keys cannot be checked");
+			foreach (array_keys($spec['components']['schemas'][$name]['properties'] ?? []) as $property)
+			{
+				if (!isset($sent[$name][$property]))
+				{
+					$violations[] = "$name.$property is declared but no recorded 2xx body carries it";
+				}
+			}
+		}
+
+		self::assertSame([], $violations, "Schemas declare keys the server never sends:\n" . implode("\n", $violations));
+	}
 }

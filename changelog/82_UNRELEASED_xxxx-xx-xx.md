@@ -128,6 +128,7 @@
 - `GET /files/{group}/{fileName}` now answers `400` for an invalid file group or file name. Every failure used to be answered `404`, so "you asked wrongly" and "it is not here" were the same answer; a file that does not exist is still `404`
 - Nine list endpoints no longer document a `500` response, because they no longer return one - an invalid filter or sort parameter has been a `400` since the previous release. The nine are `GET` `/objects/{entity}`, `/users`, `/stock/products/{productId}/locations`, `/stock/products/{productId}/entries`, `/stock/locations/{locationId}/entries`, `/recipes/fulfillment`, `/chores`, `/batteries` and `/tasks`. Clients that read `error_details` off those responses will no longer find it
 - The OpenAPI specification now documents the `401`, `403` and `404` responses that the API actually returns
+- The OpenAPI specification no longer declares `track_count` on `ChoreDetailsResponse`. `GET /chores/{choreId}` has only ever sent `tracked_count`, so the declared key was always absent and a generated client exposed a field that was never filled. The response itself is unchanged ([#922](https://github.com/datagen24/victual/issues/922))
 - The OpenAPI specification now describes the `422` body of 19 label operations (the revised, reprint, cancel and promote operations, and the template, asset, render status, preview image and renderer credential routes) as the `{field, code, error_message}` refusal the server sends. They were typed only as `object`
 
 ### Users and permissions
