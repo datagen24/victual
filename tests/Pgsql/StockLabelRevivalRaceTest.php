@@ -79,7 +79,7 @@ class StockLabelRevivalRaceTest extends PgsqlSchemaTestCase
 		return $result;
 	}
 
-	private static function undo(int $booking, string $name): array
+	private static function undo(int $booking, string $name): Subprocess
 	{
 		return self::start('stock-undo-subprocess-helper.php', ['undo', (string)$booking], ['VICTUAL_TEST_APPLICATION_NAME' => $name]);
 	}

@@ -9,6 +9,7 @@ use Victual\Services\Database\PostgresDialect;
 use Victual\Services\DatabaseMigrationService;
 use Victual\Services\DatabaseService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #487 findings H6 (#495) and M17 (#517): the migration runner's atomicity and its
@@ -407,7 +408,6 @@ PHP);
 		file_put_contents($probeFile, <<<'PHP'
 <?php
 use Victual\Services\DatabaseService;
-use Victual\Tests\Support\Subprocess;
 
 $db = DatabaseService::GetInstance()->GetDbConnectionRaw();
 $db->exec('CREATE TABLE migration_runner_probe_visible_writes (id integer)');
