@@ -12,6 +12,7 @@ use Victual\Services\ApiKeyService;
 use Victual\Services\Database\PostgresDialect;
 use Victual\Services\DatabaseService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #458: every stock booking path locks the product it books, so a concurrent
@@ -188,9 +189,9 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 	 * do other things - here, wait for it to block on a lock and then release that lock -
 	 * while it runs. finishSubprocess() collects the result afterwards.
 	 *
-	 * @return array{0: resource, 1: array} The proc_open() process handle and its pipes
+	 * @return Subprocess The running child, nothing read yet
 	 */
-	private static function startSubprocess(string $method, string $path, ?array $body = null): array
+	private static function startSubprocess(string $method, string $path, ?array $body = null): Subprocess
 	{
 		$spec = array_filter(
 			['method' => $method, 'path' => $path, 'headers' => ['VICTUAL-API-KEY' => self::$apiKey], 'body' => $body],
@@ -211,15 +212,10 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
+		return Subprocess::start(
 			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
 			$env
 		);
-
-		return [$process, $pipes];
 	}
 
 	/**
@@ -229,9 +225,9 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 	 * callers produce (see that helper's own comment). Not started via startSubprocess():
 	 * there is no request spec, no API key, and the result carries no response body.
 	 *
-	 * @return array{0: resource, 1: array}
+	 * @return Subprocess
 	 */
-	private static function startCompactSubprocess(int $productId): array
+	private static function startCompactSubprocess(int $productId): Subprocess
 	{
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
 		$env = array_merge($inherited, [
@@ -245,15 +241,10 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
+		return Subprocess::start(
 			[PHP_BINARY, __DIR__ . '/compact-stock-subprocess-helper.php', (string)$productId],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
 			$env
 		);
-
-		return [$process, $pipes];
 	}
 
 	/**
@@ -263,14 +254,12 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 	 *         from compact-stock-subprocess-helper.php on a thrown exception - the two
 	 *         helpers this method services, never both at once.
 	 */
-	private static function finishSubprocess(array $processAndPipes): array
+	private static function finishSubprocess(Subprocess $subprocess): array
 	{
-		[$process, $pipes] = $processAndPipes;
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = $subprocess->finish();
+		self::assertFalse($finished['timedOut'], 'the subprocess outlived its bound: ' . Subprocess::Describe($finished));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);

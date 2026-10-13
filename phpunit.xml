@@ -80,6 +80,7 @@
 			<file>tests/Pgsql/StockEntryFormPriceTest.php</file>
 			<file>tests/Pgsql/MealPlanProductDetailsRedactionTest.php</file>
 			<file>tests/Pgsql/MealPlanStockStateTest.php</file>
+			<file>tests/Pgsql/ShoppingListUserfieldVisibilityTest.php</file>
 		</testsuite>
 		<testsuite name="householdpages">
 			<file>tests/Pgsql/HouseholdPagesTest.php</file>
@@ -91,6 +92,8 @@
 			<file>tests/Pgsql/LabelApiTest.php</file>
 			<file>tests/Pgsql/LabelResolveSchemaTest.php</file>
 			<file>tests/Pgsql/OpenApiErrorBodiesTest.php</file>
+			<file>tests/Pgsql/BatteryLabelViewPermissionTest.php</file>
+			<file>tests/Pgsql/LabelWorkerRoute403Test.php</file>
 		</testsuite>
 		<testsuite name="labelservices">
 			<file>tests/Pgsql/LabelServicesTest.php</file>
@@ -106,6 +109,7 @@
 			<file>tests/Pgsql/StockLabelRevivalPrintJobTest.php</file>
 			<file>tests/Pgsql/StockLabelRevivalRaceTest.php</file>
 			<file>tests/Pgsql/LabelRenderLifecycleTest.php</file>
+			<file>tests/Pgsql/PreviewCollectionConcurrencyTest.php</file>
 		</testsuite>
 		<testsuite name="authstack">
 			<file>tests/Pgsql/AuthStackTest.php</file>
@@ -114,11 +118,13 @@
 		</testsuite>
 		<testsuite name="helperunits">
 			<file>tests/Pgsql/HelperUnitsTest.php</file>
+			<file>tests/Pgsql/SubprocessHelperTest.php</file>
 		</testsuite>
 		<testsuite name="barcodelookup">
 			<file>tests/Pgsql/BarcodeLookupTest.php</file>
 			<file>tests/Pgsql/OutboundHostPolicyTest.php</file>
 			<file>tests/Pgsql/GtinTest.php</file>
+			<file>tests/Pgsql/BarcodeLookupNonFiniteTest.php</file>
 		</testsuite>
 		<testsuite name="storagefiles">
 			<file>tests/Pgsql/StorageFilesTest.php</file>
@@ -140,6 +146,8 @@
 			<file>tests/Pgsql/CrossOperationLedgerInvariantTest.php</file>
 			<file>tests/Pgsql/MergeProductsConsumptionTest.php</file>
 			<file>tests/Pgsql/MergeProductsChoreLockOrderTest.php</file>
+			<file>tests/Pgsql/BarcodeLookupNonFiniteHttpTest.php</file>
+			<file>tests/Pgsql/BarcodeLookupFactorNormalRangeTest.php</file>
 		</testsuite>
 		<testsuite name="stockconcurrency">
 			<file>tests/Pgsql/StockConcurrencyTest.php</file>
@@ -175,6 +183,7 @@
 			<file>tests/Pgsql/OutboxClaimConcurrencyTest.php</file>
 			<file>tests/Pgsql/InfluxWriteRequestTest.php</file>
 			<file>tests/Pgsql/InfluxPermanentRejectionTest.php</file>
+			<file>tests/Pgsql/OutboxRequeueTest.php</file>
 		</testsuite>
 		<testsuite name="genericquery">
 			<file>tests/Pgsql/GenericQueryTest.php</file>
@@ -205,6 +214,9 @@
 			<file>tests/Pgsql/ProductReferenceMigrationTest.php</file>
 			<file>tests/Pgsql/StockAmountMigrationTest.php</file>
 			<file>tests/Pgsql/StockScopedAvailabilityTest.php</file>
+			<file>tests/Pgsql/ImportConversionFactorTest.php</file>
+			<file>tests/Pgsql/ChoreConsumeFlagCheckTest.php</file>
+			<file>tests/Pgsql/ImportChoreConsumeFlagTest.php</file>
 		</testsuite>
 		<testsuite name="chores">
 			<file>tests/Pgsql/ChoreExecutionStockUndoTest.php</file>

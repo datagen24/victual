@@ -41,6 +41,62 @@ abstract class BaseBarcodeLookupPlugin
 	 */
 	private const FETCH_MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 
+	/** json_encode()'s own default depth: output nested deeper than this could not be encoded anyway. */
+	private const MAX_OUTPUT_DEPTH = 512;
+
+	/** Finite, and at least the smallest positive normal double (so not zero, negative or subnormal either). */
+	private static function IsNormalPositive(float $value): bool
+	{
+		return is_finite($value) && $value >= PHP_FLOAT_MIN;
+	}
+
+	/**
+	 * Refuses a float that is not finite anywhere in $value, naming the dotted key path
+	 * and never the value.
+	 *
+	 * Bounded like json_encode(): beyond MAX_OUTPUT_DEPTH levels is refused, which is what
+	 * stops a plugin's self-referencing array (by reference) from recursing until memory
+	 * runs out. An object that contains itself is refused at once; $ancestors holds the
+	 * ids of the objects on the way down, so one object shared by two siblings is fine.
+	 *
+	 * @param array<int, true> $ancestors
+	 * @throws \Exception
+	 */
+	private static function AssertAllNumbersAreFinite($value, string $path, int $depth = 0, array $ancestors = []): void
+	{
+		if (is_float($value) && !is_finite($value))
+		{
+			throw new \Exception("Plugin output contains a non-finite number at $path");
+		}
+
+		// An object is walked as its public properties: a plugin may nest one (a decoded
+		// JSON document), and json_encode() reaches its floats just the same.
+		if (is_object($value))
+		{
+			$id = spl_object_id($value);
+			if (isset($ancestors[$id]))
+			{
+				throw new \Exception("Plugin output contains a circular reference at $path");
+			}
+
+			$ancestors[$id] = true;
+			$value = get_object_vars($value);
+		}
+
+		if (is_array($value))
+		{
+			if ($depth >= self::MAX_OUTPUT_DEPTH)
+			{
+				throw new \Exception('Plugin output is nested deeper than ' . self::MAX_OUTPUT_DEPTH . " levels at $path");
+			}
+
+			foreach ($value as $key => $child)
+			{
+				self::AssertAllNumbersAreFinite($child, $path === '' ? (string)$key : "$path.$key", $depth + 1, $ancestors);
+			}
+		}
+	}
+
 	/**
 	 * Guzzle's 'on_headers' callback: called once the response's headers have arrived but
 	 * before its body downloads. Throwing here aborts the transfer - Guzzle surfaces the
@@ -162,10 +218,53 @@ abstract class BaseBarcodeLookupPlugin
 		// Of the required properties, the four ids/factor below are all value-checked;
 		// name is not, so a source that found a product with no name would otherwise pass
 		// straight through to the row services/StockService.php writes.
-		if (empty($pluginOutput['name']))
+		//
+		// A string, not just truthy: empty() let 123 and a non-empty array through to the
+		// row, and refused the legal name "0".
+		$name = $pluginOutput['name'];
+		if ($name !== null && !is_string($name))
+		{
+			throw new \Exception('Provided name must be a string');
+		}
+
+		if ($name === null || trim($name) === '')
 		{
 			throw new \Exception('Provided name is empty');
 		}
+
+		// A divisor in every conversion StockService::ExternalBarcodeLookup() makes with
+		// it, so zero, blank, non-numeric and negative are all refused - not just the
+		// first two, which is what empty() alone catches. Non-finite values are refused
+		// too (issue #842): is_numeric() accepts a float NAN and a string such as "1e400"
+		// (which casts to INF), and NAN <= 0 is false, so neither would be caught by the
+		// comparison; quantity_unit_conversions.factor is DOUBLE PRECISION, which would
+		// store NaN or Infinity and corrupt every later booking in the purchase unit.
+		$quFactor = $pluginOutput['__qu_factor_purchase_to_stock'];
+		if (!is_numeric($quFactor) || !is_finite((float)$quFactor) || (float)$quFactor <= 0)
+		{
+			throw new \Exception('Provided __qu_factor_purchase_to_stock must be a finite number greater than zero');
+		}
+
+		// Issue #890: the insert trigger on quantity_unit_conversions writes the inverse,
+		// 1 / factor, into a second row. A factor below 2^-1022 (PHP_FLOAT_MIN) is itself
+		// subnormal, and 1 / 5e-324 overflows (PostgreSQL raises 22003, which surfaces as
+		// a database error); a factor above 2^1022 has a subnormal inverse, which
+		// PostgreSQL stores without complaint and with most of its precision gone. So the
+		// factor and its computed inverse must both be finite and normal. 1.0 / $f is INF,
+		// not an error, in PHP for a tiny $f. This avoids overflow and subnormal results;
+		// it does not make the arithmetic exact or set a medically meaningful range.
+		if (!self::IsNormalPositive((float)$quFactor) || !self::IsNormalPositive(1.0 / (float)$quFactor))
+		{
+			throw new \Exception('Provided __qu_factor_purchase_to_stock and its inverse must both be finite, normal numbers greater than zero');
+		}
+
+		// Issue #844: every other field is written as sent too, and a float INF or NAN
+		// (a plugin's json_decode('1e400'), a division) is accepted by PostgreSQL's numeric
+		// and double columns but cannot be json_encode()d, so ApiResponse() would answer
+		// 500 after the rows had committed. Refused here, anywhere in the output, before
+		// anything is written. After the factor check so that one keeps its own message, and ahead of
+		// the id checks below, whose messages embed the value they refuse.
+		self::AssertAllNumbersAreFinite($pluginOutput, '');
 
 		// Check if referenced entity ids are valid
 		$locationId = $pluginOutput['location_id'];
@@ -184,19 +283,6 @@ abstract class BaseBarcodeLookupPlugin
 		if (FindObjectInArrayByPropertyValue($this->QuantityUnits, 'id', $quIdStock) === null)
 		{
 			throw new \Exception("Provided qu_id_stock ($quIdStock) is not a valid quantity unit id");
-		}
-
-		// A divisor in every conversion StockService::ExternalBarcodeLookup() makes with
-		// it, so zero, blank, non-numeric and negative are all refused - not just the
-		// first two, which is what empty() alone catches. Non-finite values are refused
-		// too (issue #842): is_numeric() accepts a float NAN and a string such as "1e400"
-		// (which casts to INF), and NAN <= 0 is false, so neither would be caught by the
-		// comparison; quantity_unit_conversions.factor is DOUBLE PRECISION, which would
-		// store NaN or Infinity and corrupt every later booking in the purchase unit.
-		$quFactor = $pluginOutput['__qu_factor_purchase_to_stock'];
-		if (!is_numeric($quFactor) || !is_finite((float)$quFactor) || (float)$quFactor <= 0)
-		{
-			throw new \Exception('Provided __qu_factor_purchase_to_stock must be a finite number greater than zero');
 		}
 
 		// __barcode is not just an identifier: services/StockService.php builds the stored

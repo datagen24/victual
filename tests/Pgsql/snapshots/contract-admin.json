@@ -834,9 +834,18 @@
     },
     "GET /api/objects/{entity} (shopping_list)": {
         "status": 200,
-        "shape": {
-            "__empty_list__": true
-        }
+        "shape": [
+            {
+                "amount": "integer",
+                "done": "integer",
+                "id": "integer",
+                "note": "null",
+                "product_id": "integer",
+                "qu_id": "integer",
+                "row_created_timestamp": "string(date-time)",
+                "shopping_list_id": "integer"
+            }
+        ]
     },
     "GET /api/objects/{entity} (shopping_lists)": {
         "status": 200,
@@ -978,9 +987,28 @@
     },
     "GET /api/objects/{entity} (uihelper_shopping_list)": {
         "status": 200,
-        "shape": {
-            "__empty_list__": true
-        }
+        "shape": [
+            {
+                "amount": "integer",
+                "default_shopping_location_name": "null",
+                "done": "integer",
+                "id": "integer",
+                "last_price_total": "integer",
+                "last_price_unit": "number",
+                "note": "null",
+                "price": "number",
+                "product_barcodes": "string",
+                "product_group_id": "integer",
+                "product_group_name": "string",
+                "product_id": "integer",
+                "product_name": "string",
+                "qu_id": "integer",
+                "qu_name": "string",
+                "qu_name_plural": "string",
+                "row_created_timestamp": "string(date-time)",
+                "shopping_list_id": "integer"
+            }
+        ]
     },
     "GET /api/objects/{entity} (userentities)": {
         "status": 200,
@@ -3746,6 +3774,10 @@
         "shape": "empty"
     },
     "POST /api/stock/shoppinglist/add-product": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "POST /api/stock/shoppinglist/add-product (kept for the sweep)": {
         "status": 204,
         "shape": "empty"
     },

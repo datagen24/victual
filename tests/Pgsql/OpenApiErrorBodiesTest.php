@@ -16,9 +16,9 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * things in place.
  *
  * The document check walks every 4xx and 5xx response in the document, follows a `$ref` to
- * components/responses, and requires a content entry with a schema. The one exception is
+ * components/responses, and requires a content entry with a schema. An exception would be
  * listed in ALLOWED_DESCRIPTION_ONLY, with the reason, and the class fails if that entry
- * stops being description-only, so the list cannot go stale unnoticed.
+ * stops being description-only, so the list cannot go stale unnoticed. There is none now.
  *
  * The runtime checks send a request that provokes each distinct error body and hold the
  * answer to the schema the document gives for that operation and status, with Opis, and to
@@ -40,21 +40,12 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 {
 	/**
 	 * Declared error responses allowed to stay description-only, by "METHOD /path STATUS".
-	 * Each is unreachable, so there is no body to describe; they are kept in the document
-	 * (deleting a declared status is a maintainer decision) with a description that says so.
-	 *
-	 * LabelWorkerApiController maps a `forbidden` refusal to 403, but `forbidden` is raised only
-	 * for attempt, printer and artifact-bytes ownership (LabelWorkerAuthorization::Authorize(),
-	 * lines 33-54), plus LabelCaptureService and PrintAttemptService. Register, Claim and Rotate
-	 * raise none of them. POST /labels/pair is worse: BaseAuthMiddleware returns before any
-	 * authorization for labels-pair (lines 100-106) and Pair() raises only 401 and 422.
+	 * None is: the four that used to be listed here (the 403 of POST /labels/pair, register,
+	 * jobs/claim and credentials/rotate) were unreachable and are no longer declared, and
+	 * LabelWorkerRoute403Test pins that they stay unreachable. A new entry needs a reason as
+	 * strong as that one, and the class fails if it stops being description-only.
 	 */
-	private const ALLOWED_DESCRIPTION_ONLY = [
-		'POST /labels/pair 403',
-		'POST /labels/register 403',
-		'POST /labels/jobs/claim 403',
-		'POST /labels/credentials/rotate 403',
-	];
+	private const ALLOWED_DESCRIPTION_ONLY = [];
 
 	private const ADMIN_USER = 9700;
 	private const OPERATOR_USER = 9701;
@@ -132,6 +123,9 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 
 	public function testTheAllowlistNamesOnlyEntriesThatAreStillDescriptionOnly(): void
 	{
+		// No description-only response is allowed; a new entry is a deliberate change to this line
+		self::assertSame([], self::ALLOWED_DESCRIPTION_ONLY);
+
 		foreach (self::ALLOWED_DESCRIPTION_ONLY as $key)
 		{
 			[$method, $path, $status] = explode(' ', $key);
@@ -140,6 +134,51 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 			self::assertIsArray($response, "$key is allowlisted but the document no longer declares it");
 			self::assertFalse(self::HasBodySchema(self::ResolveResponse($response)), "$key now describes its body: remove it from the allowlist");
 		}
+	}
+
+	/**
+	 * Issue 889: a label operation's 4xx must name its body's shape, not just have a schema. 19
+	 * operations declared their 422 as `{"type": "object"}`, which satisfies the check above and
+	 * tells a generated client nothing; every server 422 on those routes is a LabelRefusal.
+	 */
+	public function testNoLabelErrorResponseIsABareObject(): void
+	{
+		$bare = [];
+
+		foreach (self::Operations() as [$method, $path, $operation])
+		{
+			if (!str_starts_with($path, '/labels/'))
+			{
+				continue;
+			}
+
+			foreach ($operation['responses'] as $status => $response)
+			{
+				if (substr((string)$status, 0, 1) !== '4')
+				{
+					continue;
+				}
+
+				foreach (self::ResolveResponse($response)['content'] ?? [] as $media)
+				{
+					$schema = $media['schema'] ?? [];
+
+					// A $ref to a component is followed, so a reference to a bare-object
+					// component is caught as well as an inline one.
+					while (isset($schema['$ref']))
+					{
+						$schema = self::Spec()['components']['schemas'][substr($schema['$ref'], strlen('#/components/schemas/'))] ?? [];
+					}
+
+					if (!isset($schema['properties']) && !isset($schema['oneOf']) && !isset($schema['anyOf']) && !isset($schema['allOf']))
+					{
+						$bare[] = "$method $path $status";
+					}
+				}
+			}
+		}
+
+		self::assertSame([], $bare, count($bare) . " label error responses are a bare object:\n" . implode("\n", $bare));
 	}
 
 	public function testEveryComponentResponseIsUsed(): void
@@ -246,6 +285,37 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 
 		self::AssertBody($response, 'POST', '/labels/pair', 422, [
 			'field' => 'material', 'code' => 'value_out_of_range', 'error_message' => 'Expected 32 bytes as lowercase hexadecimal',
+		]);
+	}
+
+	/**
+	 * Issue 889: one runtime case per code path behind the 19 operations that now reference
+	 * LabelRefused - the Operate arm, the Dispatch arm and PreviewImage.
+	 */
+	public function testAPromotionWithoutAPrinterIsALabelRefusal(): void
+	{
+		$response = self::Send('POST', '/api/labels/artifacts/999999/promote', [], self::$adminKey);
+
+		self::AssertBody($response, 'POST', '/labels/artifacts/{artifactId}/promote', 422, [
+			'field' => 'printer_id', 'code' => 'value_out_of_range', 'error_message' => 'An integer printer_id is required',
+		]);
+	}
+
+	public function testAnAssetUploadWithoutBytesIsALabelRefusal(): void
+	{
+		$response = self::Send('POST', '/api/labels/assets', [], self::$adminKey);
+
+		self::AssertBody($response, 'POST', '/labels/assets', 422, [
+			'field' => 'content_base64', 'code' => 'invalid_value', 'error_message' => 'An asset upload carries its bytes',
+		]);
+	}
+
+	public function testAPreviewImageOfAnUnknownArtifactIsALabelRefusal(): void
+	{
+		$response = self::Send('GET', '/api/labels/artifacts/999999/image', null, self::$adminKey);
+
+		self::AssertBody($response, 'GET', '/labels/artifacts/{artifactId}/image', 422, [
+			'field' => 'artifact_id', 'code' => 'not_found', 'error_message' => 'No such artifact',
 		]);
 	}
 

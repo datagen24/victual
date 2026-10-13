@@ -538,6 +538,9 @@ class ContractTest extends PgsqlSchemaTestCase
 		self::invokeAdmin('POST /api/stock/shoppinglist/add-expired-products', fn() => $stock->AddExpiredProductsToShoppingList(self::request('POST', []), new Response(), []));
 		self::invokeAdmin('POST /api/stock/shoppinglist/remove-product', fn() => $stock->RemoveProductFromShoppingList(self::request('POST', ['product_id' => $productId, 'product_amount' => 1]), new Response(), []));
 		self::invokeAdmin('POST /api/stock/shoppinglist/clear', fn() => $stock->ClearShoppingList(self::request('POST', []), new Response(), []));
+		// One row stays on the list for the rest of the run: the generic sweep reads shopping_list and
+		// uihelper_shopping_list after this method, and an empty list records no row shape for them (issue #888).
+		self::invokeAdmin('POST /api/stock/shoppinglist/add-product (kept for the sweep)', fn() => $stock->AddProductToShoppingList(self::request('POST', ['product_id' => $productId, 'product_amount' => 2]), new Response(), []));
 
 		// Issue #772: a price change (the stock-edit-old/-new pair) and a measurement (the
 		// stock-measured-old/-new pair) on the due-soon product's single unit, so the ledger
@@ -1779,12 +1782,8 @@ class ContractTest extends PgsqlSchemaTestCase
 	 * the /api/stock routes reach, which the test asserts;
 	 * RecipeFulfillmentResponse is the other schema issue #787 names.
 	 *
-	 * Not listed, because they still omit keys the server sends (found by this leg's walk
-	 * over contract-admin.json when it was written, and left for their own change):
-	 * Battery, BatteryChargeCycleEntry, BatteryDetailsResponse, Chore, ChoreDetailsResponse,
-	 * ChoreLogEntry, CurrentBatteryResponse, CurrentChoreResponse, Role, ShoppingLocation
-	 * and TaskCategory, and the inline GET /system/info schema. Adding a schema here is
-	 * how its gaps become a failure.
+	 * Not listed: the inline GET /system/info schema, which has no component name for this
+	 * walk to attribute its keys to. Adding a schema here is how its gaps become a failure.
 	 */
 	private const UNDECLARED_KEY_COVERED_SCHEMAS = [
 		'CurrentStockResponse',
@@ -1800,6 +1799,17 @@ class ContractTest extends PgsqlSchemaTestCase
 		'StockLocation',
 		'StockLogEntry',
 		'RecipeFulfillmentResponse',
+		'Battery',
+		'Chore',
+		'ChoreDetailsResponse',
+		'ChoreLogEntry',
+		'CurrentBatteryResponse',
+		'CurrentChoreResponse',
+		'Role',
+		'ShoppingLocation',
+		'TaskCategory',
+		'BatteryChargeCycleEntry',
+		'BatteryDetailsResponse',
 	];
 
 	/** The schemas issue #787 names, which the covered list has to include. */
@@ -2003,5 +2013,65 @@ class ContractTest extends PgsqlSchemaTestCase
 		// And no listed schema passes only because nothing recorded reached it.
 		$unreached = array_values(array_diff(self::UNDECLARED_KEY_COVERED_SCHEMAS, array_keys($reachedAnywhere)));
 		self::assertSame([], $unreached, 'Covered schemas no recorded 2xx body reached, so the check above says nothing about them');
+	}
+
+	/**
+	 * The reverse of the check above (issue #922): a schema must not declare a property
+	 * no recorded body ever carries, because a generated client then exposes a field
+	 * that is always absent. ChoreDetailsResponse declared track_count while the server
+	 * only ever sent tracked_count.
+	 *
+	 * Only the schemas below are checked. A general reverse check would flag every
+	 * optional key that is legitimately absent from a particular recorded body; these
+	 * are built by one service method that emits every key every time (null when there
+	 * is no value), so a declared key that is never recorded is a stale declaration, not
+	 * an absent optional.
+	 */
+	private const SERVER_ALWAYS_SENDS_EVERY_DECLARED_KEY = ['ChoreDetailsResponse'];
+
+	#[Depends('testGenericEntitySweepAsAdmin')]
+	public function testSchemasDeclareNoKeyThatIsNeverSent(): void
+	{
+		$spec = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), true);
+		$sent = [];
+
+		foreach (self::$adminBodies as $key => $body)
+		{
+			$status = self::$adminSnapshot[$key]['status'];
+			if ($status < 200 || $status >= 300 || !is_array($body) || array_is_list($body))
+			{
+				continue;
+			}
+
+			$schema = self::documentedResponseSchema($spec, $key, $status);
+			if ($schema === null)
+			{
+				continue;
+			}
+
+			$ambiguous = [];
+			foreach (self::schemaMembers($spec, $schema, $body, $ambiguous) as [, $name])
+			{
+				if ($name !== null && in_array($name, self::SERVER_ALWAYS_SENDS_EVERY_DECLARED_KEY, true))
+				{
+					$sent[$name] = ($sent[$name] ?? []) + array_fill_keys(array_keys($body), true);
+				}
+			}
+		}
+
+		$violations = [];
+		foreach (self::SERVER_ALWAYS_SENDS_EVERY_DECLARED_KEY as $name)
+		{
+			self::assertArrayHasKey($name, $sent, "No recorded 2xx body reached $name, so its declared keys cannot be checked");
+			foreach (array_keys($spec['components']['schemas'][$name]['properties'] ?? []) as $property)
+			{
+				if (!isset($sent[$name][$property]))
+				{
+					$violations[] = "$name.$property is declared but no recorded 2xx body carries it";
+				}
+			}
+		}
+
+		self::assertSame([], $violations, "Schemas declare keys the server never sends:\n" . implode("\n", $violations));
 	}
 }

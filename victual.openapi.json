@@ -76,7 +76,7 @@
 					"Labels"
 				],
 				"summary": "Resolve an opaque label",
-				"description": "Accepts a bare uid or vctl: payload, ignoring case and folding I/L to 1 and O to 0. Each kind resolves under the caller's domain permission (FieldCatalogue::DomainPermission): STOCK_VIEW for location, product, and stock_entry; RECIPES_VIEW for recipe; CHORES_VIEW for chore; BATTERIES for battery. Unauthorized and unknown labels both return 200 with status unknown; a caller holding none of these permissions performs no label lookup.",
+				"description": "Accepts a bare uid or vctl: payload, ignoring case and folding I/L to 1 and O to 0. Each kind resolves under the caller's domain permission (FieldCatalogue::DomainPermission): STOCK_VIEW for location, product, and stock_entry; RECIPES_VIEW for recipe; CHORES_VIEW for chore; BATTERIES_VIEW for battery. Unauthorized and unknown labels both return 200 with status unknown; a caller holding none of these permissions performs no label lookup.",
 				"parameters": [
 					{
 						"name": "code",
@@ -363,7 +363,7 @@
 					"Labels"
 				],
 				"summary": "Read the target and import epoch for a label request (plan 32)",
-				"description": "The generic form of GET /labels/locations/{locationId}/context for the five kinds plan 32 added: product, stock_entry, recipe, chore, battery. Requires the kind's own domain read permission (FieldCatalogue::DomainPermission()) - STOCK_VIEW for product and stock_entry, RECIPES_VIEW, CHORES_VIEW, or BATTERIES. Compose a future print request with this import_epoch; issuance refuses if an import has replaced the target set. This endpoint does not issue or print a label.",
+				"description": "The generic form of GET /labels/locations/{locationId}/context for the five kinds plan 32 added: product, stock_entry, recipe, chore, battery. Requires the kind's own domain read permission (FieldCatalogue::DomainPermission()) - STOCK_VIEW for product and stock_entry, RECIPES_VIEW, CHORES_VIEW, or BATTERIES_VIEW. Compose a future print request with this import_epoch; issuance refuses if an import has replaced the target set. This endpoint does not issue or print a label.",
 				"parameters": [
 					{
 						"name": "kind",
@@ -510,6 +510,18 @@
 										"database_engine": {
 											"type": "string",
 											"description": "The database engine serving this installation and its version, e.g. \"PostgreSQL 16.10\", or \"unavailable\" when the connection cannot be interrogated."
+										},
+										"db_version": {
+											"type": "integer",
+											"description": "The highest migration number applied to the database."
+										},
+										"os": {
+											"type": "string",
+											"description": "The operating system the server runs on, as PHP's php_uname() reports it: name, release, version and machine type."
+										},
+										"client": {
+											"type": "string",
+											"description": "The User-Agent header of this request, or \"unknown\" when it carried none."
 										}
 									}
 								}
@@ -7151,9 +7163,6 @@
 							}
 						}
 					},
-					"403": {
-						"description": "Not produced by this operation: pairing is unauthenticated and raises only 401 and 422; kept so the declared status set does not change"
-					},
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
@@ -7207,9 +7216,6 @@
 					"401": {
 						"$ref": "#/components/responses/RotateUnauthorized",
 						"description": "Invalid or expired credential"
-					},
-					"403": {
-						"description": "Not produced by this operation: a 403 `forbidden` refusal is raised only for attempt, printer and artifact ownership, and this operation raises none of those (rotation raises 401 and 422 only); kept so the declared status set does not change"
 					},
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
@@ -7269,9 +7275,6 @@
 						"$ref": "#/components/responses/WorkerUnauthorized",
 						"description": "Invalid or expired credential"
 					},
-					"403": {
-						"description": "Not produced by this operation: a 403 `forbidden` refusal is raised only for attempt, printer and artifact ownership, and this operation raises none of those (it raises 401 and 422 only); kept so the declared status set does not change"
-					},
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
@@ -7327,9 +7330,6 @@
 					"401": {
 						"$ref": "#/components/responses/WorkerUnauthorized",
 						"description": "Invalid or expired credential"
-					},
-					"403": {
-						"description": "Not produced by this operation: a 403 `forbidden` refusal is raised only for attempt, printer and artifact ownership, and this operation raises none of those (it raises 401 and 422 only); kept so the declared status set does not change"
 					},
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
@@ -8534,14 +8534,8 @@
 						"description": "idempotency_conflict: the Idempotency-Key was already used for a different request"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -8552,7 +8546,7 @@
 					"Labels"
 				],
 				"summary": "Queue a label for any of the six kinds (plan 32)",
-				"description": "Requires MASTER_DATA_EDIT plus the kind's own domain read permission (FieldCatalogue::DomainPermission()): STOCK_VIEW for location/product/stock_entry, RECIPES_VIEW, CHORES_VIEW, or BATTERIES. Atomically issues the label and enqueues the job, the same as POST /labels/locations/{locationId}/print for kind=location.",
+				"description": "Requires MASTER_DATA_EDIT plus the kind's own domain read permission (FieldCatalogue::DomainPermission()): STOCK_VIEW for location/product/stock_entry, RECIPES_VIEW, CHORES_VIEW, or BATTERIES_VIEW. Atomically issues the label and enqueues the job, the same as POST /labels/locations/{locationId}/print for kind=location.",
 				"parameters": [
 					{
 						"name": "kind",
@@ -8702,14 +8696,8 @@
 						"description": "idempotency_conflict: the Idempotency-Key was already used for a different request"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -8767,14 +8755,8 @@
 						"description": "idempotency_conflict: the Idempotency-Key was already used for a different request"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -8832,14 +8814,8 @@
 						"description": "idempotency_conflict: the Idempotency-Key was already used for a different request; already_claimed: an attempt has already been made, so the job can no longer be cancelled"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -8897,14 +8873,8 @@
 						"description": "idempotency_conflict: the Idempotency-Key was already used for a different request"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -8932,14 +8902,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			},
@@ -8976,14 +8940,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9026,14 +8984,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			},
@@ -9089,14 +9041,8 @@
 						"description": "stale_revision: the draft changed since its revision token was read"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9139,14 +9085,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9189,14 +9129,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9250,14 +9184,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9300,14 +9228,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9361,14 +9283,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9396,14 +9312,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			},
@@ -9440,14 +9350,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9553,14 +9457,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9892,14 +9790,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9942,14 +9834,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -13725,6 +13611,14 @@
 						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
 						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
+					"active": {
+						"type": "integer",
+						"enum": [
+							0,
+							1
+						],
+						"description": "1 for an active shopping location, 0 for an inactive one (shopping_locations.active, CHECK 0 or 1)."
+					},
 					"userfields": {
 						"type": "object",
 						"description": "Key/value pairs of userfields"
@@ -14457,7 +14351,7 @@
 						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
 						"description": "When this chore was last tracked. An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
-					"track_count": {
+					"tracked_count": {
 						"type": "integer",
 						"description": "How often this chore was tracked so far"
 					},
@@ -14508,7 +14402,7 @@
 						"row_created_timestamp": "2019-05-02T20:12:26.000000Z"
 					},
 					"last_tracked": "2019-05-04T11:31:04.563000Z",
-					"track_count": 1,
+					"tracked_count": 1,
 					"last_done_by": {
 						"id": 1,
 						"username": "admin",
@@ -14517,7 +14411,9 @@
 						"display_name": "Ada Lovelace",
 						"row_created_timestamp": "2019-05-02T20:12:25.000000Z"
 					},
-					"next_estimated_execution_time": "2019-05-05T11:31:04.563000Z"
+					"next_estimated_execution_time": "2019-05-05T11:31:04.563000Z",
+					"next_execution_assigned_user": null,
+					"average_execution_frequency_hours": null
 				}
 			},
 			"BatteryDetailsResponse": {
@@ -14922,6 +14818,19 @@
 						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
 						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
+					"active": {
+						"type": "integer",
+						"enum": [
+							0,
+							1
+						],
+						"description": "1 for an active battery, 0 for an inactive one (batteries.active, CHECK 0 or 1)."
+					},
+					"import_epoch": {
+						"type": "integer",
+						"minimum": 0,
+						"description": "A server-owned generation: label_current_import_epoch() when the row was written, which a legacy import bumps (migrations/0283.pgsql.php)."
+					},
 					"userfields": {
 						"type": "object",
 						"description": "Key/value pairs of userfields"
@@ -14936,6 +14845,23 @@
 					},
 					"battery_id": {
 						"type": "integer"
+					},
+					"undone": {
+						"type": "integer",
+						"enum": [
+							0,
+							1
+						],
+						"description": "1 once this charge cycle has been undone, else 0 (battery_charge_cycles.undone, CHECK 0 or 1)."
+					},
+					"undone_timestamp": {
+						"type": [
+							"string",
+							"null"
+						],
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "When this charge cycle was undone, null while it is not. An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"tracked_time": {
 						"type": [
@@ -15066,6 +14992,46 @@
 						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
 						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
+					"consume_product_on_execution": {
+						"type": "integer",
+						"enum": [
+							0,
+							1
+						],
+						"description": "1 consumes the product on execution; 0 does not. No other value is accepted: chores.consume_product_on_execution is SMALLINT NOT NULL DEFAULT 0 with CHECK (consume_product_on_execution IN (0, 1)) since migration 0312, and a write of another value is refused with a 400. Issue #923."
+					},
+					"product_id": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The product consumed on each execution, when consume_product_on_execution is 1."
+					},
+					"product_amount": {
+						"type": [
+							"number",
+							"null"
+						],
+						"description": "The amount of product_id consumed on each execution, when consume_product_on_execution is 1."
+					},
+					"period_interval": {
+						"type": "integer",
+						"minimum": 1,
+						"description": "Every how many period_type units the chore recurs (chores.period_interval, CHECK greater than 0)."
+					},
+					"active": {
+						"type": "integer",
+						"enum": [
+							0,
+							1
+						],
+						"description": "1 for an active chore, 0 for an inactive one (chores.active, CHECK 0 or 1)."
+					},
+					"import_epoch": {
+						"type": "integer",
+						"minimum": 0,
+						"description": "A server-owned generation: label_current_import_epoch() when the row was written, which a legacy import bumps (migrations/0283.pgsql.php)."
+					},
 					"userfields": {
 						"type": "object",
 						"description": "Key/value pairs of userfields"
@@ -15098,6 +15064,46 @@
 						"format": "date-time",
 						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
 						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
+					},
+					"done_by_user_id": {
+						"type": [
+							"integer",
+							"null"
+						]
+					},
+					"undone": {
+						"type": "integer",
+						"enum": [
+							0,
+							1
+						],
+						"description": "1 once this execution has been undone, else 0 (chores_log.undone, CHECK 0 or 1)."
+					},
+					"undone_timestamp": {
+						"type": [
+							"string",
+							"null"
+						],
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "When this execution was undone, null while it is not. An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
+					},
+					"skipped": {
+						"type": "integer",
+						"enum": [
+							0,
+							1
+						],
+						"description": "1 when this execution was recorded as skipped rather than done, else 0 (chores_log.skipped, CHECK 0 or 1)."
+					},
+					"scheduled_execution_time": {
+						"type": [
+							"string",
+							"null"
+						],
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "The time this execution was scheduled for, when it was recorded against a schedule. An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"stock_transaction_id": {
 						"type": [
@@ -15432,6 +15438,10 @@
 			"CurrentChoreResponse": {
 				"type": "object",
 				"properties": {
+					"id": {
+						"type": "integer",
+						"description": "The chore's id, the same value as chore_id."
+					},
 					"chore_id": {
 						"type": "integer"
 					},
@@ -15489,8 +15499,15 @@
 			"CurrentBatteryResponse": {
 				"type": "object",
 				"properties": {
+					"id": {
+						"type": "integer",
+						"description": "The battery's id, the same value as battery_id."
+					},
 					"battery_id": {
 						"type": "integer"
+					},
+					"battery": {
+						"$ref": "#/components/schemas/Battery"
 					},
 					"last_tracked_time": {
 						"type": [
@@ -15643,6 +15660,18 @@
 						"format": "date-time",
 						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
 						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
+					},
+					"active": {
+						"type": "integer",
+						"enum": [
+							0,
+							1
+						],
+						"description": "1 for an active task category, 0 for an inactive one (task_categories.active, CHECK 0 or 1)."
+					},
+					"userfields": {
+						"type": "object",
+						"description": "Key/value pairs of userfields"
 					}
 				}
 			},
@@ -16153,6 +16182,10 @@
 						"format": "date-time",
 						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
 						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
+					},
+					"userfields": {
+						"type": "object",
+						"description": "Key/value pairs of userfields"
 					}
 				}
 			},

@@ -11,6 +11,7 @@ use Victual\Controllers\RecipesController;
 use Victual\Controllers\StockController;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * The Blade page controllers behind the stock, master data, shopping list, recipe and
@@ -1177,18 +1178,10 @@ class StockPagesTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/stockpages-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::run([PHP_BINARY, __DIR__ . '/stockpages-subprocess-helper.php', base64_encode(json_encode($spec))], $env);
+		self::assertFalse($finished['timedOut'], 'the page helper outlived its bound: ' . Subprocess::Describe($finished));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		self::assertIsArray($result, "the page helper printed no JSON. stdout: $output\nstderr: $errors");
