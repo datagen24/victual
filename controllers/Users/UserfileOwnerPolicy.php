@@ -25,7 +25,11 @@ use Victual\Services\FilesService;
  * - the definition rows (userfields, userentities) admit ADMIN only, an explicit exception
  *   here that leaves EntityReadPolicy's null - definitions readable by any authenticated
  *   caller - untouched (F3');
- * - the user's own row admits that user, as GetUserfields does (F4).
+ * - the user's own row admits that user, as GetUserfields does (F4);
+ * - a view row is resolved by the key GetObject uses and admits whoever the view's read
+ *   permission admits; one that no longer exists is unresolved. The label_* and print_*
+ *   entities are not looked up, so they are unresolved, which is ADMIN only - exactly their
+ *   EntityReadPolicy permission.
  *
  * The check runs on the original file's name before anything is read or a picture
  * derivative is created, and every refusal is the same exception: it must not tell a
@@ -52,8 +56,8 @@ class UserfileOwnerPolicy
 
 	/**
 	 * The entities whose records this class can look up. The table name is never taken from
-	 * a stored value: an entity not listed here is unresolved, whatever userfields.entity
-	 * says. Their read permission is EntityReadPolicy::PERMISSIONS.
+	 * a stored value: an entity not listed here or in OWNER_VIEWS is unresolved, whatever
+	 * userfields.entity says. Their read permission is EntityReadPolicy::PERMISSIONS.
 	 */
 	const OWNER_TABLES = [
 		'products', 'chores', 'product_barcodes', 'batteries', 'locations', 'storage_classes',
@@ -63,6 +67,20 @@ class UserfileOwnerPolicy
 		'equipment', 'meal_plan', 'meal_plan_sections', 'stock_log', 'chores_log',
 		'battery_charge_cycles', 'permission_hierarchy', 'userobjects', 'users',
 		'roles', 'mqtt_product_entities', 'stock', 'label_printer_status'
+	];
+
+	/**
+	 * The read-only views EntityReadPolicy covers. GenericEntityApiController::GetObject looks
+	 * their rows up by id like a table's, so a value attached to one resolves the same way: the
+	 * row must exist in the view, and the view's own read permission decides (a view row that
+	 * disappears is an unresolved reference). Several of them select a constant or a source
+	 * row's id as that column, which is what GetObject finds too.
+	 */
+	const OWNER_VIEWS = [
+		'stock_current_locations', 'products_last_purchased', 'products_average_price',
+		'quantity_unit_conversions_resolved', 'locations_resolved', 'product_groups_resolved',
+		'product_barcodes_view', 'uihelper_shopping_list', 'product_groups_missing',
+		'product_location_missing', 'product_substitutions_resolved', 'recipes_pos_resolved'
 	];
 
 	/**
@@ -187,8 +205,8 @@ class UserfileOwnerPolicy
 		if (!self::OwnerExists($entity, $objectId))
 		{
 			// F1: a reference nobody can resolve is an orphan. That includes an entity with a
-			// read policy but no lookup in OWNER_TABLES - a view, or the label tables - whose
-			// record this class cannot find, so only ADMIN, who may read all of them, passes
+			// read policy but no lookup (the label and print tables, all ADMIN) whose record
+			// this class does not look for, so only ADMIN, who may read all of them, passes
 			return User::HasPermissions(User::PERMISSION_ADMIN);
 		}
 
@@ -229,7 +247,7 @@ class UserfileOwnerPolicy
 			return $statement->fetchColumn() !== false;
 		}
 
-		if (!in_array($entity, self::OWNER_TABLES, true) || !isset(EntityReadPolicy::PERMISSIONS[$entity]))
+		if ((!in_array($entity, self::OWNER_TABLES, true) && !in_array($entity, self::OWNER_VIEWS, true)) || !isset(EntityReadPolicy::PERMISSIONS[$entity]))
 		{
 			return false;
 		}

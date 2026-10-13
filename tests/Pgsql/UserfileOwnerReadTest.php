@@ -80,6 +80,9 @@ class UserfileOwnerReadTest extends PgsqlSchemaTestCase
 		self::$roleId = (int)self::$db->query("INSERT INTO roles (code, name) VALUES ('ufo-role', 'ufo role') RETURNING id")->fetchColumn();
 		self::$mqttEntityId = (int)self::$db->query('INSERT INTO mqtt_product_entities (product_id) VALUES (' . self::$productId . ') RETURNING id')->fetchColumn();
 
+		self::$db->prepare('INSERT INTO recipes_pos (recipe_id, product_id, amount) VALUES (?, ?, 1)')->execute([self::$recipeId, self::$productId]);
+		self::$db->prepare('INSERT INTO shopping_list (product_id, amount) VALUES (?, 1)')->execute([self::$productId]);
+
 		self::$png = self::MakePng(120, 80);
 	}
 
@@ -299,8 +302,8 @@ class UserfileOwnerReadTest extends PgsqlSchemaTestCase
 			['userentities', (string)$entityId, 'admin'],
 			['api_keys', (string)$keyId, 'nobody'],
 			['api_keys', '999999', 'nobody'],
-			// A view EntityReadPolicy covers but this class cannot look a record up in: unresolved
-			['stock_current_locations', '1', 'admin'],
+			// An entity EntityReadPolicy covers (ADMIN) but this class does not look a record up in: unresolved
+			['label_workers', '1', 'admin'],
 			['no_such_entity', '1', 'nobody']
 		];
 
@@ -471,6 +474,142 @@ class UserfileOwnerReadTest extends PgsqlSchemaTestCase
 		$this->assertRefused(self::serve($token), 'definition row + api_keys: not even ADMIN');
 		self::grant(self::everyLeafButAdmin());
 		$this->assertRefused(self::serve($token), 'definition row + api_keys: nobody else');
+	}
+
+	// -------------------------------------------------------------------------------
+	// View rows: owned by the row of the view, looked up by the key GetObject uses
+	// -------------------------------------------------------------------------------
+
+	#[DataProvider('backends')]
+	public function testAFileOnAViewRowFollowsThatViewsReadPermission(string $backend): void
+	{
+		$cases = [
+			'stock_current_locations' => ['STOCK_VIEW', 'RECIPES_VIEW'],
+			'locations_resolved' => ['STOCK_VIEW', 'RECIPES_VIEW'],
+			'recipes_pos_resolved' => ['RECIPES_VIEW', 'STOCK_VIEW'],
+			'uihelper_shopping_list' => ['SHOPPINGLIST_VIEW', 'STOCK_VIEW']
+		];
+
+		foreach ($cases as $view => [$leaf, $otherLeaf])
+		{
+			self::$db->exec('DELETE FROM userfield_values');
+			$key = self::$db->query("SELECT MIN(id) FROM $view")->fetchColumn();
+			self::assertNotNull($key, "$view has a row to hang a value off");
+			$token = $this->fixtureFile($backend, 'view-owned.txt', "bytes of $view");
+			self::reference($view, (string)$key, 'view-owned.txt');
+
+			self::grant([]);
+			$this->assertRefused(self::serve($token), "$view: holding nothing");
+			self::grant([$otherLeaf]);
+			$this->assertRefused(self::serve($token), "$view: holding $otherLeaf instead of $leaf");
+			self::grant([$leaf]);
+			$served = self::serve($token);
+			self::assertSame(200, $served['status'], "$view: holding $leaf");
+			self::assertSame("bytes of $view", $served['body']);
+		}
+	}
+
+	#[DataProvider('backends')]
+	public function testAViewRowThatIsGoneMakesTheReferenceUnresolved(string $backend): void
+	{
+		$token = $this->fixtureFile($backend, 'view-gone.txt', 'gone');
+		self::reference('stock_current_locations', '999999', 'view-gone.txt');
+
+		self::grant(['STOCK_VIEW', 'RECIPES_VIEW', 'SHOPPINGLIST_VIEW']);
+		$this->assertRefused(self::serve($token), 'a view row that does not exist');
+		self::grant(['ADMIN']);
+		self::assertSame(200, self::serve($token)['status']);
+	}
+
+	#[DataProvider('backends')]
+	public function testAViewOwnerAndATableOwnerBothHaveToAdmit(string $backend): void
+	{
+		$token = $this->fixtureFile($backend, 'view-and-table.txt', 'both');
+		self::reference('stock_current_locations', (string)self::$db->query('SELECT MIN(id) FROM stock_current_locations')->fetchColumn(), 'view-and-table.txt');
+		self::reference('batteries', (string)self::$batteryId, 'view-and-table.txt');
+
+		self::grant(['STOCK_VIEW']);
+		$this->assertRefused(self::serve($token), 'the view owner alone');
+		self::grant(['BATTERIES_VIEW']);
+		$this->assertRefused(self::serve($token), 'the table owner alone');
+		self::grant(['STOCK_VIEW', 'BATTERIES_VIEW']);
+		self::assertSame(200, self::serve($token)['status']);
+	}
+
+	#[DataProvider('backends')]
+	public function testAViewRowCombinedWithADefinitionOrApiKeyOwnerStillNarrows(string $backend): void
+	{
+		$fieldId = (string)(int)self::$db->query('SELECT MIN(id) FROM userfields')->fetchColumn();
+		$keyId = (int)self::$db->query("INSERT INTO api_keys (api_key, user_id, key_type) VALUES ('ufo-key-" . uniqid() . "', " . self::CALLER_ID . ", 'default') RETURNING id")->fetchColumn();
+		$viewKey = (string)self::$db->query('SELECT MIN(id) FROM stock_current_locations')->fetchColumn();
+
+		$token = $this->fixtureFile($backend, 'view-combined.txt', 'combined');
+		self::reference('stock_current_locations', $viewKey, 'view-combined.txt');
+		self::reference('userfields', $fieldId, 'view-combined.txt');
+		self::grant(['STOCK_VIEW']);
+		$this->assertRefused(self::serve($token), 'view row + definition row: the view permission alone');
+		self::grant(['ADMIN']);
+		self::assertSame(200, self::serve($token)['status'], 'view row + definition row: ADMIN');
+
+		self::$db->exec('DELETE FROM userfield_values');
+		self::reference('stock_current_locations', $viewKey, 'view-combined.txt');
+		self::reference('api_keys', (string)$keyId, 'view-combined.txt');
+		self::grant(['ADMIN']);
+		$this->assertRefused(self::serve($token), 'view row + api_keys: not even ADMIN');
+		self::grant(['STOCK_VIEW']);
+		$this->assertRefused(self::serve($token), 'view row + api_keys: the view permission alone');
+	}
+
+	/** Every owner the policy can look up has the key column GetObject would use. */
+	public function testEveryLookedUpOwnerHasItsKeyColumn(): void
+	{
+		$owners = array_merge(
+			\Victual\Controllers\Users\UserfileOwnerPolicy::OWNER_TABLES,
+			defined(\Victual\Controllers\Users\UserfileOwnerPolicy::class . '::OWNER_VIEWS') ? constant(\Victual\Controllers\Users\UserfileOwnerPolicy::class . '::OWNER_VIEWS') : []
+		);
+		foreach ($owners as $entity)
+		{
+			$column = \Victual\Controllers\Users\UserfileOwnerPolicy::OWNER_KEYS[$entity][0] ?? 'id';
+			$statement = self::$db->prepare('SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = ?');
+			$statement->execute([$entity, $column]);
+			self::assertSame(1, (int)$statement->fetchColumn(), "$entity has a $column column");
+		}
+	}
+
+	/**
+	 * A view with a read policy that the lookup does not list would silently fall into
+	 * "unresolved, ADMIN only"; the day a view is added to EntityReadPolicy this fails
+	 * until the policy here decides how to find its rows.
+	 */
+	public function testEveryViewWithAReadPolicyIsLookedUpByItsKey(): void
+	{
+		$views = self::$db->query("SELECT table_name FROM information_schema.views WHERE table_schema = current_schema()")->fetchAll(PDO::FETCH_COLUMN);
+		$policed = array_values(array_filter($views, fn(string $view) => array_key_exists($view, \Victual\Controllers\Users\EntityReadPolicy::PERMISSIONS)));
+		$looked = defined(\Victual\Controllers\Users\UserfileOwnerPolicy::class . '::OWNER_VIEWS') ? constant(\Victual\Controllers\Users\UserfileOwnerPolicy::class . '::OWNER_VIEWS') : [];
+
+		self::assertNotEmpty($policed);
+		sort($policed);
+		sort($looked);
+		self::assertSame($policed, $looked);
+		foreach ($policed as $view)
+		{
+			self::assertNotNull(\Victual\Controllers\Users\EntityReadPolicy::PERMISSIONS[$view], "$view has a read permission");
+		}
+	}
+
+	/** An entity that is neither lookup-listed nor a view is unresolved: that equals its policy only while it is ADMIN. */
+	public function testEveryLabelAndPrintEntityIsAdminOnly(): void
+	{
+		$checked = 0;
+		foreach (\Victual\Controllers\Users\EntityReadPolicy::PERMISSIONS as $entity => $permission)
+		{
+			if (str_starts_with($entity, 'label_') || str_starts_with($entity, 'print_'))
+			{
+				self::assertSame(\Victual\Controllers\Users\User::PERMISSION_ADMIN, $permission, "$entity");
+				$checked++;
+			}
+		}
+		self::assertGreaterThan(0, $checked);
 	}
 
 	// -------------------------------------------------------------------------------
