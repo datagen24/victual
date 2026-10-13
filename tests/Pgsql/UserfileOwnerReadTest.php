@@ -50,6 +50,8 @@ class UserfileOwnerReadTest extends PgsqlSchemaTestCase
 	private static int $taskId;
 	private static int $objectId;
 	private static string $stockId;
+	private static int $roleId;
+	private static int $mqttEntityId;
 
 	public static function setUpBeforeClass(): void
 	{
@@ -74,6 +76,9 @@ class UserfileOwnerReadTest extends PgsqlSchemaTestCase
 		self::$stockId = 'ufo-stock-' . uniqid();
 		self::$db->prepare('INSERT INTO stock (product_id, location_id, best_before_date, amount, stock_id, open, purchased_date) VALUES (?, (SELECT MIN(id) FROM locations), ?, 1, ?, 0, CURRENT_DATE)')
 			->execute([self::$productId, '2999-12-31', self::$stockId]);
+
+		self::$roleId = (int)self::$db->query("INSERT INTO roles (code, name) VALUES ('ufo-role', 'ufo role') RETURNING id")->fetchColumn();
+		self::$mqttEntityId = (int)self::$db->query('INSERT INTO mqtt_product_entities (product_id) VALUES (' . self::$productId . ') RETURNING id')->fetchColumn();
 
 		self::$png = self::MakePng(120, 80);
 	}
@@ -124,7 +129,9 @@ class UserfileOwnerReadTest extends PgsqlSchemaTestCase
 			'chores' => ['chores', (string)self::$choreId, 'CHORES_VIEW'],
 			'tasks' => ['tasks', (string)self::$taskId, 'TASKS_VIEW'],
 			'custom entity' => ['userentity-ufo-garage', (string)self::$objectId, 'MASTER_DATA_EDIT'],
-			'stock (keyed by stock_id)' => ['stock', self::$stockId, 'STOCK_VIEW']
+			'stock (keyed by stock_id)' => ['stock', self::$stockId, 'STOCK_VIEW'],
+			'roles' => ['roles', (string)self::$roleId, 'USERS_READ'],
+			'mqtt product entities' => ['mqtt_product_entities', (string)self::$mqttEntityId, 'STOCK_VIEW']
 		];
 
 		foreach ($cases as $label => [$entity, $objectId, $leaf])
@@ -332,20 +339,138 @@ class UserfileOwnerReadTest extends PgsqlSchemaTestCase
 	}
 
 	#[DataProvider('backends')]
-	public function testADerivativeNameAskedForDirectlyIsAdminOnly(string $backend): void
+	public function testADerivativeNameFollowsTheOwnersOfItsOriginal(string $backend): void
 	{
 		$token = $this->fixtureFile($backend, 'photo.png', self::$png);
 		self::reference('products', (string)self::$productId, 'photo.png');
 		self::grant(['STOCK_VIEW']);
 		self::serve($token, ['force_serve_as' => 'picture', 'best_fit_width' => '32']);
 
-		$derivatives = array_values(array_filter(self::durableNames($backend), fn ($name) => str_contains($name, '__downscaledto')));
-		self::assertCount(1, $derivatives);
-		$derivativeToken = base64_encode($derivatives[0]);
+		$derivativeToken = base64_encode(self::derivativeNames($backend)[0]);
 
-		$this->assertRefused(self::serve($derivativeToken), 'the derivative by its own name, for a caller who may read the original');
+		self::grant([]);
+		$this->assertRefused(self::serve($derivativeToken), 'the derivative by its own name, holding nothing');
+		self::grant(['STOCK_VIEW']);
+		self::assertSame(200, self::serve($derivativeToken)['status'], 'it has the owners of the original');
 		self::grant(['ADMIN']);
 		self::assertSame(200, self::serve($derivativeToken)['status']);
+
+		// A derivative whose original nothing references is an orphan
+		self::$db->exec('DELETE FROM userfield_values');
+		self::grant(self::everyLeafButAdmin());
+		$this->assertRefused(self::serve($derivativeToken), 'an orphan derivative');
+	}
+
+	/**
+	 * A reference to a derivative's name can only narrow: the validator's probe attached a
+	 * thumbnail made for a battery caller to a product, hoping to read it with STOCK_VIEW alone.
+	 */
+	#[DataProvider('backends')]
+	public function testReferencingADerivativeNeverWidensWhoMayReadIt(string $backend): void
+	{
+		$token = $this->fixtureFile($backend, 'photo.png', self::$png);
+		self::reference('batteries', (string)self::$batteryId, 'photo.png');
+
+		self::grant(['BATTERIES_VIEW']);
+		self::assertSame(200, self::serve($token, ['force_serve_as' => 'picture', 'best_fit_width' => '32'])['status'], 'the battery reader makes the thumbnail');
+		$derivativeName = self::derivativeNames($backend)[0];
+
+		self::reference('products', (string)self::$productId, $derivativeName, 'file', 'attach_derivative');
+
+		self::grant(['STOCK_VIEW']);
+		$this->assertRefused(self::serve(base64_encode($derivativeName)), 'STOCK_VIEW alone, by the derivative name');
+		$this->assertRefused(self::serve($token), 'and by the original');
+		self::grant(['BATTERIES_VIEW']);
+		$this->assertRefused(self::serve(base64_encode($derivativeName)), 'BATTERIES_VIEW alone: the product reference narrows');
+		self::grant(['STOCK_VIEW', 'BATTERIES_VIEW']);
+		self::assertSame(200, self::serve(base64_encode($derivativeName))['status']);
+	}
+
+	#[DataProvider('backends')]
+	public function testAValueWhoseDefinitionIsGoneIsAnUnresolvedReference(string $backend): void
+	{
+		$token = $this->fixtureFile($backend, 'undefined.txt', 'undefined');
+		self::reference('products', (string)self::$productId, 'undefined.txt');
+		self::$db->prepare('INSERT INTO userfield_values(field_id, object_id, value) VALUES (?, ?, ?)')
+			->execute([999999, '1', base64_encode('undefined.txt')]);
+
+		self::grant(['STOCK_VIEW']);
+		$this->assertRefused(self::serve($token), 'the value with no definition narrows the read to ADMIN');
+		self::grant(['ADMIN']);
+		self::assertSame(200, self::serve($token)['status']);
+	}
+
+	#[DataProvider('backends')]
+	public function testTheFullIntegerRangeOfAnIdIsRecognised(string $backend): void
+	{
+		self::$db->exec("INSERT INTO users(id, username, password) VALUES (2147483647, 'ufo-maxid', 'fixture') ON CONFLICT DO NOTHING");
+		$token = $this->fixtureFile($backend, 'maxid.txt', 'maxid');
+		self::reference('users', '2147483647', 'maxid.txt');
+
+		self::grant(['USERS_READ']);
+		self::assertSame(200, self::serve($token)['status'], 'a record with the largest id resolves');
+		self::$db->exec('DELETE FROM userfield_values');
+		self::$db->exec('DELETE FROM users WHERE id = 2147483647');
+	}
+
+	/**
+	 * F3': the definition rows are ADMIN only, for the bytes and for a picture derivative, and
+	 * a second reference can only narrow that.
+	 */
+	#[DataProvider('backends')]
+	public function testDefinitionRowFilesAreAdminOnlyForBytesAndDerivatives(string $backend): void
+	{
+		self::reference('products', (string)self::$productId, 'seed.png');
+		$fieldId = (string)(int)self::$db->query('SELECT MIN(id) FROM userfields')->fetchColumn();
+		$entityId = (string)(int)self::$db->query('SELECT MIN(id) FROM userentities')->fetchColumn();
+		$query = ['force_serve_as' => 'picture', 'best_fit_width' => '32'];
+
+		foreach ([['userfields', $fieldId], ['userentities', $entityId]] as [$entity, $objectId])
+		{
+			self::$db->exec('DELETE FROM userfield_values');
+			self::$startFresh = true;
+			$token = $this->fixtureFile($backend, 'definition.png', self::$png);
+			self::reference($entity, $objectId, 'definition.png');
+
+			self::grant(self::everyLeafButAdmin());
+			$this->assertRefused(self::serve($token), "$entity: bytes");
+			$this->assertRefused(self::serve($token, $query), "$entity: picture");
+			self::assertSame(['definition.png'], self::durableNames($backend), "$entity: no derivative file or row was created");
+
+			self::grant(['ADMIN']);
+			$served = self::serve($token);
+			self::assertSame(200, $served['status']);
+			self::assertSame(self::$png, $served['body'], "$entity: ADMIN gets the bytes");
+			$picture = self::serve($token, $query);
+			self::assertSame(200, $picture['status'], "$entity: ADMIN gets the picture");
+			self::assertCount(1, self::derivativeNames($backend), "$entity: and that created the derivative");
+			$derivative = self::serve(base64_encode(self::derivativeNames($backend)[0]));
+			self::assertSame(200, $derivative['status'], "$entity: the derivative is served to ADMIN");
+			self::assertSame($picture['body'], $derivative['body']);
+		}
+	}
+
+	#[DataProvider('backends')]
+	public function testADefinitionRowCombinedWithAnotherOwnerNarrows(string $backend): void
+	{
+		$fieldId = (string)(int)self::$db->query('SELECT MIN(id) FROM userfields')->fetchColumn();
+		$keyId = (int)self::$db->query("INSERT INTO api_keys (api_key, user_id, key_type) VALUES ('ufo-key-" . uniqid() . "', " . self::CALLER_ID . ", 'default') RETURNING id")->fetchColumn();
+
+		$token = $this->fixtureFile($backend, 'combined.txt', 'combined');
+		self::reference('userfields', $fieldId, 'combined.txt');
+		self::reference('products', (string)self::$productId, 'combined.txt');
+		self::grant(['STOCK_VIEW']);
+		$this->assertRefused(self::serve($token), 'definition row + product: STOCK_VIEW');
+		self::grant(['ADMIN']);
+		self::assertSame(200, self::serve($token)['status'], 'definition row + product: ADMIN');
+
+		self::$db->exec('DELETE FROM userfield_values');
+		self::reference('userfields', $fieldId, 'combined.txt');
+		self::reference('api_keys', (string)$keyId, 'combined.txt');
+		self::grant(['ADMIN']);
+		$this->assertRefused(self::serve($token), 'definition row + api_keys: not even ADMIN');
+		self::grant(self::everyLeafButAdmin());
+		$this->assertRefused(self::serve($token), 'definition row + api_keys: nobody else');
 	}
 
 	// -------------------------------------------------------------------------------
@@ -523,6 +648,12 @@ class UserfileOwnerReadTest extends PgsqlSchemaTestCase
 		sort($names);
 
 		return $names;
+	}
+
+	/** @return string[] */
+	private static function derivativeNames(string $backend): array
+	{
+		return array_values(array_filter(self::durableNames($backend), fn ($name) => str_contains($name, '__downscaledto')));
 	}
 
 	private static function derivativeRows(): int

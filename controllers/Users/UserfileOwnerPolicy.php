@@ -4,6 +4,7 @@ namespace Victual\Controllers\Users;
 
 use PDO;
 use Victual\Services\DatabaseService;
+use Victual\Services\FilesService;
 
 /**
  * Who may read a file in the userfiles group: a caller every record that references it permits.
@@ -61,7 +62,7 @@ class UserfileOwnerPolicy
 		'task_categories', 'product_groups', 'product_location_min_stock', 'product_substitutions',
 		'equipment', 'meal_plan', 'meal_plan_sections', 'stock_log', 'chores_log',
 		'battery_charge_cycles', 'permission_hierarchy', 'userobjects', 'users',
-		'stock', 'label_printer_status'
+		'roles', 'mqtt_product_entities', 'stock', 'label_printer_status'
 	];
 
 	/**
@@ -90,7 +91,17 @@ class UserfileOwnerPolicy
 
 	public static function MayRead(string $storedName): bool
 	{
-		$references = self::ReferencesTo($storedName);
+		// A cached picture derivative is read on the terms of its original: the owners of the
+		// original and of the derivative's own name all have to admit the caller, so a value
+		// that names a derivative can only narrow who may read it, never widen it
+		$names = [$storedName];
+		$original = self::OriginalOfDerivative($storedName);
+		if ($original !== null)
+		{
+			$names[] = $original;
+		}
+
+		$references = self::ReferencesTo($names);
 
 		if (count($references) === 0)
 		{
@@ -121,26 +132,48 @@ class UserfileOwnerPolicy
 	 *
 	 * @return array<int, array{0: string, 1: string}>
 	 */
-	private static function ReferencesTo(string $storedName): array
+	private static function ReferencesTo(array $storedNames): array
 	{
+		// LEFT JOIN: a value whose definition row is gone still names the file, and is an
+		// unresolved reference (entity null) rather than no reference at all
 		$statement = DatabaseService::GetInstance()->GetDbConnectionRaw()->query(
-			"SELECT uf.entity, uv.object_id, uv.value FROM userfield_values uv JOIN userfields uf ON uf.id = uv.field_id WHERE uv.value <> ''"
+			"SELECT uf.entity, uv.object_id, uv.value FROM userfield_values uv LEFT JOIN userfields uf ON uf.id = uv.field_id WHERE uv.value <> ''"
 		);
 
 		$found = [];
 		while (($row = $statement->fetch(PDO::FETCH_NUM)) !== false)
 		{
-			if (base64_decode(explode('_', $row[2])[0]) === $storedName)
+			if (in_array(base64_decode(explode('_', $row[2])[0]), $storedNames, true))
 			{
-				$found[$row[0] . "\0" . $row[1]] = [$row[0], $row[1]];
+				$found[$row[0] === null ? "\0undefined" : $row[0] . "\0" . $row[1]] = [$row[0], $row[1]];
 			}
 		}
 
 		return array_values($found);
 	}
 
-	private static function MayReadAsOwner(string $entity, string $objectId): bool
+	/**
+	 * The stored name of the original, when $storedName is a cached picture derivative
+	 * ("<name>__downscaledto<h>x<w>.<ext>", see FilesService::DownscaleImage), else null.
+	 */
+	private static function OriginalOfDerivative(string $storedName): ?string
 	{
+		$infix = preg_quote(FilesService::DOWNSCALED_INFIX, '/');
+		if (preg_match('/^(.+)' . $infix . '(?:\d+|auto)x(?:\d+|auto)\.([^.]+)$/s', $storedName, $match) !== 1)
+		{
+			return null;
+		}
+
+		return $match[1] . '.' . $match[2];
+	}
+
+	private static function MayReadAsOwner(?string $entity, string $objectId): bool
+	{
+		if ($entity === null)
+		{
+			return User::HasPermissions(User::PERMISSION_ADMIN);
+		}
+
 		if (in_array($entity, self::DENIED_ENTITIES, true))
 		{
 			return false;
@@ -223,6 +256,6 @@ class UserfileOwnerPolicy
 	/** An integer in the form the id column prints, so '01' and '1 ' name nothing. */
 	private static function IsCanonicalId(string $objectId): bool
 	{
-		return $objectId === (string)(int)$objectId && strlen($objectId) < 10;
+		return $objectId === (string)(int)$objectId && (int)$objectId >= -2147483648 && (int)$objectId <= 2147483647;
 	}
 }
