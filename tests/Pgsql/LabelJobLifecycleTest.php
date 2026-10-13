@@ -726,15 +726,22 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 		$job = self::jobRow($jobId);
 		self::assertNull($job['artifact_id'], 'Precondition: the job is still unrendered');
 
-		self::$db->exec('UPDATE outbox SET payload = \'{"payload_version":999}\' WHERE id = ' . (int)$job['outbox_id']);
-		$claims = self::tx(static fn () => (new PrintAttemptService(self::$db))->Claim($worker));
-		self::assertSame([], $claims);
+		// The job reaches its terminal outcome before any render by the path that exists for it
+		// (#858): its render request ends invalid, which dead-letters the jobs waiting on it.
+		// Claim() no longer sees an unrendered job at all, so it cannot be the way there.
+		$requests = new \Victual\Services\Labels\RenderRequestService(self::$db);
+		$input = self::tx(static fn () => $requests->Claim());
+		self::assertSame((int)$job['render_request_id'], $input['render_request_id']);
+		self::tx(static fn () => $requests->RecordInvalid($input['render_request_id'], (string)$input['generation_token'], 'TEXT_OVERFLOW', 'title', 'Does not fit'));
 		self::assertSame('dead_lettered', self::jobRow($jobId)['outcome'], 'Precondition: the job is dead-lettered before it was ever rendered');
 
+		// A finished render of some other request supplies the artifact; AttachArtifact is
+		// asked to attach it to the dead-lettered job's request.
+		self::enqueue($printer, 'Lifecycle attach-after-dead-letter donor');
 		$artifact = \renderPending(self::$db);
-		self::assertNotNull($artifact, 'A renderer can still complete the render request that predates the dead letter');
+		self::assertNotNull($artifact, 'A renderer can still complete a render request');
 
-		$attached = self::tx(static fn () => (new LabelOperationsService(self::$db))->AttachArtifact((int)$artifact['render_request_id'], (int)$artifact['id']));
+		$attached = self::tx(static fn () => (new LabelOperationsService(self::$db))->AttachArtifact((int)$job['render_request_id'], (int)$artifact['id']));
 		self::assertSame(0, $attached, 'A job that already has a terminal outcome takes no artifact, the same as a cancelled one');
 		self::assertNull(self::jobRow($jobId)['artifact_id'], 'artifact_id stays null on a dead-lettered job');
 	}

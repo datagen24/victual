@@ -168,8 +168,11 @@ class ArtifactService extends LabelService
      * Reference-aware: an artifact a job points at is never collected whatever its retention
      * class says, because the job is the reference and the maintainer's answer to question 4
      * keeps print images until the label is retired.
+     *
+     * The render queue's claim calls this on every poll with a $limit, so a large backlog is
+     * worked off a batch at a time rather than inside one request.
      */
-    public function CollectExpiredPreviews(): int
+    public function CollectExpiredPreviews(?int $limit = null): int
     {
         $this->Transaction();
         $rows = $this->Query("SELECT a.id,a.file_group,a.file_name FROM label_artifacts a
@@ -177,6 +180,7 @@ class ArtifactService extends LabelService
             WHERE a.retention_class='preview' AND a.collected_at IS NULL
               AND r.expires_at IS NOT NULL AND r.expires_at<=CURRENT_TIMESTAMP
               AND NOT EXISTS (SELECT 1 FROM print_jobs j WHERE j.artifact_id=a.id)
+            ORDER BY a.id" . ($limit === null ? '' : ' LIMIT ' . $limit) . "
             FOR UPDATE OF a")->fetchAll(\PDO::FETCH_ASSOC);
 
         $store = new LabelByteStore($this->db);
