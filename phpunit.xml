@@ -122,6 +122,7 @@
 			<file>tests/Pgsql/BarcodeLookupTest.php</file>
 			<file>tests/Pgsql/OutboundHostPolicyTest.php</file>
 			<file>tests/Pgsql/GtinTest.php</file>
+			<file>tests/Pgsql/BarcodeLookupNonFiniteTest.php</file>
 		</testsuite>
 		<testsuite name="storagefiles">
 			<file>tests/Pgsql/StorageFilesTest.php</file>
@@ -142,6 +143,7 @@
 			<file>tests/Pgsql/CrossOperationLedgerInvariantTest.php</file>
 			<file>tests/Pgsql/MergeProductsConsumptionTest.php</file>
 			<file>tests/Pgsql/MergeProductsChoreLockOrderTest.php</file>
+			<file>tests/Pgsql/BarcodeLookupNonFiniteHttpTest.php</file>
 		</testsuite>
 		<testsuite name="stockconcurrency">
 			<file>tests/Pgsql/StockConcurrencyTest.php</file>
