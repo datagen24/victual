@@ -16,9 +16,9 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * things in place.
  *
  * The document check walks every 4xx and 5xx response in the document, follows a `$ref` to
- * components/responses, and requires a content entry with a schema. The one exception is
+ * components/responses, and requires a content entry with a schema. An exception would be
  * listed in ALLOWED_DESCRIPTION_ONLY, with the reason, and the class fails if that entry
- * stops being description-only, so the list cannot go stale unnoticed.
+ * stops being description-only, so the list cannot go stale unnoticed. There is none now.
  *
  * The runtime checks send a request that provokes each distinct error body and hold the
  * answer to the schema the document gives for that operation and status, with Opis, and to
@@ -40,21 +40,12 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 {
 	/**
 	 * Declared error responses allowed to stay description-only, by "METHOD /path STATUS".
-	 * Each is unreachable, so there is no body to describe; they are kept in the document
-	 * (deleting a declared status is a maintainer decision) with a description that says so.
-	 *
-	 * LabelWorkerApiController maps a `forbidden` refusal to 403, but `forbidden` is raised only
-	 * for attempt, printer and artifact-bytes ownership (LabelWorkerAuthorization::Authorize(),
-	 * lines 33-54), plus LabelCaptureService and PrintAttemptService. Register, Claim and Rotate
-	 * raise none of them. POST /labels/pair is worse: BaseAuthMiddleware returns before any
-	 * authorization for labels-pair (lines 100-106) and Pair() raises only 401 and 422.
+	 * None is: the four that used to be listed here (the 403 of POST /labels/pair, register,
+	 * jobs/claim and credentials/rotate) were unreachable and are no longer declared, and
+	 * LabelWorkerRoute403Test pins that they stay unreachable. A new entry needs a reason as
+	 * strong as that one, and the class fails if it stops being description-only.
 	 */
-	private const ALLOWED_DESCRIPTION_ONLY = [
-		'POST /labels/pair 403',
-		'POST /labels/register 403',
-		'POST /labels/jobs/claim 403',
-		'POST /labels/credentials/rotate 403',
-	];
+	private const ALLOWED_DESCRIPTION_ONLY = [];
 
 	private const ADMIN_USER = 9700;
 	private const OPERATOR_USER = 9701;
@@ -132,6 +123,9 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 
 	public function testTheAllowlistNamesOnlyEntriesThatAreStillDescriptionOnly(): void
 	{
+		// No description-only response is allowed; a new entry is a deliberate change to this line
+		self::assertSame([], self::ALLOWED_DESCRIPTION_ONLY);
+
 		foreach (self::ALLOWED_DESCRIPTION_ONLY as $key)
 		{
 			[$method, $path, $status] = explode(' ', $key);
