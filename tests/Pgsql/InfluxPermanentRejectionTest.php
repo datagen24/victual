@@ -329,7 +329,7 @@ class InfluxPermanentRejectionTest extends PgsqlSchemaTestCase
 
 		$posts = substr_count((string)file_get_contents(self::$standinLog), '=== POST');
 		self::assertLessThanOrEqual((int)ceil(log(50, 2)) + 2, $posts, 'POSTs made for one drain of 50 refused rows');
-		self::assertSame(3, $posts, 'the whole batch, the first row alone, then the rest in one write');
+		self::assertSame(2 + (int)ceil(log(50, 2)), $posts, 'the whole batch, the first row alone, the rest in one write, then ceil(log2 n) sampled rows alone');
 
 		foreach ($ids as $id)
 		{
@@ -338,6 +338,45 @@ class InfluxPermanentRejectionTest extends PgsqlSchemaTestCase
 
 		self::assertLessThanOrEqual(3, substr_count($result['stderr'], 'was not acknowledged'),
 			'the isolation writes are summarised once, not logged one by one');
+	}
+
+	/**
+	 * Several bad rows at the head: the first row and the rest are both refused, which alone
+	 * would stop the walk with no proof. Sampling single rows across the batch finds a good one,
+	 * and then the bad rows are isolated and the good ones delivered in the same drain.
+	 */
+	public function testSeveralBadRowsAtTheHeadDoNotBlockTheQueue(): void
+	{
+		$bad = [];
+		$good = [];
+
+		for ($i = 0; $i < 3; $i++)
+		{
+			$bad[] = $this->queue('reject-BADROW-' . $i);
+		}
+
+		for ($i = 0; $i < 47; $i++)
+		{
+			$good[] = $this->queue('reject-good-' . $i);
+		}
+
+		file_put_contents(self::$standinControl, 'lines:BADROW=400');
+
+		$result = self::Drain();
+
+		self::assertTrue($result['delivered']);
+
+		foreach ($bad as $id)
+		{
+			$row = $this->row($id);
+			self::assertNotNull($row['dead_lettered_at'], 'a bad row, once the endpoint has shown it takes the others');
+			self::assertNull($row['delivered_at']);
+		}
+
+		foreach ($good as $id)
+		{
+			$this->assertDelivered($id, 'a good row behind the bad ones');
+		}
 	}
 
 	public function testOneRowUnderAnEverythingRejectedEndpointIsNotDeadLettered(): void
@@ -388,9 +427,9 @@ class InfluxPermanentRejectionTest extends PgsqlSchemaTestCase
 
 	public function testAnAbortBeforeAnyRowWasAcceptedDeadLettersNothing(): void
 	{
-		// Halves [BADROW, FLAKY] and [x, y]; the first splits to [BADROW] (400) and [FLAKY]
-		// (500), which stops the walk with nothing accepted, so BADROW has no proof behind it
-		$rows = [$this->queue('reject-BADROW'), $this->queue('reject-FLAKY'), $this->queue('reject-x'), $this->queue('reject-y')];
+		// BADROW alone is refused (400); the first sampled row, FLAKY-a, answers 500, which
+		// stops the walk with nothing accepted, so BADROW has no proof behind it
+		$rows = [$this->queue('reject-BADROW'), $this->queue('reject-FLAKY-a'), $this->queue('reject-FLAKY-b')];
 
 		file_put_contents(self::$standinControl, 'lines:BADROW=400,FLAKY=500');
 
@@ -402,6 +441,26 @@ class InfluxPermanentRejectionTest extends PgsqlSchemaTestCase
 		{
 			$this->assertRetryable($id, 'nothing was accepted before the abort');
 		}
+	}
+
+	public function testASampledGoodRowAfterABadHeadIsProofEvenIfALaterRowFails(): void
+	{
+		// BADROW alone: 400. The sample lands on x, which is accepted - proof - so BADROW is
+		// dead-lettered. FLAKY then answers 500 and stops the rest (y is not tried).
+		$bad = $this->queue('reject-BADROW');
+		$flaky = $this->queue('reject-FLAKY');
+		$x = $this->queue('reject-x');
+		$y = $this->queue('reject-y');
+
+		file_put_contents(self::$standinControl, 'lines:BADROW=400,FLAKY=500');
+
+		$result = self::Drain();
+
+		self::assertTrue($result['delivered']);
+		self::assertNotNull($this->row($bad)['dead_lettered_at']);
+		$this->assertDelivered($x, 'the sampled row');
+		$this->assertRetryable($flaky, 'the row that met the 500');
+		$this->assertRetryable($y, 'the row not tried');
 	}
 
 	public function testA413IsRowLevelToo(): void

@@ -372,7 +372,7 @@ class BookingEventPublisher
 	 * RecordFailure() as before, and nothing is ever dead-lettered on its account, because a
 	 * misconfigured token must not discard committed events. A 400, 413 or 422 is InfluxDB
 	 * refusing the body, so ResolveRefusedBatch() works out within this call which rows are at
-	 * fault, in a bounded number of writes (three when the endpoint refuses everything, about
+	 * fault, in a bounded number of writes (at most 2 + ceil(log2(n)) when the endpoint refuses everything, about
 	 * twice log2(n) when one row among many is bad): rows InfluxDB accepts are delivered, and
 	 * a row it refuses on its own is collected.
 	 *
@@ -584,10 +584,17 @@ class BookingEventPublisher
 	 * - **Accepted**: the endpoint takes Victual's lines, so the refusal is about some row of
 	 *   the rest. They are bisected (IsolateRejection()), which isolates one bad row among
 	 *   many in about twice log2(n) writes.
-	 * - **Refused**: the rest are tried in one write. Accepted, and the first row was the bad
-	 *   one: it is collected and the rest are delivered. Refused too, with nothing delivered:
-	 *   as likely the endpoint as two bad rows, so the walk stops there - three writes in all -
-	 *   and every row is recorded as failed and stays queued.
+	 * - **Refused**: it may be the only bad row, or one of several, or the endpoint may be
+	 *   refusing everything. Up to ceil(log2(n)) other rows are tried alone, at evenly spaced
+	 *   positions across the batch. The first one accepted is the proof: the refused rows seen
+	 *   so far are collected, and the rows still untried are bisected (IsolateRejection()), so
+	 *   a few bad rows at the head of the queue are isolated and the good rows behind them
+	 *   delivered. If every sampled row is refused too, nothing has been shown about any row
+	 *   and the walk stops: nothing is dead-lettered and every row is recorded as failed and
+	 *   stays queued. That is at most 2 + ceil(log2(n)) writes per drain, counting the
+	 *   whole-batch write - 10 for 200 rows. What stays blocked is a batch in which the first
+	 *   row and every sampled row are all refused, which in practice is an endpoint-wide
+	 *   refusal.
 	 *
 	 * Trying the first row, rather than descending to it, is the same test for one write
 	 * instead of log2(n). The oldest row is the one a bad row blocks the queue as, so it is the
@@ -613,41 +620,107 @@ class BookingEventPublisher
 			return;
 		}
 
-		if (self::WriteQuietly($first, $writer, $outbox, $state) === 'refused')
-		{
-			$state['rejected'][$first[0]['id']] = self::DescribeRejection($writer);
+		$outcome = self::WriteQuietly($first, $writer, $outbox, $state);
 
-			$outcome = self::WriteQuietly($rest, $writer, $outbox, $state);
-
-			if ($outcome === 'refused')
-			{
-				// Nothing accepted anywhere: stop, and keep everything
-				$state['error'] = self::DescribeRejection($writer);
-				array_push($state['unresolved'], ...array_column($rest, 'id'));
-			}
-
-			return;
-		}
-
-		if ($state['error'] !== null)
+		if ($outcome === 'failed')
 		{
 			array_push($state['unresolved'], ...array_column($rest, 'id'));
 
 			return;
 		}
 
-		// The first row was accepted, and the whole was refused, so the rest hold the bad row
-		if (count($rest) === 1)
+		if ($outcome === 'accepted')
 		{
-			if (self::WriteQuietly($rest, $writer, $outbox, $state) === 'refused')
+			// The whole was refused and the first row was not, so the rest hold the bad row
+			self::ResolveRemainder($rest, $writer, $outbox, $state);
+
+			return;
+		}
+
+		$state['rejected'][$first[0]['id']] = self::DescribeRejection($writer);
+
+		// Look for proof among the rest: ceil(log2(n)) single rows, evenly spaced across the batch
+		$count = count($rows);
+		$samples = (int)ceil(log($count, 2));
+		$positions = [];
+
+		for ($i = 1; $i <= $samples; $i++)
+		{
+			$positions[min($count - 1, intdiv($i * $count, $samples))] = true;
+		}
+
+		$refused = [];
+
+		foreach (array_keys($positions) as $position)
+		{
+			$outcome = self::WriteQuietly([$rows[$position]], $writer, $outbox, $state);
+
+			if ($outcome === 'refused')
 			{
-				$state['rejected'][$rest[0]['id']] = self::DescribeRejection($writer);
+				$refused[$rows[$position]['id']] = self::DescribeRejection($writer);
+
+				continue;
+			}
+
+			$tried = array_keys($refused);
+			$tried[] = $rows[$position]['id'];
+			$untried = array_values(array_filter($rest, function ($row) use ($tried)
+			{
+				return !in_array($row['id'], $tried, true);
+			}));
+
+			if ($outcome === 'failed')
+			{
+				array_push($state['unresolved'], ...array_column($untried, 'id'));
+				// The sampled rows refused before it are rows nothing was proven about
+				foreach ($refused as $id => $reason)
+				{
+					$state['rejected'][$id] = $reason;
+				}
+
+				return;
+			}
+
+			// Proof. The sampled rows refused on their own are refused rows like any other
+			$state['rejected'] += $refused;
+			self::ResolveRemainder($untried, $writer, $outbox, $state);
+
+			return;
+		}
+
+		// Every sampled row was refused as well: stop, and keep everything
+		$state['rejected'] += $refused;
+		$state['error'] = self::DescribeRejection($writer);
+		array_push($state['unresolved'], ...array_column(array_filter($rest, function ($row) use ($refused)
+		{
+			return !array_key_exists($row['id'], $refused);
+		}), 'id'));
+	}
+
+	/**
+	 * Resolves rows that are known to hold the refused one(s), once a row has been delivered.
+	 *
+	 * @param array<int, array{id: int, lines: string[]}> $rows Zero or more rows
+	 * @param array{delivered: bool, deliveredRows: int, rejected: array<int, string>, unresolved: int[], error: string|null} $state
+	 */
+	private static function ResolveRemainder(array $rows, InfluxEventWriter $writer, OutboxService $outbox, array &$state): void
+	{
+		if (count($rows) === 0)
+		{
+			return;
+		}
+
+		if (count($rows) === 1)
+		{
+			if (self::WriteQuietly($rows, $writer, $outbox, $state) === 'refused')
+			{
+				$state['rejected'][$rows[0]['id']] = self::DescribeRejection($writer);
 			}
 
 			return;
 		}
 
-		self::IsolateRejection($rest, $writer, $outbox, $state);
+		self::IsolateRejection($rows, $writer, $outbox, $state);
 	}
 
 	/**
