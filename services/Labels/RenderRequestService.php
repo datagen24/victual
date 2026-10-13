@@ -26,6 +26,14 @@ class RenderRequestService extends LabelService
     /** An unpromoted preview expires after 24 hours (plan 27 piece 6). */
     public const PREVIEW_TTL_SECONDS = 86400;
 
+    /**
+     * How many pending requests one claim will settle as unrenderable before it gives up and
+     * reports nothing to do, and how many expired previews one claim will end or collect.
+     * Both bound the work a polling renderer can be made to wait for; the next poll continues.
+     */
+    public const CLAIM_SETTLE_LIMIT = 20;
+    public const EXPIRY_BATCH = 100;
+
     public function __construct(\PDO $db, private int $leaseSeconds = self::LEASE_SECONDS)
     {
         parent::__construct($db);
@@ -80,8 +88,54 @@ class RenderRequestService extends LabelService
                 generation=generation+1, generation_token=NULL, lease_expires_at=NULL,
                 error_code=CASE WHEN attempts>=? THEN 'RENDER_LEASE_EXHAUSTED' ELSE error_code END,
                 error_detail=CASE WHEN attempts>=? THEN 'The render lease expired ' || attempts || ' times' ELSE error_detail END
-            WHERE state='rendering' AND lease_expires_at<=CURRENT_TIMESTAMP RETURNING id", [self::MAX_ATTEMPTS, self::MAX_ATTEMPTS, self::MAX_ATTEMPTS]);
-        return count($reaped->fetchAll());
+            WHERE state='rendering' AND lease_expires_at<=CURRENT_TIMESTAMP RETURNING id,state,error_code,error_detail", [self::MAX_ATTEMPTS, self::MAX_ATTEMPTS, self::MAX_ATTEMPTS])->fetchAll(\PDO::FETCH_ASSOC);
+        foreach ($reaped as $request) {
+            if ($request['state'] === 'failed') {
+                $this->DeadLetterWaitingJobs((int)$request['id'], 'failed', $request['error_code'], $request['error_detail']);
+            }
+        }
+        return count($reaped);
+    }
+
+    /**
+     * Ends the life of a preview nobody rendered in time (plan 27 piece 6: unpromoted
+     * previews expire after 24 hours).
+     *
+     * An expired request is never claimed, so without this it would stay `pending` for ever
+     * and keep being reported as something worth waiting for. No attempt is spent: nothing
+     * was tried, and `failed` with `expired` says so.
+     */
+    private function ExpirePending(): void
+    {
+        $expired = $this->Query("UPDATE label_render_requests
+            SET state='failed', error_code='expired', error_detail='The preview expired before it was rendered'
+            WHERE id IN (SELECT id FROM label_render_requests
+                WHERE state='pending' AND expires_at IS NOT NULL AND expires_at<=CURRENT_TIMESTAMP
+                ORDER BY id LIMIT " . self::EXPIRY_BATCH . " FOR UPDATE SKIP LOCKED)
+            RETURNING id")->fetchAll(\PDO::FETCH_COLUMN);
+        foreach ($expired as $requestId) {
+            $this->DeadLetterWaitingJobs((int)$requestId, 'failed', 'expired', 'The preview expired before it was rendered');
+        }
+    }
+
+    /**
+     * A print job waits for exactly one thing, its artifact. When the render request it waits
+     * on can no longer produce one, nothing else ever will: the job could never be claimed
+     * and the only transition out of "unrendered" is a successful render. It is dead-lettered
+     * the way a job with an unreadable payload is, naming the render outcome, so the monitor
+     * shows a finished job and the claim query does not carry it for ever.
+     *
+     * Cancelled jobs already ended and keep their own reason; a job with an artifact is
+     * claimable and is not this request's to end.
+     */
+    private function DeadLetterWaitingJobs(int $requestId, string $state, ?string $code, ?string $detail): void
+    {
+        $reason = 'Render request ' . $requestId . ' ' . $state . ': ' . ($code ?? 'no code') . ($detail !== null && $detail !== '' ? ' - ' . $detail : '');
+        $jobs = $this->Query("UPDATE print_jobs SET outcome='dead_lettered',outcome_at=CURRENT_TIMESTAMP
+            WHERE render_request_id=? AND artifact_id IS NULL AND outcome IS NULL AND cancelled_at IS NULL RETURNING outbox_id", [$requestId])->fetchAll(\PDO::FETCH_COLUMN);
+        foreach ($jobs as $outboxId) {
+            $this->Query('UPDATE outbox SET dead_lettered_at=CURRENT_TIMESTAMP,last_error=? WHERE id=?', [$reason, $outboxId]);
+        }
     }
 
     /**
@@ -91,26 +145,44 @@ class RenderRequestService extends LabelService
      * profile geometry and the QR module matrix Victual computed. It fetches its assets by
      * id through its own authorized route and reaches nothing else - it accepts no
      * caller-controlled fetch destination, which is why there is no URL anywhere in here.
+     *
+     * The claim is also the periodic tick of the render queue, because the renderer polls it
+     * about once a minute: it returns expired leases, ends expired previews and collects
+     * their artifacts, so no separate job has to remember to.
+     *
+     * A request whose input cannot be resolved (an asset deleted since it was enqueued, say)
+     * is settled as `invalid` and the claim moves on to the next one. The refusal is never
+     * thrown out of here: the caller's transaction would roll back the attempt that was
+     * counted, and the same row would head the queue on every later poll.
      */
     public function Claim(): ?array
     {
         $this->Transaction();
         $this->ReapExpired();
+        $this->ExpirePending();
+        (new ArtifactService($this->db))->CollectExpiredPreviews(self::EXPIRY_BATCH);
 
-        $request = $this->Query("SELECT * FROM label_render_requests
-            WHERE state='pending' AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP)
-            ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1")->fetch(\PDO::FETCH_ASSOC);
-        if (!$request) {
-            return null;
+        for ($settled = 0; $settled < self::CLAIM_SETTLE_LIMIT; $settled++) {
+            $request = $this->Query("SELECT * FROM label_render_requests
+                WHERE state='pending' AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP)
+                ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1")->fetch(\PDO::FETCH_ASSOC);
+            if (!$request) {
+                return null;
+            }
+
+            $token = bin2hex(random_bytes(16));
+            $request = $this->Query("UPDATE label_render_requests
+                SET state='rendering', generation=generation+1, generation_token=?, attempts=attempts+1,
+                    lease_expires_at=CURRENT_TIMESTAMP+make_interval(secs=>?)
+                WHERE id=? RETURNING *", [$token, $this->leaseSeconds, $request['id']])->fetch(\PDO::FETCH_ASSOC);
+
+            try {
+                return $this->Input($request);
+            } catch (LabelValidationException $refusal) {
+                $this->RecordInvalid((int)$request['id'], $token, $refusal->errorCode, $this->UnavailableAssetElement($request, $refusal), $refusal->getMessage());
+            }
         }
-
-        $token = bin2hex(random_bytes(16));
-        $request = $this->Query("UPDATE label_render_requests
-            SET state='rendering', generation=generation+1, generation_token=?, attempts=attempts+1,
-                lease_expires_at=CURRENT_TIMESTAMP+make_interval(secs=>?)
-            WHERE id=? RETURNING *", [$token, $this->leaseSeconds, $request['id']])->fetch(\PDO::FETCH_ASSOC);
-
-        return $this->Input($request);
+        return null;
     }
 
     /** The resolved render input for a request, without claiming it. */
@@ -121,15 +193,7 @@ class RenderRequestService extends LabelService
 
         if ($request['purpose'] === 'preview_draft') {
             $document = json_decode($request['draft_document'], true);
-            $assetNames = self::AssetNames($document);
-            $assets = [];
-            foreach ($assetNames as $name) {
-                $row = $this->Query('SELECT id,name,asset_kind,mime_type,content_digest,font_family FROM label_assets WHERE name=?', [$name])->fetch(\PDO::FETCH_ASSOC);
-                if (!$row) {
-                    $this->Refuse('assets', 'asset_unavailable', 'The draft references asset "' . $name . '", which is not stored');
-                }
-                $assets[$name] = $row;
-            }
+            $assets = (new LabelAssetService($this->db))->ResolveByName(self::AssetNames($document));
             $templateIdentity = ['template_id' => (int)$request['draft_template_id'], 'template_version_id' => null, 'document_digest' => null];
         } else {
             $version = $this->Query('SELECT * FROM label_template_versions WHERE id=?', [$request['template_version_id']])->fetch(\PDO::FETCH_ASSOC);
@@ -179,8 +243,10 @@ class RenderRequestService extends LabelService
     {
         $this->Transaction();
         $this->AssertCurrent($requestId, $token);
-        return $this->Query("UPDATE label_render_requests SET state='invalid',error_code=?,error_element=?,error_detail=?,generation_token=NULL,lease_expires_at=NULL WHERE id=? RETURNING *",
+        $invalid = $this->Query("UPDATE label_render_requests SET state='invalid',error_code=?,error_element=?,error_detail=?,generation_token=NULL,lease_expires_at=NULL WHERE id=? RETURNING *",
             [$code, $element, $detail, $requestId])->fetch(\PDO::FETCH_ASSOC);
+        $this->DeadLetterWaitingJobs($requestId, 'invalid', $code, $detail);
+        return $invalid;
     }
 
     public function RecordFailure(int $requestId, string $token, string $detail): array
@@ -188,8 +254,12 @@ class RenderRequestService extends LabelService
         $this->Transaction();
         $request = $this->AssertCurrent($requestId, $token);
         $terminal = (int)$request['attempts'] >= self::MAX_ATTEMPTS;
-        return $this->Query('UPDATE label_render_requests SET state=?,error_code=?,error_detail=?,generation_token=NULL,lease_expires_at=NULL WHERE id=? RETURNING *',
+        $failure = $this->Query('UPDATE label_render_requests SET state=?,error_code=?,error_detail=?,generation_token=NULL,lease_expires_at=NULL WHERE id=? RETURNING *',
             [$terminal ? 'failed' : 'pending', 'RENDER_FAILED', $detail, $requestId])->fetch(\PDO::FETCH_ASSOC);
+        if ($terminal) {
+            $this->DeadLetterWaitingJobs($requestId, 'failed', 'RENDER_FAILED', $detail);
+        }
+        return $failure;
     }
 
     /**
@@ -210,6 +280,25 @@ class RenderRequestService extends LabelService
             $this->Refuse('generation_token', 'stale_generation', 'The render lease has moved on; this result belongs to a superseded generation');
         }
         return $request;
+    }
+
+    /**
+     * The id of the first element of a draft that names an asset which is not stored, so an
+     * `asset_unavailable` refusal points a designer at the element to fix (plan 27 piece 4).
+     * Null for any other refusal, and when no element references the missing asset.
+     */
+    private function UnavailableAssetElement(array $request, LabelValidationException $refusal): ?string
+    {
+        if ($refusal->errorCode !== 'asset_unavailable' || $request['purpose'] !== 'preview_draft') {
+            return null;
+        }
+        foreach (json_decode($request['draft_document'], true)['elements'] as $element) {
+            $name = $element['type'] === 'text' ? ($element['font_asset'] ?? null) : ($element['type'] === 'image' ? ($element['asset'] ?? null) : null);
+            if ($name !== null && !$this->Query('SELECT 1 FROM label_assets WHERE name=?', [$name])->fetchColumn()) {
+                return (string)$element['id'];
+            }
+        }
+        return null;
     }
 
     private static function AssetNames(array $document): array
