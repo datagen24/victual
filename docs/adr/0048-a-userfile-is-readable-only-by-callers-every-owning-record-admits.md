@@ -93,7 +93,8 @@ definition metadata. Do not reinterpret EntityReadPolicy::null globally."
 
 A file referenced from an `api_keys` row is readable by no caller, ADMIN included. The same
 holds when the referenced key row no longer exists. An owner entity with no
-`EntityReadPolicy` entry at all also admits nobody.
+`EntityReadPolicy` entry at all also admits nobody. This follows from F3's "deny unless an
+explicit policy permits access".
 
 Source, F3 and F3′: "deny unless an explicit policy permits access ... Preserve intentional
 non-exposure, including for administrators"; "api_keys files remain deny-all."
@@ -102,7 +103,9 @@ non-exposure, including for administrators"; "api_keys files remain deny-all."
 
 Authorization runs on the original file before the server reads any byte, and before it
 reads or creates a picture derivative. A request that names a derivative is authorized
-through the references of its original. All ownership refusals are one response: the
+through the references of its original. References to the derivative's own name also
+count, intersected with the original's, so a reference to a derivative can only narrow
+access. All ownership refusals are one response: the
 status and body do not reveal the owner type, whether the file exists, or which owner
 denied the request.
 
