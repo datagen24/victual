@@ -331,6 +331,206 @@ class OutboxService extends BaseService
 	}
 
 	/**
+	 * Puts dead-lettered InfluxDB events back in the queue (issue #902).
+	 *
+	 * DeadLetter() is a one-way door on its own: a row set aside because the endpoint was
+	 * misconfigured at the time (a bucket refusing one field while accepting another) would
+	 * otherwise be lost to InfluxDB for good. This is the operator's way back, reached only
+	 * through bin/victual-publish-state --requeue-dead - there is deliberately no route or page.
+	 *
+	 * **Only stock.transaction_booked rows.** Redelivering one is an overwrite: BuildLines()
+	 * derives every line from the stored payload alone (event_id tag, payload timestamp), so
+	 * the second write names the same points as the first. A label.print_requested row is
+	 * not like that - the job may have printed - and labels recover through reprint, which
+	 * makes a new job. Any other event type is refused rather than guessed at.
+	 *
+	 * **Atomic and re-checked.** With $execute, one transaction selects the candidates
+	 * FOR UPDATE with the eligibility predicate applied again, and clears dead_lettered_at on
+	 * exactly the rows it locked. A row delivered or requeued by someone else between an
+	 * operator's dry run and this call is therefore not touched, and is reported. The lock is
+	 * a plain FOR UPDATE and never GetRowClaimLockClause(): SKIP LOCKED would silently drop a
+	 * row from an explicit id list.
+	 *
+	 * **Against a drain.** ClaimUndelivered() only claims rows with dead_lettered_at IS NULL, so
+	 * it cannot hold a row this method clears. A row a drain is dead-lettering but has not
+	 * committed still reads as not dead-lettered here, so it is neither selected nor waited
+	 * for. Once this commits the row is an ordinary undelivered row and the next drain claims
+	 * it once.
+	 *
+	 * **Preserved.** attempts and last_error are not touched: last_error is overwritten only by
+	 * a later failure. The result carries each row's previous values, because printing them is
+	 * the only record of why the row was set aside.
+	 *
+	 * Explicit ids are all-or-nothing: if any id is ineligible nothing is requeued, so a typo
+	 * never half-applies. A selection by event type has no such list and requeues whatever is
+	 * eligible, optionally refusing when the count is not the one the operator saw.
+	 *
+	 * @param int[] $ids Explicit row ids; empty selects every eligible row of the type
+	 * @param bool $execute False reports what would be requeued and changes nothing
+	 * @param int|null $expectedCount When set with $execute, refuse (changing nothing) unless exactly this many rows are eligible
+	 * @return array{executed: bool, eligible: array<int, array{id: int, dead_lettered_at: string, attempts: int, last_error: ?string}>, requeued: int[], ineligible: array<int, string>, refusal: ?string}
+	 * @throws \InvalidArgumentException For an event type other than stock.transaction_booked
+	 */
+	public function RequeueDeadLettered(array $ids, string $eventType, bool $execute, ?int $expectedCount = null): array
+	{
+		if ($eventType !== self::EVENT_STOCK_TRANSACTION_BOOKED)
+		{
+			throw new \InvalidArgumentException('Only ' . self::EVENT_STOCK_TRANSACTION_BOOKED . ' rows can be requeued; "' . $eventType . '" rows are not safe to redeliver (label jobs recover through reprint)');
+		}
+
+		$ids = array_values(array_unique(array_map('intval', $ids)));
+		sort($ids);
+
+		// Bookkeeping like the rest of this class: requeueing records what an operator did to
+		// the queue, not what the household did, so it must not move the changed time. The
+		// statements below are raw, which the change callback does not see anyway; the wrapper
+		// keeps that true if one is ever moved onto LessQL.
+		return DatabaseService::GetInstance()->RunAsBookkeeping(function () use ($ids, $eventType, $execute, $expectedCount)
+		{
+			$db = DatabaseService::GetInstance();
+
+			if (!$execute)
+			{
+				return $this->PlanRequeue($db->GetDbConnectionRaw(), $ids, $eventType, false, '');
+			}
+
+			return $db->InTransaction(function () use ($db, $ids, $eventType, $expectedCount)
+			{
+				$pdo = $db->GetDbConnectionRaw();
+
+				// SQLite has no row locks (and one writer at a time), so nothing is appended there
+				$plan = $this->PlanRequeue($pdo, $ids, $eventType, true, $db->GetDialect()->GetName() === 'pgsql' ? ' FOR UPDATE' : '');
+
+				if ($plan['refusal'] !== null || count($plan['ineligible']) > 0)
+				{
+					return $plan;
+				}
+
+				if ($expectedCount !== null && count($plan['eligible']) !== $expectedCount)
+				{
+					$plan['refusal'] = count($plan['eligible']) . ' row(s) are eligible now, not the ' . $expectedCount . ' expected; nothing was requeued';
+
+					return $plan;
+				}
+
+				$locked = array_column($plan['eligible'], 'id');
+				$requeued = [];
+
+				foreach (array_chunk($locked, 500) as $chunk)
+				{
+					$update = $pdo->prepare(
+						'UPDATE outbox SET dead_lettered_at = NULL WHERE id IN (' . self::Placeholders(count($chunk)) . ')'
+							. ' AND dead_lettered_at IS NOT NULL AND delivered_at IS NULL AND event_type = ? RETURNING id'
+					);
+					$update->execute(array_merge($chunk, [$eventType]));
+
+					foreach ($update->fetchAll(\PDO::FETCH_COLUMN) as $id)
+					{
+						$requeued[] = (int)$id;
+					}
+				}
+
+				sort($requeued);
+
+				// Cannot differ while the rows are locked. If it ever does, nothing is reported
+				// as done that was not, and the transaction rolls back.
+				if ($requeued !== $locked)
+				{
+					throw new \RuntimeException('The rows requeued are not the rows that were locked; rolled back');
+				}
+
+				$plan['requeued'] = $requeued;
+
+				return $plan;
+			});
+		});
+	}
+
+	/**
+	 * The selection half of RequeueDeadLettered(): which rows qualify, and why each other
+	 * requested id does not. The qualifying rows are locked when $lockClause is not empty.
+	 *
+	 * @param int[] $ids
+	 */
+	private function PlanRequeue(\PDO $pdo, array $ids, string $eventType, bool $executing, string $lockClause): array
+	{
+		$plan = ['executed' => $executing, 'eligible' => [], 'requeued' => [], 'ineligible' => [], 'refusal' => null];
+
+		// The eligibility predicate; the UPDATE repeats it
+		$sql = 'SELECT id, dead_lettered_at, attempts, last_error FROM outbox'
+			. ' WHERE event_type = ? AND dead_lettered_at IS NOT NULL AND delivered_at IS NULL';
+		$params = [$eventType];
+
+		if (count($ids) > 0)
+		{
+			$sql .= ' AND id IN (' . self::Placeholders(count($ids)) . ')';
+			$params = array_merge($params, $ids);
+		}
+
+		// Ordered so that two requeues locking overlapping sets take the locks in one order
+		$query = $pdo->prepare($sql . ' ORDER BY id' . $lockClause);
+		$query->execute($params);
+
+		foreach ($query->fetchAll(\PDO::FETCH_ASSOC) as $row)
+		{
+			$plan['eligible'][] = [
+				'id' => (int)$row['id'],
+				'dead_lettered_at' => (string)$row['dead_lettered_at'],
+				'attempts' => (int)$row['attempts'],
+				'last_error' => $row['last_error'] === null ? null : (string)$row['last_error']
+			];
+		}
+
+		$missing = array_values(array_diff($ids, array_column($plan['eligible'], 'id')));
+
+		if (count($missing) === 0)
+		{
+			return $plan;
+		}
+
+		$state = $pdo->prepare('SELECT id, event_type, delivered_at, dead_lettered_at FROM outbox WHERE id IN (' . self::Placeholders(count($missing)) . ')');
+		$state->execute($missing);
+		$rows = [];
+
+		foreach ($state->fetchAll(\PDO::FETCH_ASSOC) as $row)
+		{
+			$rows[(int)$row['id']] = $row;
+		}
+
+		foreach ($missing as $id)
+		{
+			if (!isset($rows[$id]))
+			{
+				$plan['ineligible'][$id] = 'does not exist';
+			}
+			elseif ($rows[$id]['event_type'] !== $eventType)
+			{
+				$plan['ineligible'][$id] = 'is a ' . $rows[$id]['event_type'] . ' row, not an InfluxDB event'
+					. ($rows[$id]['event_type'] === self::EVENT_LABEL_PRINT_REQUESTED ? ' (label jobs recover through reprint)' : '');
+			}
+			elseif ($rows[$id]['delivered_at'] !== null)
+			{
+				$plan['ineligible'][$id] = 'was already delivered at ' . $rows[$id]['delivered_at'];
+			}
+			elseif ($rows[$id]['dead_lettered_at'] === null)
+			{
+				$plan['ineligible'][$id] = 'is not dead-lettered';
+			}
+			else
+			{
+				$plan['ineligible'][$id] = 'changed state while it was being checked';
+			}
+		}
+
+		return $plan;
+	}
+
+	private static function Placeholders(int $count): string
+	{
+		return implode(',', array_fill(0, $count, '?'));
+	}
+
+	/**
 	 * Runs a write without letting it count as a data change.
 	 *
 	 * Draining is bookkeeping: it records what was delivered, not what the household did.
