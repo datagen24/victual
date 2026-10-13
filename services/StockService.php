@@ -4871,6 +4871,22 @@ class StockService extends BaseService
 
 		DatabaseService::GetInstance()->InTransaction(function () use ($productIdToKeep, $productIdToRemove)
 		{
+			// ADR-0040 rule 8: row locks first, then the ascending product locks. TrackChore()
+			// and UndoChoreExecution() lock the chore row FOR UPDATE and only then take product
+			// locks (ConsumeProduct(), UndoTransaction()). This method writes the removed
+			// product's chores below, after the product locks, so a merge and a chore
+			// execution on the same product waited on each other. The rows the merge will
+			// repoint are therefore locked first, in ascending id order.
+			//
+			// Checked and deliberately not locked here: consumption_mappings (their paths
+			// take no product lock, so nothing can wait on one while holding the other);
+			// consumption_recipe_lines and consumption_event_lines (the paths that rewrite
+			// them take the recipe or event row first and then every product lock they need
+			// up front, and this method writes neither of those parent rows); recipes_pos,
+			// recipes, meal_plan and shopping_list (no path takes a row lock on them before a
+			// product lock - there is no FOR UPDATE on them anywhere).
+			DatabaseService::GetInstance()->ExecuteDbStatement('SELECT id FROM chores WHERE product_id = ' . $productIdToRemove . ' ORDER BY id FOR UPDATE');
+
 			// Both products' stock rows are read and rewritten below, so both are locked,
 			// in ascending order, before either is touched (issue #458) - the ascending
 			// order is what keeps a merge running concurrently with another one over an
