@@ -484,7 +484,7 @@ class DatabaseImporter
 			throw new \RuntimeException('Import refused: ' . $count . ' source quantity_unit_conversions row(s) hold a factor that is '
 				. 'not a positive, finite number (NULL, zero, negative, NaN, infinite or not numeric), which the target refuses outright '
 				. '(migration 0309, quantity_unit_conversions_factor_positive; issue #903). '
-				. 'Sample (id, product_id, from_qu_id, to_qu_id, factor): ' . json_encode($sample) . '. '
+				. 'Sample (id, product_id, from_qu_id, to_qu_id, factor): ' . json_encode($sample, JSON_INVALID_UTF8_SUBSTITUTE) . '. '
 				. 'These rows are refused rather than clamped or dropped, so no value the source did not actually hold is invented. '
 				. 'Choose an explicit source repair and retry; --force does not bypass this check. '
 				. 'List all rows: ' . $listing . ';');

@@ -105,6 +105,7 @@
 - Fixed accent insensitive searching using the general table search field was broken
 - Fixed that it wasn't possible to log in using passwords containing special escape sequences (e.g. `<<`)
 - Fixed that the initially created location and quantity units weren't localized (only applies to new installations)
+- Importing a legacy database now refuses, before anything is changed, a quantity unit conversion whose factor is not a positive, finite number (zero, negative, infinite or not numeric), listing the rows instead of failing partway with a database error; `--force` does not bypass this check
 
 ### API
 

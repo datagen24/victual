@@ -73,6 +73,25 @@ class ImportConversionFactorTest extends PgsqlSchemaTestCase
 		return $result;
 	}
 
+	/**
+	 * A target row the refused import must leave alone; the rows compared by targetState()
+	 * would otherwise be empty tables, which a truncate cannot be told from.
+	 */
+	private static function seedTargetConversion(): void
+	{
+		$units = [];
+		$suffix = uniqid('', true);
+		foreach (['conv-seed-a-', 'conv-seed-b-'] as $prefix)
+		{
+			$name = $prefix . $suffix;
+			$statement = self::Pdo()->prepare('INSERT INTO quantity_units (name) VALUES (?) RETURNING id');
+			$statement->execute([$name]);
+			$units[] = (int)$statement->fetchColumn();
+		}
+		self::Pdo()->exec('INSERT INTO quantity_unit_conversions (from_qu_id, to_qu_id, factor) VALUES (' . $units[0] . ', ' . $units[1] . ', 3.5)');
+		self::assertGreaterThan(0, (int)self::Pdo()->query('SELECT count(*) FROM quantity_unit_conversions')->fetchColumn());
+	}
+
 	public static function versions(): array { return [[255], [265]]; }
 
 	#[DataProvider('versions')]
@@ -86,6 +105,7 @@ class ImportConversionFactorTest extends PgsqlSchemaTestCase
 			9005 => '-9e999',
 			9006 => "'abc'",
 		]);
+		self::seedTargetConversion();
 		$before = self::targetState();
 		try { $this->importer($source)->Import(true); self::fail('Bad factors must refuse'); }
 		catch (\RuntimeException $ex)
@@ -106,6 +126,22 @@ class ImportConversionFactorTest extends PgsqlSchemaTestCase
 		self::assertSame($before, self::targetState());
 		self::assertFalse($source->inTransaction());
 		self::assertFalse(self::Pdo()->inTransaction());
+	}
+
+	public function testBlobFactorIsRefusedAndSampleSurvivesInvalidUtf8(): void
+	{
+		$source = $this->source(265, [9001 => '2.5', 9007 => "X'00FF'"]);
+		self::seedTargetConversion();
+		$before = self::targetState();
+		try { $this->importer($source)->Import(true); self::fail('A blob factor must refuse'); }
+		catch (\RuntimeException $ex)
+		{
+			self::assertStringContainsString('Import refused: 1 source quantity_unit_conversions row(s)', $ex->getMessage());
+			// json_encode() returns false for invalid UTF-8 without a substitute flag, which
+			// would leave the sample empty.
+			self::assertStringContainsString('"id":9007,', $ex->getMessage());
+		}
+		self::assertSame($before, self::targetState());
 	}
 
 	public function testSampleIsLimitedToTenRowsButCountIsComplete(): void
