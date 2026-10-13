@@ -872,12 +872,66 @@ class MergeProductsConversionConflictTest extends PgsqlSchemaTestCase
 	}
 
 	/*
-	 * A child that gains or loses a conversion while the stock-unit factor is 1 cannot be built: a 1:1
-	 * conversion between the stock units is symmetric and transitive, so a child that reaches one unit
-	 * reaches the other at the same factor and a child that reaches neither still reaches neither. A
-	 * child that does reach them is the next test; the gain/loss refusals stay covered by the tests
-	 * above with a factor that is not 1.
+	 * A child that gains or loses a conversion while the stock-unit factor is 1 is constructible when the
+	 * 1:1 belongs to the removed product only (a global one is symmetric, so a child reaching one unit
+	 * reaches the other): the existing gain and loss checks refuse it. A and B below.
 	 */
+	public function testAChildThatWouldGainAConversionIsRefusedAcrossARemovedProductOneToOne(): void
+	{
+		$strip = self::unit('MPCC strip');
+		$piece = self::unit('MPCC piece');
+		$each = self::unit('MPCC each');
+		$keep = self::product('MPCC keep', $each);
+		$remove = self::product('MPCC remove', $piece);
+		self::conversion($piece, $each, 1, $remove);
+		$child = self::product('MPCC child', $strip, $remove);
+		self::conversion($strip, $each, 4, $child);
+
+		$this->assertRefusalNaming($keep, $remove, [$child, $strip, 4]);
+	}
+
+	public function testAChildThatWouldLoseAConversionIsRefusedAcrossARemovedProductOneToOne(): void
+	{
+		$strip = self::unit('MPCC strip');
+		$piece = self::unit('MPCC piece');
+		$each = self::unit('MPCC each');
+		$keep = self::product('MPCC keep', $each);
+		$remove = self::product('MPCC remove', $piece);
+		self::conversion($piece, $each, 1, $remove);
+		$child = self::product('MPCC child', $strip, $remove);
+		self::conversion($strip, $piece, 4, $child);
+
+		$this->assertRefusalNaming($keep, $remove, [$child, $strip, 4]);
+	}
+
+	public function testAChildWithNoConversionIsRefusedWhenTheKeptProductsOwnFactorOverridesTheRemovedProductsOneToOne(): void
+	{
+		$strip = self::unit('MPCC strip');
+		$piece = self::unit('MPCC piece');
+		$each = self::unit('MPCC each');
+		$keep = self::product('MPCC keep', $each);
+		$remove = self::product('MPCC remove', $piece);
+		self::conversion($piece, $each, 1, $remove);
+		self::conversion($piece, $each, 2, $keep);
+		$child = self::product('MPCC child', $strip, $remove);
+
+		$this->assertRefusalNaming($keep, $remove, [$child, $piece, $each, 1, 2]);
+	}
+
+	public function testAChildWithNoConversionIsRefusedWhenTheKeptProductsOwnFactorOverridesAGlobalOneToOne(): void
+	{
+		$strip = self::unit('MPCC strip');
+		$piece = self::unit('MPCC piece');
+		$each = self::unit('MPCC each');
+		self::conversion($piece, $each, 1, null);
+		$keep = self::product('MPCC keep', $each);
+		$remove = self::product('MPCC remove', $piece);
+		self::conversion($piece, $each, 2, $keep);
+		$child = self::product('MPCC child', $strip, $remove);
+
+		$this->assertRefusalNaming($keep, $remove, [$child, $piece, $each, 1, 2]);
+	}
+
 	public function testAChildWhoseConversionSurvivesThroughTheEquivalenceIsNotAffected(): void
 	{
 		$strip = self::unit('MPCC strip');

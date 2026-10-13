@@ -5087,12 +5087,13 @@ class StockService extends BaseService
 			}
 
 			// A child is aggregated into its parent through the child's own conversion to the parent's
-			// stock unit; the view reads 1.0 when there is none (04_views_l1a.sql :47-50). The removed
+			// stock unit. With none, stock_current (migration 0298) counts the child as 0 in its parent
+			// and the baseline-era readers fall back to 1.0. The removed
 			// product's children are repointed to the kept product by the merge; the kept product's
 			// own children keep their parent. Rules (maintainer, #901): readable on both sides ->
 			// compare; readable before and not after, or not before and readable after -> refuse; none
-			// on either side -> allowed only when the merge's stock scale is 1 (CompareAmounts), since
-			// the view reads 1.0 on both sides.
+			// on either side -> allowed only when the merge's stock scale is 1 (CompareAmounts) and, for
+			// differing stock units, the kept product resolves a factor of 1 between them after the merge.
 			$childRows = $connection->query('SELECT id, qu_id_stock, parent_product_id FROM products WHERE parent_product_id IN (' . $productIdToRemove . ', ' . $productIdToKeep . ') AND id NOT IN (' . $productIdToRemove . ', ' . $productIdToKeep . ') ORDER BY id')->fetchAll(\PDO::FETCH_NUM);
 			foreach ($childRows as [$childId, $childStockUnit, $childParent])
 			{
@@ -5128,7 +5129,7 @@ class StockService extends BaseService
 					DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE products SET parent_product_id = NULL WHERE id = ' . $productIdToKeep . ' AND parent_product_id = ' . $productIdToRemove);
 					DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE products SET parent_product_id = ' . $productIdToKeep . ' WHERE parent_product_id = ' . $productIdToRemove);
 
-					$keptAfter = $resolved($productIdToKeep, $keptStockUnit, array_keys(($unitsByReading['removed'] ?? []) + ($unitsByReading['kept'] ?? [])));
+					$keptAfter = $resolved($productIdToKeep, $keptStockUnit, array_keys(($unitsByReading['removed'] ?? []) + ($unitsByReading['kept'] ?? []) + [$removedStockUnit => true]));
 					foreach ($checks as $index => $check)
 					{
 						if ($check['child'])
@@ -5189,12 +5190,26 @@ class StockService extends BaseService
 					// that did not come from a resolved row is refused here even at 1.
 					if (!$agree(1.0, 1.0, $scale))
 					{
-						throw $refusal($who . ' has no quantity unit conversion to its parent\'s stock unit before or after the merge, which counts it at 1, but the merge scales stock by ' . $fmt($scale) . ' so it would be counted differently');
+						throw $refusal($who . ' has no quantity unit conversion to its parent\'s stock unit before or after the merge, but the merge scales stock by ' . $fmt($scale) . ' so it would be counted differently');
 					}
 
-					if ($check['removed'] && $removedStockUnit !== $keptStockUnit && ($conversion === null || !$agree(1.0, (float)$conversion->factor, 1.0)))
+					if ($check['removed'] && $removedStockUnit !== $keptStockUnit)
 					{
-						throw $refusal($who . ' has no quantity unit conversion to its parent\'s stock unit before or after the merge, and no conversion of factor 1 joins stock unit ' . $removedStockUnit . ' of product ' . $productIdToRemove . ' to stock unit ' . $keptStockUnit . ' of product ' . $productIdToKeep . ' to show they are the same unit');
+						// Evaluated against the proposed merged state: the kept product's own conversion
+						// between the two stock units can override the removed product's or a global one
+						// (the dedupe above drops the removed product's row for the same unit pair), so
+						// the factor 1 that passed the scale check may not be what the kept product says.
+						$keptFactors = $keptAfter[$removedStockUnit] ?? [];
+						$joined = $keptFactors !== [];
+						foreach ($keptFactors as $keptFactor)
+						{
+							$joined = $joined && $agree(1.0, $keptFactor, 1.0);
+						}
+
+						if (!$joined)
+						{
+							throw $refusal($who . ' has no quantity unit conversion to its parent\'s stock unit before or after the merge, and the stock units are not shown to be the same unit: stock unit ' . $removedStockUnit . ' of product ' . $productIdToRemove . ' converts to stock unit ' . $keptStockUnit . ' of product ' . $productIdToKeep . ' at ' . $fmt((float)$factor) . ' before the merge and at ' . $list($keptFactors) . ' after it');
+						}
 					}
 
 					continue;
