@@ -142,6 +142,44 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Issue 889: a label operation's 4xx must name its body's shape, not just have a schema. 19
+	 * operations declared their 422 as `{"type": "object"}`, which satisfies the check above and
+	 * tells a generated client nothing; every server 422 on those routes is a LabelRefusal.
+	 */
+	public function testNoLabelErrorResponseIsABareObject(): void
+	{
+		$bare = [];
+
+		foreach (self::Operations() as [$method, $path, $operation])
+		{
+			if (!str_starts_with($path, '/labels/'))
+			{
+				continue;
+			}
+
+			foreach ($operation['responses'] as $status => $response)
+			{
+				if (substr((string)$status, 0, 1) !== '4')
+				{
+					continue;
+				}
+
+				foreach (self::ResolveResponse($response)['content'] ?? [] as $media)
+				{
+					$schema = $media['schema'] ?? [];
+
+					if (!isset($schema['$ref']) && ($schema['type'] ?? null) === 'object' && !isset($schema['properties']))
+					{
+						$bare[] = "$method $path $status";
+					}
+				}
+			}
+		}
+
+		self::assertSame([], $bare, count($bare) . " label error responses are a bare object:\n" . implode("\n", $bare));
+	}
+
 	public function testEveryComponentResponseIsUsed(): void
 	{
 		$document = file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json');
