@@ -8,7 +8,7 @@
   [issue 905](https://github.com/datagen24/victual/issues/905), and the view-owner decision
   of 2026-10-13 recorded in decision item 8, are the source of every decision item below.
 - **Referenced by:** [issue 905](https://github.com/datagen24/victual/issues/905),
-  [issue 920](https://github.com/datagen24/victual/issues/920), and the draft implementation
+  [issue 920](https://github.com/datagen24/victual/issues/920), and the implementation
   in [PR 919](https://github.com/datagen24/victual/pull/919).
 - **Relationship:** would partly supersede accepted
   [ADR-0035](0035-batteries-equipment-calendar-and-custom-entities-require-view-permissions.md):
@@ -131,15 +131,16 @@ recorded on 2026-10-13 that the deferral of F5 is not acceptance of this bypass.
 
 A userfile reference may name a row of one of the read-only views that
 `EntityReadPolicy` covers, because any exposed entity view can carry userfields. The owner
-is looked up in the view by the same key `GetObject` uses: `id`, or `stock_id` for
-`stock`. The view's `EntityReadPolicy` permission decides whether the caller is admitted.
+is looked up in the view by the same key `GetObject` uses: `id` (the decision also names
+`stock_id` for `stock`, a table already keyed that way). The view's `EntityReadPolicy` permission decides whether the caller is admitted.
 
 A view row that no longer exists makes the reference unresolved. The file then follows the
 orphan rule in item 3 and is readable by ADMIN only. The `label_*` and `print_*` entities
-are not looked up, so they are unresolved too. Their own `EntityReadPolicy` permission is
-`ADMIN`, so the outcome is the same as their policy gives.
+other than `label_printer_status` (looked up by `printer_id`) are not looked up, so they
+are unresolved too. All of them, `label_printer_status` included, have the
+`EntityReadPolicy` permission `ADMIN`, so the outcome is the same as their policy gives.
 
-Source, maintainer decision of 2026-10-13. It answers the coordinator's question on PR 919.
+Source, maintainer decision of 2026-10-13. It answers a question raised during review of PR 919.
 The answer is recorded in
 [a comment on issue 905](https://github.com/datagen24/victual/issues/905#issuecomment-6153663817):
 "**resolve via the view key** — look the owner up in the view by the same key GetObject
@@ -182,9 +183,9 @@ because deleting them is a lesser right was rejected in F1.
    item 7 is undecided. Until it lands, the disclosure issue 905 describes is only partly
    fixed.
 2. **Entities with a read policy but no owner lookup.** With item 8 in place, only the
-   `label_*` and `print_*` entities are in this group. Draft PR 919 treats such an owner as
-   unresolved, so its files are ADMIN only, which equals their own `EntityReadPolicy`
-   permission. This is an implementation fact, not a maintainer decision. Denying everyone
+   `label_*` and `print_*` entities other than `label_printer_status` are in this group.
+   PR 919 treats such an owner as unresolved, so its files are ADMIN only, which equals
+   their own `EntityReadPolicy` permission. This is an implementation fact, not a maintainer decision. Denying everyone
    is the alternative.
 3. **An index on the owner lookup.** The measurements under Consequences give no threshold.
    Decide on an index only if a larger install shows the per-request scan matters.
