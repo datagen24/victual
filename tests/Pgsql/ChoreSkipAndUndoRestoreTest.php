@@ -16,7 +16,7 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *   not consumed, no STOCK_CONSUME is needed, and an empty stock does not refuse it.
  * - #865: undoing an execution restores the reschedule date and the reschedule assignee that
  *   tracking cleared, from chores_log.prior_rescheduled_date and
- *   chores_log.prior_rescheduled_next_execution_assigned_to_user_id (migration 0310), as a
+ *   chores_log.prior_rescheduled_next_execution_assigned_to_user_id (migration 0311), as a
  *   pair or not at all: only when the undone row has the highest id among the chore's
  *   non-undone executions (insertion order; tracked_time can be backdated), both reschedule
  *   fields on the chore are empty, and the saved assignee still exists.

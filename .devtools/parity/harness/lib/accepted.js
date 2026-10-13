@@ -271,7 +271,7 @@ const ACCEPTED = [
 			'undo has them null there and set here. ' +
 			'Maintainer decision of 2026-10-12, issue #865; the values are kept in ' +
 			'chores_log.prior_rescheduled_date and chores_log.prior_rescheduled_next_execution_assigned_to_user_id ' +
-			'(migration 0310).\n\n' +
+			'(migration 0311).\n\n' +
 			'**The fork is the intended side and this must not be "fixed" towards upstream.** The ' +
 			'matcher is narrow: those two chore fields, upstream null, the fork non-null, on a chore read.',
 		match: ({ step, difference }) =>
@@ -684,7 +684,7 @@ const FORK_ADDED_FIELDS = new Map([
 	// to, on every table a label import writes.
 	['import_epoch', [...ROUTES.productRows, ...ROUTES.recipes, ...ROUTES.choresAndBatteries,
 		/^GET \/objects\/stock(\/\d+)?$/, /^GET \/stock\/locations\/\d+\/entries$/]],
-	// issue #865, migration 0310 — the reschedule values tracking cleared, kept on the
+	// issue #865, migration 0311 — the reschedule values tracking cleared, kept on the
 	// execution row so an undo can restore them. Nullable, so a client that ignores them is
 	// unaffected.
 	['prior_rescheduled_date', [/^GET \/objects\/chores_log(\/\d+)?$/, /^POST \/chores\/\d+\/execute$/]],

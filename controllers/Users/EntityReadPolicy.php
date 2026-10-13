@@ -66,9 +66,11 @@ class EntityReadPolicy
 		'label_assets' => User::PERMISSION_ADMIN,
 		'label_media_profiles' => User::PERMISSION_ADMIN,
 		'label_render_requests' => User::PERMISSION_ADMIN,
-		'batteries' => null,
-		'battery_charge_cycles' => null,
-		'equipment' => null,
+		// ADR-0035: the generic read is no way round the leaf the battery and equipment
+		// pages and dedicated APIs require (#847).
+		'batteries' => User::PERMISSION_BATTERIES_VIEW,
+		'battery_charge_cycles' => User::PERMISSION_BATTERIES_VIEW,
+		'equipment' => User::PERMISSION_EQUIPMENT_VIEW,
 		'api_keys' => null,
 		'userfields' => null,
 		'userentities' => null,

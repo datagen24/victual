@@ -103,12 +103,64 @@ see the stock journal sees them.
 
 ## Adding a product, unit or location
 
-Creating, changing and deleting master data needs `MASTER_DATA_EDIT`. The generic object routes
-(`/api/objects/{entity}`), which the web forms save through, and the barcode lookup that adds a
-product check it for products, quantity units and their conversions, locations, barcodes, stores,
-product groups, chores, batteries, tasks and userfields. The shopping list, recipes, meal plan and
-equipment have their own permissions. Nothing in a stock, consumption or recipe permission lets an
-account add a product.
+Creating a product, product barcode, location, quantity unit, product group or store needs
+`MASTER_DATA_ADD`. Editing or deleting any of those six needs `MASTER_DATA_EDIT`. `MASTER_DATA_ADD`
+is a child of `MASTER_DATA_EDIT` in the permission hierarchy, so every account that holds
+`MASTER_DATA_EDIT` or `ADMIN` already holds it. A narrower account can hold `MASTER_DATA_ADD`
+alone and add those records without being able to change or remove any of them. No seeded role
+gets `MASTER_DATA_ADD` automatically. Grant it to an account or a role when a household wants
+members to add products without editing them.
+
+The generic object routes (`/api/objects/{entity}`), which the web forms save through, apply
+these gates:
+
+| Operation | Entities | Permission |
+|---|---|---|
+| Create | Products, product barcodes, locations, quantity units, product groups, stores | `MASTER_DATA_ADD` |
+| Edit, delete | The same six | `MASTER_DATA_EDIT` |
+| Create, edit | Chores | `CHORES` |
+| Create, edit | Tasks | `TASKS` |
+| Delete | Chores and tasks | `MASTER_DATA_EDIT` |
+| Merge | Chores (`POST /chores/{keep}/merge/{remove}`) | `MASTER_DATA_EDIT` |
+| Create, edit, delete | Quantity unit conversions, batteries, task categories | `MASTER_DATA_EDIT` |
+| Create, edit, delete | Userfield and user entity definitions | `ADMIN` |
+| Save values | Userfield values on an object | `MASTER_DATA_EDIT` |
+
+The shopping list, recipes, meal plan and equipment have their own permissions. Nothing in a
+stock, consumption or recipe permission lets an account add a product.
+
+An account with `MASTER_DATA_EDIT` and without `CHORES` or `TASKS` can no longer create or edit
+chores or tasks. Those two domain permissions gate create and edit for every chore and task,
+whoever created it. The seeded Adult role holds `CHORES` and `TASKS`, so it can create and edit
+both. The Child role cannot.
+
+Quantity unit conversions stay under `MASTER_DATA_EDIT`. Two exceptions apply. Creating a product
+by any route also creates the default conversions that the database makes for it
+(`products_default_qu_conversions_INS`), so check their factors as in step 3 below. The barcode
+lookup described below can also set the purchase-to-stock conversion of the product it creates.
+
+### Barcode lookup
+
+`GET /api/stock/barcodes/external-lookup/{barcode}` needs `STOCK_VIEW` for a lookup that creates
+nothing. With `add=true` it also needs `MASTER_DATA_ADD`, because it creates a product and a
+product barcode. A read-only API key is refused either way.
+
+- **Picture.** A fetched picture is stored only for the product the lookup creates, and never
+  replaces an existing file. If a file of that name exists, Victual creates the product without a
+  picture and leaves the existing file as it was.
+- **Conversion.** The lookup can set the new product's purchase-to-stock factor when it creates
+  the product. It never changes a conversion of another product or a global conversion.
+- **Shopping list.** Creating a product can add below-minimum-stock products to the shopping
+  list, depending on the creating user's setting. That side effect happens only when the account
+  also holds `SHOPPINGLIST_ITEMS_ADD`. The product is created either way.
+
+### Limits of the web product form
+
+The web product form is not part of `MASTER_DATA_ADD`. Uploading a picture, saving userfield
+values and adding quantity unit conversions from the form still need `MASTER_DATA_EDIT`. An
+account that holds only `MASTER_DATA_ADD` can create a product through the API or the lookup,
+and can use the new-record buttons that this permission shows. It cannot finish the parts of the
+form that need `MASTER_DATA_EDIT`.
 
 Merging two products needs both `STOCK_EDIT` and `MASTER_DATA_EDIT`. A merge moves the stock,
 history and references of one product onto the other and then deletes the first product, and it
@@ -116,22 +168,25 @@ cannot be undone. An account that lacks either permission gets `403` and nothing
 seeded Adult role holds `STOCK_EDIT` but not `MASTER_DATA_EDIT`, so it cannot merge. The products
 page disables the Merge menu item for an account that lacks either permission.
 
-The seeded Adult, Child and Guest roles do not hold `MASTER_DATA_EDIT`, so on a household set up
-with those roles only an administrator can add a medication or vitamin. `ADMIN` is not required:
-an account that holds `MASTER_DATA_EDIT` and nothing else can add and edit master data. Such an
-account cannot record a dose or save a consumption mapping unless it also holds `STOCK_VIEW` and
-`STOCK_CONSUME`. Master data is shared by every account, and the permission covers every product,
-not only the ones its holder added. A consumption recipe's owner has no extra right to the
-products on it.
+The seeded Adult, Child and Guest roles hold neither `MASTER_DATA_EDIT` nor `MASTER_DATA_ADD`, so
+on a household set up with those roles only an administrator can add a medication or vitamin.
+`ADMIN` is not required: an account that holds `MASTER_DATA_ADD` can add the product, and an
+account that holds `MASTER_DATA_EDIT` can also edit it and add conversions. Such an account cannot
+record a dose or save a consumption mapping unless it also holds `STOCK_VIEW` and `STOCK_CONSUME`.
+
+Master data is shared by every account, and the permission covers every product, not only the
+ones its holder added. A consumption recipe's owner has no extra right to the products on it.
 
 To let a client map a new medication:
 
-1. An account that holds `MASTER_DATA_EDIT` adds the product in the web interface. Give it the
-   quantity unit the medication is counted in ("tablet", "mL") as its stock unit, because a
+1. An account that holds `MASTER_DATA_EDIT` adds the product in the web interface. An account
+   that holds only `MASTER_DATA_ADD` can create the product through the API, but the web form
+   still needs `MASTER_DATA_EDIT` for the picture, userfields and conversions. Give the product
+   the quantity unit the medication is counted in ("tablet", "mL") as its stock unit, because a
    mapping in the stock unit needs no conversion.
 2. Add a quantity unit conversion for the product only if the client reports in another unit,
    for example milligrams for a product counted in tablets. The conversion is the amount of the
-   product's stock unit in one of the other unit.
+   product's stock unit in one of the other unit. Adding it needs `MASTER_DATA_EDIT`.
 3. Check the factor of any conversion Victual created when it saved the product. A purchase,
    consume or price unit that differs from the stock unit gets a conversion of factor 1 unless a
    default conversion already applies.
@@ -166,7 +221,7 @@ design decision.
 | Batteries | `BATTERIES`, `BATTERIES_TRACK_CHARGE_CYCLE`, `BATTERIES_UNDO_CHARGE_CYCLE` |
 | Equipment | `EQUIPMENT` |
 | Calendar | `CALENDAR` |
-| Master data | `MASTER_DATA_EDIT` (products, locations, quantity units and conversions, barcodes, stores, product groups, chores, batteries, tasks and userfields, and — with the label subsystem — printing itself; see [Adding a product, unit or location](#adding-a-product-unit-or-location)) |
+| Master data | `MASTER_DATA_ADD` (create products, locations, quantity units, barcodes, stores and product groups; a child of `MASTER_DATA_EDIT`), `MASTER_DATA_EDIT` (edit and delete of products, locations, quantity units, barcodes, stores and product groups, quantity unit conversions, batteries, task categories and userfield values, delete and merge of chores, delete of tasks, and — with the label subsystem — printing itself; see [Adding a product, unit or location](#adding-a-product-unit-or-location)) |
 | Users | `USERS`, `USERS_READ`, `USERS_CREATE`, `USERS_EDIT`, `USERS_EDIT_SELF` |
 | Everything | `ADMIN` |
 

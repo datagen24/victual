@@ -196,7 +196,7 @@
 									data-dialog-type="table">
 									<span class="dropdown-item-text">{{ $__t('Chore journal') }}</span>
 								</a>
-								<a class="dropdown-item permission-MASTER_DATA_EDIT"
+								<a class="dropdown-item permission-CHORES"
 									type="button"
 									href="{{ $U('/chore/') }}{{ $curentChoreEntry->chore_id }}">
 									<span class="dropdown-item-text">{{ $__t('Edit chore') }}</span>

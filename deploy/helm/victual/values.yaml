@@ -114,6 +114,13 @@ secrets:
   #               into Secrets. Nothing secret is in your values file.
   # existing:     no Secret is rendered: they already exist, written by any other means
   #               (a secrets operator, or `kubectl create secret`), under the names below.
+  #
+  # Rolling the pods after a change (issue #852): the pod reads its environment once, at
+  # start. A change to the ConfigMap, or to Secrets this chart renders inline, changes the
+  # pod template's checksum/config and checksum/secrets annotations, so `helm upgrade`
+  # rolls the Deployment. With `existing` or `onepassword` the chart cannot see the Secret's
+  # contents, so changing one needs `kubectl rollout restart deployment/victual` (or an
+  # operator such as Reloader). Label-worker CronJobs start fresh pods every run.
   source: placeholder
 
   # The Secrets the pods read, by name. Every mode uses these names.

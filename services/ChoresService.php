@@ -444,7 +444,7 @@ class ChoresService extends BaseService
 	 *
 	 * Issue #865 (maintainer decision, 2026-10-12): the reschedule date and assignee that
 	 * TrackChore() cleared are put back from chores_log.prior_rescheduled_date and
-	 * chores_log.prior_rescheduled_next_execution_assigned_to_user_id (migration 0310), in
+	 * chores_log.prior_rescheduled_next_execution_assigned_to_user_id (migration 0311), in
 	 * this same transaction, as a pair or not at all. They are restored only if this row has
 	 * the highest id among the chore's non-undone executions (insertion order, not
 	 * tracked_time, which can be backdated), BOTH reschedule fields on the chore are empty
@@ -569,7 +569,7 @@ class ChoresService extends BaseService
 			// cleared it, both fields are empty and the saved pair returns: undoing the
 			// tracking undoes what tracking cleared. A saved assignee who no longer exists
 			// restores nothing, and so does a row without saved values (recorded before
-			// migration 0310).
+			// migration 0311).
 			if ($restoresReschedule)
 			{
 				$chore = $this->DB->chores($logRow->chore_id);

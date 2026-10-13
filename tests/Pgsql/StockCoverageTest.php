@@ -3947,6 +3947,588 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	}
 
 	// ------------------------------------------------------------------------------
+	// Issue 742 / ADR-0043: the external lookup needs MASTER_DATA_ADD only when it
+	// creates (add=true), never MASTER_DATA_EDIT, and its picture write never replaces
+	// an existing file.
+	// ------------------------------------------------------------------------------
+
+	/** @var array<string, string> API keys by account label, filled by lookupKey() */
+	private static array $lookupKeys = [];
+
+	/**
+	 * An API key for a throwaway account that holds exactly $permissions, created once per
+	 * label. Keys are direct grants, so nothing is inherited from a role.
+	 *
+	 * @param string[] $permissions
+	 */
+	private static function lookupKey(string $label, int $userId, array $permissions): string
+	{
+		if (!isset(self::$lookupKeys[$label]))
+		{
+			self::$db->exec("INSERT INTO users(id, username, password) VALUES ($userId, 'stockcoverage-$label', 'fixture')");
+			$grant = self::$db->prepare("INSERT INTO user_permissions (user_id, permission_id) SELECT $userId, id FROM permission_hierarchy WHERE name = ?");
+			foreach ($permissions as $permission)
+			{
+				$grant->execute([$permission]);
+				self::assertSame(1, $grant->rowCount(), "permission $permission exists");
+			}
+
+			$key = bin2hex(random_bytes(25));
+			self::$db->prepare("INSERT INTO api_keys (api_key, key_hint, user_id, expires, key_type) VALUES (?, ?, $userId, now() + interval '30 days', ?)")
+				->execute([ApiKeyService::HashKey($key), substr($key, -4), ApiKeyService::API_KEY_TYPE_DEFAULT]);
+			self::$lookupKeys[$label] = $key;
+		}
+
+		return self::$lookupKeys[$label];
+	}
+
+	private static function addOnlyKey(): string
+	{
+		return self::lookupKey('add-only', 9510, ['MASTER_DATA_ADD', 'STOCK_VIEW']);
+	}
+
+	private static function viewOnlyKey(): string
+	{
+		return self::lookupKey('view-only', 9511, ['STOCK_VIEW']);
+	}
+
+	private const LOOKUP_PLUGIN = ['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin'];
+
+	/** @return array{status: int, body: string, stderr: string} */
+	private static function lookupAs(string $key, string $barcode, bool $add, array $settingOverrides = []): array
+	{
+		return self::send('GET', '/api/stock/barcodes/external-lookup/' . $barcode . ($add ? '?add=true' : ''), self::LOOKUP_PLUGIN + $settingOverrides, null, ['VICTUAL-API-KEY' => $key]);
+	}
+
+	/** @return array<int, array<string, mixed>> quantity_unit_conversions only (never the cache__ resolved table), by id */
+	private static function conversionsById(): array
+	{
+		$rows = [];
+		foreach (self::$db->query('SELECT * FROM quantity_unit_conversions ORDER BY id')->fetchAll(PDO::FETCH_ASSOC) as $row)
+		{
+			$rows[(int)$row['id']] = $row;
+		}
+
+		return $rows;
+	}
+
+	/**
+	 * Every conversion that existed before still exists, byte for byte, and every row that
+	 * is new belongs to $productId. Asserts that the comparison had a global and another
+	 * product's conversion to damage in the first place.
+	 *
+	 * @return array<int, array<string, mixed>> the new rows by id
+	 */
+	private static function assertOnlyTheNewProductsConversionsAdded(array $before, int $productId): array
+	{
+		self::assertNotEmpty(array_filter($before, fn ($row) => $row['product_id'] === null), 'the comparison covers at least one global conversion');
+		self::assertNotEmpty(array_filter($before, fn ($row) => $row['product_id'] !== null && (int)$row['product_id'] !== $productId), 'and at least one other product\'s conversion');
+
+		$after = self::conversionsById();
+		foreach ($before as $id => $row)
+		{
+			self::assertArrayHasKey($id, $after, "conversion $id still exists");
+			self::assertSame($row, $after[$id], "conversion $id is unchanged");
+		}
+
+		$new = array_diff_key($after, $before);
+		foreach ($new as $id => $row)
+		{
+			self::assertSame($productId, (int)$row['product_id'], "new conversion $id belongs to the created product");
+		}
+
+		return $new;
+	}
+
+	private static function productIdByName(string $name): ?int
+	{
+		$statement = self::$db->prepare('SELECT id FROM products WHERE name = ?');
+		$statement->execute([$name]);
+		$id = $statement->fetchColumn();
+
+		return $id === false ? null : (int)$id;
+	}
+
+	private static function counts(): array
+	{
+		return [
+			'products' => (int)self::$db->query('SELECT COUNT(*) FROM products')->fetchColumn(),
+			'product_barcodes' => (int)self::$db->query('SELECT COUNT(*) FROM product_barcodes')->fetchColumn(),
+			'quantity_unit_conversions' => (int)self::$db->query('SELECT COUNT(*) FROM quantity_unit_conversions')->fetchColumn(),
+		];
+	}
+
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testALookupWithoutAddNeedsOnlyStockViewAndAddNeedsMasterDataAdd(): void
+	{
+		$pluginFile = self::writeUserLookupPlugin('Coverage Gate View ', 3, 2, 'null');
+
+		try
+		{
+			$before = self::counts();
+			$beforeConversions = self::conversionsById();
+
+			$read = self::lookupAs(self::viewOnlyKey(), '4000417743001', false);
+			self::assertSame(200, $read['status'], 'A STOCK_VIEW holder can look a barcode up: ' . $read['body']);
+			self::assertSame('Coverage Gate View 4000417743001', json_decode($read['body'], true)['name']);
+
+			$add = self::lookupAs(self::viewOnlyKey(), '4000417743001', true);
+			self::assertSame(403, $add['status'], 'but cannot create from it: ' . $add['body']);
+			self::assertStringContainsString('MASTER_DATA_ADD', $add['body'], 'and is told which permission it lacks');
+
+			self::assertSame($before, self::counts(), 'no product, barcode or conversion was written');
+			self::assertSame($beforeConversions, self::conversionsById());
+			self::assertNull(self::productIdByName('Coverage Gate View 4000417743001'));
+		}
+		finally
+		{
+			@unlink($pluginFile);
+		}
+	}
+
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testAnAddOnlyAccountCanCreateTheProductAndItsBarcodeFromALookup(): void
+	{
+		$pluginFile = self::writeUserLookupPlugin('Coverage Gate Add ', 2, 2, 'null');
+
+		try
+		{
+			$response = self::lookupAs(self::addOnlyKey(), '4000417743002', true);
+			self::assertSame(200, $response['status'], 'MASTER_DATA_ADD with STOCK_VIEW is enough: ' . $response['body']);
+
+			$productId = self::productIdByName('Coverage Gate Add 4000417743002');
+			self::assertNotNull($productId, 'the product exists');
+			self::assertSame($productId, (int)json_decode($response['body'], true)['id']);
+
+			$barcode = self::$db->prepare('SELECT COUNT(*) FROM product_barcodes WHERE product_id = ? AND barcode = ?');
+			$barcode->execute([$productId, '4000417743002']);
+			self::assertSame(1, (int)$barcode->fetchColumn(), 'with its barcode');
+
+			$noView = self::lookupAs(self::lookupKey('add-no-view', 9512, ['MASTER_DATA_ADD']), '4000417743002', false);
+			self::assertSame(403, $noView['status'], 'STOCK_VIEW is still required first: ' . $noView['body']);
+			self::assertStringContainsString('STOCK_VIEW', $noView['body']);
+		}
+		finally
+		{
+			@unlink($pluginFile);
+		}
+	}
+
+	/**
+	 * Decision 2: a purchase unit that differs from the stock unit writes the plugin's
+	 * factor onto the purchase->stock conversion the products trigger created for the new
+	 * product, and touches no other product's or global conversion.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testTheTriggerCreatedConversionIsUpdatedInPlaceAndNothingElseChanges(): void
+	{
+		$pluginFile = self::writeUserLookupPlugin('Coverage Conv Inplace ', 3, 2, 'null', '4');
+
+		// Logs every insert and delete on quantity_unit_conversions, so "updated in place"
+		// is shown by the id the trigger gave the row and by the absence of any delete,
+		// not inferred from the final table alone.
+		self::$db->exec(
+			'CREATE TABLE coverage_conversion_log (op text, id integer, product_id integer, from_qu_id integer, to_qu_id integer);'
+			. 'CREATE FUNCTION coverage_log_conversion() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN '
+			. "IF TG_OP = 'DELETE' THEN INSERT INTO coverage_conversion_log VALUES ('DELETE', OLD.id, OLD.product_id, OLD.from_qu_id, OLD.to_qu_id); RETURN OLD; END IF; "
+			. "INSERT INTO coverage_conversion_log VALUES ('INSERT', NEW.id, NEW.product_id, NEW.from_qu_id, NEW.to_qu_id); RETURN NEW; END $$;"
+			. 'CREATE TRIGGER coverage_log_conversion AFTER INSERT OR DELETE ON quantity_unit_conversions FOR EACH ROW EXECUTE FUNCTION coverage_log_conversion()'
+		);
+
+		try
+		{
+			self::ensureGlobalAndOtherProductConversions('742a');
+			$before = self::conversionsById();
+
+			$response = self::lookupAs(self::addOnlyKey(), '4000417743003', true);
+			self::assertSame(200, $response['status'], $response['body']);
+			$productId = self::productIdByName('Coverage Conv Inplace 4000417743003');
+			self::assertNotNull($productId);
+
+			$log = self::$db->prepare('SELECT op, id, from_qu_id, to_qu_id FROM coverage_conversion_log WHERE product_id = ? ORDER BY id');
+			$log->execute([$productId]);
+			$log = $log->fetchAll(PDO::FETCH_ASSOC);
+			self::assertSame([], array_filter($log, fn ($entry) => $entry['op'] === 'DELETE'), 'no conversion of the new product was ever deleted');
+			$triggerInserted = array_values(array_filter($log, fn ($entry) => (int)$entry['from_qu_id'] === 3 && (int)$entry['to_qu_id'] === 2));
+			self::assertCount(1, $triggerInserted, 'the products trigger inserted the purchase->stock row exactly once');
+			$keptId = self::$db->prepare('SELECT id FROM quantity_unit_conversions WHERE product_id = ? AND from_qu_id = 3 AND to_qu_id = 2');
+			$keptId->execute([$productId]);
+			self::assertSame((int)$triggerInserted[0]['id'], (int)$keptId->fetchColumn(), 'and that same row, with that id, carries the plugin factor');
+
+			$new = self::assertOnlyTheNewProductsConversionsAdded($before, $productId);
+			self::assertCount(2, $new, 'exactly the purchase->stock row and its inverse appear');
+
+			$forward = array_values(array_filter($new, fn ($row) => (int)$row['from_qu_id'] === 3 && (int)$row['to_qu_id'] === 2));
+			$inverse = array_values(array_filter($new, fn ($row) => (int)$row['from_qu_id'] === 2 && (int)$row['to_qu_id'] === 3));
+			self::assertCount(1, $forward, 'one purchase->stock row, not the trigger default plus a second');
+			self::assertEqualsWithDelta(4.0, (float)$forward[0]['factor'], 1e-9, 'at the plugin factor');
+			self::assertCount(1, $inverse);
+			self::assertEqualsWithDelta(0.25, (float)$inverse[0]['factor'], 1e-9, 'with the trigger-maintained inverse at 1/factor');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+			self::$db->exec('DROP TRIGGER coverage_log_conversion ON quantity_unit_conversions; DROP FUNCTION coverage_log_conversion(); DROP TABLE coverage_conversion_log');
+		}
+	}
+
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testAGlobalConversionCoveringThePairGetsOneProductSpecificRowAndStaysUnchanged(): void
+	{
+		$from = self::insertRow('quantity_units', ['name' => 'Cov742 B From', 'name_plural' => 'Cov742 B Froms']);
+		$to = self::insertRow('quantity_units', ['name' => 'Cov742 B To', 'name_plural' => 'Cov742 B Tos']);
+		self::$db->prepare('INSERT INTO quantity_unit_conversions (from_qu_id, to_qu_id, factor, product_id) VALUES (?, ?, 2, NULL)')->execute([$from, $to]);
+		$pluginFile = self::writeUserLookupPlugin('Coverage Conv Global ', $from, $to, 'null', '9');
+
+		try
+		{
+			self::ensureGlobalAndOtherProductConversions('742b');
+			$before = self::conversionsById();
+
+			$response = self::lookupAs(self::addOnlyKey(), '4000417743004', true);
+			self::assertSame(200, $response['status'], $response['body']);
+			$productId = self::productIdByName('Coverage Conv Global 4000417743004');
+			self::assertNotNull($productId);
+
+			$new = self::assertOnlyTheNewProductsConversionsAdded($before, $productId);
+			$forward = array_values(array_filter($new, fn ($row) => (int)$row['from_qu_id'] === $from && (int)$row['to_qu_id'] === $to));
+			self::assertCount(1, $forward, 'one product-specific row for the pair');
+			self::assertEqualsWithDelta(9.0, (float)$forward[0]['factor'], 1e-9);
+
+			$global = self::$db->prepare('SELECT factor FROM quantity_unit_conversions WHERE product_id IS NULL AND from_qu_id = ? AND to_qu_id = ?');
+			$global->execute([$from, $to]);
+			self::assertEqualsWithDelta(2.0, (float)$global->fetchColumn(), 1e-9, 'and the global conversion keeps its factor');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+		}
+	}
+
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testConsumeAndPriceConversionsOfTheNewProductStayAtFactorOne(): void
+	{
+		$consume = self::insertRow('quantity_units', ['name' => 'Cov742 C Consume', 'name_plural' => 'Cov742 C Consumes']);
+		$price = self::insertRow('quantity_units', ['name' => 'Cov742 C Price', 'name_plural' => 'Cov742 C Prices']);
+		$pluginFile = self::writeUserLookupPlugin('Coverage Conv Consume ', 3, 2, 'null', '5', "'qu_id_consume' => {$consume}, 'qu_id_price' => {$price},");
+
+		try
+		{
+			self::ensureGlobalAndOtherProductConversions('742c');
+			$before = self::conversionsById();
+
+			$response = self::lookupAs(self::addOnlyKey(), '4000417743005', true);
+			self::assertSame(200, $response['status'], $response['body']);
+			$productId = self::productIdByName('Coverage Conv Consume 4000417743005');
+			self::assertNotNull($productId);
+
+			$new = self::assertOnlyTheNewProductsConversionsAdded($before, $productId);
+			$byPair = [];
+			foreach ($new as $row)
+			{
+				$byPair[$row['from_qu_id'] . '>' . $row['to_qu_id']] = (float)$row['factor'];
+			}
+
+			self::assertEqualsWithDelta(5.0, $byPair['3>2'], 1e-9, 'purchase->stock carries the plugin factor');
+			self::assertEqualsWithDelta(1.0, $byPair[$consume . '>2'], 1e-9, 'consume->stock stays 1');
+			self::assertEqualsWithDelta(1.0, $byPair[$price . '>2'], 1e-9, 'price->stock stays 1');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+		}
+	}
+
+	/** A holder of MASTER_DATA_ADD can create through the lookup but cannot later change what it created. */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testAnAddOnlyAccountCannotLaterEditOrCreateConversionsDirectly(): void
+	{
+		$pluginFile = self::writeUserLookupPlugin('Coverage Conv Edit ', 3, 2, 'null', '3');
+
+		try
+		{
+			$response = self::lookupAs(self::addOnlyKey(), '4000417743006', true);
+			self::assertSame(200, $response['status'], $response['body']);
+			$productId = self::productIdByName('Coverage Conv Edit 4000417743006');
+
+			$row = self::$db->prepare('SELECT id FROM quantity_unit_conversions WHERE product_id = ? AND from_qu_id = 3 AND to_qu_id = 2');
+			$row->execute([$productId]);
+			$conversionId = (int)$row->fetchColumn();
+			$before = self::conversionsById();
+
+			$key = ['VICTUAL-API-KEY' => self::addOnlyKey()];
+			$put = self::send('PUT', '/api/objects/quantity_unit_conversions/' . $conversionId, [], ['factor' => 99], $key);
+			self::assertSame(403, $put['status'], 'editing the conversion needs MASTER_DATA_EDIT: ' . $put['body']);
+
+			$post = self::send('POST', '/api/objects/quantity_unit_conversions', [], ['from_qu_id' => 2, 'to_qu_id' => 3, 'factor' => 7, 'product_id' => $productId], $key);
+			self::assertSame(403, $post['status'], 'so does creating one: ' . $post['body']);
+
+			self::assertSame($before, self::conversionsById(), 'and the table is exactly as it was');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+		}
+	}
+
+	/** Issue #842's refusals hold for the narrower credential too: nothing is written. */
+	#[DataProvider('nonFiniteOrUnusableLookupFactorProvider')]
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testAnAddOnlyAccountAddingWithAnUnusableFactorIsRefusedAndWritesNothing(string $factorExpression, string $barcode): void
+	{
+		$pluginFile = self::writeUserLookupPlugin('Coverage Add Only Bad Factor ', 3, 2, 'null', $factorExpression);
+
+		try
+		{
+			self::ensureGlobalAndOtherProductConversions('742d' . $barcode);
+			$before = self::counts();
+			$beforeConversions = self::conversionsById();
+
+			$response = self::lookupAs(self::addOnlyKey(), $barcode, true);
+			self::assertSame(400, $response['status'], $response['body']);
+			self::assertStringContainsString('Provided __qu_factor_purchase_to_stock must be a finite number greater than zero', $response['body']);
+
+			self::assertSame($before, self::counts(), 'no product, barcode or conversion row was written');
+			self::assertSame($beforeConversions, self::conversionsById());
+			self::assertNull(self::productIdByName('Coverage Add Only Bad Factor ' . $barcode));
+		}
+		finally
+		{
+			@unlink($pluginFile);
+		}
+	}
+
+	/** A failure of the conversion write itself rolls the product and its barcode back. */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testAFailedConversionWriteLeavesNoProductAndNoBarcode(): void
+	{
+		self::$db->exec(
+			'CREATE FUNCTION coverage_fail_conversion_write() RETURNS trigger LANGUAGE plpgsql AS $$ '
+			. "BEGIN IF NEW.product_id IS NOT NULL AND ABS(NEW.factor - 7.77) < 0.000001 THEN RAISE EXCEPTION 'injected'; END IF; RETURN NEW; END $$;"
+			. 'CREATE TRIGGER coverage_fail_conversion_write BEFORE INSERT OR UPDATE ON quantity_unit_conversions '
+			. 'FOR EACH ROW EXECUTE FUNCTION coverage_fail_conversion_write()'
+		);
+		$pluginFile = self::writeUserLookupPlugin('Coverage Conv Rollback ', 3, 2, 'null', '7.77');
+
+		try
+		{
+			$before = self::counts();
+			$beforeConversions = self::conversionsById();
+
+			$response = self::lookupAs(self::addOnlyKey(), '4000417743007', true);
+			self::assertSame(400, $response['status'], 'the injected failure refuses the add: ' . $response['body']);
+
+			self::assertSame($before, self::counts(), 'no product, barcode or conversion survives');
+			self::assertSame($beforeConversions, self::conversionsById());
+			self::assertNull(self::productIdByName('Coverage Conv Rollback 4000417743007'));
+		}
+		finally
+		{
+			@unlink($pluginFile);
+			self::$db->exec('DROP TRIGGER coverage_fail_conversion_write ON quantity_unit_conversions; DROP FUNCTION coverage_fail_conversion_write()');
+		}
+	}
+
+	/** @return array<string, array{0: string, 1: string}> */
+	public static function pictureCallerAndBackendProvider(): array
+	{
+		$cases = [];
+		foreach (['filesystem', 'database'] as $backend)
+		{
+			foreach (['admin', 'add-only', 'edit-only'] as $caller)
+			{
+				$cases["$caller on $backend storage"] = [$backend, $caller];
+			}
+		}
+
+		return $cases;
+	}
+
+	private const PICTURE_GIF = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+	private static function pictureBytes(string $backend, string $name): ?string
+	{
+		if ($backend === 'database')
+		{
+			$statement = self::$db->prepare("SELECT content FROM files WHERE file_group = 'productpictures' AND name = ?");
+			$statement->execute([$name]);
+			$statement->bindColumn(1, $content, PDO::PARAM_LOB);
+
+			if ($statement->fetch(PDO::FETCH_BOUND) === false)
+			{
+				return null;
+			}
+
+			return is_resource($content) ? stream_get_contents($content) : (string)$content;
+		}
+
+		$path = getenv('VICTUAL_DATAPATH') . '/storage/productpictures/' . $name;
+
+		return is_file($path) ? file_get_contents($path) : null;
+	}
+
+	private static function putPicture(string $backend, string $name, string $bytes): void
+	{
+		if ($backend === 'database')
+		{
+			$statement = self::$db->prepare("INSERT INTO files (file_group, name, mime_type, size_bytes, is_derivative, content) VALUES ('productpictures', ?, 'image/gif', ?, 0, ?)");
+			$statement->bindValue(1, $name);
+			$statement->bindValue(2, strlen($bytes), PDO::PARAM_INT);
+			$statement->bindValue(3, $bytes, PDO::PARAM_LOB);
+			$statement->execute();
+
+			return;
+		}
+
+		$directory = getenv('VICTUAL_DATAPATH') . '/storage/productpictures';
+		@mkdir($directory, 0777, true);
+		file_put_contents($directory . '/' . $name, $bytes);
+	}
+
+	private static function removePicture(string $backend, string $name): void
+	{
+		if ($backend === 'database')
+		{
+			self::$db->prepare("DELETE FROM files WHERE file_group = 'productpictures' AND name = ?")->execute([$name]);
+
+			return;
+		}
+
+		@unlink(getenv('VICTUAL_DATAPATH') . '/storage/productpictures/' . $name);
+	}
+
+	/**
+	 * The fetched picture is stored only when no file of that name exists, for every caller:
+	 * an add=true caller can no longer replace another product's picture by naming a barcode
+	 * that collides with it.
+	 */
+	#[DataProvider('pictureCallerAndBackendProvider')]
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testTheLookupPictureIsCreatedNeverOverwritten(string $backend, string $caller): void
+	{
+		$key = match ($caller)
+		{
+			'admin' => self::$apiKey,
+			'add-only' => self::addOnlyKey(),
+			'edit-only' => self::lookupKey('edit-only', 9513, ['MASTER_DATA_EDIT', 'STOCK_VIEW']),
+		};
+		$overrides = ['VICTUAL_FILE_STORAGE' => $backend];
+		$suffix = ($backend === 'database' ? '1' : '0') . ['admin' => '1', 'add-only' => '0', 'edit-only' => '2'][$caller];
+		$freshBarcode = '40004177440' . $suffix;
+		$takenBarcode = '40004177441' . $suffix;
+		$pluginFile = self::writeUserLookupPlugin('Coverage Picture Create ', 2, 2, "'" . self::PICTURE_GIF . "'");
+
+		try
+		{
+			self::removePicture($backend, $freshBarcode . '.gif');
+			$fresh = self::lookupAs($key, $freshBarcode, true, $overrides);
+			self::assertSame(200, $fresh['status'], $fresh['body']);
+			$freshProduct = self::$db->prepare('SELECT picture_file_name FROM products WHERE id = ?');
+			$freshProduct->execute([json_decode($fresh['body'], true)['id']]);
+			self::assertSame($freshBarcode . '.gif', $freshProduct->fetchColumn(), 'a new name gets the fetched picture');
+			self::assertSame('GIF8', substr((string)self::pictureBytes($backend, $freshBarcode . '.gif'), 0, 4));
+
+			self::putPicture($backend, $takenBarcode . '.gif', 'sentinel picture bytes');
+			$taken = self::lookupAs($key, $takenBarcode, true, $overrides);
+			self::assertSame(200, $taken['status'], 'a taken picture name does not fail the add: ' . $taken['body']);
+			$takenProduct = self::$db->prepare('SELECT picture_file_name FROM products WHERE id = ?');
+			$takenProduct->execute([json_decode($taken['body'], true)['id']]);
+			self::assertNull($takenProduct->fetchColumn(), 'the product is created without a picture');
+			self::assertSame('sentinel picture bytes', self::pictureBytes($backend, $takenBarcode . '.gif'), 'and the existing file is untouched');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+			self::removePicture($backend, $freshBarcode . '.gif');
+			self::removePicture($backend, $takenBarcode . '.gif');
+		}
+	}
+
+	/**
+	 * Create succeeded but recording the name on the product failed: the file is this call's
+	 * own, so it is removed rather than left to block the next add of the same barcode.
+	 */
+	#[DataProvider('backendProvider')]
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testAFailedPictureNameUpdateRemovesTheFileThisCallCreated(string $backend): void
+	{
+		$barcode = $backend === 'database' ? '4000417745011' : '4000417745001';
+		self::$db->exec(
+			'CREATE FUNCTION coverage_fail_picture_update() RETURNS trigger LANGUAGE plpgsql AS $$ '
+			. "BEGIN IF NEW.picture_file_name IS NOT NULL AND NEW.name LIKE 'Coverage Update Fail %' THEN RAISE EXCEPTION 'injected'; END IF; RETURN NEW; END \$\$;"
+			. 'CREATE TRIGGER coverage_fail_picture_update BEFORE UPDATE ON products FOR EACH ROW EXECUTE FUNCTION coverage_fail_picture_update()'
+		);
+		$overrides = ['VICTUAL_FILE_STORAGE' => $backend];
+		$pluginFile = self::writeUserLookupPlugin('Coverage Update Fail ', 2, 2, "'" . self::PICTURE_GIF . "'");
+
+		try
+		{
+			self::removePicture($backend, $barcode . '.gif');
+			$first = self::lookupAs(self::addOnlyKey(), $barcode, true, $overrides);
+			self::assertSame(200, $first['status'], 'the committed add still answers 200: ' . $first['body']);
+			$picture = self::$db->prepare('SELECT picture_file_name FROM products WHERE id = ?');
+			$picture->execute([json_decode($first['body'], true)['id']]);
+			self::assertNull($picture->fetchColumn(), 'the product has no picture');
+			self::assertNull(self::pictureBytes($backend, $barcode . '.gif'), 'and the file this call created is not left behind');
+
+			// The first product is renamed away and releases the barcode, as a user fixing it up
+			// would; the file name must be free again for the next add.
+			self::$db->prepare('DELETE FROM product_barcodes WHERE barcode = ?')->execute([$barcode]);
+			@unlink($pluginFile);
+			$pluginFile = self::writeUserLookupPlugin('Coverage Update Retry ', 2, 2, "'" . self::PICTURE_GIF . "'");
+			$second = self::lookupAs(self::addOnlyKey(), $barcode, true, $overrides);
+			self::assertSame(200, $second['status'], $second['body']);
+			$picture->execute([json_decode($second['body'], true)['id']]);
+			self::assertSame($barcode . '.gif', $picture->fetchColumn(), 'so a later add of the same barcode gets its picture');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+			self::$db->exec('DROP TRIGGER coverage_fail_picture_update ON products; DROP FUNCTION coverage_fail_picture_update()');
+			self::removePicture($backend, $barcode . '.gif');
+		}
+	}
+
+	/** @return array<string, array{0: string}> */
+	public static function backendProvider(): array
+	{
+		return ['filesystem storage' => ['filesystem'], 'database storage' => ['database']];
+	}
+
+	/** A plugin cannot name the picture: only the lookup itself sets picture_file_name. */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testAPluginCannotSetThePictureFileName(): void
+	{
+		$planted = "'picture_file_name' => 'planted.gif',";
+		$pluginFile = self::writeUserLookupPlugin('Coverage Planted Picture ', 2, 2, "'" . self::PICTURE_GIF . "'", '6', $planted);
+
+		try
+		{
+			self::putPicture('filesystem', '4000417745002.gif', 'sentinel picture bytes');
+			$taken = self::lookupAs(self::addOnlyKey(), '4000417745002', true);
+			self::assertSame(200, $taken['status'], $taken['body']);
+
+			$noImage = self::writeUserLookupPlugin('Coverage Planted Picture ', 2, 2, 'null', '6', $planted);
+			$none = self::lookupAs(self::addOnlyKey(), '4000417745003', true);
+			self::assertSame(200, $none['status'], $none['body']);
+
+			$picture = self::$db->prepare('SELECT picture_file_name FROM products WHERE id = ?');
+			foreach ([$taken, $none] as $response)
+			{
+				$picture->execute([json_decode($response['body'], true)['id']]);
+				self::assertNull($picture->fetchColumn(), 'the name the plugin proposed is not stored on the product');
+			}
+
+			self::assertSame('sentinel picture bytes', self::pictureBytes('filesystem', '4000417745002.gif'), 'and the taken file is untouched');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+			self::removePicture('filesystem', '4000417745002.gif');
+		}
+	}
+
+	// ------------------------------------------------------------------------------
 	// Issue #459 (sweep finding S14, docs/security-sweep.md): the picture extension
 	// allow-list and the outbound host policy, exercised end to end through the real
 	// StockApiController route and StockService::ExternalBarcodeLookup(), with
@@ -4287,7 +4869,7 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	}
 
 	/** Writes a lookup plugin into the data directory and returns its path. */
-	private static function writeUserLookupPlugin(string $namePrefix, int $quIdPurchase, int $quIdStock, string $imageUrlExpression, string $factorExpression = '6'): string
+	private static function writeUserLookupPlugin(string $namePrefix, int $quIdPurchase, int $quIdStock, string $imageUrlExpression, string $factorExpression = '6', string $extraFields = ''): string
 	{
 		$pluginDirectory = getenv('VICTUAL_DATAPATH') . '/plugins';
 		$pluginFile = $pluginDirectory . '/CoverageBarcodeLookupPlugin.php';
@@ -4312,6 +4894,7 @@ class CoverageBarcodeLookupPlugin extends \\Victual\\Helpers\\BaseBarcodeLookupP
 			'__qu_factor_purchase_to_stock' => {$factorExpression},
 			'__barcode' => \$barcode,
 			'__image_url' => {$imageUrlExpression},
+			{$extraFields}
 		];
 	}
 }

@@ -225,7 +225,9 @@ Six tools, the plan's table made concrete. Shared conventions first:
   > checks what "the equivalent REST route" checks — is the one that holds, and those
   > routes check the `*_VIEW` leaves. The map as built is therefore `STOCK_VIEW`
   > (`stock_overview`, `expiring_soon`, `missing_products`, `find_product`),
-  > `SHOPPINGLIST_VIEW` (`shopping_list`) and `RECIPES_VIEW` (`recipes_i_can_cook`). The
+  > `SHOPPINGLIST_VIEW` (`shopping_list`, which also requires `STOCK_VIEW` because it
+  > reads `products` and `quantity_units` for names) and `RECIPES_VIEW`
+  > (`recipes_i_can_cook`). The
   > write tools' `SHOPPINGLIST_ITEMS_ADD`, `STOCK_CONSUME` and `STOCK_PURCHASE` are already
   > leaves and stand as written.
 - **`tools/list` order and caching**: fixed, deterministic order; `ttlMs: 300000`,
@@ -371,9 +373,20 @@ Two layers, never mixed:
   `error` is one of `unauthorized` (bad/expired key — the user must fix the client
   config), `forbidden` (valid key, insufficient permission or read-only key on a
   write), `not_found` (id does not exist), `invalid_request` (Victual rejected the
-  parameters), `victual_unavailable` (connect/timeout — retryable), `victual_error`
-  (5xx — not retryable without human attention). The `text` rendering states the
-  category and whether retrying can help.
+  parameters). `victual_unavailable` means Victual could not be reached, or answered 503
+  before running any handler; it is retryable. `outcome_unknown` means a write failed
+  after the request may have reached Victual; it is not retryable until the state is
+  checked. `victual_error` (other 5xx) is not retryable without human attention. The
+  `text` rendering states the category and whether retrying can help.
+
+  A connect failure (DNS, connection refused) means the request never left the sidecar,
+  so it is `victual_unavailable` for every method. A timeout, a connection reset after
+  sending, or a 502/504 from a gateway in front of Victual says nothing about whether
+  the request was applied. On a write that is `outcome_unknown`, and the `text` tells the
+  model to check the current state (stock journal, stock overview, shopping list) before
+  any retry, because a blind retry can book the same consumption or purchase twice. The
+  same timeout or 502/504 on a read is `victual_unavailable`, since a repeated read
+  changes nothing.
 
 This mapping is why [plan 11](plans/11-api-error-handling.md) gates this work: today
 Victual answers 400 for "not allowed" and 500 for "bad filter" on some routes, which

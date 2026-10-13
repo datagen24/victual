@@ -2160,7 +2160,7 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 
 	public function testBatteryChargeCyclesAreTimedEventsLinkedToTheBatteryOverview()
 	{
-		self::grant([]);
+		self::grant(['BATTERIES_VIEW']);
 
 		$battery = self::eventTitled(CalendarService::GetInstance()->GetEvents(), 'CalendarBattery');
 
@@ -2213,7 +2213,7 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 	 */
 	public function testTheEventListIsEveryAreaTheCallerMaySeeAtOnce()
 	{
-		self::grant(['STOCK_VIEW', 'TASKS_VIEW', 'CHORES_VIEW', 'MEALPLAN_VIEW']);
+		self::grant(['STOCK_VIEW', 'TASKS_VIEW', 'CHORES_VIEW', 'MEALPLAN_VIEW', 'BATTERIES_VIEW']);
 
 		$events = CalendarService::GetInstance()->GetEvents();
 		$titles = array_column($events, 'title');

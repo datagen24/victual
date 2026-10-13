@@ -841,10 +841,11 @@
 						}
 					}
 				},
-				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW or MEALPLAN_VIEW domain permission. Roles and the permission hierarchy require USERS_READ."
+				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW, MEALPLAN_VIEW, BATTERIES_VIEW (batteries, battery_charge_cycles) or EQUIPMENT_VIEW (equipment) domain permission. Roles and the permission hierarchy require USERS_READ."
 			},
 			"post": {
 				"summary": "Adds a single object of the given entity",
+				"description": "Creating products, product_barcodes, locations, quantity_units, product_groups or shopping_locations requires MASTER_DATA_ADD, which MASTER_DATA_EDIT and ADMIN also satisfy. Chores require CHORES and tasks require TASKS. Shopping lists, recipes, the meal plan and equipment require their own permissions. Every other entity, including quantity_unit_conversions, requires MASTER_DATA_EDIT, and userfields and userentities additionally require ADMIN. A 403 names the missing permission. Creating a product may also add below-minimum-stock products to the shopping list, but only when the caller holds SHOPPINGLIST_ITEMS_ADD; the product is created either way.",
 				"tags": [
 					"Generic entity interactions"
 				],
@@ -1040,10 +1041,11 @@
 						}
 					}
 				},
-				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW or MEALPLAN_VIEW domain permission. Roles and the permission hierarchy require USERS_READ."
+				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW, MEALPLAN_VIEW, BATTERIES_VIEW (batteries, battery_charge_cycles) or EQUIPMENT_VIEW (equipment) domain permission. Roles and the permission hierarchy require USERS_READ."
 			},
 			"put": {
 				"summary": "Edits the given object of the given entity",
+				"description": "Editing chores requires CHORES and editing tasks requires TASKS, whoever created the object. Editing any other entity, including the six that MASTER_DATA_ADD can create (products, product_barcodes, locations, quantity_units, product_groups, shopping_locations), requires MASTER_DATA_EDIT, except for entities with their own permission such as shopping lists, recipes, the meal plan and equipment. Editing userfields and userentities also requires ADMIN. MASTER_DATA_ADD alone does not allow editing.",
 				"tags": [
 					"Generic entity interactions"
 				],
@@ -1256,7 +1258,7 @@
 						}
 					}
 				},
-				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW or MEALPLAN_VIEW domain permission. Roles and the permission hierarchy require USERS_READ."
+				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW, MEALPLAN_VIEW, BATTERIES_VIEW (batteries, battery_charge_cycles) or EQUIPMENT_VIEW (equipment) domain permission. Roles and the permission hierarchy require USERS_READ."
 			},
 			"put": {
 				"summary": "Edits the given userfields of the given object of the given entity",
@@ -5186,7 +5188,7 @@
 						}
 					}
 				},
-				"description": "Requires STOCK_VIEW. "
+				"description": "Requires STOCK_VIEW. With add=true it also requires MASTER_DATA_ADD (403 otherwise); MASTER_DATA_EDIT is not required. A picture the plugin names is stored only when no file of that name exists; if one does, the product is created without a picture and the existing file is left unchanged. A read-only API key is refused on this operation whether or not add is set."
 			}
 		},
 		"/recipes/{recipeId}/add-not-fulfilled-products-to-shoppinglist": {

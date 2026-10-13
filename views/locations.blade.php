@@ -16,7 +16,7 @@
 					href="{{ $U('/locationlabels') }}">
 					{{ $__t('Scan location label') }}
 				</a>
-				<a class="btn btn-primary responsive-button m-1 mt-md-0 mb-md-0 float-right show-as-dialog-link"
+				<a class="btn btn-primary responsive-button permission-MASTER_DATA_ADD m-1 mt-md-0 mb-md-0 float-right show-as-dialog-link"
 					href="{{ $U('/location/new?embedded') }}">
 					{{ $__t('Add') }}
 				</a>
