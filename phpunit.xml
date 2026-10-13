@@ -74,6 +74,7 @@
 			<file>tests/Pgsql/TimestampInstantTest.php</file>
 			<file>tests/Pgsql/StockEntryEditContractTest.php</file>
 			<file>tests/Pgsql/StockPurchaseInventoryInputTest.php</file>
+			<file>tests/Pgsql/NumericStringAcceptanceTest.php</file>
 		</testsuite>
 		<testsuite name="stockpages">
 			<file>tests/Pgsql/StockPagesTest.php</file>
