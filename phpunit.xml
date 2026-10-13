@@ -108,6 +108,7 @@
 			<file>tests/Pgsql/StockLabelRevivalPrintJobTest.php</file>
 			<file>tests/Pgsql/StockLabelRevivalRaceTest.php</file>
 			<file>tests/Pgsql/LabelRenderLifecycleTest.php</file>
+			<file>tests/Pgsql/PreviewCollectionConcurrencyTest.php</file>
 		</testsuite>
 		<testsuite name="authstack">
 			<file>tests/Pgsql/AuthStackTest.php</file>
@@ -211,6 +212,8 @@
 			<file>tests/Pgsql/StockAmountMigrationTest.php</file>
 			<file>tests/Pgsql/StockScopedAvailabilityTest.php</file>
 			<file>tests/Pgsql/ImportConversionFactorTest.php</file>
+			<file>tests/Pgsql/ChoreConsumeFlagCheckTest.php</file>
+			<file>tests/Pgsql/ImportChoreConsumeFlagTest.php</file>
 		</testsuite>
 		<testsuite name="chores">
 			<file>tests/Pgsql/ChoreExecutionStockUndoTest.php</file>
