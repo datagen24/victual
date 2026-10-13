@@ -561,6 +561,45 @@ class MergeProductsConversionConflictTest extends PgsqlSchemaTestCase
 		self::assertEqualsWithDelta(6.0, self::recipesPosReading($stockPos)[0], 1e-9, 'Then: a stock-unit amount is rescaled into strips');
 	}
 
+	/** The recipes_pos_resolved columns a flag=1 row is priced, calorie-counted and shopped by. */
+	private static function recipesPosResolvedReading(int $recipePosId): array
+	{
+		$row = self::$db->query("SELECT costs, calories, missing_amount, amount_on_shopping_list, stock_amount FROM recipes_pos_resolved WHERE recipe_pos_id = $recipePosId")->fetch(PDO::FETCH_ASSOC);
+
+		return array_map('floatval', $row);
+	}
+
+	public function testASingleUnitRowsCostsCaloriesAndShoppingListQuantityAreUnchangedByAMergeWithEqualEffectiveFactors(): void
+	{
+		$box = self::unit('MPCC box');
+		$tablet = self::unit('MPCC tablet');
+		$strip = self::unit('MPCC strip');
+		$keep = self::product('MPCC keep', $strip);
+		$remove = self::product('MPCC remove', $tablet);
+		// 1 box = 30 tablets = 3 strips; a tablet carries 2 and costs 1, a strip carries 20 and costs 10.
+		self::conversion($box, $tablet, 30, $remove);
+		self::conversion($tablet, $strip, 0.1, $remove);
+		self::conversion($box, $strip, 3, $keep);
+		self::$db->exec("UPDATE products SET calories = 2 WHERE id = $remove");
+		self::$db->exec("UPDATE products SET calories = 20 WHERE id = $keep");
+		// The product is out of stock, so the row is short by its whole amount; the last purchase price still prices it.
+		StockService::GetInstance()->AddProduct($remove, 60, '2999-12-31', StockService::TRANSACTION_TYPE_PURCHASE, '2026-01-01', 1.0, self::$location);
+		StockService::GetInstance()->ConsumeProduct($remove, 60, false, StockService::TRANSACTION_TYPE_CONSUME);
+		$pos = self::recipesPos($remove, 1, $box, 1);
+		$before = self::recipesPosResolvedReading($pos);
+		self::assertEqualsWithDelta(30.0, $before['costs'], 1e-6, 'Given: 1 box is 30 tablets at 1 each');
+
+		self::assertNull(self::merge($keep, $remove), 'Then: the merge goes through');
+
+		$after = self::recipesPosResolvedReading($pos);
+		foreach (['costs', 'calories', 'missing_amount', 'amount_on_shopping_list'] as $column)
+		{
+			self::assertEqualsWithDelta($before[$column], $after[$column], 1e-6, "Then: $column is the same before and after (before " . $before[$column] . ', after ' . $after[$column] . ')');
+		}
+		// missing_amount is what RecipesService adds to the shopping list; with no stock to offset it, it is the row's own amount.
+		self::assertEqualsWithDelta(1.0, $after['missing_amount'], 1e-6, 'Then: the shopping-list quantity is the unrescaled 1');
+	}
+
 	public function testASingleUnitRowWithNoConversionOnEitherSideAndTheSameStockUnitMerges(): void
 	{
 		$box = self::unit('MPCC box');
