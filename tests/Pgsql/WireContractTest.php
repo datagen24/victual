@@ -7,6 +7,7 @@ use Victual\Services\ApiKeyService;
 use Victual\Services\Time\Instant;
 use Victual\Services\WireBooleans;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * The five wire defects the first-party Swift client (ADR-0024) found, issues #229 to #233.
@@ -216,18 +217,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 			// request that asked for no zone has to overwrite one an earlier one set.
 			'VICTUAL_TEST_TIMEZONE' => $timezone ?? ''
 		]);
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		self::assertIsArray($result, "the request helper printed no JSON for $method $path. stdout: $output\nstderr: $errors");

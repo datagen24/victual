@@ -7,6 +7,7 @@ use Victual\Services\ConsumptionRecipeService;
 use Victual\Services\ConsumptionRefillService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * ADR-0042 under real concurrency: two connections, two processes, one recipe.
@@ -86,29 +87,25 @@ class ConsumptionRefillRaceTest extends PgsqlSchemaTestCase
 		foreach ([[$first, 0], [$second, $delay]] as [$call, $wait])
 		{
 			$spec = ['method' => $call[0], 'args' => $call[1], 'service' => $call[2] ?? 'refill', 'delay_us' => $wait];
-			$process = proc_open([PHP_BINARY, __DIR__ . '/consumption-refill-race-subprocess-helper.php', base64_encode(json_encode($spec))],
-				[0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-			$processes[] = [$process, $pipes];
+			$processes[] = Subprocess::start([PHP_BINARY, __DIR__ . '/consumption-refill-race-subprocess-helper.php', base64_encode(json_encode($spec))], $env, null, true);
 		}
 
-		foreach ($processes as [, $pipes])
+		foreach ($processes as $process)
 		{
-			self::assertSame("ready\n", fgets($pipes[1]), 'the helper connected');
+			self::assertSame("ready\n", $process->readLine(), 'the helper connected');
 		}
-		foreach ($processes as [, $pipes])
+		foreach ($processes as $process)
 		{
-			fwrite($pipes[0], "go\n");
-			fclose($pipes[0]);
+			$process->write("go\n");
+			$process->closeStdin();
 		}
 
 		$results = [];
-		foreach ($processes as [$process, $pipes])
+		foreach ($processes as $process)
 		{
-			$output = stream_get_contents($pipes[1]);
-			$errors = stream_get_contents($pipes[2]);
-			fclose($pipes[1]);
-			fclose($pipes[2]);
-			proc_close($process);
+			$finished = Subprocess::Completed($process->finish());
+			$output = $finished['stdout'];
+			$errors = $finished['stderr'];
 			$decoded = json_decode($output, true);
 			self::assertIsArray($decoded, 'the helper printed no JSON (seed ' . self::$seed . "). stdout: $output stderr: $errors");
 			$results[] = $decoded;

@@ -12,6 +12,7 @@ use Victual\Services\DatabaseService;
 use Victual\Services\Labels\LabelIdentityService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * ADR-0033 ("Stock rows are merged only by a maintenance routine, and only when they never
@@ -273,9 +274,9 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 	 *        TEST_ISSUE_PAUSE_LOCK_CLASS/$pauseObjId after Issue() succeeds but before its own
 	 *        commit - see that helper's own docblock - so B3's "connection B keeps its
 	 *        transaction open" is produced under this test's control.
-	 * @return array{0: resource, 1: array}
+	 * @return Subprocess The running child, nothing read yet
 	 */
-	private static function startIssueLabelSubprocess(int $stockRowId, int $expectedEpoch, ?int $pauseObjId = null): array
+	private static function startIssueLabelSubprocess(int $stockRowId, int $expectedEpoch, ?int $pauseObjId = null): Subprocess
 	{
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
 		$env = array_merge($inherited, [
@@ -293,21 +294,13 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 			$env['VICTUAL_TEST_ISSUE_PAUSE_OBJID'] = (string)$pauseObjId;
 		}
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/issue-stock-label-subprocess-helper.php', (string)$stockRowId, (string)$expectedEpoch],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-
-		return [$process, $pipes];
+		return Subprocess::start([PHP_BINARY, __DIR__ . '/issue-stock-label-subprocess-helper.php', (string)$stockRowId, (string)$expectedEpoch], $env);
 	}
 
 	/** Reads exactly one JSON line from the subprocess's stdout pipe (blocking). */
-	private static function readJsonLine($pipe): array
+	private static function readJsonLine(Subprocess $process): array
 	{
-		$line = fgets($pipe);
+		$line = $process->readLine();
 		self::assertIsString($line, 'The subprocess must print a line before this call reads it');
 		$decoded = json_decode($line, true);
 		self::assertIsArray($decoded, "Expected a JSON line, got: $line");
@@ -334,14 +327,10 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		self::fail("Timed out waiting for backend $waiterPid to block behind backend $blockerPid");
 	}
 
-	private static function finishIssueLabelSubprocess(array $processAndPipes): array
+	private static function finishIssueLabelSubprocess(Subprocess $process): array
 	{
-		[$process, $pipes] = $processAndPipes;
-		$secondLine = fgets($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$secondLine = $process->readLine();
+		$errors = Subprocess::Completed($process->finish())['stderr'];
 
 		$decoded = json_decode((string)$secondLine, true);
 		self::assertIsArray($decoded, "the issuance subprocess printed no final JSON line. stderr: $errors");
@@ -358,9 +347,9 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 	 * @param string|null $pauseAt When given, one of 'after_row_locks'/'after_first_rewrite' -
 	 *        see StockService::TestPauseHook() - so this run blocks mid-transaction on
 	 *        TEST_COMPACT_PAUSE_LOCK_CLASS/$productId until the calling test releases it.
-	 * @return array{0: resource, 1: array}
+	 * @return Subprocess The running child, nothing read yet
 	 */
-	private static function startCompactSubprocess(int $productId, ?string $pauseAt = null): array
+	private static function startCompactSubprocess(int $productId, ?string $pauseAt = null): Subprocess
 	{
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
 		$env = array_merge($inherited, [
@@ -378,15 +367,7 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 			$env['VICTUAL_TEST_COMPACT_PAUSE_AT'] = $pauseAt;
 		}
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/compact-stock-subprocess-helper.php', (string)$productId],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-
-		return [$process, $pipes];
+		return Subprocess::start([PHP_BINARY, __DIR__ . '/compact-stock-subprocess-helper.php', (string)$productId], $env);
 	}
 
 	/**
@@ -460,14 +441,11 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		self::fail('Timed out waiting for a backend to block on the stock booking advisory lock for product ' . $productId);
 	}
 
-	private static function finishCompactSubprocess(array $processAndPipes): array
+	private static function finishCompactSubprocess(Subprocess $process): array
 	{
-		[$process, $pipes] = $processAndPipes;
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed($process->finish());
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);
@@ -876,14 +854,14 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		$control->prepare('SELECT pg_advisory_lock(?, ?)')->execute([self::TEST_ISSUE_PAUSE_LOCK_CLASS, $product]);
 
 		$issuance = self::startIssueLabelSubprocess($targetRowId, $epoch, $product);
-		$issuanceBackendPid = (int)self::readJsonLine($issuance[1][1])['backend_pid'];
+		$issuanceBackendPid = (int)self::readJsonLine($issuance)['backend_pid'];
 		self::waitUntilBlockedBy($issuanceBackendPid, $controlBackendPid);
 
 		// B is now paused with Issue()'s own row lock held and its label row inserted,
 		// uncommitted. Start the real, unpaused maintenance run and confirm it blocks behind
 		// that exact row lock.
 		$compaction = self::startCompactSubprocess($product);
-		$compactionBackendPid = (int)self::readJsonLine($compaction[1][1])['backend_pid'];
+		$compactionBackendPid = (int)self::readJsonLine($compaction)['backend_pid'];
 		self::waitUntilBlockedBy($compactionBackendPid, $issuanceBackendPid);
 
 		// Release B: it commits the label.
@@ -923,7 +901,7 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		$control->prepare('SELECT pg_advisory_lock(?, ?)')->execute([self::TEST_COMPACT_PAUSE_LOCK_CLASS, $product]);
 
 		$compaction = self::startCompactSubprocess($product, 'after_row_locks');
-		$compactionBackendPid = (int)self::readJsonLine($compaction[1][1])['backend_pid'];
+		$compactionBackendPid = (int)self::readJsonLine($compaction)['backend_pid'];
 		self::waitUntilBlockedBy(self::waitForTestPauseWaiter($product), $controlBackendPid);
 		self::assertSame($compactionBackendPid, self::waitForTestPauseWaiter($product), 'Sanity: the backend paused on the test lock is this same subprocess');
 
@@ -931,7 +909,7 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		// pause checkpoint), but has not written anything. Issuance on the losing row must
 		// block behind that real lock.
 		$issuance = self::startIssueLabelSubprocess($losingId, $epoch);
-		$issuanceBackendPid = (int)self::readJsonLine($issuance[1][1])['backend_pid'];
+		$issuanceBackendPid = (int)self::readJsonLine($issuance)['backend_pid'];
 		self::waitUntilBlockedBy($issuanceBackendPid, $compactionBackendPid);
 
 		// Release the run: it deletes the losing row, rewrites the kept one, and commits.
@@ -1173,7 +1151,7 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		$control->prepare('SELECT pg_advisory_lock(?, ?)')->execute([self::TEST_COMPACT_PAUSE_LOCK_CLASS, $product]);
 
 		$subprocess = self::startCompactSubprocess($product, 'after_first_rewrite');
-		$subprocessBackendPid = (int)self::readJsonLine($subprocess[1][1])['backend_pid'];
+		$subprocessBackendPid = (int)self::readJsonLine($subprocess)['backend_pid'];
 		self::waitUntilBlockedBy(self::waitForTestPauseWaiter($product), $controlBackendPid);
 
 		// The run has already issued its one group's UPDATE/DELETE statements inside its own
@@ -1210,15 +1188,12 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		$control->prepare('SELECT pg_advisory_lock(?, ?)')->execute([self::TEST_COMPACT_PAUSE_LOCK_CLASS, $product]);
 
 		$maintenance = self::startCompactSubprocess($product, 'after_row_locks');
-		$maintenancePid = (int)self::readJsonLine($maintenance[1][1])['backend_pid'];
+		$maintenancePid = (int)self::readJsonLine($maintenance)['backend_pid'];
 		self::waitUntilBlockedBy(self::waitForTestPauseWaiter($product), $controlBackendPid);
 
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
-		$consume = proc_open(
+		$consume = Subprocess::start(
 			[PHP_BINARY, __DIR__ . '/stock-consume-subprocess-helper.php', (string)$product, '1'],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$consumePipes,
-			null,
 			array_merge($inherited, [
 				'RBAC_TEST_SCHEMA' => self::Schema(),
 				'PHPUNIT_DB_NAME' => getenv('PHPUNIT_DB_NAME'),
@@ -1230,7 +1205,7 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 				'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 			])
 		);
-		self::readJsonLine($consumePipes[1]);
+		self::readJsonLine($consume);
 		self::waitUntilBlockedBy(self::waitForAdvisoryWaiter($product), $maintenancePid);
 		self::assertCount(2, self::rows($product), 'Sanity: the consume is waiting and nothing is merged yet');
 
@@ -1238,11 +1213,9 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		$merged = self::finishCompactSubprocess($maintenance);
 		self::assertSame(200, $merged['status'], 'The merge completes: ' . ($merged['error_message'] ?? ''));
 
-		$output = stream_get_contents($consumePipes[1]);
-		$errors = stream_get_contents($consumePipes[2]);
-		fclose($consumePipes[1]);
-		fclose($consumePipes[2]);
-		proc_close($consume);
+		$finished = Subprocess::Completed($consume->finish());
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 		$consumed = json_decode(trim($output), true);
 		self::assertSame(200, $consumed['status'] ?? null, "The waiting consume then succeeds: $output $errors");
 
@@ -1304,20 +1277,10 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 			$env['VICTUAL_DATAPATH'] = (string)getenv('VICTUAL_DATAPATH');
 			$env['PGOPTIONS'] = '-c search_path=' . self::Schema() . ',public';
 
-			$process = proc_open(
-				[PHP_BINARY, VICTUAL_ROOT_PATH . '/bin/victual-compact-stock', '--product-id=' . $product, '--quiet'],
-				[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-				$pipes,
-				null,
-				$env
-			);
-			self::assertIsResource($process, 'bin/victual-compact-stock could not be started');
-
-			$stdout = stream_get_contents($pipes[1]);
-			$stderr = stream_get_contents($pipes[2]);
-			fclose($pipes[1]);
-			fclose($pipes[2]);
-			$exitCode = proc_close($process);
+			$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, VICTUAL_ROOT_PATH . '/bin/victual-compact-stock', '--product-id=' . $product, '--quiet'], $env));
+			$stdout = $finished['stdout'];
+			$stderr = $finished['stderr'];
+			$exitCode = $finished['exit'];
 
 			return [$exitCode, $stdout, $stderr];
 		};

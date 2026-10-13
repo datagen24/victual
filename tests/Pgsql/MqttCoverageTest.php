@@ -4,6 +4,7 @@ namespace Victual\Tests\Pgsql;
 
 use Victual\Services\Mqtt\MqttPublisher;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * The parts of MQTT state publication the .devtools/mqtt/ probes do not reach: what happens
@@ -898,21 +899,9 @@ class MqttCoverageTest extends PgsqlSchemaTestCase
 
 		$resultFile = self::$scratch . '/result-' . uniqid() . '.json';
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/mqttcoverage-subprocess-helper.php', 'scenario', implode(',', $steps), $resultFile],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			array_merge(self::ChildEnvironment(), $settings)
-		);
-
-		self::assertIsResource($process, 'could not start the scenario helper');
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/mqttcoverage-subprocess-helper.php', 'scenario', implode(',', $steps), $resultFile], array_merge(self::ChildEnvironment(), $settings)));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		self::assertFileExists($resultFile,
 			"the scenario helper wrote no result for " . implode(',', $steps) . "\nstdout: $output\nstderr: $errors");

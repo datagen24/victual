@@ -10,6 +10,7 @@ use Slim\Psr7\Response;
 use Victual\Controllers\Api\StockApiController;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * ADR-0033 acceptance prerequisite 3 / round 3c item 1/3: bin/victual-compact-stock's own
@@ -303,20 +304,10 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 		$env['VICTUAL_DATAPATH'] = (string)getenv('VICTUAL_DATAPATH');
 		$env['PGOPTIONS'] = '-c search_path=' . self::Schema() . ',public';
 
-		$process = proc_open(
-			array_merge([PHP_BINARY, VICTUAL_ROOT_PATH . '/bin/victual-compact-stock'], $extraArgs),
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		self::assertIsResource($process, 'bin/victual-compact-stock could not be started');
-
-		$stdout = stream_get_contents($pipes[1]);
-		$stderr = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		$exitCode = proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run(array_merge([PHP_BINARY, VICTUAL_ROOT_PATH . '/bin/victual-compact-stock'], $extraArgs), $env));
+		$stdout = $finished['stdout'];
+		$stderr = $finished['stderr'];
+		$exitCode = $finished['exit'];
 
 		return [$exitCode, $stdout, $stderr];
 	}

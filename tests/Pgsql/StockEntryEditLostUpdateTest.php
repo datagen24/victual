@@ -6,6 +6,7 @@ use PDO;
 use Victual\Services\ApiKeyService;
 use Victual\Services\Database\PostgresDialect;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * A lost update found in review of issues #519/#524's partial-update fix for
@@ -128,8 +129,8 @@ class StockEntryEditLostUpdateTest extends PgsqlSchemaTestCase
 		self::fail("Timed out waiting for a backend to block on the stock booking advisory lock for product $productId");
 	}
 
-	/** Starts request-subprocess-helper.php without waiting for it to finish. @return array{0: resource, 1: array} */
-	private static function startSubprocess(string $method, string $path, ?array $body = null): array
+	/** Starts request-subprocess-helper.php without waiting for it to finish. @return Subprocess The running child, nothing read yet */
+	private static function startSubprocess(string $method, string $path, ?array $body = null): Subprocess
 	{
 		$spec = array_filter(
 			['method' => $method, 'path' => $path, 'headers' => ['VICTUAL-API-KEY' => self::$apiKey], 'body' => $body],
@@ -147,26 +148,15 @@ class StockEntryEditLostUpdateTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-
-		return [$process, $pipes];
+		return Subprocess::start([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env);
 	}
 
 	/** @return array{status: int, body: string} */
-	private static function finishSubprocess(array $processAndPipes): array
+	private static function finishSubprocess(Subprocess $subprocess): array
 	{
-		[$process, $pipes] = $processAndPipes;
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed($subprocess->finish());
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		self::assertIsArray($result, "the request helper printed no JSON. stdout: $output\nstderr: $errors");

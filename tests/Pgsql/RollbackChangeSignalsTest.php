@@ -9,6 +9,7 @@ use Victual\Services\Database\PostgresDialect;
 use Victual\Services\DatabaseService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #534: a refused write must not advance GET /api/system/db-changed-time or republish
@@ -341,21 +342,9 @@ class RollbackChangeSignalsTest extends PgsqlSchemaTestCase
 			'VICTUAL_MQTT_PORT' => (string)self::$brokerPort,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/rollback-change-signals-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-
-		self::assertIsResource($process, 'could not start the request helper');
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/rollback-change-signals-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);

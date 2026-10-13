@@ -10,6 +10,7 @@ use Victual\Services\ConsumptionRecipeService;
 use Victual\Services\ConsumptionRefillService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * ConsumptionRefillService::ListRefills() and ::Notices() against a revoke, on a fixed schedule.
@@ -86,7 +87,7 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 	}
 
 	/** Starts one service call in its own process and returns once it has been released. */
-	private function start(string $method, array $args): array
+	private function start(string $method, array $args): Subprocess
 	{
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
 		$env = array_merge($inherited, [
@@ -94,24 +95,20 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 			'PGHOST' => getenv('PGHOST'), 'PGPORT' => getenv('PGPORT'), 'PGUSER' => getenv('PGUSER'), 'PGPASSWORD' => getenv('PGPASSWORD'), 'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 		$spec = ['method' => $method, 'args' => $args, 'service' => $method === 'RemoveShare' ? 'recipe' : 'refill', 'delay_us' => 0];
-		$process = proc_open([PHP_BINARY, __DIR__ . '/consumption-refill-race-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
+		$process = Subprocess::start([PHP_BINARY, __DIR__ . '/consumption-refill-race-subprocess-helper.php', base64_encode(json_encode($spec))], $env, null, true);
 
-		self::assertSame("ready\n", fgets($pipes[1]), 'the helper connected');
-		fwrite($pipes[0], "go\n");
-		fclose($pipes[0]);
+		self::assertSame("ready\n", $process->readLine(), 'the helper connected');
+		$process->write("go\n");
+		$process->closeStdin();
 
-		return [$process, $pipes];
+		return $process;
 	}
 
-	private function finish(array $handle): array
+	private function finish(Subprocess $process): array
 	{
-		[$process, $pipes] = $handle;
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed($process->finish());
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 		$decoded = json_decode($output, true);
 		self::assertIsArray($decoded, "the helper printed no JSON. stdout: $output stderr: $errors");
 

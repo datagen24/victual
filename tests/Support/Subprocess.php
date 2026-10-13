@@ -2,6 +2,7 @@
 
 namespace Victual\Tests\Support;
 
+use PHPUnit\Framework\Assert;
 use RuntimeException;
 
 /**
@@ -15,7 +16,14 @@ use RuntimeException;
  *
  * start() reads nothing, so a test can start several children (a lock holder and a
  * waiter, say), do other work, and finish them afterwards. Output is never capped: the
- * full buffers come back. Stdin is not wired; the child inherits the parent's.
+ * full buffers come back. Stdin is not wired unless start() is asked for it (a child that
+ * waits for a "go" line); otherwise the child inherits the parent's.
+ *
+ * A child that prints a "ready" line and then waits for the parent is read with
+ * readLine(), which keeps draining stderr while it waits for the stdout line, so a child
+ * that fills stderr first cannot deadlock. A line readLine() returns is consumed:
+ * finish() returns the stdout after it, as stream_get_contents() would after fgets().
+ * Stderr is always returned whole.
  *
  * The bound counts from start(), not from finish(): a child started, left running, and
  * finished late has less time than finish()'s argument suggests (a child that has already
@@ -44,6 +52,18 @@ final class Subprocess
 	/** @var array<int, resource> */
 	private array $pipes;
 
+	/** @var resource|null The child's stdin, while it is open */
+	private $stdin = null;
+
+	/** @var array<int, string> */
+	private array $buffers = [1 => '', 2 => ''];
+
+	/** @var array<int, resource> Output pipes not yet at EOF */
+	private array $open = [];
+
+	/** Bytes of the stdout buffer already handed out by readLine(). */
+	private int $consumed = 0;
+
 	private int $pid;
 	private float $startedAt;
 	private bool $finished = false;
@@ -53,17 +73,32 @@ final class Subprocess
 	{
 		$this->process = $process;
 		$this->pipes = $pipes;
+		$this->stdin = $pipes[0] ?? null;
+		$this->open = [1 => $pipes[1], 2 => $pipes[2]];
 		$this->startedAt = microtime(true);
 		$this->pid = (int)(proc_get_status($process)['pid'] ?? 0);
+
+		foreach ($this->open as $pipe)
+		{
+			stream_set_blocking($pipe, false);
+		}
 	}
 
 	/**
 	 * @param string[]|string $command An argv array (no shell) or a shell command line
 	 * @param array<string, scalar>|null $env null inherits the parent's environment
+	 * @param bool $stdin true gives the child a stdin pipe for write() and closeStdin()
 	 */
-	public static function start(array|string $command, ?array $env = null, ?string $cwd = null): self
+	public static function start(array|string $command, ?array $env = null, ?string $cwd = null, bool $stdin = false): self
 	{
-		$process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $cwd, $env);
+		$descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+
+		if ($stdin)
+		{
+			$descriptors = [0 => ['pipe', 'r']] + $descriptors;
+		}
+
+		$process = proc_open($command, $descriptors, $pipes, $cwd, $env);
 
 		if (!is_resource($process))
 		{
@@ -88,6 +123,159 @@ final class Subprocess
 		return $this->pid;
 	}
 
+	/** Writes to the child's stdin (start() with $stdin = true). Blocks until the bytes are in the pipe. */
+	public function write(string $bytes): void
+	{
+		if ($this->stdin === null)
+		{
+			throw new RuntimeException('stdin is not open for: ' . $this->commandLine);
+		}
+
+		while ($bytes !== '')
+		{
+			$written = fwrite($this->stdin, $bytes);
+
+			if ($written === false || $written === 0)
+			{
+				throw new RuntimeException('could not write to the stdin of: ' . $this->commandLine);
+			}
+
+			$bytes = substr($bytes, $written);
+		}
+	}
+
+	/** Closes the child's stdin, so a child reading it sees EOF. finish() closes it too if it is still open. */
+	public function closeStdin(): void
+	{
+		if ($this->stdin !== null)
+		{
+			fclose($this->stdin);
+			$this->stdin = null;
+		}
+	}
+
+	/**
+	 * One line of the child's stdout, including its newline (like fgets()), or null when
+	 * stdout reaches EOF with nothing left or the bound runs out. Stderr is drained into the
+	 * buffer while this waits. A last line without a newline is returned at EOF. The bound
+	 * counts from this call. Nothing is killed on null: finish() does that.
+	 */
+	public function readLine(float $boundSeconds = 120.0): ?string
+	{
+		if ($this->finished)
+		{
+			throw new RuntimeException('readLine() after finish() for: ' . $this->commandLine);
+		}
+
+		$deadline = microtime(true) + $boundSeconds;
+
+		while (true)
+		{
+			$newline = strpos($this->buffers[1], "\n", $this->consumed);
+
+			if ($newline !== false)
+			{
+				$line = substr($this->buffers[1], $this->consumed, $newline + 1 - $this->consumed);
+				$this->consumed = $newline + 1;
+
+				return $line;
+			}
+
+			if (!isset($this->open[1]))
+			{
+				if ($this->consumed < strlen($this->buffers[1]))
+				{
+					$line = substr($this->buffers[1], $this->consumed);
+					$this->consumed = strlen($this->buffers[1]);
+
+					return $line;
+				}
+
+				return null;
+			}
+
+			if (microtime(true) >= $deadline)
+			{
+				return null;
+			}
+
+			$this->Pump();
+		}
+	}
+
+	/**
+	 * Gives up on the child: SIGTERM, up to two seconds of grace, SIGKILL, then closes the
+	 * pipes. For a test's finally block when the test failed before finish(). Does nothing
+	 * after finish().
+	 */
+	public function abort(): void
+	{
+		if ($this->finished)
+		{
+			return;
+		}
+
+		$this->finished = true;
+		$this->closeStdin();
+		$process = $this->process;
+		$exited = self::ExitOf(proc_get_status($process)) !== null;
+		$deadline = microtime(true) + self::TERM_GRACE_SECONDS;
+
+		if (!$exited)
+		{
+			proc_terminate($process, self::SIGTERM);
+		}
+
+		while (!$exited && microtime(true) < $deadline)
+		{
+			usleep(10000);
+			$exited = self::ExitOf(proc_get_status($process)) !== null;
+		}
+
+		if (!$exited)
+		{
+			proc_terminate($process, self::SIGKILL);
+			$deadline = microtime(true) + self::REAP_SECONDS;
+
+			while (!$exited && microtime(true) < $deadline)
+			{
+				usleep(10000);
+				$exited = self::ExitOf(proc_get_status($process)) !== null;
+			}
+		}
+
+		foreach ([1, 2] as $number)
+		{
+			fclose($this->pipes[$number]);
+		}
+
+		$this->open = [];
+
+		if ($exited)
+		{
+			proc_close($process);
+		}
+
+		$this->process = null;
+	}
+
+	/**
+	 * Fails the running test when finish() reported a timeout, or a descendant still holding
+	 * the pipes (so the output may be incomplete). Returns the result for chaining.
+	 *
+	 * @param array{exit: int, stdout: string, stderr: string, timedOut: bool, pipesHeldOpen: bool, elapsed: float, command: string} $result
+	 * @return array{exit: int, stdout: string, stderr: string, timedOut: bool, pipesHeldOpen: bool, elapsed: float, command: string}
+	 */
+	public static function Completed(array $result): array
+	{
+		if ($result['timedOut'] || $result['pipesHeldOpen'])
+		{
+			Assert::fail(self::Describe($result));
+		}
+
+		return $result;
+	}
+
 	/**
 	 * Reads both pipes until both reach EOF and the child has exited, or until the bound
 	 * runs out. On expiry: SIGTERM, up to two seconds of grace, SIGKILL, a last
@@ -105,15 +293,8 @@ final class Subprocess
 		}
 
 		$this->finished = true;
+		$this->closeStdin();
 		$process = $this->process;
-		$buffers = [1 => '', 2 => ''];
-		$open = [1 => $this->pipes[1], 2 => $this->pipes[2]];
-
-		foreach ($open as $pipe)
-		{
-			stream_set_blocking($pipe, false);
-		}
-
 		$deadline = $this->startedAt + $boundSeconds;
 		$exit = null;
 		$exitedAt = null;
@@ -124,32 +305,7 @@ final class Subprocess
 
 		while (true)
 		{
-			if ($open !== [])
-			{
-				$read = array_values($open);
-				$write = null;
-				$except = null;
-
-				// false is an interrupted system call; the warning is noise, so try again.
-				if (@stream_select($read, $write, $except, 0, self::TICK_MICROSECONDS) === false)
-				{
-					usleep(10000);
-				}
-				else
-				{
-					foreach ($open as $number => $pipe)
-					{
-						if (in_array($pipe, $read, true))
-						{
-							$this->drain($number, $pipe, $buffers, $open);
-						}
-					}
-				}
-			}
-			else
-			{
-				usleep(10000);
-			}
+			$this->Pump();
 
 			// Status before the deadline: a child that already exited cleanly is not timed out
 			// because finish() was called late.
@@ -163,7 +319,7 @@ final class Subprocess
 				}
 			}
 
-			if ($open === [] && $exit !== null)
+			if ($this->open === [] && $exit !== null)
 			{
 				break;
 			}
@@ -200,14 +356,14 @@ final class Subprocess
 		}
 
 		// Whatever is already in the pipes when the loop ends.
-		foreach ($open as $number => $pipe)
+		foreach ($this->open as $number => $pipe)
 		{
-			$this->drain($number, $pipe, $buffers, $open);
+			$this->drain($number, $pipe);
 		}
 
-		foreach ($this->pipes as $pipe)
+		foreach ([1, 2] as $number)
 		{
-			fclose($pipe);
+			fclose($this->pipes[$number]);
 		}
 
 		if ($exit !== null)
@@ -222,8 +378,8 @@ final class Subprocess
 
 		return [
 			'exit' => $exit ?? -1,
-			'stdout' => $buffers[1],
-			'stderr' => $buffers[2],
+			'stdout' => substr($this->buffers[1], $this->consumed),
+			'stderr' => $this->buffers[2],
 			'timedOut' => $timedOut,
 			'pipesHeldOpen' => $pipesHeldOpen,
 			'elapsed' => microtime(true) - $this->startedAt,
@@ -255,12 +411,39 @@ final class Subprocess
 		);
 	}
 
-	/**
-	 * @param array<int, string> $buffers
-	 * @param array<int, resource> $open
-	 * @param resource $pipe
-	 */
-	private function drain(int $number, $pipe, array &$buffers, array &$open): void
+	/** One select tick over the pipes still open: reads whatever is ready into the buffers. */
+	private function Pump(): void
+	{
+		if ($this->open === [])
+		{
+			usleep(10000);
+
+			return;
+		}
+
+		$read = array_values($this->open);
+		$write = null;
+		$except = null;
+
+		// false is an interrupted system call; the warning is noise, so try again.
+		if (@stream_select($read, $write, $except, 0, self::TICK_MICROSECONDS) === false)
+		{
+			usleep(10000);
+
+			return;
+		}
+
+		foreach ($this->open as $number => $pipe)
+		{
+			if (in_array($pipe, $read, true))
+			{
+				$this->drain($number, $pipe);
+			}
+		}
+	}
+
+	/** @param resource $pipe */
+	private function drain(int $number, $pipe): void
 	{
 		// A non-blocking fread returns at most what is buffered; loop so one tick empties it,
 		// but stop at a cap so a writer that keeps the pipe full cannot starve the deadline.
@@ -272,7 +455,7 @@ final class Subprocess
 
 			if ($chunk !== false && $chunk !== '')
 			{
-				$buffers[$number] .= $chunk;
+				$this->buffers[$number] .= $chunk;
 				$taken += strlen($chunk);
 
 				continue;
@@ -283,7 +466,7 @@ final class Subprocess
 
 		if (feof($pipe))
 		{
-			unset($open[$number]);
+			unset($this->open[$number]);
 		}
 	}
 

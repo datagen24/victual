@@ -7,6 +7,7 @@ use Victual\Services\ConsumptionEventService;
 use Victual\Services\ConsumptionMappingService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * ADR-0041 rules 5 and 6 under real concurrency: several processes, one connection each, against the
@@ -101,29 +102,25 @@ class ConsumptionEventRaceTest extends PgsqlSchemaTestCase
 		foreach ($calls as [$service, $method, $args])
 		{
 			$spec = ['service' => $service, 'method' => $method, 'args' => $args, 'delay_us' => mt_rand(0, 4000)];
-			$process = proc_open([PHP_BINARY, __DIR__ . '/consumption-event-race-subprocess-helper.php', base64_encode(json_encode($spec))],
-				[0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-			$processes[] = [$process, $pipes];
+			$processes[] = Subprocess::start([PHP_BINARY, __DIR__ . '/consumption-event-race-subprocess-helper.php', base64_encode(json_encode($spec))], $env, null, true);
 		}
 
-		foreach ($processes as [, $pipes])
+		foreach ($processes as $process)
 		{
-			self::assertSame("ready\n", fgets($pipes[1]), 'the helper connected');
+			self::assertSame("ready\n", $process->readLine(), 'the helper connected');
 		}
-		foreach ($processes as [, $pipes])
+		foreach ($processes as $process)
 		{
-			fwrite($pipes[0], "go\n");
-			fclose($pipes[0]);
+			$process->write("go\n");
+			$process->closeStdin();
 		}
 
 		$results = [];
-		foreach ($processes as [$process, $pipes])
+		foreach ($processes as $process)
 		{
-			$output = stream_get_contents($pipes[1]);
-			$errors = stream_get_contents($pipes[2]);
-			fclose($pipes[1]);
-			fclose($pipes[2]);
-			proc_close($process);
+			$finished = Subprocess::Completed($process->finish());
+			$output = $finished['stdout'];
+			$errors = $finished['stderr'];
 			$decoded = json_decode($output, true);
 			self::assertIsArray($decoded, 'the helper printed no JSON (seed ' . self::$seed . "). stdout: $output stderr: $errors");
 			self::assertStringNotContainsString('deadlock', strtolower((string)($decoded['message'] ?? '')), 'deadlock detected (seed ' . self::$seed . '): ' . ($decoded['message'] ?? ''));

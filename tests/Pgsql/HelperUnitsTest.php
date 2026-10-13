@@ -16,6 +16,7 @@ use Victual\Services\LocalizationService;
 use Victual\Services\Time\Instant;
 use Victual\Services\UserfieldsService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * The helpers and services nothing else in the suite reaches: the global functions in
@@ -172,12 +173,9 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 			$environment[$name] = $value;
 		}
 
-		$process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $environment);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run($command, $environment));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$decoded = json_decode((string)$output, true);
 		self::assertIsArray($decoded, "the helper printed no JSON for task {$spec['task']}. stdout: $output\nstderr: $errors");
@@ -265,16 +263,9 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 
 		if (!array_key_exists($extension, self::$startableWithout))
 		{
-			$process = proc_open(
-				[PHP_BINARY, '-n', '-r', "echo extension_loaded('$extension') ? 'loaded' : 'absent';"],
-				[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-				$pipes
-			);
-			$answer = trim((string)stream_get_contents($pipes[1]));
-			$errors = (string)stream_get_contents($pipes[2]);
-			fclose($pipes[1]);
-			fclose($pipes[2]);
-			proc_close($process);
+			$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, '-n', '-r', "echo extension_loaded('$extension') ? 'loaded' : 'absent';"]));
+			$answer = trim($finished['stdout']);
+			$errors = $finished['stderr'];
 
 			self::assertContains($answer, ['loaded', 'absent'], "the probe for $extension answered \"$answer\". stderr: $errors");
 
