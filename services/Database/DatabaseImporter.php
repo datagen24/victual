@@ -492,6 +492,46 @@ class DatabaseImporter
 	}
 
 	/**
+	 * Migration 0312's chores_consume_product_on_execution_check (CHECK consume_product_on_execution
+	 * IN (0, 1), issue #923) refuses any other value, and the column is NOT NULL. Upstream grocy's
+	 * column carries no CHECK, so a legacy source can hold a 2, a negative number, text or a blob;
+	 * without this check the COPY of whichever batch holds one fails with a bare SQLSTATE 23514
+	 * (22P02 for text), naming neither the row nor the cause. Same rule as AssertConversionFactors():
+	 * refuse before truncation and never repair, so no value the source did not hold is invented.
+	 *
+	 * typeof() is part of the predicate because SQLite's `1.0 IN (0, 1)` is true while a smallint
+	 * column refuses the text "1.0", and NULL (a source column without NOT NULL) is neither in nor
+	 * out of the list. The value is cast to text in the SELECT so a blob cannot make json_encode()
+	 * fail.
+	 *
+	 * Gated on the table and column existing on both sides, as AssertConversionFactors() is.
+	 *
+	 * @param string[] $tables GetCommonTables()'s own list.
+	 */
+	private function AssertChoreConsumeFlags(array $tables): void
+	{
+		if (!in_array('chores', $tables, true) || !in_array('consume_product_on_execution', $this->GetCommonColumns('chores'), true))
+		{
+			return;
+		}
+
+		$where = 'consume_product_on_execution IS NULL OR typeof(consume_product_on_execution) <> \'integer\' OR consume_product_on_execution NOT IN (0, 1)';
+		$count = (int)$this->Source->query('SELECT COUNT(*) FROM chores WHERE ' . $where)->fetchColumn();
+		if ($count > 0)
+		{
+			$listing = 'SELECT id, name, CAST(consume_product_on_execution AS TEXT) AS consume_product_on_execution FROM chores WHERE ' . $where . ' ORDER BY id';
+			$sample = $this->Source->query($listing . ' LIMIT 10')->fetchAll(\PDO::FETCH_ASSOC);
+			throw new \RuntimeException('Import refused: ' . $count . ' source chores row(s) hold a consume_product_on_execution '
+				. 'that is not 0 or 1 (another number or not numeric, which the target refuses with '
+				. 'migration 0312, chores_consume_product_on_execution_check, issue #923; or NULL, which its NOT NULL refuses with SQLSTATE 23502). '
+				. 'Sample (id, name, consume_product_on_execution): ' . json_encode($sample, JSON_INVALID_UTF8_SUBSTITUTE) . '. '
+				. 'These rows are refused rather than clamped or dropped, so no value the source did not actually hold is invented. '
+				. 'Choose an explicit source repair and retry; --force does not bypass this check. '
+				. 'List all rows: ' . $listing . ';');
+		}
+	}
+
+	/**
 	 * The same refusal as AssertStockLocations(), extended to every foreign key
 	 * migrations/0295.pgsql.sql adds on products (issue #552): location_id, qu_id_purchase,
 	 * qu_id_stock, qu_id_consume, qu_id_price and product_group_id. Following ADR-0029's own
@@ -722,6 +762,7 @@ class DatabaseImporter
 		$this->AssertProductReferences($tables);
 		$this->AssertStockAmounts($tables);
 		$this->AssertConversionFactors($tables);
+		$this->AssertChoreConsumeFlags($tables);
 		$this->AssertSourceTimestamps($tables);
 
 		$report = [];
