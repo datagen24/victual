@@ -1003,18 +1003,25 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'A draft resolves its assets by the name the document pins');
 	}
 
-	public function testDraftReferencingAnAssetThatIsNotStoredIsRefused(): void
+	public function testDraftReferencingAnAssetThatIsNotStoredIsSettledAsInvalid(): void
 	{
 		self::quiesceQueue();
 		$document = self::textDocument();
 		$document['elements'][1]['font_asset'] = 'Never Uploaded';
 
-		self::tx(static fn () => self::requests()->CreateForDraft(
+		$request = self::tx(static fn () => self::requests()->CreateForDraft(
 			self::$qrTemplate, TemplateDocument::Validate($document, 'location')['document'],
 			(int)self::$profile['id'], self::$captureId, 9000));
 
-		self::assertRefused(static fn () => self::tx(static fn () => self::requests()->Claim()),
-			'assets', 'asset_unavailable', 'A draft pinning a font nobody uploaded');
+		// The refusal is recorded on the request and committed, not thrown out of the claim
+		// (#846): thrown, it rolled back its own attempt and headed the queue for ever.
+		self::assertNull(self::tx(static fn () => self::requests()->Claim()),
+			'A draft pinning a font nobody uploaded is settled, and nothing else is waiting');
+		$row = self::requestRow((int)$request['id']);
+		self::assertSame('invalid', $row['state']);
+		self::assertSame('asset_unavailable', $row['error_code']);
+		self::assertSame('title', $row['error_element']);
+		self::assertSame(1, (int)$row['attempts']);
 	}
 
 	/** An expired preview is not work; a renderer coming back later must not pick it up. */

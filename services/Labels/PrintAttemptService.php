@@ -49,12 +49,17 @@ class PrintAttemptService extends LabelService
         if ($limit < 1 || $limit > 50) {
             $this->Refuse('limit', 'value_out_of_range', 'Claim limit must be 1 through 50');
         }
+        // Readiness (a validated artifact is attached) is in the same WHERE for the same
+        // reason: jobs still waiting for a render must not fill the LIMIT below either.
         // Retirement is excluded from the candidate set here, in SQL, rather than checked per
         // row after fetching: a page of retired jobs ahead of an eligible one must not be able
         // to fill the LIMIT below and crowd it out. "Retirement stops new claims" (plan 27
         // verification 10) is all this checks for - ADR-0019 dead-letters an unclaimed job only
         // for a payload no version can read or a deleted printer, never for merely being
-        // unclaimed, so a retired label's job is left exactly as queued as it was.
+        // unclaimed, so a retired label's job is left exactly as queued as it was. (A job whose
+        // render request ended invalid or terminally failed is dead-lettered too, but by
+        // RenderRequestService when the request ends, not here: such a job has no artifact and
+        // is never a candidate.)
         //
         // ADR-0037 section 9: a stock-entry label can turn live again when an undo revives it.
         // A job that existed when the label retired (id at or below the event's jobs_through_id)
@@ -62,7 +67,7 @@ class PrintAttemptService extends LabelService
         // by itself. A job requested after the revival has a higher id and is claimable.
         $jobs = $this->Query("SELECT j.*,o.payload FROM print_jobs j JOIN outbox o ON o.id=j.outbox_id
    JOIN label_printers p ON p.id=j.printer_id
-   WHERE p.worker_id=? AND j.outcome IS NULL AND j.cancelled_at IS NULL AND j.attempts_made<j.attempts_authorized
+   WHERE p.worker_id=? AND j.outcome IS NULL AND j.cancelled_at IS NULL AND j.artifact_id IS NOT NULL AND j.attempts_made<j.attempts_authorized
    AND o.delivered_at IS NULL AND o.dead_lettered_at IS NULL
    AND NOT EXISTS (SELECT 1 FROM print_attempts a WHERE a.id=j.current_attempt_id AND a.ended_at IS NULL AND a.lease_expires_at>CURRENT_TIMESTAMP)
    AND NOT EXISTS (SELECT 1 FROM labels lb WHERE lb.uid=j.label_uid AND lb.retired_at IS NOT NULL)

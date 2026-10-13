@@ -17,6 +17,9 @@
 - **Accepting decides the model, not the schedule.** No `label_printers` table exists, no worker
   repository exists, and the five `/printlabel` endpoints still fire the webhook. Decision
   item 7 sequences the replacement and this acceptance authorizes step 1 only.
+- **Amended 2026-10-12** by the maintainer, in [PR #881](https://github.com/datagen24/victual/pull/881):
+  the closed set of reasons a print job is dead-lettered gains a third cause, a job whose
+  render request ended `invalid`, terminally `failed` or expired. See *Offline behaviour*.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-06.
@@ -858,7 +861,29 @@ days ago" and "reported healthy three seconds ago" must not render identically, 
   day eats a day of labels" — which the outbox removes, and it is distinct from decision
   item 6's rule, which starts at the claim.
   Dead-lettering stays for what 0259 defined it for, a payload no version can read, plus
-  decision item 4's deleted-printer case.
+  decision item 4's deleted-printer case, plus the third cause added by the amendment of
+  2026-10-12 (below).
+  **Amendment, 2026-10-12: a job whose render request can no longer produce an artifact.**
+  A job is dead-lettered when it has no artifact, no outcome and no cancellation, and the
+  render request it waits on reaches a terminal state. Three transitions do this, each with
+  `last_error` naming the request and its code:
+  - `invalid`: the renderer refused the document, for example because an asset it names was
+    deleted after the job was enqueued ([#846](https://github.com/datagen24/victual/issues/846)).
+  - Terminal `failed`: the attempt bound was exhausted, whether the renderer reported the
+    failure or the lease expired and was reaped at the bound.
+  - Preview expiry: an unpromoted preview passed its expiry before any renderer claimed it
+    ([#858](https://github.com/datagen24/victual/issues/858)).
+
+  Such a job can never become claimable, because readiness requires a validated artifact
+  (decision item 4) and a render request in a terminal state produces none. The job is
+  therefore finished rather than unclaimed; leaving it queued would keep it in the claim
+  query and show a monitor a job that is waiting for something that will not arrive.
+
+  This does not make unclaimed age an error: a job whose render request is `pending` or
+  `rendering`, or whose artifact is attached and waits for a worker, stays queued as above.
+  A job that already has an artifact, an outcome or a cancellation is untouched. The change
+  landed in [PR #881](https://github.com/datagen24/victual/pull/881), in
+  `RenderRequestService`, not in the claim path.
 - **A printer whose assigned worker cannot drive it is a visible state.** When that worker
   does not advertise the printer's exact driver version, or the artifact and profile contract
   versions a job needs, the job is never offered. The configuration screen says which of the two

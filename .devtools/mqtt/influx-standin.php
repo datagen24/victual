@@ -17,9 +17,10 @@
 //   VICTUAL_STANDIN_CONTROL=<path>  read the mode from that file on every request, so a
 //                                   test can flip a running server between rejecting and
 //                                   accepting without restarting it. The file holds
-//                                   "reject", "accept", "fail-after:N", "redirect" or
-//                                   "ok-with-body"; it wins over the variables above, and a
-//                                   missing file means accept.
+//                                   "reject", "accept", "fail-after:N", "redirect",
+//                                   "ok-with-body", "status:CODE" or "lines:MARKER=CODE,...";
+//                                   it wins over the variables above, and a missing file
+//                                   means accept.
 //
 // The last two modes exist for one defect. A write is only delivered when the *write
 // endpoint* acknowledged it, and two shapes used to pass for an acknowledgement:
@@ -30,6 +31,17 @@
 //                  a 200 login page came back as success.
 //   ok-with-body   200 with an HTML page, which is what a proxy that answers everything with
 //                  its own page looks like. InfluxDB's write API answers 204 with no body.
+//
+// The last two modes exist for permanent rejections (issue #854). InfluxDB answers 400 to a
+// body it cannot parse and 413 to one that is too large, and 401 or 404 to a token or bucket
+// that is wrong; the drain has to tell those apart:
+//
+//   status:CODE           answer CODE to every write, whatever it carries (401, 404, 500, ...)
+//   lines:MARKER=CODE,..  answer CODE to a write whose body contains MARKER, 204 otherwise.
+//                         The first listed marker found in the body wins, so a test can make
+//                         one row a permanent 400 and another a transient 500, and a batch
+//                         holding both answers 400. A rejection carries InfluxDB's own JSON
+//                         error shape, which is the text a dead-lettered row keeps.
 //
 // GET /login always answers a 200 login page, whatever the mode - so a probe can assert not
 // only that the write failed but that /login was never requested at all, which is what proves
@@ -87,6 +99,35 @@ if ($control !== false && $control !== '' && file_exists($control))
 		// carrying a page instead of the empty body InfluxDB's write API answers with.
 		http_response_code(200);
 		echo '<html><body><h1>Sign in</h1></body></html>';
+
+		return true;
+	}
+
+	if (str_starts_with($mode, 'status:'))
+	{
+		http_response_code((int)substr($mode, strlen('status:')));
+		echo 'answered by the stand-in';
+
+		return true;
+	}
+
+	if (str_starts_with($mode, 'lines:'))
+	{
+		foreach (explode(',', substr($mode, strlen('lines:'))) as $rule)
+		{
+			[$marker, $code] = array_pad(explode('=', $rule, 2), 2, '400');
+
+			if ($marker !== '' && str_contains($body, $marker))
+			{
+				http_response_code((int)$code);
+				header('Content-Type: application/json');
+				echo '{"code":"invalid","message":"unable to parse line containing ' . $marker . '"}';
+
+				return true;
+			}
+		}
+
+		http_response_code(204);
 
 		return true;
 	}

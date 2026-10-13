@@ -162,7 +162,7 @@ class OutboxService extends BaseService
 	 * reservation exists to keep out of a shared table's read path without another agent
 	 * having to prove nothing else depends on the old behaviour first.
 	 *
-	 * @return array<int, array{id: int, payload: array}>
+	 * @return array<int, array{id: int, payload: array, attempts: int}>
 	 * @throws \LogicException When called with no transaction open
 	 */
 	public function ClaimUndelivered(string $eventType, int $limit = self::DRAIN_BATCH_SIZE): array
@@ -180,7 +180,7 @@ class OutboxService extends BaseService
 		// syntax at all, and this drain runs on both engines (run-tests.sh's mqtt phase
 		// exercises the outbox on SQLite as well as PostgreSQL; see that comment for why).
 		$query = $pdo->prepare(
-			'SELECT id, payload FROM outbox'
+			'SELECT id, payload, attempts FROM outbox'
 				. ' WHERE event_type = ? AND delivered_at IS NULL AND dead_lettered_at IS NULL'
 				. ' ORDER BY id LIMIT ?' . $db->GetDialect()->GetRowClaimLockClause()
 		);
@@ -197,7 +197,8 @@ class OutboxService extends BaseService
 
 			$rows[] = [
 				'id' => (int)$row['id'],
-				'payload' => is_array($decoded) ? $decoded : []
+				'payload' => is_array($decoded) ? $decoded : [],
+				'attempts' => (int)$row['attempts']
 			];
 		}
 

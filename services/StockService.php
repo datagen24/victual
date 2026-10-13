@@ -2167,9 +2167,11 @@ class StockService extends BaseService
 			// migrations/0225.sql), so a plain `> 0` needs an explicit numeric CAST to even
 			// type-check on PostgreSQL; CAST(... AS NUMERIC) rather than the PG-only `::` sugar
 			// keeps this valid under DatabaseDialect::SQLITE_TOOLING_ENV too, where the
-			// differential suite can run this same code path against SQLite. Nothing puts a
-			// CHECK on quantity_unit_conversions.factor, so a NEGATIVE factor can reach this
-			// cache table (a factor of exactly 0 cannot: quantity_unit_conversions_INS's own
+			// differential suite can run this same code path against SQLite. Migration 0309
+			// puts quantity_unit_conversions_factor_positive (factor > 0 AND factor < 'Infinity')
+			// on quantity_unit_conversions.factor, so on a migrated database a non-positive factor
+			// cannot reach this cache table; the guard stays for a database where the constraint
+			// was dropped (a factor of exactly 0 never could: quantity_unit_conversions_INS's own
 			// inverse-row computation divides by it and raises first - see MergeProducts()'s
 			// equivalent guard, StockService.php ~4177). Admitting a sub product on a
 			// non-positive factor would let SumStockEntriesInProductUnit()'s availability check
@@ -4898,6 +4900,22 @@ class StockService extends BaseService
 
 		DatabaseService::GetInstance()->InTransaction(function () use ($productIdToKeep, $productIdToRemove)
 		{
+			// ADR-0040 rule 8: row locks first, then the ascending product locks. TrackChore()
+			// and UndoChoreExecution() lock the chore row FOR UPDATE and only then take product
+			// locks (ConsumeProduct(), UndoTransaction()). This method writes the removed
+			// product's chores below, after the product locks, so a merge and a chore
+			// execution on the same product waited on each other. The rows the merge will
+			// repoint are therefore locked first, in ascending id order.
+			//
+			// Checked and deliberately not locked here: consumption_mappings (their paths
+			// take no product lock, so nothing can wait on one while holding the other);
+			// consumption_recipe_lines and consumption_event_lines (the paths that rewrite
+			// them take the recipe or event row first and then every product lock they need
+			// up front, and this method writes neither of those parent rows); recipes_pos,
+			// recipes, meal_plan and shopping_list (no path takes a row lock on them before a
+			// product lock - there is no FOR UPDATE on them anywhere).
+			DatabaseService::GetInstance()->ExecuteDbStatement('SELECT id FROM chores WHERE product_id = ' . $productIdToRemove . ' ORDER BY id FOR UPDATE');
+
 			// Both products' stock rows are read and rewritten below, so both are locked,
 			// in ascending order, before either is touched (issue #458) - the ascending
 			// order is what keeps a merge running concurrently with another one over an
@@ -5021,6 +5039,31 @@ class StockService extends BaseService
 			// genuinely new pairs are left to repoint.
 			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM quantity_unit_conversions quc_remove WHERE quc_remove.product_id = ' . $productIdToRemove . ' AND EXISTS (SELECT 1 FROM quantity_unit_conversions quc_keep WHERE quc_keep.product_id = ' . $productIdToKeep . ' AND quc_keep.from_qu_id = quc_remove.from_qu_id AND quc_keep.to_qu_id = quc_remove.to_qu_id)');
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE quantity_unit_conversions SET product_id = ' . $productIdToKeep . ' WHERE product_id = ' . $productIdToRemove);
+
+			// The consumption tables (migrations/0305.pgsql.sql, 0306.pgsql.sql) reference
+			// products ON DELETE CASCADE, so left alone the DELETE below destroyed the removed
+			// product's recipe lines (a one-line recipe became empty), mappings (later events
+			// became needs_mapping) and event lines (booked events lost their lines) (issue
+			// #848). They are repointed here, after the conversions above have moved: a line or
+			// mapping that names its own unit must still convert to the kept product's stock
+			// unit, and that is checked against the kept product's resolved conversions as they
+			// now stand. A unit that no longer converts (a conversion deleted after the row was
+			// written) refuses the merge, which the surrounding transaction rolls back whole.
+			$stockUnitOfKeptProduct = (int)$productToKeep->qu_id_stock;
+			$unconvertible = ' AND x.qu_id <> ' . $stockUnitOfKeptProduct . ' AND NOT EXISTS (SELECT 1 FROM cache__quantity_unit_conversions_resolved r WHERE r.product_id = ' . $productIdToKeep . ' AND r.from_qu_id = x.qu_id AND r.to_qu_id = ' . $stockUnitOfKeptProduct . ' AND CAST(r.factor AS DOUBLE PRECISION) > 0)';
+			if (DatabaseService::GetInstance()->ExecuteDbQuery('SELECT 1 FROM consumption_recipe_lines x WHERE x.product_id = ' . $productIdToRemove . $unconvertible . ' LIMIT 1')->fetch() !== false
+				|| DatabaseService::GetInstance()->ExecuteDbQuery('SELECT 1 FROM consumption_mappings x WHERE x.product_id = ' . $productIdToRemove . $unconvertible . ' LIMIT 1')->fetch() !== false)
+			{
+				throw new \Exception('Cannot merge: a consumption recipe line or mapping of $productIdToRemove uses a unit with no quantity unit conversion to $productIdToKeep\'s stock unit');
+			}
+
+			// Recipe lines carry their own unit and are converted at read time, so they only move.
+			// Event lines hold stock-unit amounts and rescale like stock_log above. A mapping
+			// without a unit holds its factor against the stock unit and rescales; one with its
+			// own unit converts through the conversion checked above and keeps its factor.
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE consumption_recipe_lines SET product_id = ' . $productIdToKeep . ' WHERE product_id = ' . $productIdToRemove);
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE consumption_event_lines SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE consumption_mappings SET product_id = ' . $productIdToKeep . ', quantity_factor = CASE WHEN qu_id IS NULL THEN quantity_factor * ' . $factor . ' ELSE quantity_factor END WHERE product_id = ' . $productIdToRemove);
 
 			// price_factor is a unitless cost multiplier applied on top of amount * price in
 			// the recipe costs columns (db/pgsql/baseline/05_views_l3.sql), not a per-unit
