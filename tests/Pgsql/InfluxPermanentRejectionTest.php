@@ -4,6 +4,7 @@ namespace Victual\Tests\Pgsql;
 
 use PDO;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #854: one permanently rejected outbox row must not hold every row behind it hostage.
@@ -163,11 +164,8 @@ class InfluxPermanentRejectionTest extends PgsqlSchemaTestCase
 	/** @return array{status: int, error_message?: string, delivered?: bool, stderr: string} */
 	private static function Drain(): array
 	{
-		$process = proc_open(
+		$subprocess = Subprocess::start(
 			[PHP_BINARY, __DIR__ . '/outbox-claim-subprocess-helper.php', 'drain'],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
 			array_merge(self::subprocessEnv(), [
 				'VICTUAL_INFLUXDB_ENABLED' => 'true',
 				'VICTUAL_INFLUXDB_URL' => 'http://127.0.0.1:' . self::$standinPort,
@@ -178,11 +176,10 @@ class InfluxPermanentRejectionTest extends PgsqlSchemaTestCase
 			])
 		);
 
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = $subprocess->finish();
+		self::assertFalse($finished['timedOut'], 'the subprocess outlived its bound: ' . Subprocess::Describe($finished));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);
@@ -310,7 +307,6 @@ class InfluxPermanentRejectionTest extends PgsqlSchemaTestCase
 	 * When the endpoint refuses every row, the walk stops while nothing has been delivered:
 	 * a handful of writes, not the 2n-1 a full bisection costs on every drain, inside the
 	 * claim transaction, for ever.
-	 * (50 rows stays under the 64 KB of child stderr this harness reads after stdout.)
 	 */
 	public function testAnEndpointRefusingEveryRowIsNotWalkedRowByRow(): void
 	{

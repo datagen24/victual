@@ -101,12 +101,14 @@
 ### Userfields
 
 - Fixed that Userfields of type "Select list (a single item can be selected)" changed by keyboard only were not saved
+- The shopping list page no longer shows product and product group userfield columns, values or file names to a user who can view the shopping list but not stock (part of [#905](https://github.com/datagen24/victual/issues/905)). A user who can view both sees the page as before
 
 ### General
 
 - Fixed accent insensitive searching using the general table search field was broken
 - Fixed that it wasn't possible to log in using passwords containing special escape sequences (e.g. `<<`)
 - Fixed that the initially created location and quantity units weren't localized (only applies to new installations)
+- Importing a legacy database now refuses, before anything is changed, a quantity unit conversion whose factor is not a positive, finite number (zero, negative, infinite or not numeric), listing the rows instead of failing partway with a database error; `--force` does not bypass this check
 
 ### API
 
@@ -133,6 +135,7 @@
 
 - Added the permission `MASTER_DATA_ADD`, a child of `MASTER_DATA_EDIT` (migration 0308, [ADR-0043](../docs/adr/0043-creating-shared-master-data-is-a-right-below-master-data-edit.md)). It allows creating products, product barcodes, locations, quantity units, product groups and stores, and nothing else: editing and deleting them, and every quantity unit conversion, still need `MASTER_DATA_EDIT`. Every `MASTER_DATA_EDIT` and `ADMIN` holder has it already. No role is given it automatically, so grant it to an account or role to let members add records without editing them. A `403` on those creates now names `MASTER_DATA_ADD`. The web product form still needs `MASTER_DATA_EDIT` for pictures, userfields and conversions
 - `GET /api/stock/barcodes/external-lookup/{barcode}` needs only `STOCK_VIEW` when it creates nothing, and `MASTER_DATA_ADD` with `add=true` instead of `MASTER_DATA_EDIT`. A fetched picture is stored only when no file of that name exists; otherwise the product is created without a picture and the existing file is unchanged
+- `GET /api/stock/barcodes/external-lookup/{barcode}` now answers `400` when a barcode source returns an infinite or not-a-number value in any field, or a `name` that is not a text string, and writes nothing. It used to store the product and then answer `500`. The message names the field, for example `Plugin output contains a non-finite number at extra.calories`. A product named `0` is no longer refused as empty ([#844](https://github.com/datagen24/victual/issues/844))
 - Creating a product adds below-minimum-stock products to the shopping list, per the creating user's setting, only when the caller also holds `SHOPPINGLIST_ITEMS_ADD`. The product is created either way
 - ⚠️ Creating and editing chores now needs `CHORES`, and tasks need `TASKS`, instead of `MASTER_DATA_EDIT`. An account that holds `MASTER_DATA_EDIT` without `CHORES` or `TASKS` can no longer create or edit chores or tasks, and the seeded Adult role, which holds both, now can. Deleting chores and tasks and merging chores still need `MASTER_DATA_EDIT`
 - `USERS_EDIT` no longer lets an account edit, delete or re-permission a user who holds permissions it does not hold itself - which included resetting an administrator's password. The same rule covers deleting another user's picture. Note that `USERS_CREATE` resolves to `USERS_EDIT` through the permission hierarchy, so this closed the shorter path too

@@ -47,7 +47,7 @@ The entity pages expose printing without typing these paths. Locations also reta
 
 Printing new or revised data requires `MASTER_DATA_EDIT` *and* the domain read permission
 for what is being printed — `STOCK_VIEW`
-for a location, product or stock entry, `RECIPES_VIEW`, `CHORES_VIEW`, or `BATTERIES` —
+for a location, product or stock entry, `RECIPES_VIEW`, `CHORES_VIEW`, or `BATTERIES_VIEW` —
 because printing a physical, hard-to-recall label is treated as editing master data, not as a
 read. A reprint, a promotion and a cancellation check only `MASTER_DATA_EDIT`: none of the
 three reads a fresh value, so the domain grant a capture needs does not apply. A print call
