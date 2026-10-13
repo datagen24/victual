@@ -8524,14 +8524,8 @@
 						"description": "idempotency_conflict: the Idempotency-Key was already used for a different request"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -8692,14 +8686,8 @@
 						"description": "idempotency_conflict: the Idempotency-Key was already used for a different request"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -8757,14 +8745,8 @@
 						"description": "idempotency_conflict: the Idempotency-Key was already used for a different request"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -8822,14 +8804,8 @@
 						"description": "idempotency_conflict: the Idempotency-Key was already used for a different request; already_claimed: an attempt has already been made, so the job can no longer be cancelled"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -8887,14 +8863,8 @@
 						"description": "idempotency_conflict: the Idempotency-Key was already used for a different request"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -8922,14 +8892,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			},
@@ -8966,14 +8930,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9016,14 +8974,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			},
@@ -9079,14 +9031,8 @@
 						"description": "stale_revision: the draft changed since its revision token was read"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9129,14 +9075,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9179,14 +9119,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9240,14 +9174,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9290,14 +9218,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9351,14 +9273,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9386,14 +9302,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			},
@@ -9430,14 +9340,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9543,14 +9447,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9882,14 +9780,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}
@@ -9932,14 +9824,8 @@
 						"description": "Missing, invalid or expired API key"
 					},
 					"422": {
-						"description": "A refusal carrying a field and a code",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object"
-								}
-							}
-						}
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
 					}
 				}
 			}

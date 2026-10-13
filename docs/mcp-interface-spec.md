@@ -388,6 +388,11 @@ Two layers, never mixed:
   same timeout or 502/504 on a read is `victual_unavailable`, since a repeated read
   changes nothing.
 
+  The timeout covers the whole response, body included. A failure while reading the body
+  of a 2xx answer (a stall, a truncated body, or one that is not valid JSON) is
+  `outcome_unknown` on a write, because the headers say it was probably applied, and
+  `victual_unavailable` on a read.
+
 This mapping is why [plan 11](plans/11-api-error-handling.md) gates this work: today
 Victual answers 400 for "not allowed" and 500 for "bad filter" on some routes, which
 collapses `forbidden`/`invalid_request`/`victual_error` into mush. The sidecar maps
