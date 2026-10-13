@@ -198,18 +198,15 @@ class FieldCatalogue
             'battery' => [
                 'battery.name' => [
                     'column' => 'name',
-                    // Batteries have no domain-scoped read permission (EntityReadPolicy maps
-                    // 'batteries' to null - any authenticated caller may read them); the
-                    // permission that gates the battery feature at all is the closest thing
-                    // there is, and Authorize() still refuses a caller who lacks it.
-                    'permission' => User::PERMISSION_BATTERIES,
+                    // Batteries are read through BATTERIES_VIEW (EntityReadPolicy, ADR-0035).
+                    'permission' => User::PERMISSION_BATTERIES_VIEW,
                     'max_length' => 240,
                     'null' => 'error',
                     'type' => 'string',
                 ],
                 'battery.id' => [
                     'column' => 'id',
-                    'permission' => User::PERMISSION_BATTERIES,
+                    'permission' => User::PERMISSION_BATTERIES_VIEW,
                     'max_length' => 20,
                     'null' => 'error',
                     'type' => 'integer',
@@ -245,7 +242,7 @@ class FieldCatalogue
             'location', 'product', 'stock_entry' => User::PERMISSION_STOCK_VIEW,
             'recipe' => User::PERMISSION_RECIPES_VIEW,
             'chore' => User::PERMISSION_CHORES_VIEW,
-            'battery' => User::PERMISSION_BATTERIES,
+            'battery' => User::PERMISSION_BATTERIES_VIEW,
             default => throw new LabelValidationException('entity_kind', 'unsupported_entity_kind', 'No field catalogue exists for entity kind "' . $entityKind . '"'),
         };
     }
