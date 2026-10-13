@@ -7153,9 +7153,6 @@
 							}
 						}
 					},
-					"403": {
-						"description": "Not produced by this operation: pairing is unauthenticated and raises only 401 and 422; kept so the declared status set does not change"
-					},
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
@@ -7209,9 +7206,6 @@
 					"401": {
 						"$ref": "#/components/responses/RotateUnauthorized",
 						"description": "Invalid or expired credential"
-					},
-					"403": {
-						"description": "Not produced by this operation: a 403 `forbidden` refusal is raised only for attempt, printer and artifact ownership, and this operation raises none of those (rotation raises 401 and 422 only); kept so the declared status set does not change"
 					},
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
@@ -7271,9 +7265,6 @@
 						"$ref": "#/components/responses/WorkerUnauthorized",
 						"description": "Invalid or expired credential"
 					},
-					"403": {
-						"description": "Not produced by this operation: a 403 `forbidden` refusal is raised only for attempt, printer and artifact ownership, and this operation raises none of those (it raises 401 and 422 only); kept so the declared status set does not change"
-					},
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
@@ -7329,9 +7320,6 @@
 					"401": {
 						"$ref": "#/components/responses/WorkerUnauthorized",
 						"description": "Invalid or expired credential"
-					},
-					"403": {
-						"description": "Not produced by this operation: a 403 `forbidden` refusal is raised only for attempt, printer and artifact ownership, and this operation raises none of those (it raises 401 and 422 only); kept so the declared status set does not change"
 					},
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
