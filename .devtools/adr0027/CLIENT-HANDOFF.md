@@ -62,3 +62,22 @@ the server rolls out.
 
 Prerequisite 5 of ADR-0027 names `victual-kit` updated. It is not met until this work is
 done and verified in that repository.
+
+## Issue #922: `ChoreDetailsResponse.track_count` is removed from the document
+
+This is separate from the instant changes above and needs no server change: the response of
+`GET /api/chores/{choreId}` is the same before and after. The server has only ever sent
+`tracked_count`; `victual.openapi.json` also declared `track_count`, which no response carried.
+The declaration is now gone, and the schema's example shows `tracked_count`.
+
+It lands with the server revision that merges pull request #934 (for #922); regenerate from the
+`victual.openapi.json` at that merge commit or a later one.
+
+Generated-client impact: the generated `ChoreDetailsResponse` loses its optional
+`trackCount` property, which was always `nil`. Code that read it must read `trackedCount`
+(an integer, which the server always sends).
+
+`trackedCount` exists only in clients regenerated from a `victual.openapi.json` at or after
+the merge of #915 (`0547d275`), which added `tracked_count` to the schema. It is generated
+as an optional property because `ChoreDetailsResponse` has no `required` array, although the
+server always sends it.
