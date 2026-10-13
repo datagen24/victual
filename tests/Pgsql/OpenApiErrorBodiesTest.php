@@ -123,8 +123,8 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 
 	public function testTheAllowlistNamesOnlyEntriesThatAreStillDescriptionOnly(): void
 	{
-		// An empty list makes the loop below assert nothing; this keeps the case from being risky
-		self::assertIsArray(self::ALLOWED_DESCRIPTION_ONLY);
+		// No description-only response is allowed; a new entry is a deliberate change to this line
+		self::assertSame([], self::ALLOWED_DESCRIPTION_ONLY);
 
 		foreach (self::ALLOWED_DESCRIPTION_ONLY as $key)
 		{

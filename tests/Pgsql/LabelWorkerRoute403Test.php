@@ -85,11 +85,9 @@ class LabelWorkerRoute403Test extends PgsqlSchemaTestCase
 
 		foreach (self::OPERATIONS as $path)
 		{
-			// PHP turns the numeric string keys into integers
-			$statuses = array_keys($spec['paths'][$path]['post']['responses']);
-			sort($statuses);
-
-			self::assertSame([200, 401, 422], $statuses, "POST $path declares exactly the statuses it can answer");
+			// Only the 403 is pinned: other statuses (a 400 from HandleApiCall, a 503 from the
+			// schema gate) may legitimately be declared, so the full set is not asserted.
+			self::assertArrayNotHasKey(403, $spec['paths'][$path]['post']['responses'], "POST $path declares a 403 it cannot answer");
 		}
 	}
 
