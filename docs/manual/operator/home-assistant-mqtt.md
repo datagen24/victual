@@ -79,3 +79,45 @@ snapshot rather than an outbox-drained queue, by design (plan 18, question 5). A
 costs nothing the next write or the next boot publish does not already repair. The MQTT
 client library this fork uses also cannot acknowledge QoS 1 without running an event loop
 across the end of a web request, which is exactly what this design avoids.
+
+### Putting set-aside events back in the queue
+
+A drain sets an event aside, instead of retrying it, when retrying cannot help. Either the payload
+is unreadable or lines cannot be built from it, or InfluxDB refused the event's own line while
+accepting other lines in the same batch. The outbox table keeps the row with `dead_lettered_at`
+set and the reason in `last_error`. If the cause was a misconfigured endpoint that you have
+since fixed, `bin/victual-publish-state --requeue-dead` puts the rows back so the next drain
+delivers them.
+
+```sh
+# Explicit ids run immediately
+php bin/victual-publish-state --requeue-dead --ids=12,15,40
+
+# A selection by event type is a dry run until you add --execute
+php bin/victual-publish-state --requeue-dead --event-type=stock.transaction_booked
+php bin/victual-publish-state --requeue-dead --event-type=stock.transaction_booked --execute --expect-count=3
+```
+
+- **Only InfluxDB events.** Rows of type `stock.transaction_booked` are the only ones accepted.
+  Label print jobs are refused, because a job that was attempted may already have printed.
+  Reprint the label instead, which creates a new job.
+- **All or nothing for ids.** If any id does not exist, is a label job, was already delivered or
+  is not dead-lettered, the command reports every such id, requeues nothing, and exits 1.
+- **Checked again at execution.** The command locks and re-selects the rows in one transaction.
+  A row delivered or requeued since your dry run is left alone and reported. Pass
+  `--expect-count=N` with the count the dry run showed, and the command changes nothing if
+  the count is different now.
+- **Nothing is reset.** `attempts` and `last_error` keep their values; a later failure
+  overwrites `last_error`, so it stays in the row until then. After the requeue commits, the
+  command prints each requeued row's id, its previous `dead_lettered_at` time and its full
+  `last_error` to standard output. That output is the record of why the row was set aside, so
+  keep it. `--quiet` is refused with this mode. It is not logged anywhere else and is never sent to
+  MQTT or InfluxDB.
+- **Redelivery overwrites.** The lines are rebuilt from the stored payload alone, so the
+  second write names the same points as the first.
+- **Some rows come straight back.** A row set aside because its payload is unreadable or its
+  lines cannot be built is dead-lettered again by the next drain. The `last_error` text tells
+  you which: "could not build the InfluxDB lines" and the payload-version messages mean the
+  row itself is at fault, while an "HTTP 400/413/422" message means InfluxDB refused the line.
+
+The command runs whether or not `INFLUXDB_ENABLED` is true, and it needs no MQTT broker.

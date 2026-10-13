@@ -449,6 +449,49 @@ class DatabaseImporter
 	}
 
 	/**
+	 * Migration 0309's quantity_unit_conversions_factor_positive CHECK (factor > 0 AND factor <
+	 * 'Infinity', issue #903) refuses a conversion factor that is not positive and finite, and
+	 * the column is NOT NULL. Without this check a source holding one fails the COPY of
+	 * whichever batch contains it with a bare SQLSTATE 23514 (23502 for NULL, 22P02 for text),
+	 * naming neither the row nor the cause. Same rule as AssertStockAmounts(): refuse before
+	 * truncation and never repair or clamp, so no value the source did not hold is invented.
+	 *
+	 * The predicate is written for what SQLite holds, which is not what PostgreSQL would hold:
+	 * +/-Infinity is stored as a REAL (the literal 9e999), so `factor > max double` catches it
+	 * and `factor <= 0` catches -Infinity; NaN is stored as NULL by SQLite, and `factor <>
+	 * factor` stays as the arm for an engine that keeps it; text that is not numeric stays text
+	 * in a REAL column (numeric-looking text is converted by the column affinity), so anything
+	 * whose typeof() is not real or integer is refused. The factor is cast to text in the
+	 * SELECT so an Infinity in the sample cannot make json_encode() fail.
+	 *
+	 * Gated on the table and column existing on both sides, as AssertStockAmounts() is.
+	 *
+	 * @param string[] $tables GetCommonTables()'s own list.
+	 */
+	private function AssertConversionFactors(array $tables): void
+	{
+		if (!in_array('quantity_unit_conversions', $tables, true) || !in_array('factor', $this->GetCommonColumns('quantity_unit_conversions'), true))
+		{
+			return;
+		}
+
+		$where = 'factor IS NULL OR typeof(factor) NOT IN (\'real\', \'integer\') OR factor <= 0 OR factor <> factor OR factor > 1.7976931348623157e308';
+		$count = (int)$this->Source->query('SELECT COUNT(*) FROM quantity_unit_conversions WHERE ' . $where)->fetchColumn();
+		if ($count > 0)
+		{
+			$listing = 'SELECT id, product_id, from_qu_id, to_qu_id, CAST(factor AS TEXT) AS factor FROM quantity_unit_conversions WHERE ' . $where . ' ORDER BY id';
+			$sample = $this->Source->query($listing . ' LIMIT 10')->fetchAll(\PDO::FETCH_ASSOC);
+			throw new \RuntimeException('Import refused: ' . $count . ' source quantity_unit_conversions row(s) hold a factor that is '
+				. 'not a positive, finite number (NULL, zero, negative, NaN, infinite or not numeric), which the target refuses outright '
+				. '(migration 0309, quantity_unit_conversions_factor_positive; issue #903). '
+				. 'Sample (id, product_id, from_qu_id, to_qu_id, factor): ' . json_encode($sample, JSON_INVALID_UTF8_SUBSTITUTE) . '. '
+				. 'These rows are refused rather than clamped or dropped, so no value the source did not actually hold is invented. '
+				. 'Choose an explicit source repair and retry; --force does not bypass this check. '
+				. 'List all rows: ' . $listing . ';');
+		}
+	}
+
+	/**
 	 * The same refusal as AssertStockLocations(), extended to every foreign key
 	 * migrations/0295.pgsql.sql adds on products (issue #552): location_id, qu_id_purchase,
 	 * qu_id_stock, qu_id_consume, qu_id_price and product_group_id. Following ADR-0029's own
@@ -678,6 +721,7 @@ class DatabaseImporter
 		$this->AssertStockLocations();
 		$this->AssertProductReferences($tables);
 		$this->AssertStockAmounts($tables);
+		$this->AssertConversionFactors($tables);
 		$this->AssertSourceTimestamps($tables);
 
 		$report = [];

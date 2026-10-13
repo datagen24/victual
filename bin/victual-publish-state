@@ -5,6 +5,7 @@
 // configured MQTT broker, then exits.
 //
 //   php bin/victual-publish-state [--retract] [--drain] [--quiet]
+//   php bin/victual-publish-state --requeue-dead (--ids=N,N,... | --event-type=T) [--execute] [--expect-count=N]
 //
 // This is the "publish on boot" half of docs/plans/18-mqtt-state-publication.md. PHP has no
 // boot event, so it is a command the deployment runs rather than something the application
@@ -18,6 +19,8 @@
 //
 // Exit codes: 0 when everything was published (or when MQTT is disabled, which is not a
 // failure), 1 when the broker could not be reached or the snapshot could not be assembled.
+// --requeue-dead exits 0 for a dry run or a completed requeue and 1 for a refusal, an
+// ineligible id or an error.
 
 use Victual\Services\DatabaseService;
 use Victual\Services\Influx\BookingEventPublisher;
@@ -35,9 +38,17 @@ $quiet = in_array('--quiet', $arguments, true);
 $retract = in_array('--retract', $arguments, true);
 $drain = in_array('--drain', $arguments, true);
 
+// Spelled out because the help and the argument checks below run before the autoloader is
+// loaded; they are OutboxService::EVENT_STOCK_TRANSACTION_BOOKED and EVENT_LABEL_PRINT_REQUESTED,
+// and the service refuses anything but the first whatever is passed here.
+$influxEventType = 'stock.transaction_booked';
+$labelEventType = 'label.print_requested';
+
 if (in_array('--help', $arguments, true) || in_array('-h', $arguments, true))
 {
-	echo "Usage: php bin/victual-publish-state [--retract] [--drain] [--quiet]\n\n";
+	echo "Usage: php bin/victual-publish-state [--retract] [--drain] [--quiet]\n";
+	echo "       php bin/victual-publish-state --requeue-dead (--ids=N,N,... | --event-type=" . $influxEventType . ")\n";
+	echo "                                     [--execute | --dry-run] [--expect-count=N]\n\n";
 	echo "  Publishes the Home Assistant discovery payloads and the full state snapshot as\n";
 	echo "  retained MQTT topics. Run it once after every deployment, from a postStart hook\n";
 	echo "  or a Job next to the bin/victual-migrate initContainer.\n\n";
@@ -55,7 +66,137 @@ if (in_array('--help', $arguments, true) || in_array('-h', $arguments, true))
 	echo "             InfluxDB was down - run it from a CronJob, or by hand after fixing\n";
 	echo "             the endpoint.\n";
 	echo "  --quiet    Only print errors.\n";
+	echo "\n";
+	echo "  --requeue-dead  Put dead-lettered InfluxDB events back in the queue, so the next\n";
+	echo "             drain delivers them. For rows a drain set aside because the endpoint\n";
+	echo "             was misconfigured at the time. Select the rows one of two ways:\n";
+	echo "               --ids=12,15,40       explicit outbox ids; runs immediately (add\n";
+	echo "                                    --dry-run to only list them)\n";
+	echo "               --event-type=" . $influxEventType . "\n";
+	echo "                                    every dead-lettered row of the type; a dry run\n";
+	echo "                                    listing the count, ids and last_error unless\n";
+	echo "                                    --execute is given. Use --expect-count=N with\n";
+	echo "                                    --execute to refuse when the count is not the one\n";
+	echo "                                    the dry run showed.\n";
+	echo "             Only " . $influxEventType . " rows qualify. Label print jobs\n";
+	echo "             (" . $labelEventType . ") are refused: a job may already have printed, so\n";
+	echo "             labels recover by reprinting, which creates a new job. Rows that are\n";
+	echo "             delivered, not dead-lettered or missing are reported; with --ids, one such\n";
+	echo "             id means nothing is requeued and the exit code is 1. Eligibility is\n";
+	echo "             checked again, with the rows locked, when the requeue runs.\n";
+	echo "             attempts and last_error are kept, and last_error is replaced only by a\n";
+	echo "             later failure. After the requeue commits, each requeued row's id, previous\n";
+	echo "             dead_lettered_at and full last_error are printed to standard output; keep\n";
+	echo "             that output, it is the operator's record of why the row was set aside.\n";
+	echo "             --quiet is refused with --requeue-dead. A row set aside because\n";
+	echo "             its payload is unreadable or its lines cannot be built is dead-lettered again\n";
+	echo "             by the next drain; last_error says which (\"could not build the InfluxDB\n";
+	echo "             lines\" or a payload message, rather than an \"HTTP 400/413/422\" refusal).\n";
 	exit(0);
+}
+
+// --requeue-dead is checked in full before anything touches the database or the network, so
+// that a typo can only ever produce a refusal.
+$requeueOptions = [];
+
+foreach ($arguments as $argument)
+{
+	if (preg_match('/^--(ids|event-type|expect-count)=(.*)$/s', $argument, $matches) === 1)
+	{
+		$requeueOptions[$matches[1]] = $matches[2];
+	}
+}
+
+$execute = in_array('--execute', $arguments, true);
+$dryRun = in_array('--dry-run', $arguments, true);
+$requeueDead = in_array('--requeue-dead', $arguments, true);
+
+if ($requeueDead || count($requeueOptions) > 0 || $execute || $dryRun)
+{
+	$refusal = null;
+	$requeueIds = [];
+	$allowed = ['--requeue-dead', '--execute', '--dry-run', '--quiet'];
+	$seen = [];
+
+	foreach ($arguments as $argument)
+	{
+		if (!in_array($argument, $allowed, true) && preg_match('/^--(ids|event-type|expect-count)=/', $argument) !== 1)
+		{
+			$refusal = 'Unknown or incompatible argument with --requeue-dead: ' . $argument;
+			break;
+		}
+
+		// A repeated option would silently use one of its values
+		$name = explode('=', $argument, 2)[0];
+
+		if (isset($seen[$name]))
+		{
+			$refusal = $name . ' was given more than once.';
+			break;
+		}
+
+		$seen[$name] = true;
+	}
+
+	if ($refusal === null && $requeueDead && $quiet)
+	{
+		$refusal = '--quiet cannot be used with --requeue-dead: its report is the operator\'s record of why the rows were set aside.';
+	}
+	elseif ($refusal === null && !$requeueDead)
+	{
+		$refusal = '--ids, --event-type, --expect-count, --execute and --dry-run belong to --requeue-dead.';
+	}
+	elseif ($refusal === null && isset($requeueOptions['ids']) && isset($requeueOptions['event-type']))
+	{
+		$refusal = 'Choose either --ids or --event-type, not both.';
+	}
+	elseif ($refusal === null && !isset($requeueOptions['ids']) && !isset($requeueOptions['event-type']))
+	{
+		$refusal = '--requeue-dead needs --ids=N,N,... or --event-type=' . $influxEventType . '.';
+	}
+	elseif ($refusal === null && $execute && $dryRun)
+	{
+		$refusal = '--execute and --dry-run contradict each other.';
+	}
+	elseif ($refusal === null && isset($requeueOptions['event-type']) && $requeueOptions['event-type'] !== $influxEventType)
+	{
+		$refusal = 'Only ' . $influxEventType . ' events can be requeued. Label print jobs ('
+			. $labelEventType . ') recover through reprint, which creates a new job, because a job that was attempted may already have printed.';
+	}
+	elseif ($refusal === null && isset($requeueOptions['expect-count']) && (!$execute || isset($requeueOptions['ids'])))
+	{
+		$refusal = '--expect-count applies to a bulk --event-type selection with --execute.';
+	}
+	elseif ($refusal === null && isset($requeueOptions['expect-count']) && preg_match('/^\d{1,9}$/', $requeueOptions['expect-count']) !== 1)
+	{
+		$refusal = '--expect-count needs a whole number.';
+	}
+	elseif ($refusal === null && isset($requeueOptions['ids']))
+	{
+		if (preg_match('/^\d+(,\d+)*$/', $requeueOptions['ids']) !== 1)
+		{
+			$refusal = '--ids needs comma-separated outbox ids, for example --ids=12,15,40.';
+		}
+		else
+		{
+			$requeueIds = array_values(array_unique(array_map('intval', explode(',', $requeueOptions['ids']))));
+
+			if (min($requeueIds) < 1 || max($requeueIds) > 2147483647)
+			{
+				$refusal = '--ids needs outbox ids between 1 and 2147483647.';
+			}
+			elseif (count($requeueIds) > 1000)
+			{
+				$refusal = '--ids takes at most 1000 ids; use --event-type for a larger selection.';
+			}
+		}
+	}
+
+	if ($refusal !== null)
+	{
+		fwrite(STDERR, $refusal . PHP_EOL);
+		exit(1);
+	}
 }
 
 if (!defined('VICTUAL_DATAPATH'))
@@ -88,6 +229,79 @@ catch (\Victual\Helpers\EInvalidConfig $ex)
 {
 	fwrite(STDERR, 'Invalid setting in config.php: ' . $ex->getMessage() . PHP_EOL);
 	exit(1);
+}
+
+// --requeue-dead is about the outbox table alone, so like --drain it is answered before the
+// MQTT gate, and it does not need INFLUXDB_ENABLED: the rows exist whether or not the
+// endpoint is configured right now.
+if ($requeueDead)
+{
+	MqttStatePublicationService::SuppressRequestEndPublish();
+	BookingEventPublisher::SuppressRequestEndDrain();
+	DatabaseService::GetInstance()->SetCurrentUserId(VICTUAL_USER_ID);
+
+	// Explicit ids are the operator's own choice and run at once; a selection by type is a
+	// dry run until --execute says otherwise.
+	$executing = count($requeueIds) > 0 ? !$dryRun : $execute;
+	$expectedCount = isset($requeueOptions['expect-count']) ? (int)$requeueOptions['expect-count'] : null;
+
+	try
+	{
+		$result = (new OutboxService())->RequeueDeadLettered($requeueIds, $influxEventType, $executing, $expectedCount);
+	}
+	catch (\Throwable $ex)
+	{
+		fwrite(STDERR, 'Could not requeue: ' . $ex->getMessage() . PHP_EOL);
+		exit(1);
+	}
+
+	if (count($result['ineligible']) > 0)
+	{
+		foreach ($result['ineligible'] as $id => $reason)
+		{
+			fwrite(STDERR, 'Outbox row #' . $id . ' ' . $reason . '.' . PHP_EOL);
+		}
+
+		fwrite(STDERR, 'Nothing was requeued: ' . count($result['ineligible']) . ' of the ' . count($requeueIds) . ' id(s) cannot be.' . PHP_EOL);
+		exit(1);
+	}
+
+	if ($result['refusal'] !== null)
+	{
+		fwrite(STDERR, ucfirst($result['refusal']) . '.' . PHP_EOL);
+		exit(1);
+	}
+
+	$eligibleCount = count($result['eligible']);
+
+	// Operator-only output: standard output of this command is the record of what the rows
+	// said before they were cleared. Printed whatever --quiet says, and deliberately not
+	// error_log()ed, which is shipped elsewhere.
+	if ($executing)
+	{
+		echo 'Requeued ' . count($result['requeued']) . ' of ' . $eligibleCount . ' eligible row(s). attempts and last_error were left as they were; '
+			. 'the next drain (bin/victual-publish-state --drain) delivers them.' . PHP_EOL;
+
+		foreach ($result['eligible'] as $row)
+		{
+			echo '  #' . $row['id'] . '  dead-lettered at ' . $row['dead_lettered_at'] . ', attempts ' . $row['attempts'] . PHP_EOL;
+			echo '      last_error: ' . ($row['last_error'] ?? '(none)') . PHP_EOL;
+		}
+	}
+	else
+	{
+		echo 'Dry run: ' . $eligibleCount . ' dead-lettered ' . $influxEventType . ' row(s) selected. Nothing was changed'
+			. ($eligibleCount > 0 && count($requeueIds) === 0 ? '; add --execute (and --expect-count=' . $eligibleCount . ') to requeue them' : '') . '.' . PHP_EOL;
+
+		foreach ($result['eligible'] as $row)
+		{
+			$error = preg_replace('/\s+/', ' ', (string)$row['last_error']);
+			echo '  #' . $row['id'] . '  dead-lettered at ' . $row['dead_lettered_at'] . ', attempts ' . $row['attempts']
+				. ', last_error: ' . (strlen($error) > 120 ? substr($error, 0, 120) . '...' : ($error === '' ? '(none)' : $error)) . PHP_EOL;
+		}
+	}
+
+	exit(0);
 }
 
 // --drain is about InfluxDB, so it is answered before the MQTT gate below rather than
