@@ -44,6 +44,12 @@ abstract class BaseBarcodeLookupPlugin
 	/** json_encode()'s own default depth: output nested deeper than this could not be encoded anyway. */
 	private const MAX_OUTPUT_DEPTH = 512;
 
+	/** Finite, and at least the smallest positive normal double (so not zero, negative or subnormal either). */
+	private static function IsNormalPositive(float $value): bool
+	{
+		return is_finite($value) && $value >= PHP_FLOAT_MIN;
+	}
+
 	/**
 	 * Refuses a float that is not finite anywhere in $value, naming the dotted key path
 	 * and never the value.
@@ -237,6 +243,19 @@ abstract class BaseBarcodeLookupPlugin
 		if (!is_numeric($quFactor) || !is_finite((float)$quFactor) || (float)$quFactor <= 0)
 		{
 			throw new \Exception('Provided __qu_factor_purchase_to_stock must be a finite number greater than zero');
+		}
+
+		// Issue #890: the insert trigger on quantity_unit_conversions writes the inverse,
+		// 1 / factor, into a second row. A factor below 2^-1022 (PHP_FLOAT_MIN) is itself
+		// subnormal, and 1 / 5e-324 overflows (PostgreSQL raises 22003, which surfaces as
+		// a database error); a factor above 2^1022 has a subnormal inverse, which
+		// PostgreSQL stores without complaint and with most of its precision gone. So the
+		// factor and its computed inverse must both be finite and normal. 1.0 / $f is INF,
+		// not an error, in PHP for a tiny $f. This avoids overflow and subnormal results;
+		// it does not make the arithmetic exact or set a medically meaningful range.
+		if (!self::IsNormalPositive((float)$quFactor) || !self::IsNormalPositive(1.0 / (float)$quFactor))
+		{
+			throw new \Exception('Provided __qu_factor_purchase_to_stock and its inverse must both be finite, normal numbers greater than zero');
 		}
 
 		// Issue #844: every other field is written as sent too, and a float INF or NAN
