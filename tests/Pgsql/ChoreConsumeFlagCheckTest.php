@@ -163,7 +163,7 @@ class ChoreConsumeFlagCheckTest extends PgsqlSchemaTestCase
 	public function testOffendingRowsRefuseTheUpgradeWithoutBeingRewrittenAndCanBeRetried(): void
 	{
 		$db = self::$db;
-		$db->exec('ALTER TABLE chores DROP CONSTRAINT ' . self::CONSTRAINT . '; DELETE FROM migrations WHERE migration=312');
+		$db->exec('ALTER TABLE chores DROP CONSTRAINT IF EXISTS ' . self::CONSTRAINT . '; DELETE FROM migrations WHERE migration=312');
 		$good0 = self::chore('upgrade good 0', 0);
 		$good1 = self::chore('upgrade good 1', 1);
 		$two = self::chore('upgrade two', 2);
@@ -206,10 +206,59 @@ class ChoreConsumeFlagCheckTest extends PgsqlSchemaTestCase
 		self::assertSame(1, (int)$db->query('SELECT count(*) FROM migrations WHERE migration=312')->fetchColumn());
 	}
 
+	/**
+	 * ADR-0029's lock-timeout case: ChoresService::LockChore() holds a row lock (SELECT ... FOR
+	 * UPDATE) while a chore is tracked, and the migration's ACCESS EXCLUSIVE lock must give up
+	 * after lock_timeout (5 s) instead of queueing behind it, leaving nothing half done.
+	 */
+	public function testMigrationGivesUpOnALockedChoreAndRollsBackCleanly(): void
+	{
+		$db = self::$db;
+		$db->exec('ALTER TABLE chores DROP CONSTRAINT IF EXISTS ' . self::CONSTRAINT . '; DELETE FROM migrations WHERE migration=312');
+		$id = self::chore('lock held', 1);
+		$before = $db->query('SELECT * FROM chores ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
+
+		$other = new PDO('pgsql:host=' . getenv('PGHOST') . ';port=' . getenv('PGPORT') . ';dbname=' . getenv('PHPUNIT_DB_NAME'),
+			getenv('PGUSER'), getenv('PGPASSWORD'), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+		$other->exec('SET search_path TO ' . self::Schema() . ', public');
+		$other->beginTransaction();
+
+		try
+		{
+			$other->query('SELECT id FROM chores WHERE id = ' . $id . ' FOR UPDATE')->fetchAll();
+			$start = microtime(true);
+			try
+			{
+				DatabaseMigrationService::GetInstance()->MigrateDatabase();
+				self::fail('The migration must give up while a chore row is locked');
+			}
+			catch (PDOException $ex)
+			{
+				self::assertSame('55P03', (string)$ex->getCode(), $ex->getMessage());
+				self::assertStringContainsString('lock timeout', $ex->getMessage());
+			}
+			self::assertLessThan(20, microtime(true) - $start, 'the wait is bounded by lock_timeout');
+
+			self::assertFalse($db->inTransaction());
+			self::assertSame(0, (int)$db->query('SELECT count(*) FROM migrations WHERE migration=312')->fetchColumn());
+			self::assertFalse(self::constraintExists());
+		}
+		finally
+		{
+			// The schema must end up migrated for the tests after this one, whatever failed above.
+			$other->rollBack();
+			DatabaseMigrationService::GetInstance()->MigrateDatabase();
+		}
+
+		self::assertSame($before, $db->query('SELECT * FROM chores ORDER BY id')->fetchAll(PDO::FETCH_ASSOC));
+		self::assertTrue(self::constraintExists());
+		self::assertSame(1, (int)$db->query('SELECT count(*) FROM migrations WHERE migration=312')->fetchColumn());
+	}
+
 	public function testUpgradeWithOnlyZeroAndOneAddsTheConstraintAndKeepsTheRows(): void
 	{
 		$db = self::$db;
-		$db->exec('ALTER TABLE chores DROP CONSTRAINT ' . self::CONSTRAINT . '; DELETE FROM migrations WHERE migration=312');
+		$db->exec('ALTER TABLE chores DROP CONSTRAINT IF EXISTS ' . self::CONSTRAINT . '; DELETE FROM migrations WHERE migration=312');
 		self::chore('clean 0', 0);
 		self::chore('clean 1', 1);
 		$before = $db->query('SELECT * FROM chores ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);

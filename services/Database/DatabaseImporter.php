@@ -522,8 +522,8 @@ class DatabaseImporter
 			$listing = 'SELECT id, name, CAST(consume_product_on_execution AS TEXT) AS consume_product_on_execution FROM chores WHERE ' . $where . ' ORDER BY id';
 			$sample = $this->Source->query($listing . ' LIMIT 10')->fetchAll(\PDO::FETCH_ASSOC);
 			throw new \RuntimeException('Import refused: ' . $count . ' source chores row(s) hold a consume_product_on_execution '
-				. 'that is not 0 or 1 (NULL, another number or not numeric), which the target refuses outright '
-				. '(migration 0312, chores_consume_product_on_execution_check; issue #923). '
+				. 'that is not 0 or 1 (another number or not numeric, which the target refuses with '
+				. 'migration 0312, chores_consume_product_on_execution_check, issue #923; or NULL, which its NOT NULL refuses with SQLSTATE 23502). '
 				. 'Sample (id, name, consume_product_on_execution): ' . json_encode($sample, JSON_INVALID_UTF8_SUBSTITUTE) . '. '
 				. 'These rows are refused rather than clamped or dropped, so no value the source did not actually hold is invented. '
 				. 'Choose an explicit source repair and retry; --force does not bypass this check. '
