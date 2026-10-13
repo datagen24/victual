@@ -99,6 +99,7 @@
 ### Userfields
 
 - Fixed that Userfields of type "Select list (a single item can be selected)" changed by keyboard only were not saved
+- The shopping list page no longer shows product and product group userfield columns, values or file names to a user who can view the shopping list but not stock (part of [#905](https://github.com/datagen24/victual/issues/905)). A user who can view both sees the page as before
 
 ### General
 
