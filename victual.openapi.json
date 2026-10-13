@@ -1960,7 +1960,7 @@
 								"properties": {
 									"permission_id": {
 										"type": "integer",
-										"description": "The id of the permission to assign to the user. Absent or null is refused with 400 \"permission_id is required\""
+										"description": "The id of the permission to assign to the user. Absent or null is refused with 400 \"permission_id is required\". A JSON number, or a string of plain decimal digits, that names an existing permission. A string with a sign, a leading zero, an exponent, a fraction or surrounding whitespace (\"+2\", \"02\", \"1e3\", \"2.0\", \" 2\") answers 400 \"No permission with id ... exists\". The request body filter removes a leading vertical tab or form feed before the value is read, so such a string can name a permission; that is a side effect of the filter (issue #946), not part of the accepted form. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									}
 								},
 								"required": [
@@ -2465,8 +2465,16 @@
 								"description": "amount is required. Every other property is optional: a property whose key is absent from the body keeps the entry's current value, resolved against the entry as it is at the moment of the edit rather than as it was when the request was formed. A property that is present must be readable as the type documented below, or as the additional numeric-string forms price and shopping_location_id's own descriptions name, or the request is refused with 400 and nothing about the entry changes. price, shopping_location_id and note additionally accept an explicit null to clear the field, since an absent key keeps it instead; price and shopping_location_id also accept \"\" for the same reason - for shopping_location_id this matches the web form's own \"no store\" option. best_before_date, location_id, purchased_date and open are not nullable.",
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The entry's new amount. A negative amount is refused; zero is unaffected by that check."
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The entry's new amount. A negative amount is refused; zero is unaffected by that check. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The amount must be a number\". A value that is negative or not finite answers 400 \"Stock amount must be finite and non-negative\"; zero is accepted. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"best_before_date": {
 										"type": "string",
@@ -2479,13 +2487,17 @@
 												"type": "number"
 											},
 											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											},
+											{
 												"type": "null"
 											},
 											{
 												"const": ""
 											}
 										],
-										"description": "The price per stock quantity unit in configured currency. Omitted keeps the entry's current price; null or \"\" clears it. Also accepts any string PHP's is_numeric() reads, such as \"3\", \"2.50\", \"1e3\", \".5\" or one with leading/trailing whitespace - undocumented in the type above, matching this fork's own convention for the same field on POST /stock/products/{productId}/add and the other stock-booking routes, whose examples show it."
+										"description": "The price per stock quantity unit in configured currency. Omitted keeps the entry's current price; null or \"\" clears it. A string is read with PHP's is_numeric() (the grammar of the amount fields: \"3\", \"-2\", \"2.50\", \"1e3\", \".5\", \"5.\", with optional surrounding space, tab, newline, carriage return, vertical tab or form feed). Other strings, and a JSON number outside the range of a double, answer 400 \"The price must be a number\". A negative price is accepted and stored. A numeric string outside the range of a double (\"1e309\", 400 digits) passes that check and answers 400 \"The database rejected this request\". The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"open": {
 										"oneOf": [
@@ -2628,8 +2640,16 @@
 								"type": "object",
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The reading, in qu_id. Net contents unless gross is true"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The reading, in qu_id. Net contents unless gross is true. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"2.5\", \".5\", \"5.\", \"1e3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. A string that is not numeric, zero, a negative value, a value outside the range of a double and a JSON number outside that range all answer 400 \"A measurement requires a positive amount\". The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"qu_id": {
 										"type": "integer",
@@ -3064,8 +3084,16 @@
 								],
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The amount to add"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The amount to add. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; zero answers 400 \"Amount can't be <= 0\". The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"best_before_date": {
 										"type": "string",
@@ -3076,8 +3104,22 @@
 										"$ref": "#/components/schemas/StockAddTransactionType"
 									},
 									"price": {
-										"type": "number",
-										"description": "The price per stock quantity unit in configured currency"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											},
+											{
+												"type": "null"
+											},
+											{
+												"const": ""
+											}
+										],
+										"description": "The price per stock quantity unit in configured currency. Absent, null or \"\" means no price. Also accepts a string PHP's is_numeric() reads (the grammar of the amount fields: \"3\", \"-2\", \"2.50\", \"1e3\", \".5\", \"5.\", with optional surrounding space, tab, newline, carriage return, vertical tab or form feed). Other strings, and a JSON number outside the range of a double, answer 400 \"The price must be a number\". A negative price is accepted and stored. A numeric string outside the range of a double (\"1e309\", 400 digits) passes that check and answers 400 \"The database rejected this request\". The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"location_id": {
 										"type": "integer",
@@ -3089,7 +3131,7 @@
 									},
 									"stock_label_type": {
 										"type": "integer",
-										"description": "`1` = No label, `2` = Single label, `3` = Label per unit"
+										"description": "`1` = No label, `2` = Single label, `3` = Label per unit. A numeric string is read like the same number. A value that is not numeric (\"abc\", \"\") is ignored and the default 0 is used. Only the value 2 was observed to change the result: it books one stock entry per unit; every other value books a single entry. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"note": {
 										"type": "string",
@@ -3181,8 +3223,16 @@
 								],
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The amount to remove"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The amount to remove. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; zero answers 400 \"Amount must be greater than 1.0E-9\" and more than is in stock answers 400. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"transaction_type": {
 										"$ref": "#/components/schemas/StockConsumeTransactionType"
@@ -3197,7 +3247,7 @@
 									},
 									"recipe_id": {
 										"type": "integer",
-										"description": "A valid recipe id for which this product was used (for statistical purposes only)"
+										"description": "A valid recipe id for which this product was used (for statistical purposes only). A string is accepted when PostgreSQL reads it as an integer: an optional sign and digits with optional surrounding space, tab, newline or carriage return (\"2\", \"+2\", \" 2\", \"02\"). A JSON number with an integral value inside the range of the integer column is accepted (1e3 is recorded as 1000). Negative ids and 0 are stored as given. A numeric value PostgreSQL cannot read as an integer answers 400 \"The database rejected this request\" and nothing is booked: the strings \"2.5\", \"2.0\", \"1e3\" and \"1e309\", a string of 400 digits, a JSON number with a fraction (2.5), and a whole number outside the integer range (2147483648, 99999999999, as a number or a string). A value that is not numeric (\"abc\", \"\", \"2abc\", \"0x1A\", one with a no-break space), and a JSON number outside the range of a double (1e309), are ignored: the consumption is booked with no recipe and the request answers 200 without saying so (issue #950). The id is not checked against existing recipes. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"location_id": {
 										"type": "integer",
@@ -3298,8 +3348,16 @@
 								],
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The amount to transfer - please note that when tare weight handling for the product is enabled, this needs to be the amount including the container weight (gross), the amount to be posted will be automatically calculated based on what is in stock and the defined tare weight"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The amount to transfer - please note that when tare weight handling for the product is enabled, this needs to be the amount including the container weight (gross), the amount to be posted will be automatically calculated based on what is in stock and the defined tare weight. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; zero answers 400 \"Amount must be greater than 1.0E-9\" and more than is in stock at the source location answers 400. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"location_id_from": {
 										"type": "integer",
@@ -3398,8 +3456,16 @@
 								],
 								"properties": {
 									"new_amount": {
-										"type": "number",
-										"description": "The new current amount for the given product"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The new current amount for the given product. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The new amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; a value equal to the current stock answers 400 \"The new amount cannot equal the current stock amount\" and zero sets the stock to zero. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"best_before_date": {
 										"type": "string",
@@ -3415,12 +3481,26 @@
 										"description": "If omitted, the default location of the product is used (only applies to added products)"
 									},
 									"price": {
-										"type": "number",
-										"description": "If omitted, the last price of the product is used (only applies to added products)"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											},
+											{
+												"type": "null"
+											},
+											{
+												"const": ""
+											}
+										],
+										"description": "If omitted, the last price of the product is used (only applies to added products). Null or \"\" is read as omitted. Also accepts a string PHP's is_numeric() reads (the grammar of the amount fields: \"3\", \"-2\", \"2.50\", \"1e3\", \".5\", \"5.\", with optional surrounding space, tab, newline, carriage return, vertical tab or form feed). Other strings, and a JSON number outside the range of a double, answer 400 \"The price must be a number\". A negative price is accepted and stored. A numeric string outside the range of a double (\"1e309\", 400 digits) passes that check and answers 400 \"The database rejected this request\". The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"stock_label_type": {
 										"type": "integer",
-										"description": "`1` = No label, `2` = Single label, `3` = Label per unit (only applies to added products)"
+										"description": "`1` = No label, `2` = Single label, `3` = Label per unit (only applies to added products). A numeric string is read like the same number. A value that is not numeric (\"abc\", \"\") is ignored and the default 0 is used. Only the value 2 was observed to change the result: it books one stock entry per unit; every other value books a single entry. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"note": {
 										"type": "string",
@@ -3506,8 +3586,16 @@
 								],
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The amount to mark as opened"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The amount to mark as opened. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; zero answers 400 \"Amount must be greater than 1.0E-9\" and more than is unopened answers 400. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"stock_entry_id": {
 										"type": "string",
@@ -3756,8 +3844,16 @@
 								],
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The amount to add"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The amount to add. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; zero answers 400 \"Amount can't be <= 0\". The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"best_before_date": {
 										"type": "string",
@@ -3768,8 +3864,22 @@
 										"$ref": "#/components/schemas/StockAddTransactionType"
 									},
 									"price": {
-										"type": "number",
-										"description": "The price per stock quantity unit in configured currency"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											},
+											{
+												"type": "null"
+											},
+											{
+												"const": ""
+											}
+										],
+										"description": "The price per stock quantity unit in configured currency. Absent, null or \"\" means no price. Also accepts a string PHP's is_numeric() reads (the grammar of the amount fields: \"3\", \"-2\", \"2.50\", \"1e3\", \".5\", \"5.\", with optional surrounding space, tab, newline, carriage return, vertical tab or form feed). Other strings, and a JSON number outside the range of a double, answer 400 \"The price must be a number\". A negative price is accepted and stored. A numeric string outside the range of a double (\"1e309\", 400 digits) passes that check and answers 400 \"The database rejected this request\". The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"location_id": {
 										"type": "integer",
@@ -3851,8 +3961,16 @@
 								],
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The amount to remove"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The amount to remove. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; zero answers 400 \"Amount must be greater than 1.0E-9\" and more than is in stock answers 400. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"transaction_type": {
 										"$ref": "#/components/schemas/StockConsumeTransactionType"
@@ -3867,7 +3985,7 @@
 									},
 									"recipe_id": {
 										"type": "integer",
-										"description": "A valid recipe id for which this product was used (for statistical purposes only)"
+										"description": "A valid recipe id for which this product was used (for statistical purposes only). A string is accepted when PostgreSQL reads it as an integer: an optional sign and digits with optional surrounding space, tab, newline or carriage return (\"2\", \"+2\", \" 2\", \"02\"). A JSON number with an integral value inside the range of the integer column is accepted (1e3 is recorded as 1000). Negative ids and 0 are stored as given. A numeric value PostgreSQL cannot read as an integer answers 400 \"The database rejected this request\" and nothing is booked: the strings \"2.5\", \"2.0\", \"1e3\" and \"1e309\", a string of 400 digits, a JSON number with a fraction (2.5), and a whole number outside the integer range (2147483648, 99999999999, as a number or a string). A value that is not numeric (\"abc\", \"\", \"2abc\", \"0x1A\", one with a no-break space), and a JSON number outside the range of a double (1e309), are ignored: the consumption is booked with no recipe and the request answers 200 without saying so (issue #950). The id is not checked against existing recipes. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"location_id": {
 										"type": "integer",
@@ -3958,8 +4076,16 @@
 								],
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The amount to transfer - please note that when tare weight handling for the product is enabled, this needs to be the amount including the container weight (gross), the amount to be posted will be automatically calculated based on what is in stock and the defined tare weight"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The amount to transfer - please note that when tare weight handling for the product is enabled, this needs to be the amount including the container weight (gross), the amount to be posted will be automatically calculated based on what is in stock and the defined tare weight. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; zero answers 400 \"Amount must be greater than 1.0E-9\" and more than is in stock at the source location answers 400. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"location_id_from": {
 										"type": "integer",
@@ -4048,8 +4174,16 @@
 								],
 								"properties": {
 									"new_amount": {
-										"type": "number",
-										"description": "The new current amount for the given product"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The new current amount for the given product. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The new amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; a value equal to the current stock answers 400 \"The new amount cannot equal the current stock amount\" and zero sets the stock to zero. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"best_before_date": {
 										"type": "string",
@@ -4061,8 +4195,22 @@
 										"description": "If omitted, the default location of the product is used (only applies to added products)"
 									},
 									"price": {
-										"type": "number",
-										"description": "If omitted, the last price of the product is used (only applies to added products)"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											},
+											{
+												"type": "null"
+											},
+											{
+												"const": ""
+											}
+										],
+										"description": "If omitted, the last price of the product is used (only applies to added products). Null or \"\" is read as omitted. Also accepts a string PHP's is_numeric() reads (the grammar of the amount fields: \"3\", \"-2\", \"2.50\", \"1e3\", \".5\", \"5.\", with optional surrounding space, tab, newline, carriage return, vertical tab or form feed). Other strings, and a JSON number outside the range of a double, answer 400 \"The price must be a number\". A negative price is accepted and stored. A numeric string outside the range of a double (\"1e309\", 400 digits) passes that check and answers 400 \"The database rejected this request\". The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									}
 								}
 							}
@@ -4134,8 +4282,16 @@
 								],
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The amount to mark as opened"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The amount to mark as opened. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; zero answers 400 \"Amount must be greater than 1.0E-9\" and more than is unopened answers 400. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"stock_entry_id": {
 										"type": "string",
@@ -4326,8 +4482,16 @@
 								],
 								"properties": {
 									"gross_amount": {
-										"type": "number",
-										"description": "The gross reading, in the location's own tare_qu_id; the server subtracts the location's tare_weight"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The gross reading, in the location's own tare_qu_id; the server subtracts the location's tare_weight. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The gross amount must be a number\". A string of 400 digits or \"1e309\" answers 400 \"Stock amounts must be finite\"; a reading below the location's tare weight answers 400. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"gross_qu_id": {
 										"type": "integer",
@@ -4422,8 +4586,16 @@
 								],
 								"properties": {
 									"gross_amount": {
-										"type": "number",
-										"description": "The gross reading, in the location's own tare_qu_id; the server subtracts the location's tare_weight"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The gross reading, in the location's own tare_qu_id; the server subtracts the location's tare_weight. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The gross amount must be a number\". A string of 400 digits or \"1e309\" answers 400 \"Stock amounts must be finite\"; a reading below the location's tare weight answers 400. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"gross_qu_id": {
 										"type": "integer",
@@ -4762,7 +4934,7 @@
 								"properties": {
 									"product_id": {
 										"type": "integer",
-										"description": "A valid product id of the product to be added"
+										"description": "A valid product id of the product to be added. A string is accepted when PostgreSQL reads it as an integer (\"2\", \"+2\", \" 2\", \"02\"). A JSON number with an integral value inside the range of the integer column is accepted (1e3 is read as 1000). A numeric value PostgreSQL cannot read as an integer answers 400 \"The database rejected this request\": the strings \"2.5\", \"2.0\", \"1e3\" and \"1e309\", a string of 400 digits, and a JSON number with a fraction (2.5). 0 (also -0 as a JSON number), \"0\", \"\", a value that is not numeric (\"abc\", \"2abc\", \"0x1A\", one with a no-break space) and a JSON number outside the range of a double (1e309) answer 400 \"No product id was supplied\". A whole number outside the integer range (2147483648, 99999999999, as a number or a string) answers 400 and nothing changes. A negative id (-2, \"-2\", \"-0\") answers 400 \"Product does not exist or is inactive\", as does an id that names no product. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"qu_id": {
 										"type": "integer",
@@ -4847,7 +5019,7 @@
 								"properties": {
 									"product_id": {
 										"type": "integer",
-										"description": "A valid product id of the item on the shopping list"
+										"description": "A valid product id of the item on the shopping list. A string is accepted when PostgreSQL reads it as an integer (\"2\", \"+2\", \" 2\", \"02\"). A JSON number with an integral value inside the range of the integer column is accepted (1e3 is read as 1000). A numeric value PostgreSQL cannot read as an integer answers 400 \"The database rejected this request\": the strings \"2.5\", \"2.0\", \"1e3\" and \"1e309\", a string of 400 digits, and a JSON number with a fraction (2.5). 0 (also -0 as a JSON number), \"0\", \"\", a value that is not numeric (\"abc\", \"2abc\", \"0x1A\", one with a no-break space) and a JSON number outside the range of a double (1e309) answer 400 \"No product id was supplied\". A whole number outside the integer range (2147483648, 99999999999, as a number or a string) answers 400 and nothing changes. A negative id (-2, \"-2\") or \"-0\" answers 204 and nothing changes (issue #950). The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"list_id": {
 										"type": "integer",
