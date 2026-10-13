@@ -5180,17 +5180,21 @@ class StockService extends BaseService
 
 				if ($check['child'] && $before === [] && $after === [])
 				{
-					// Allowed only when the scale is 1 AND the relationship is unchanged: a factor near 1
-					// alone is not enough, since a child of the removed product would move from one
-					// parent stock unit to another (maintainer decision, #901).
+					// Allowed only when the scale is 1 under the tolerance (maintainer decisions, #901 and
+					// the one on #921): a child with no conversion has the same (unconverted) contribution
+					// on both sides, so it is unaffected exactly when the parent's stock unit is the same
+					// unit relationship after the merge. That is either the identical unit, or two units
+					// an actual resolved conversion (global or the removed product's own) joins at 1. A
+					// missing conversion's fallback of 1 is never evidence of equivalence, so a factor
+					// that did not come from a resolved row is refused here even at 1.
 					if (!$agree(1.0, 1.0, $scale))
 					{
 						throw $refusal($who . ' has no quantity unit conversion to its parent\'s stock unit before or after the merge, which counts it at 1, but the merge scales stock by ' . $fmt($scale) . ' so it would be counted differently');
 					}
 
-					if ($check['removed'] && $removedStockUnit !== $keptStockUnit)
+					if ($check['removed'] && $removedStockUnit !== $keptStockUnit && ($conversion === null || !$agree(1.0, (float)$conversion->factor, 1.0)))
 					{
-						throw $refusal($who . ' has no quantity unit conversion to its parent\'s stock unit before or after the merge, and the merge would move it from stock unit ' . $removedStockUnit . ' of product ' . $productIdToRemove . ' to stock unit ' . $keptStockUnit . ' of product ' . $productIdToKeep);
+						throw $refusal($who . ' has no quantity unit conversion to its parent\'s stock unit before or after the merge, and no conversion of factor 1 joins stock unit ' . $removedStockUnit . ' of product ' . $productIdToRemove . ' to stock unit ' . $keptStockUnit . ' of product ' . $productIdToKeep . ' to show they are the same unit');
 					}
 
 					continue;

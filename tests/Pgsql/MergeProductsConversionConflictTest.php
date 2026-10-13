@@ -803,7 +803,103 @@ class MergeProductsConversionConflictTest extends PgsqlSchemaTestCase
 		$this->assertRefusalNaming($keep, $remove, [$child, $strip, 4]);
 	}
 
-	public function testAChildWithNoConversionIsRefusedWhenAOneToOneFactorMovesItBetweenStockUnits(): void
+	private static function aggregatedAmount(int $productId): float
+	{
+		// The view has a rolled-up row and a plain one per parent; the rolled-up one is the aggregate.
+		return (float)self::$db->query("SELECT amount_aggregated FROM stock_current WHERE product_id = $productId ORDER BY is_aggregated_amount DESC LIMIT 1")->fetchColumn();
+	}
+
+	/*
+	 * Maintainer decision on #921 (2026-10-13): a child with no conversion to its parent's stock unit
+	 * before or after the merge is allowed when the two stock units are the same effective unit
+	 * relationship - identical, or joined by a resolved conversion whose factor is 1 - not only
+	 * when the unit ids are identical. A missing conversion's fallback of 1 is no evidence of it.
+	 * Identical units: testAChildWithNoConversionOnEitherSideMergesWhenTheFactorIsOne.
+	 */
+	public function testAChildWithNoConversionIsAllowedWhenAGlobalOneToOneFactorJoinsTheStockUnits(): void
+	{
+		$strip = self::unit('MPCC strip');
+		$piece = self::unit('MPCC piece');
+		$each = self::unit('MPCC each');
+		self::conversion($piece, $each, 1, null);
+		$keep = self::product('MPCC keep', $each);
+		$remove = self::product('MPCC remove', $piece);
+		$child = self::product('MPCC child', $strip, $remove);
+		self::stock($remove, 2);
+		self::stock($child, 3);
+		// Migration 0298 (#553): a sub product with no conversion to its parent's stock unit contributes 0.
+		self::assertSame(2.0, self::aggregatedAmount($remove), 'Given: the unconvertible child adds nothing to its parent');
+
+		$message = self::merge($keep, $remove);
+
+		self::assertNull($message, 'Then: the merge is allowed');
+		self::assertSame($keep, (int)self::$db->query("SELECT parent_product_id FROM products WHERE id = $child")->fetchColumn());
+		self::assertFalse(self::productExists($remove));
+		self::assertSame(2.0, self::aggregatedAmount($keep), 'Then: the moved stock counts 2 in the kept unit and the child still adds nothing');
+		self::assertSame(3.0, (float)self::$db->query("SELECT amount FROM stock WHERE product_id = $child")->fetchColumn(), 'Then: the child\'s own stock is untouched');
+		self::assertSame(0, (int)self::$db->query("SELECT count(*) FROM quantity_unit_conversions WHERE product_id IN ($keep, $child)")->fetchColumn(), 'Then: neither product has a conversion of its own, so the child still has none');
+	}
+
+	public function testAChildWithNoConversionIsRefusedWhenTheStockUnitsHaveNoConnectingConversion(): void
+	{
+		$strip = self::unit('MPCC strip');
+		$piece = self::unit('MPCC piece');
+		$each = self::unit('MPCC each');
+		$keep = self::product('MPCC keep', $each);
+		$remove = self::product('MPCC remove', $piece);
+		self::product('MPCC child', $strip, $remove);
+
+		$before = self::snapshot();
+		$message = self::merge($keep, $remove);
+
+		self::assertNotNull($message, 'Then: a missing conversion is not read as 1');
+		self::assertStringContainsString('no quantity unit conversion exists', $message);
+		self::assertTrue(self::productExists($remove));
+		self::assertSame($before, self::snapshot(), 'Then: no row of any table changed');
+	}
+
+	public function testAChildWithNoConversionIsRefusedWhenOnlyAGlobalNonOneFactorJoinsTheStockUnits(): void
+	{
+		$strip = self::unit('MPCC strip');
+		$piece = self::unit('MPCC piece');
+		$each = self::unit('MPCC each');
+		self::conversion($piece, $each, 2, null);
+		$keep = self::product('MPCC keep', $each);
+		$remove = self::product('MPCC remove', $piece);
+		$child = self::product('MPCC child', $strip, $remove);
+
+		$this->assertRefusalNaming($keep, $remove, [$child, $strip, 2]);
+	}
+
+	/*
+	 * A child that gains or loses a conversion while the stock-unit factor is 1 cannot be built: a 1:1
+	 * conversion between the stock units is symmetric and transitive, so a child that reaches one unit
+	 * reaches the other at the same factor and a child that reaches neither still reaches neither. A
+	 * child that does reach them is the next test; the gain/loss refusals stay covered by the tests
+	 * above with a factor that is not 1.
+	 */
+	public function testAChildWhoseConversionSurvivesThroughTheEquivalenceIsNotAffected(): void
+	{
+		$strip = self::unit('MPCC strip');
+		$piece = self::unit('MPCC piece');
+		$each = self::unit('MPCC each');
+		self::conversion($piece, $each, 1, null);
+		$keep = self::product('MPCC keep', $each);
+		$remove = self::product('MPCC remove', $piece);
+		$child = self::product('MPCC child', $strip, $remove);
+		// Readable before through piece; after the merge the same factor is reached through the global 1:1 to each.
+		self::conversion($strip, $piece, 4, $child);
+		self::stock($child, 3);
+
+		self::assertNull(self::merge($keep, $remove), 'Then: the child converts at 4 on both sides');
+		self::assertSame(12.0, self::aggregatedAmount($keep));
+	}
+
+	/**
+	 * Open question (reported in the pull request): a 1:1 conversion that belongs to the removed product only is
+	 * a resolved conversion path between the two stock units, so (a)-(c) of the decision allow it.
+	 */
+	public function testAChildWithNoConversionIsAllowedWhenARemovedProductOneToOneFactorJoinsTheStockUnits(): void
 	{
 		$strip = self::unit('MPCC strip');
 		$piece = self::unit('MPCC piece');
@@ -813,6 +909,7 @@ class MergeProductsConversionConflictTest extends PgsqlSchemaTestCase
 		self::conversion($piece, $each, 1, $remove);
 		$child = self::product('MPCC child', $strip, $remove);
 
-		$this->assertRefusalNaming($keep, $remove, [$child, $strip, $piece, $each]);
+		self::assertNull(self::merge($keep, $remove), 'Then: a resolved 1:1 path between the stock units establishes equivalence');
+		self::assertSame($keep, (int)self::$db->query("SELECT parent_product_id FROM products WHERE id = $child")->fetchColumn());
 	}
 }
