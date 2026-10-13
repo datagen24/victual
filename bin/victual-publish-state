@@ -46,7 +46,9 @@ $labelEventType = 'label.print_requested';
 
 if (in_array('--help', $arguments, true) || in_array('-h', $arguments, true))
 {
-	echo "Usage: php bin/victual-publish-state [--retract] [--drain] [--quiet]\n\n";
+	echo "Usage: php bin/victual-publish-state [--retract] [--drain] [--quiet]\n";
+	echo "       php bin/victual-publish-state --requeue-dead (--ids=N,N,... | --event-type=" . $influxEventType . ")\n";
+	echo "                                     [--execute | --dry-run] [--expect-count=N]\n\n";
 	echo "  Publishes the Home Assistant discovery payloads and the full state snapshot as\n";
 	echo "  retained MQTT topics. Run it once after every deployment, from a postStart hook\n";
 	echo "  or a Job next to the bin/victual-migrate initContainer.\n\n";
@@ -83,9 +85,10 @@ if (in_array('--help', $arguments, true) || in_array('-h', $arguments, true))
 	echo "             id means nothing is requeued and the exit code is 1. Eligibility is\n";
 	echo "             checked again, with the rows locked, when the requeue runs.\n";
 	echo "             attempts and last_error are kept, and last_error is replaced only by a\n";
-	echo "             later failure. Each requeued row's id, dead_lettered_at and full last_error\n";
-	echo "             are printed to standard output first, even with --quiet; keep that output,\n";
-	echo "             it is the only record of why the row was set aside. A row set aside because\n";
+	echo "             later failure. After the requeue commits, each requeued row's id, previous\n";
+	echo "             dead_lettered_at and full last_error are printed to standard output; keep\n";
+	echo "             that output, it is the operator's record of why the row was set aside.\n";
+	echo "             --quiet is refused with --requeue-dead. A row set aside because\n";
 	echo "             its payload is unreadable or its lines cannot be built is dead-lettered again\n";
 	echo "             by the next drain; last_error says which (\"could not build the InfluxDB\n";
 	echo "             lines\" or a payload message, rather than an \"HTTP 400/413/422\" refusal).\n";
@@ -113,6 +116,7 @@ if ($requeueDead || count($requeueOptions) > 0 || $execute || $dryRun)
 	$refusal = null;
 	$requeueIds = [];
 	$allowed = ['--requeue-dead', '--execute', '--dry-run', '--quiet'];
+	$seen = [];
 
 	foreach ($arguments as $argument)
 	{
@@ -121,9 +125,24 @@ if ($requeueDead || count($requeueOptions) > 0 || $execute || $dryRun)
 			$refusal = 'Unknown or incompatible argument with --requeue-dead: ' . $argument;
 			break;
 		}
+
+		// A repeated option would silently use one of its values
+		$name = explode('=', $argument, 2)[0];
+
+		if (isset($seen[$name]))
+		{
+			$refusal = $name . ' was given more than once.';
+			break;
+		}
+
+		$seen[$name] = true;
 	}
 
-	if ($refusal === null && !$requeueDead)
+	if ($refusal === null && $requeueDead && $quiet)
+	{
+		$refusal = '--quiet cannot be used with --requeue-dead: its report is the operator\'s record of why the rows were set aside.';
+	}
+	elseif ($refusal === null && !$requeueDead)
 	{
 		$refusal = '--ids, --event-type, --expect-count, --execute and --dry-run belong to --requeue-dead.';
 	}

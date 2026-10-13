@@ -438,7 +438,13 @@ class OutboxRequeueTest extends PgsqlSchemaTestCase
 			['--requeue-dead', '--ids='],
 			['--requeue-dead', '--event-type=nonsense', '--execute'],
 			['--requeue-dead', '--event-type=' . self::INFLUX, '--execute', '--expect-count=x'],
-			['--requeue-dead', '--ids=' . $id, '--expect-count=1']
+			['--requeue-dead', '--ids=' . $id, '--expect-count=1'],
+			['--requeue-dead', '--ids=' . $id, '--ids=' . ($id + 1)],
+			['--requeue-dead', '--event-type=' . self::INFLUX, '--execute', '--execute'],
+			['--requeue-dead', '--ids=' . $id, '--quiet'],
+			['--ids=' . $id],
+			['--execute'],
+			['--dry-run']
 		] as $arguments)
 		{
 			[$exit, , $stderr] = self::cli(...$arguments);
@@ -458,6 +464,7 @@ class OutboxRequeueTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('label', $stdout);
 		self::assertStringContainsString('attempts', $stdout);
 		self::assertStringContainsString('last_error', $stdout);
+		self::assertStringContainsString('[--execute | --dry-run] [--expect-count=N]', $stdout, 'the usage line shows the new mode');
 		self::assertStringContainsString('dead-lettered again', $stdout, 'rows set aside as unbuildable come straight back');
 	}
 
@@ -495,6 +502,14 @@ class OutboxRequeueTest extends PgsqlSchemaTestCase
 			}
 
 			self::assertSame([], $claimed, 'the uncommitted requeue is invisible to a drain: the row is still dead-lettered as far as it can tell');
+
+			// The discriminating check: even a plain FOR UPDATE (no SKIP LOCKED) with the drain's
+			// predicate returns nothing, and does not block, so it is the predicate that keeps
+			// the drain away from the row and not the skipping of locked rows.
+			$drainer->exec("SET lock_timeout = '2s'");
+			$plain = $drainer->query("SELECT id FROM outbox WHERE event_type = 'stock.transaction_booked' AND delivered_at IS NULL AND dead_lettered_at IS NULL ORDER BY id FOR UPDATE")->fetchAll(PDO::FETCH_COLUMN);
+			$drainer->exec('RESET lock_timeout');
+			self::assertSame([], $plain, 'a plain FOR UPDATE with the drain predicate finds nothing and does not wait');
 		}
 		finally
 		{

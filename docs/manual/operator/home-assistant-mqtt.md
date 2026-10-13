@@ -108,9 +108,10 @@ php bin/victual-publish-state --requeue-dead --event-type=stock.transaction_book
   `--expect-count=N` with the count the dry run showed, and the command changes nothing if
   the count is different now.
 - **Nothing is reset.** `attempts` and `last_error` keep their values; a later failure
-  overwrites `last_error`. Before clearing, the command prints each row's id, its
-  `dead_lettered_at` time and its full `last_error` to standard output. That output is the record
-  of why the row was set aside, so keep it. It is not logged anywhere else and is never sent to
+  overwrites `last_error`, so it stays in the row until then. After the requeue commits, the
+  command prints each requeued row's id, its previous `dead_lettered_at` time and its full
+  `last_error` to standard output. That output is the record of why the row was set aside, so
+  keep it. `--quiet` is refused with this mode. It is not logged anywhere else and is never sent to
   MQTT or InfluxDB.
 - **Redelivery overwrites.** The lines are rebuilt from the stored payload alone, so the
   second write names the same points as the first.
