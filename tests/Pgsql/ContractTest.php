@@ -1779,11 +1779,8 @@ class ContractTest extends PgsqlSchemaTestCase
 	 * the /api/stock routes reach, which the test asserts;
 	 * RecipeFulfillmentResponse is the other schema issue #787 names.
 	 *
-	 * Not listed, because they still omit keys the server sends (found by this leg's walk
-	 * over contract-admin.json when it was written, and left for their own change):
-	 * BatteryChargeCycleEntry and BatteryDetailsResponse, and the inline GET /system/info
-	 * schema, which has no component name for this walk to attribute its keys to. Adding a
-	 * schema here is how its gaps become a failure.
+	 * Not listed: the inline GET /system/info schema, which has no component name for this
+	 * walk to attribute its keys to. Adding a schema here is how its gaps become a failure.
 	 */
 	private const UNDECLARED_KEY_COVERED_SCHEMAS = [
 		'CurrentStockResponse',
@@ -1808,6 +1805,8 @@ class ContractTest extends PgsqlSchemaTestCase
 		'Role',
 		'ShoppingLocation',
 		'TaskCategory',
+		'BatteryChargeCycleEntry',
+		'BatteryDetailsResponse',
 	];
 
 	/** The schemas issue #787 names, which the covered list has to include. */

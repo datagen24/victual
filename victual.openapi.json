@@ -14964,6 +14964,23 @@
 					"battery_id": {
 						"type": "integer"
 					},
+					"undone": {
+						"type": "integer",
+						"enum": [
+							0,
+							1
+						],
+						"description": "1 once this charge cycle has been undone, else 0 (battery_charge_cycles.undone, CHECK 0 or 1)."
+					},
+					"undone_timestamp": {
+						"type": [
+							"string",
+							"null"
+						],
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "When this charge cycle was undone, null while it is not. An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
+					},
 					"tracked_time": {
 						"type": [
 							"string",
