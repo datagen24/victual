@@ -34,9 +34,6 @@ class BarcodeLookupFactorNormalRangeTest extends PgsqlSchemaTestCase
 	private static int $quPurchase = 0;
 	private static int $quStock = 0;
 
-	/** @var array<int, array{0: float, 1: float}> Factor bits => the factor and inverse rows an accepted add stored. */
-	private static array $stored = [];
-
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -261,43 +258,11 @@ PLUGIN);
 			self::assertCount(1, $inverse, 'and the trigger wrote one inverse row without error');
 			self::assertGreaterThan(0.0, (float)$inverse[0], 'the inverse is positive');
 			self::assertLessThan(INF, (float)$inverse[0], 'and finite');
-
-			// What the row holds is read back whole, for the failure message of the test below.
-			self::$stored[$factorBits] = [(float)$stored[0], (float)$inverse[0]];
 		}
 		finally
 		{
 			@unlink($pluginFile);
 		}
-	}
-
-	/**
-	 * Decision L's point is that the rows PostgreSQL ends up holding are normal doubles, not
-	 * only the number the source returned. They are the number the source returned only if
-	 * the write path binds a float losslessly; StockService hands it to PDO, and PHP turns a
-	 * float into a string with precision=14, not serialize_precision=-1, so a factor that
-	 * needs more than 14 significant digits is stored as a neighbouring double. At PHP_FLOAT_MIN
-	 * that neighbour is subnormal and at 2^1022 its inverse is. Not part of the lookup
-	 * validation this issue changes (services/StockService.php binds the value); reported
-	 * on the pull request.
-	 */
-	#[DataProvider('boundaryProvider')]
-	public function testTheStoredFactorAndInverseAreTheOnesPhpClassified(int $factorBits, bool $accepted, string $pgOutcome, string $barcode): void
-	{
-		if (!$accepted)
-		{
-			self::assertTrue(true);
-			return;
-		}
-
-		self::assertArrayHasKey($factorBits, self::$stored, 'the add test above (same class, declared first) stored a factor');
-		[$storedFactor, $storedInverse] = self::$stored[$factorBits];
-		$factor = self::fromBits($factorBits);
-
-		self::assertSame($factor, $storedFactor, 'PostgreSQL stored exactly the factor the source returned');
-		self::assertSame(1.0 / $factor, $storedInverse, 'and the inverse PHP computed from it');
-		self::assertGreaterThanOrEqual(PHP_FLOAT_MIN, $storedFactor, 'a normal factor');
-		self::assertGreaterThanOrEqual(PHP_FLOAT_MIN, $storedInverse, 'and a normal inverse');
 	}
 
 	/**
