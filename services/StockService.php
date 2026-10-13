@@ -5002,22 +5002,26 @@ class StockService extends BaseService
 				throw new \Exception('Cannot merge: $productIdToRemove has sub products, and $productIdToKeep already has an unrelated parent product (only one level of nesting is supported)');
 			}
 
-			// Issue #901: the rows below that carry their OWN unit (a consumption recipe line, a
-			// consumption mapping with a unit, a recipes_pos row that only checks a single unit, a
-			// barcode's package amount) are converted at read time through the owning product's
-			// resolved conversions, and after the merge that product is the kept one. The rule, per
-			// affected row and unit: take the factor the row's reader uses before and after the merge
+			// Issue #901 (maintainer decisions of 2026-10-13): refuse a merge that removes or changes any
+			// effective conversion an existing row relies on - for the removed product's rows, for the
+			// KEPT product's own rows, for barcodes of either product and for the children of either.
+			// The rows concerned carry their OWN unit (a consumption recipe line, a consumption mapping
+			// with a unit, a recipes_pos row that only checks a single unit, a barcode's package
+			// amount) and are converted at read time through the owning product's resolved
+			// conversions; the kept product's conversions are what they use after the merge. Per
+			// affected row and unit, take the factor the row's reader uses before and after the merge
 			// (the resolved conversion; where there is none, the reader's own fallback - 1.0 where it
 			// COALESCEs, "unreadable" where it fails or drops the row) and refuse iff
 			//   - the reader could read the row before and cannot after, or
 			//   - it reads it on both sides and
-			//       F_removed(unit -> removed stock unit) * $factor  !=  F_kept_after_merge(unit -> kept stock unit)
-			//     under CompareAmounts. $factor is the multiplier the merge applies to the row's own
-			//     amount only for stock-unit amounts; own-unit amounts are not rescaled (r = 1).
-			// A row that is unreadable before the merge never changes meaning by it. "Effective" is the
-			// resolved conversion (global fallbacks and transitive paths included), and
-			// F_kept_after_merge is read from the state the conversion dedupe-then-move below leaves
-			// behind, reproduced inside a savepoint and rolled back.
+			//       F_before * scale  !=  F_after_merge(unit -> kept stock unit)
+			//     under CompareAmounts, where scale is $factor for the removed product's rows and 1 for
+			//     the kept product's (own-unit amounts are not rescaled).
+			// A row that is unreadable before the merge never changes meaning by it (a child is the
+			// exception: see below). "Effective" is the resolved conversion (global fallbacks and
+			// transitive paths included); F_after_merge is read from the state the conversion
+			// dedupe-then-move below leaves behind, reproduced inside a savepoint and rolled back.
+			// A change of structure that leaves every effective factor equal is permitted.
 			// Classification of every column the merge repoints is in the pull request.
 			$fmt = fn(float $value): string => sprintf('%.12g', $value);
 
@@ -5045,54 +5049,75 @@ class StockService extends BaseService
 				return $result;
 			};
 
-			// One entry per (row type, unit). A recipes_pos row with the single-unit flag is read by the
-			// views with COALESCE(qucr.factor, 1.0) (05_views_l3.sql :164, :174): a missing conversion
-			// reads as 1.0 on either side. Consumption lines and mappings (422 at read time) and
-			// barcodes (the purchase screen offers only convertible units) are unreadable when there is
-			// none. A unit that does not reach the kept stock unit is refused here for barcodes; for
-			// lines and mappings the #848 refusal further down keeps its own message. A barcode's
-			// qu_id is never NULL (default_qu_INS/_UPD fill it with the stock unit).
-			// Pending maintainer decision: a barcode that was readable and is not after the merge
-			// refuses (table cell "P before / empty after"), and so do the child cells below.
-			$rowTypes = [
-				['SELECT DISTINCT qu_id FROM consumption_recipe_lines WHERE product_id = ' . $productIdToRemove, false, false],
-				['SELECT DISTINCT qu_id FROM consumption_mappings WHERE product_id = ' . $productIdToRemove . ' AND qu_id IS NOT NULL', false, false],
-				['SELECT DISTINCT qu_id FROM recipes_pos WHERE product_id = ' . $productIdToRemove . ' AND only_check_single_unit_in_stock = 1 AND qu_id IS NOT NULL', true, false],
-				['SELECT DISTINCT qu_id FROM product_barcodes WHERE product_id = ' . $productIdToRemove . ' AND amount IS NOT NULL AND qu_id IS NOT NULL', false, true],
-			];
-			$pairs = [];
-			$units = [];
-			foreach ($rowTypes as [$sql, $missingReadsAsOne, $refuseWhenUnreadableAfter])
-			{
-				foreach (DatabaseService::GetInstance()->GetDbConnectionRaw()->query($sql)->fetchAll(\PDO::FETCH_COLUMN) as $quId)
-				{
-					$key = ($missingReadsAsOne ? 'one:' : 'unreadable:') . (int)$quId;
-					$pairs[$key] = [(int)$quId, $missingReadsAsOne, $refuseWhenUnreadableAfter || ($pairs[$key][2] ?? false)];
-					$units[(int)$quId] = true;
-				}
-			}
 			$removedStockUnit = (int)$productToRemove->qu_id_stock;
 			$keptStockUnit = (int)$productToKeep->qu_id_stock;
-			$removedBefore = $resolved($productIdToRemove, $removedStockUnit, array_keys($units));
+			$connection = DatabaseService::GetInstance()->GetDbConnectionRaw();
 
-			// Pending maintainer decision (children): a child with no conversion before and a conversion
-			// after, and one with none on either side, keep the behaviour below (table cells "empty/P"
-			// and "empty/empty").
-			// A child of the removed product is aggregated into its parent through the child's own
-			// conversion to the parent's stock unit (a missing one counts as 1), and is repointed to
-			// the kept product by the merge.
-			$children = [];
-			$childRows = DatabaseService::GetInstance()->GetDbConnectionRaw()->query('SELECT id, qu_id_stock FROM products WHERE parent_product_id = ' . $productIdToRemove . ' AND id <> ' . $productIdToKeep . ' ORDER BY id')->fetchAll(\PDO::FETCH_NUM);
-			foreach ($childRows as [$childId, $childStockUnit])
+			// One entry per (owner, row kind, unit), for the rows of the removed product AND of the kept
+			// one (the move below can give the kept product conversions that win over the ones its own
+			// rows relied on). A recipes_pos row with the single-unit flag is read by the views with
+			// COALESCE(qucr.factor, 1.0) (05_views_l3.sql :164, :174): a missing conversion reads as 1.0
+			// on either side. Consumption lines and mappings (422 at read time) and barcodes (the
+			// purchase screen offers only convertible units) are unreadable when there is none. For the
+			// removed product's lines and mappings the #848 refusal further down keeps its own message
+			// for a unit that does not reach the kept stock unit. A barcode's qu_id is never NULL
+			// (default_qu_INS/_UPD fill it with the stock unit).
+			$checks = [];
+			foreach ([[$productIdToRemove, true], [$productIdToKeep, false]] as [$ownerId, $ownedByRemoved])
 			{
-				$before = $resolved((int)$childId, $removedStockUnit, [(int)$childStockUnit])[(int)$childStockUnit];
-				$children[(int)$childId] = [(int)$childStockUnit, $before === [] ? [1.0] : $before];
+				$rowKinds = [
+					['recipe line', 'SELECT id, qu_id FROM consumption_recipe_lines WHERE product_id = ' . $ownerId, false, $ownedByRemoved],
+					['mapping', 'SELECT id, qu_id FROM consumption_mappings WHERE product_id = ' . $ownerId . ' AND qu_id IS NOT NULL', false, $ownedByRemoved],
+					['single-unit recipes_pos row', 'SELECT id, qu_id FROM recipes_pos WHERE product_id = ' . $ownerId . ' AND only_check_single_unit_in_stock = 1 AND qu_id IS NOT NULL', true, false],
+					['barcode', 'SELECT id, qu_id FROM product_barcodes WHERE product_id = ' . $ownerId . ' AND amount IS NOT NULL AND qu_id IS NOT NULL', false, false],
+				];
+				foreach ($rowKinds as [$kind, $sql, $missingReadsAsOne, $deferToExistingRefusal])
+				{
+					$idsByUnit = [];
+					foreach ($connection->query($sql)->fetchAll(\PDO::FETCH_NUM) as [$rowId, $quId])
+					{
+						$idsByUnit[(int)$quId][] = (int)$rowId;
+					}
+
+					foreach ($idsByUnit as $quId => $rowIds)
+					{
+						$checks[] = ['owner' => $ownerId, 'removed' => $ownedByRemoved, 'kind' => $kind, 'ids' => $rowIds, 'unit' => $quId, 'one' => $missingReadsAsOne, 'defer' => $deferToExistingRefusal, 'child' => false];
+					}
+				}
 			}
 
-			$keptAfter = [];
-			$childrenAfter = [];
+			// A child is aggregated into its parent through the child's own conversion to the parent's
+			// stock unit; the view reads 1.0 when there is none (04_views_l1a.sql :47-50). The removed
+			// product's children are repointed to the kept product by the merge; the kept product's
+			// own children keep their parent. Rules (maintainer, #901): readable on both sides ->
+			// compare; readable before and not after, or not before and readable after -> refuse; none
+			// on either side -> allowed only when the merge's stock scale is 1 (CompareAmounts), since
+			// the view reads 1.0 on both sides.
+			$childRows = $connection->query('SELECT id, qu_id_stock, parent_product_id FROM products WHERE parent_product_id IN (' . $productIdToRemove . ', ' . $productIdToKeep . ') AND id NOT IN (' . $productIdToRemove . ', ' . $productIdToKeep . ') ORDER BY id')->fetchAll(\PDO::FETCH_NUM);
+			foreach ($childRows as [$childId, $childStockUnit, $childParent])
+			{
+				$checks[] = ['owner' => (int)$childParent, 'removed' => (int)$childParent === $productIdToRemove, 'kind' => 'sub product', 'ids' => [(int)$childId], 'unit' => (int)$childStockUnit, 'one' => false, 'defer' => false, 'child' => true];
+			}
+
+			// Before the merge: the removed product's rows read through the removed product, the kept
+			// product's through the kept product; a child through its own conversion to its parent.
+			$unitsByReading = [];
+			foreach ($checks as $index => $check)
+			{
+				if ($check['child'])
+				{
+					$checks[$index]['before'] = $resolved($check['ids'][0], $check['removed'] ? $removedStockUnit : $keptStockUnit, [$check['unit']])[$check['unit']];
+					continue;
+				}
+
+				$unitsByReading[$check['removed'] ? 'removed' : 'kept'][$check['unit']] = true;
+			}
+			$removedBefore = $resolved($productIdToRemove, $removedStockUnit, array_keys($unitsByReading['removed'] ?? []));
+			$keptBefore = $resolved($productIdToKeep, $keptStockUnit, array_keys($unitsByReading['kept'] ?? []));
+
 			// Nothing to compare when no affected row and no sub product exists: skip the savepoint work.
-			if ($units !== [] || $children !== [])
+			$keptAfter = [];
+			if ($checks !== [])
 			{
 				DatabaseService::GetInstance()->ExecuteDbStatement('SAVEPOINT merge_products_conversion_check');
 				try
@@ -5103,10 +5128,13 @@ class StockService extends BaseService
 					DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE products SET parent_product_id = NULL WHERE id = ' . $productIdToKeep . ' AND parent_product_id = ' . $productIdToRemove);
 					DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE products SET parent_product_id = ' . $productIdToKeep . ' WHERE parent_product_id = ' . $productIdToRemove);
 
-					$keptAfter = $resolved($productIdToKeep, $keptStockUnit, array_keys($units));
-					foreach ($children as $childId => $child)
+					$keptAfter = $resolved($productIdToKeep, $keptStockUnit, array_keys(($unitsByReading['removed'] ?? []) + ($unitsByReading['kept'] ?? [])));
+					foreach ($checks as $index => $check)
 					{
-						$childrenAfter[$childId] = $resolved($childId, $keptStockUnit, [$child[0]])[$child[0]];
+						if ($check['child'])
+						{
+							$checks[$index]['after'] = $resolved($check['ids'][0], $keptStockUnit, [$check['unit']])[$check['unit']];
+						}
 					}
 				}
 				finally
@@ -5116,69 +5144,78 @@ class StockService extends BaseService
 				}
 			}
 
-			// Two factors agree when the removed product's, carried into the kept stock unit by
-			// $factor, equals the kept product's under the repository's amount rule (ADR-0032). That
+			// Two factors agree when the row's factor before the merge, carried into the kept stock unit
+			// by $scale, equals the factor after it under the repository's amount rule (ADR-0032). That
 			// rule has an absolute floor, so two factors both below about 1e-8 always compare equal.
-			$agree = function (float $beforeFactor, float $afterFactor) use ($factor): bool
+			$agree = function (float $beforeFactor, float $afterFactor, float $scale): bool
 			{
-				$carried = $beforeFactor * $factor;
+				$carried = $beforeFactor * $scale;
 
 				return is_finite($carried) && is_finite($afterFactor) && StockService::CompareAmounts($carried, $afterFactor) === 0;
 			};
+			$list = fn(array $factors): string => $factors === [] ? 'none' : implode(', ', array_map($fmt, $factors));
+			$refusal = fn(string $text): \Exception => new \Exception('Cannot merge product ' . $productIdToRemove . ' into product ' . $productIdToKeep . ': ' . $text);
 
-			foreach ($pairs as [$quId, $missingReadsAsOne, $refuseWhenUnreadableAfter])
+			foreach ($checks as $check)
 			{
-				$beforeFactors = $removedBefore[$quId];
-				$afterFactors = $keptAfter[$quId];
-
-				if ($missingReadsAsOne)
+				$scale = $check['removed'] ? (float)$factor : 1.0;
+				if ($check['child'])
 				{
-					$beforeFactors = $beforeFactors === [] ? [1.0] : $beforeFactors;
-					$afterFactors = $afterFactors === [] ? [1.0] : $afterFactors;
+					$before = $check['before'];
+					$after = $check['after'];
+				}
+				else
+				{
+					$before = $check['removed'] ? $removedBefore[$check['unit']] : $keptBefore[$check['unit']];
+					$after = $keptAfter[$check['unit']];
 				}
 
-				if ($beforeFactors === [])
+				if ($check['one'])
+				{
+					$before = $before === [] ? [1.0] : $before;
+					$after = $after === [] ? [1.0] : $after;
+				}
+
+				$who = ($check['child'] ? 'sub product ' . $check['ids'][0] . ' (stock unit ' . $check['unit'] . ') of product ' . $check['owner'] : $check['kind'] . ' ' . implode(', ', $check['ids']) . ' of product ' . $check['owner'] . ' (quantity unit ' . $check['unit'] . ')');
+
+				if ($check['child'] && $before === [] && $after === [])
+				{
+					if (!$agree(1.0, 1.0, $scale))
+					{
+						throw $refusal($who . ' has no quantity unit conversion to its parent\'s stock unit before or after the merge, which counts it at 1, but the merge scales stock by ' . $fmt($scale) . ' so it would be counted differently');
+					}
+
+					continue;
+				}
+
+				if ($check['child'] && $before === [])
+				{
+					throw $refusal($who . ' has no quantity unit conversion to its parent\'s stock unit before the merge and would have one at ' . $list($after) . ' after it');
+				}
+
+				if ($before === [])
 				{
 					// Unreadable before the merge, so there is no meaning to carry over.
 					continue;
 				}
 
-				if ($afterFactors === [])
+				if ($after === [])
 				{
-					if ($refuseWhenUnreadableAfter)
+					if ($check['defer'])
 					{
-						throw new \Exception('Cannot merge: a row of product ' . $productIdToRemove . ' uses quantity unit ' . $quId . ', which has no quantity unit conversion to the stock unit of product ' . $productIdToKeep);
+						continue;
 					}
 
-					continue;
+					throw $refusal($who . ' has no quantity unit conversion to the stock unit of product ' . $productIdToKeep . ' after the merge; before it the conversion was ' . $list($before));
 				}
 
-				foreach ($beforeFactors as $beforeFactor)
+				foreach ($before as $beforeFactor)
 				{
-					foreach ($afterFactors as $afterFactor)
+					foreach ($after as $afterFactor)
 					{
-						if (!$agree($beforeFactor, $afterFactor))
+						if (!$agree($beforeFactor, $afterFactor, $scale))
 						{
-							throw new \Exception('Cannot merge: quantity unit ' . $quId . ' would mean a different quantity after the merge. Product ' . $productIdToRemove . ' converts it to its stock unit at ' . $fmt($beforeFactor) . ', which the merge carries into product ' . $productIdToKeep . '\'s stock unit at ' . $fmt($beforeFactor * $factor) . ' (stock scale ' . $fmt((float)$factor) . '); product ' . $productIdToKeep . ' converts it at ' . $fmt($afterFactor));
-						}
-					}
-				}
-			}
-
-			foreach ($children as $childId => [$childStockUnit, $beforeFactors])
-			{
-				if ($childrenAfter[$childId] === [])
-				{
-					throw new \Exception('Cannot merge: sub product ' . $childId . ' of product ' . $productIdToRemove . ' has no quantity unit conversion from its stock unit ' . $childStockUnit . ' to the stock unit of product ' . $productIdToKeep);
-				}
-
-				foreach ($beforeFactors as $beforeFactor)
-				{
-					foreach ($childrenAfter[$childId] as $afterFactor)
-					{
-						if (!$agree($beforeFactor, $afterFactor))
-						{
-							throw new \Exception('Cannot merge: sub product ' . $childId . ' (stock unit ' . $childStockUnit . ') would be counted differently after the merge. It converts its stock unit to the stock unit of product ' . $productIdToRemove . ' at ' . $fmt($beforeFactor) . ', which the merge carries into product ' . $productIdToKeep . '\'s stock unit at ' . $fmt($beforeFactor * $factor) . ' (stock scale ' . $fmt((float)$factor) . '); it converts directly to product ' . $productIdToKeep . '\'s stock unit at ' . $fmt($afterFactor));
+							throw $refusal($who . ' would mean a different quantity after the merge. Before it converts to its stock unit at ' . $fmt($beforeFactor) . ($check['removed'] ? ', which the merge carries into product ' . $productIdToKeep . '\'s stock unit at ' . $fmt($beforeFactor * $scale) . ' (stock scale ' . $fmt($scale) . ')' : '') . '; after it converts to product ' . $productIdToKeep . '\'s stock unit at ' . $fmt($afterFactor));
 						}
 					}
 				}

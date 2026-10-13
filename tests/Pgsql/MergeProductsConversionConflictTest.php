@@ -626,4 +626,141 @@ class MergeProductsConversionConflictTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('no quantity unit conversion', $message);
 		self::assertSame($before, self::snapshot(), 'Then: no row changed');
 	}
+
+	/** Asserts a refusal that names the given tokens and leaves every table (conversion cache included) as it was. */
+	private function assertRefusalNaming(int $keep, int $remove, array $tokens): void
+	{
+		$before = self::snapshot();
+
+		$message = self::merge($keep, $remove);
+
+		self::assertNotNull($message, 'Then: the merge is refused');
+		self::assertToken((string)$keep, $message, 'Then: the message names the kept product id');
+		self::assertToken((string)$remove, $message, 'Then: the message names the removed product id');
+		foreach ($tokens as $token)
+		{
+			self::assertToken((string)$token, $message, 'Then: the message names ' . $token);
+		}
+		self::assertDoesNotMatchRegularExpression('/\b(change|edit|adjust|update|set)\b/i', $message, 'Then: the message does not tell the operator to alter a conversion');
+		self::assertTrue(self::productExists($remove), 'Then: the removed product still exists');
+		self::assertSame($before, self::snapshot(), 'Then: no row of any table changed');
+	}
+
+	public function testTheKeptProductsLineOnAGlobalFactorIsRefusedWhenTheRemovedProductsOwnFactorWouldShadowIt(): void
+	{
+		$box = self::unit('MPCC box');
+		$tablet = self::unit('MPCC tablet');
+		self::conversion($box, $tablet, 25, null);
+		$keep = self::product('MPCC keep', $tablet);
+		$remove = self::product('MPCC remove', $tablet);
+		self::conversion($box, $tablet, 30, $remove);
+		$recipe = self::recipeLine($keep, 1, $box);
+		$line = (int)self::$db->query("SELECT id FROM consumption_recipe_lines WHERE recipe_id = $recipe")->fetchColumn();
+
+		$this->assertRefusalNaming($keep, $remove, [$box, $line, 25, 30]);
+	}
+
+	public function testTheKeptProductsTransitivePathIsRefusedWhenTheRemovedProductsDirectFactorWouldWin(): void
+	{
+		$box = self::unit('MPCC box');
+		$pack = self::unit('MPCC pack');
+		$tablet = self::unit('MPCC tablet');
+		$keep = self::product('MPCC keep', $tablet);
+		$remove = self::product('MPCC remove', $tablet);
+		// 6 x 4 = 24 through packs; the removed product's direct 30 moves over and outranks it.
+		self::conversion($box, $pack, 6, $keep);
+		self::conversion($pack, $tablet, 4, $keep);
+		self::conversion($box, $tablet, 30, $remove);
+		self::recipeLine($keep, 1, $box);
+
+		$this->assertRefusalNaming($keep, $remove, [$box, 24, 30]);
+	}
+
+	public function testAStructuralChangeThatKeepsTheKeptProductsFactorMerges(): void
+	{
+		$box = self::unit('MPCC box');
+		$pack = self::unit('MPCC pack');
+		$tablet = self::unit('MPCC tablet');
+		$keep = self::product('MPCC keep', $tablet);
+		$remove = self::product('MPCC remove', $tablet);
+		self::conversion($box, $pack, 6, $keep);
+		self::conversion($pack, $tablet, 5, $keep);
+		self::conversion($box, $tablet, 30, $remove);
+		self::recipeLine($keep, 1, $box);
+
+		self::assertNull(self::merge($keep, $remove), 'Then: 6 x 5 through packs and a direct 30 are the same factor');
+	}
+
+	public function testTheKeptProductsBarcodeIsRefusedWhenItsConversionWouldBeGone(): void
+	{
+		$box = self::unit('MPCC box');
+		$pack = self::unit('MPCC pack');
+		$tablet = self::unit('MPCC tablet');
+		$keep = self::product('MPCC keep', $tablet);
+		$remove = self::product('MPCC remove', $tablet);
+		// The kept product's cache holds a box -> tablet conversion that the view does not back;
+		// the removed product's pack -> tablet row moving over rebuilds the cache rows on its paths.
+		// (Written last: inserting a conversion rebuilds the cache rows on its paths.)
+		self::conversion($pack, $tablet, 5, $remove);
+		self::phantomCacheRow($keep, $box, $tablet, '25');
+		self::barcode($keep, 2, $box);
+		$barcode = (int)self::$db->query("SELECT id FROM product_barcodes WHERE product_id = $keep")->fetchColumn();
+
+		$this->assertRefusalNaming($keep, $remove, [$box, $barcode, 25]);
+	}
+
+	public function testTheKeptProductsChildIsRefusedWhenItsConversionDiffersAfterTheMerge(): void
+	{
+		$pack = self::unit('MPCC pack');
+		$strip = self::unit('MPCC strip');
+		$tablet = self::unit('MPCC tablet');
+		$keep = self::product('MPCC keep', $tablet);
+		$remove = self::product('MPCC remove', $tablet);
+		self::conversion($strip, $tablet, 10, null);
+		$child = self::product('MPCC child', $strip, $keep);
+		self::conversion($pack, $tablet, 5, $remove);
+		self::phantomCacheRow($child, $strip, $tablet, '12');
+
+		$this->assertRefusalNaming($keep, $remove, [$child, $strip, 12, 10]);
+	}
+
+	public function testAChildWithNoConversionOnEitherSideMergesWhenTheFactorIsOne(): void
+	{
+		$strip = self::unit('MPCC strip');
+		$tablet = self::unit('MPCC tablet');
+		$keep = self::product('MPCC keep', $tablet);
+		$remove = self::product('MPCC remove', $tablet);
+		$child = self::product('MPCC child', $strip, $remove);
+
+		self::assertNull(self::merge($keep, $remove), 'Then: the view reads 1.0 on both sides');
+		self::assertSame($keep, (int)self::$db->query("SELECT parent_product_id FROM products WHERE id = $child")->fetchColumn());
+	}
+
+	public function testAChildWithNoConversionOnEitherSideIsRefusedWhenTheFactorIsNotOne(): void
+	{
+		$strip = self::unit('MPCC strip');
+		$pack = self::unit('MPCC pack');
+		$tablet = self::unit('MPCC tablet');
+		$keep = self::product('MPCC keep', $pack);
+		$remove = self::product('MPCC remove', $tablet);
+		self::conversion($tablet, $pack, 0.5, $remove);
+		$child = self::product('MPCC child', $strip, $remove);
+
+		$this->assertRefusalNaming($keep, $remove, [$child, $strip, 0.5]);
+	}
+
+	public function testAChildWithNoConversionBeforeThatGainsOneAfterIsRefused(): void
+	{
+		$strip = self::unit('MPCC strip');
+		$pack = self::unit('MPCC pack');
+		$tablet = self::unit('MPCC tablet');
+		$keep = self::product('MPCC keep', $pack);
+		$remove = self::product('MPCC remove', $tablet);
+		self::conversion($tablet, $pack, 0.5, $remove);
+		$child = self::product('MPCC child', $strip, $remove);
+		// The child reaches the kept product's stock unit but not the removed product's.
+		self::conversion($strip, $pack, 4, $child);
+
+		$this->assertRefusalNaming($keep, $remove, [$child, $strip, 4]);
+	}
 }
