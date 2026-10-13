@@ -95,6 +95,9 @@ class EntityReadPolicy
 	{
 		if (str_starts_with($entity, 'userentity-'))
 		{
+			// The data of a custom entity is its userfield values, stored under
+			// 'userentity-<name>'; the pages that show it need MASTER_DATA_EDIT (#869).
+			User::CheckPermission($request, User::PERMISSION_MASTER_DATA_EDIT);
 			return;
 		}
 		if (!array_key_exists($entity, self::PERMISSIONS))

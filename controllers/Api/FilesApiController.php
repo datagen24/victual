@@ -63,8 +63,8 @@ class FilesApiController extends BaseApiController
 	 * pages gated only by STOCK_VIEW, EQUIPMENT_VIEW and the like; it stays open until
 	 * #905 makes a file follow the read leaf of the record that owns it. It is not tied
 	 * to EntityReadPolicy: 'userobjects' there requires MASTER_DATA_EDIT (#869), and
-	 * gating this group the same way would break those pages. equipmentmanuals maps to EQUIPMENT_VIEW, the leaf ADR-0035 requires for
-	 * the equipment pages and APIs and EntityReadPolicy now requires for 'equipment'
+	 * gating this group the same way would break those pages. equipmentmanuals maps to
+	 * EQUIPMENT_VIEW, the leaf ADR-0035 requires for the equipment pages and APIs and EntityReadPolicy now requires for 'equipment'
 	 * (#847): a manual is equipment data and must not be readable by a caller who is
 	 * refused the equipment record. userpictures maps to USERS_READ for the same reason 'users' => USERS_READ
 	 * there; CheckGroupReadPermission carries its own exception for a caller's own

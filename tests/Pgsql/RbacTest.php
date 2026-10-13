@@ -110,9 +110,9 @@ class RbacTest extends PgsqlSchemaTestCase
 		// ADR-0035 (2026-09-29): gated on MASTER_DATA_EDIT, plus ADMIN for userentities/
 		// userfields (GenericEntityController::CheckViewPermission(), mirroring
 		// GenericEntityApiController::AddObject/EditObject/DeleteObject's own write gate for
-		// the same entities exactly), rather than a *_VIEW leaf - EntityReadPolicy already
-		// maps userentities/userfields/userobjects to no read policy at all (null), so there
-		// was no read/write asymmetry to narrow with a new leaf. Every method still refuses
+		// the same entities exactly), rather than a *_VIEW leaf. Since #869 EntityReadPolicy
+		// requires MASTER_DATA_EDIT for userobjects and userentity-* field values too, and
+		// leaves only the userentities/userfields definitions open (null). Every method still refuses
 		// uniformly without a grant, but on a permission this sweep does not itself
 		// characterise as a *_VIEW leaf, so it stays here rather than in
 		// PROTECTED_CONTROLLERS.

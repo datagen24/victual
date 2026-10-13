@@ -841,7 +841,7 @@
 						}
 					}
 				},
-				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW, MEALPLAN_VIEW, BATTERIES_VIEW (batteries, battery_charge_cycles) or EQUIPMENT_VIEW (equipment) domain permission. Roles and the permission hierarchy require USERS_READ Custom-entity rows (userobjects) require MASTER_DATA_EDIT."
+				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW, MEALPLAN_VIEW, BATTERIES_VIEW (batteries, battery_charge_cycles) or EQUIPMENT_VIEW (equipment) domain permission. Roles and the permission hierarchy require USERS_READ. Custom-entity rows (userobjects) require MASTER_DATA_EDIT."
 			},
 			"post": {
 				"summary": "Adds a single object of the given entity",
@@ -1041,7 +1041,7 @@
 						}
 					}
 				},
-				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW, MEALPLAN_VIEW, BATTERIES_VIEW (batteries, battery_charge_cycles) or EQUIPMENT_VIEW (equipment) domain permission. Roles and the permission hierarchy require USERS_READ Custom-entity rows (userobjects) require MASTER_DATA_EDIT."
+				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW, MEALPLAN_VIEW, BATTERIES_VIEW (batteries, battery_charge_cycles) or EQUIPMENT_VIEW (equipment) domain permission. Roles and the permission hierarchy require USERS_READ. Custom-entity rows (userobjects) require MASTER_DATA_EDIT."
 			},
 			"put": {
 				"summary": "Edits the given object of the given entity",
@@ -1258,7 +1258,7 @@
 						}
 					}
 				},
-				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW, MEALPLAN_VIEW, BATTERIES_VIEW (batteries, battery_charge_cycles) or EQUIPMENT_VIEW (equipment) domain permission. Roles and the permission hierarchy require USERS_READ Custom-entity rows (userobjects) require MASTER_DATA_EDIT."
+				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW, MEALPLAN_VIEW, BATTERIES_VIEW (batteries, battery_charge_cycles) or EQUIPMENT_VIEW (equipment) domain permission. Roles and the permission hierarchy require USERS_READ. Custom-entity rows (userobjects) and the field values of custom entities (userentity-*) require MASTER_DATA_EDIT."
 			},
 			"put": {
 				"summary": "Edits the given userfields of the given object of the given entity",

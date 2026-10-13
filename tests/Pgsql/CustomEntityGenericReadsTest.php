@@ -26,6 +26,8 @@ class CustomEntityGenericReadsTest extends PgsqlSchemaTestCase
 	/** @var array<string,string> plaintext keys by name */
 	private static array $keys = [];
 
+	private const SECRET = 'TOPSECRET869';
+
 	private static int $objectId;
 	private static int $entityId;
 
@@ -34,18 +36,23 @@ class CustomEntityGenericReadsTest extends PgsqlSchemaTestCase
 		parent::setUpBeforeClass();
 		self::$db = self::Pdo();
 
-		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9600, 'ce-zero', 'fixture'), (9601, 'ce-stock-viewer', 'fixture'), (9602, 'ce-master-data', 'fixture')");
+		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9600, 'ce-zero', 'fixture'), (9601, 'ce-stock-viewer', 'fixture'), (9602, 'ce-master-data', 'fixture'), (9603, 'ce-admin', 'fixture')");
 		$grant = self::$db->prepare('INSERT INTO user_permissions (user_id, permission_id) SELECT ?, id FROM permission_hierarchy WHERE name = ?');
 		$grant->execute([9601, 'STOCK_VIEW']);
 		$grant->execute([9602, 'MASTER_DATA_EDIT']);
-		foreach ([9600 => 'zero', 9601 => 'stock', 9602 => 'editor'] as $userId => $name)
+		$grant->execute([9603, 'ADMIN']);
+		foreach ([9600 => 'zero', 9601 => 'stock', 9602 => 'editor', 9603 => 'admin'] as $userId => $name)
 		{
 			self::$keys[$name] = self::issueKey($userId);
 		}
 
 		self::$entityId = (int)self::$db->query("INSERT INTO userentities(name, caption) VALUES ('ce-garage', 'Garage') RETURNING id")->fetchColumn();
 		self::$objectId = (int)self::$db->query('INSERT INTO userobjects(userentity_id) VALUES (' . self::$entityId . ') RETURNING id')->fetchColumn();
-		self::$db->exec("INSERT INTO userfields(entity, name, caption, type) VALUES ('ce-garage', 'ce_note', 'Note', 'text-single-line'), ('products', 'ce_manual', 'Manual', 'file')");
+		// The app stores a custom entity's fields under 'userentity-<name>', and the values
+		// of an object under that entity: the userobjects row itself carries no data.
+		self::$db->exec("INSERT INTO userfields(entity, name, caption, type) VALUES ('userentity-ce-garage', 'ce_note', 'Note', 'text-single-line'), ('products', 'ce_manual', 'Manual', 'file')");
+		$noteFieldId = (int)self::$db->query("SELECT id FROM userfields WHERE entity = 'userentity-ce-garage' AND name = 'ce_note'")->fetchColumn();
+		self::$db->prepare('INSERT INTO userfield_values(field_id, object_id, value) VALUES (?, ?, ?)')->execute([$noteFieldId, (string)self::$objectId, self::SECRET]);
 	}
 
 	private static function issueKey(int $userId): string
@@ -129,6 +136,27 @@ class CustomEntityGenericReadsTest extends PgsqlSchemaTestCase
 		self::assertSame(self::$entityId, (int)$one['body']['userentity_id']);
 	}
 
+	public function testFieldValuesOfACustomEntityObjectNeedMasterDataEdit(): void
+	{
+		// The data of a custom entity lives in userfield_values under 'userentity-<name>',
+		// so this route is the other half of the userobjects gate.
+		$path = '/api/userfields/userentity-ce-garage/' . self::$objectId;
+		foreach (['zero', 'stock'] as $who)
+		{
+			$response = self::send('GET', $path, self::$keys[$who]);
+			self::assertSame(403, $response['status'], "$who is refused");
+			self::assertStringNotContainsString(self::SECRET, is_string($response['body']) ? $response['body'] : json_encode($response['body']), "$who: and the value is absent");
+		}
+
+		// ADMIN holds MASTER_DATA_EDIT through the hierarchy.
+		foreach (['editor', 'admin'] as $who)
+		{
+			$response = self::send('GET', $path, self::$keys[$who]);
+			self::assertSame(200, $response['status'], "$who reads the values");
+			self::assertSame(self::SECRET, $response['body']['ce_note'], "$who: with the stored value");
+		}
+	}
+
 	public function testDefinitionsStayReadableByAnyAuthenticatedCaller(): void
 	{
 		$entities = self::send('GET', '/api/objects/userentities', self::$keys['zero']);
@@ -156,6 +184,7 @@ class CustomEntityGenericReadsTest extends PgsqlSchemaTestCase
 
 		$products = self::send('GET', '/api/objects/products/' . $productId, self::$keys['stock']);
 		self::assertSame(200, $products['status'], 'the STOCK_VIEW caller reads the product');
+		self::assertSame($fileName, $products['body']['userfields']['ce_manual'], 'and its user field names the file');
 
 		$file = self::send('GET', '/api/files/userfiles/' . $fileName, self::$keys['stock']);
 		self::assertSame(200, $file['status'], 'and the file its user field references');

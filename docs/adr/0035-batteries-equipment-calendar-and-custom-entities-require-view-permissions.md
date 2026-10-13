@@ -8,8 +8,10 @@
   no longer hold. Every other part of ADR-0018 — roles as permission bundles, the six original
   view leaves, role and grant administration — is unchanged.
 - **Amended 2026-10-13** by the maintainer, in [issue #869](https://github.com/datagen24/victual/issues/869):
-  the generic read `GET /api/objects/userobjects` requires `MASTER_DATA_EDIT`, the permission its
-  pages require, so the API is no way round the page gate. `userentities` and `userfields`
+  the generic read `GET /api/objects/userobjects` and the field values of every custom entity
+  (`GET /api/userfields/userentity-<name>/{id}`, where the data of an object actually lives)
+  require `MASTER_DATA_EDIT`, the permission the pages require, so the API is no way round the
+  page gate. `userentities` and `userfields`
   (the definitions) stay readable by any authenticated caller, because ordinary pages read
   them to render user-field inputs and the sidebar. The `userfiles` file group is deliberately
   left open for now: file and image user fields render through `/api/files/userfiles/` on

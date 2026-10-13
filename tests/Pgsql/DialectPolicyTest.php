@@ -122,17 +122,28 @@ class DialectPolicyTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * A user entity's rows are its owner's business and carry no entry in the table, so the
-	 * policy returns before it would look for one. Asserted with the caller holding nothing
-	 * at all, because a policy that checked some permission here would refuse.
+	 * A user entity carries no entry in the table, but its field values are the data of the
+	 * custom-entity objects the pages show, and those pages need MASTER_DATA_EDIT (#869).
+	 * Changed from asserting that a caller holding nothing is let through.
 	 */
-	public function testAUserEntityIsCheckedWithoutAPermission(): void
+	public function testAUserEntityNeedsMasterDataEdit(): void
 	{
-		self::grant([]);
+		self::grant([User::PERMISSION_STOCK_VIEW]);
 
+		$refused = false;
+		try
+		{
+			EntityReadPolicy::Check(self::request(), 'userentity-groceries');
+		}
+		catch (\Throwable $exception)
+		{
+			$refused = true;
+		}
+		self::assertTrue($refused, 'a caller without MASTER_DATA_EDIT is refused');
+
+		self::grant([User::PERMISSION_MASTER_DATA_EDIT]);
 		EntityReadPolicy::Check(self::request(), 'userentity-groceries');
-
-		self::assertTrue(true, 'a user entity needs no leaf of its own');
+		self::assertTrue(true, 'MASTER_DATA_EDIT is enough');
 	}
 
 	/**
