@@ -14996,7 +14996,11 @@
 					},
 					"consume_product_on_execution": {
 						"type": "integer",
-						"description": "1 consumes the product on execution; any other value does not (chores.consume_product_on_execution is SMALLINT NOT NULL DEFAULT 0 with no CHECK)."
+						"enum": [
+							0,
+							1
+						],
+						"description": "1 consumes the product on execution; 0 does not. No other value is accepted: chores.consume_product_on_execution is SMALLINT NOT NULL DEFAULT 0 with CHECK (consume_product_on_execution IN (0, 1)) since migration 0312, and a write of another value is refused with a 400. Issue #923."
 					},
 					"product_id": {
 						"type": [

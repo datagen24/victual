@@ -79,6 +79,7 @@
 ### Chores
 
 - Fixed that when tracking a chore via the context/more menu on the chores overview page, the chore name was missing in the confirmation popup
+- A chore's "consume product on execution" flag is now restricted to 0 or 1 by the database, so the generic `POST`/`PUT /api/objects/chores` refuses any other value (migration 0312). Upgrading refuses, and changes nothing, while a chore holds another value; a legacy import refuses a source chore that holds one
 
 ### Calendar
 
