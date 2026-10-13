@@ -8,6 +8,7 @@ use Victual\Services\RecipesService;
 use Victual\Services\StockService;
 use Victual\Services\UserfieldsService;
 use Victual\Services\UsersService;
+use Victual\Controllers\Users\EntityReadPolicy;
 use Victual\Controllers\Users\User;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -698,6 +699,15 @@ class StockController extends BaseController
 		// count the unordered result before adding the display order (issue #45).
 		$listItems = $this->DB->uihelper_shopping_list()->where('shopping_list_id = :1', $listId);
 
+		// The page renders product and product-group userfields per listed item, but reading
+		// those values anywhere else takes the entity's read permission (EntityReadPolicy),
+		// and a file or image value is the stored file name, i.e. the way to fetch the file.
+		// Without it the page gets neither the definitions nor the values (issue #905).
+		$userfieldsService = UserfieldsService::GetInstance();
+		$mayReadUserfieldsOf = fn (string $entity): bool => User::HasPermissions(EntityReadPolicy::PERMISSIONS[$entity]);
+		$productUserfieldsReadable = $mayReadUserfieldsOf('products');
+		$productGroupUserfieldsReadable = $mayReadUserfieldsOf('product_groups');
+
 		return $this->RenderPage($response, 'shoppinglist', [
 			'listItems' => $listItems->orderBy('product_name', 'COLLATE NOCASE'),
 			'listItemsCount' => $listItems->count(),
@@ -707,10 +717,10 @@ class StockController extends BaseController
 			'shoppingLists' => $this->DB->shopping_lists_view()->orderBy('name', 'COLLATE NOCASE'),
 			'selectedShoppingListId' => $listId,
 			'quantityUnitConversionsResolved' => $this->DB->cache__quantity_unit_conversions_resolved(),
-			'productUserfields' => UserfieldsService::GetInstance()->GetFields('products'),
-			'productUserfieldValues' => UserfieldsService::GetInstance()->GetAllValues('products'),
-			'productGroupUserfields' => UserfieldsService::GetInstance()->GetFields('product_groups'),
-			'productGroupUserfieldValues' => UserfieldsService::GetInstance()->GetAllValues('product_groups'),
+			'productUserfields' => $productUserfieldsReadable ? $userfieldsService->GetFields('products') : [],
+			'productUserfieldValues' => $productUserfieldsReadable ? $userfieldsService->GetAllValues('products') : [],
+			'productGroupUserfields' => $productGroupUserfieldsReadable ? $userfieldsService->GetFields('product_groups') : [],
+			'productGroupUserfieldValues' => $productGroupUserfieldsReadable ? $userfieldsService->GetAllValues('product_groups') : [],
 			'userfields' => UserfieldsService::GetInstance()->GetFields('shopping_list'),
 			'userfieldValues' => UserfieldsService::GetInstance()->GetAllValues('shopping_list')
 		]);
