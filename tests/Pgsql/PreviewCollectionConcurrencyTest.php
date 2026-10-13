@@ -203,7 +203,7 @@ class PreviewCollectionConcurrencyTest extends PgsqlSchemaTestCase
 		self::$db->beginTransaction();
 		self::assertSame(1, self::collect(self::$db, 1), 'A takes the first row');
 		self::$other->beginTransaction();
-		self::collect(self::$other, 1);
+		self::assertSame(0, self::collect(self::$other, 1), 'B takes the other row, loses the file try-lock, and leaves the row without waiting');
 		self::$db->commit();
 		self::$other->commit();
 

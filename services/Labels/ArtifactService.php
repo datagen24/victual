@@ -184,7 +184,15 @@ class ArtifactService extends LabelService
      *
      * Lock order inside one claim: ReapExpired's rows, ExpirePending's rows (SKIP LOCKED),
      * these rows (SKIP LOCKED), the per-file try-locks (never wait), then the settle loop's
-     * rows (SKIP LOCKED). Only the first can wait, so the try-locks cannot join a cycle.
+     * rows (SKIP LOCKED). ReapExpired can wait, and so can DeadLetterWaitingJobs, which
+     * updates print_jobs and outbox rows without SKIP LOCKED and is reached from ExpirePending
+     * and, after this method's row and advisory locks are held, from the settle loop's
+     * RecordInvalid. No cycle results: nothing ever waits on a try-lock, only Promote waits on
+     * an artifact row, PromotePreview takes no print_jobs or outbox lock before Promote, and
+     * the rows collected here are unreferenced by any print job.
+     *
+     * Correctness relies on READ COMMITTED: the loser's later sharer count needs a fresh
+     * per-statement snapshot. Nothing in the codebase sets another isolation level.
      *
      * @return int The artifacts collected; rows skipped because another claim holds them are not counted.
      */
