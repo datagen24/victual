@@ -136,6 +136,7 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 			'"02"' => '200|1|rows=1 sum=1 price=2',
 			'"2.0"' => '200|1|rows=1 sum=1 price=2',
 			'"2e0"' => '200|1|rows=1 sum=1 price=2',
+			'null' => '200|1|rows=1 sum=1 price=null',
 		],
 		'add.stock_label_type' => [
 			'2' => '200|1|rows=2 sum=2 price=null,null',
@@ -291,6 +292,9 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 			'"02"' => '200|1|rows=1 sum=9 price=null recipe_id=2',
 			'"2.0"' => '400|1|rows=1 sum=10 price=null recipe_id=-',
 			'"2e0"' => '400|1|rows=1 sum=10 price=null recipe_id=-',
+			'2147483648' => '400|1|rows=1 sum=10 price=null recipe_id=-',
+			'99999999999' => '400|1|rows=1 sum=10 price=null recipe_id=-',
+			'"99999999999"' => '400|1|rows=1 sum=10 price=null recipe_id=-',
 		],
 		'edit.amount' => [
 			'2' => '200|1|rows=1 sum=2 price=null',
@@ -389,6 +393,7 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 			'"02"' => '200|1|rows=1 sum=5 price=2',
 			'"2.0"' => '200|1|rows=1 sum=5 price=2',
 			'"2e0"' => '200|1|rows=1 sum=5 price=2',
+			'null' => '200|1|rows=1 sum=5 price=null',
 		],
 		'inventory.new_amount' => [
 			'2' => '200|1|rows=1 sum=2 price=null',
@@ -487,6 +492,7 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 			'"02"' => '200|1|rows=1 sum=3 price=2',
 			'"2.0"' => '200|1|rows=1 sum=3 price=2',
 			'"2e0"' => '200|1|rows=1 sum=3 price=2',
+			'null' => '200|1|rows=1 sum=3 price=null',
 		],
 		'inventory.stock_label_type' => [
 			'2' => '200|1|rows=2 sum=2 price=null,null',
@@ -830,6 +836,9 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 			'"02"' => '204|1|rows=2:3',
 			'"2.0"' => '400|1|rows=-',
 			'"2e0"' => '400|1|rows=-',
+			'2147483648' => '400|1|rows=-',
+			'99999999999' => '400|1|rows=-',
+			'"99999999999"' => '400|1|rows=-',
 		],
 		'shoppinglist.remove.product_amount' => [
 			'2' => '204|1|rows=8',
@@ -928,6 +937,9 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 			'"02"' => '204|1|rows=2:7,1000:10',
 			'"2.0"' => '400|1|rows=2:10,1000:10',
 			'"2e0"' => '400|1|rows=2:10,1000:10',
+			'2147483648' => '400|1|rows=2:10,1000:10',
+			'99999999999' => '400|1|rows=2:10,1000:10',
+			'"99999999999"' => '400|1|rows=2:10,1000:10',
 		],
 		'users.permission_id' => [
 			'2' => '204|1|granted=2',
@@ -977,6 +989,9 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 			'"02"' => '400|1|granted=-',
 			'"2.0"' => '400|1|granted=-',
 			'"2e0"' => '400|1|granted=-',
+			'2147483648' => '400|1|granted=-',
+			'99999999999' => '400|1|granted=-',
+			'"99999999999"' => '400|1|granted=-',
 		],
 	];
 
@@ -1364,6 +1379,21 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 		if ($field === 'add.by-barcode.amount')
 		{
 			return array_intersect_key($inputs, array_flip(['2', '"2"', '" 2"', '"abc"', '1e309', '"1e3"']));
+		}
+
+		// Integer-valued fields: a value outside a 32-bit integer is a valid number to PHP and
+		// is refused (or not) further down, so the document has to say which.
+		if (in_array($field, ['consume.recipe_id', 'shoppinglist.add.product_id', 'shoppinglist.remove.product_id', 'users.permission_id'], true))
+		{
+			$inputs['2147483648'] = '2147483648';
+			$inputs['99999999999'] = '99999999999';
+			$inputs['"99999999999"'] = '"99999999999"';
+		}
+
+		// A price of null is "no price" (or, on edit, "clear it"), which the document says.
+		if (in_array($field, ['add.price', 'edit.price', 'inventory.price'], true))
+		{
+			$inputs['null'] = 'null';
 		}
 
 		return $inputs;
