@@ -139,6 +139,7 @@
 			<file>tests/Pgsql/CrossOperationLedgerInvariantTest.php</file>
 			<file>tests/Pgsql/MergeProductsConsumptionTest.php</file>
 			<file>tests/Pgsql/MergeProductsChoreLockOrderTest.php</file>
+			<file>tests/Pgsql/MergeProductsConversionConflictTest.php</file>
 		</testsuite>
 		<testsuite name="stockconcurrency">
 			<file>tests/Pgsql/StockConcurrencyTest.php</file>

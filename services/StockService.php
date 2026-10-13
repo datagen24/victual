@@ -4945,15 +4945,16 @@ class StockService extends BaseService
 			if ($factor <= 0)
 			{
 				// A non-positive factor would make "amount * factor" zero or negative and
-				// "price / factor" a division by zero or a negative price. Nothing in
-				// db/pgsql/baseline/01_tables.sql puts a CHECK on
-				// quantity_unit_conversions.factor, and cache__quantity_unit_conversions_resolved
-				// returns whatever is stored unfiltered - a NEGATIVE factor reaches this method
-				// (MergeProductsTest::testMergeRefusesWhenTheResolvedConversionFactorIsNotPositive
-				// stores one directly), though a factor of exactly 0 does not: inserting it
-				// makes quantity_unit_conversions_INS's own inverse-row computation,
-				// "1 / COALESCE(NEW.factor, 1)", raise a genuine division-by-zero (Postgres
-				// raises on this for float8 too, unlike raw IEEE 754) before the row commits.
+				// "price / factor" a division by zero or a negative price. Migration 0309 added
+				// quantity_unit_conversions_factor_positive (factor > 0 AND factor < 'Infinity'),
+				// so a stored conversion can no longer have one; this guard stays for the resolved
+				// factor, which is a product of stored ones read back from a TEXT cache column
+				// that nothing constrains (MergeProductsTest::testMergeRefusesWhenTheResolvedConversionFactorIsNotPositive
+				// drops the CHECK to store one directly). A factor of exactly 0 never got in
+				// even before that: inserting it makes quantity_unit_conversions_INS's own
+				// inverse-row computation, "1 / COALESCE(NEW.factor, 1)", raise a genuine
+				// division-by-zero (Postgres raises on this for float8 too, unlike raw IEEE 754)
+				// before the row commits.
 				// Refuse before any row is touched rather than let either arithmetic run.
 				throw new \Exception('Cannot merge: quantity unit conversion factor must be greater than zero');
 			}
@@ -4999,6 +5000,171 @@ class StockService extends BaseService
 				// itself, which the block below clears in this same merge, leaving room for
 				// exactly that repoint.
 				throw new \Exception('Cannot merge: $productIdToRemove has sub products, and $productIdToKeep already has an unrelated parent product (only one level of nesting is supported)');
+			}
+
+			// Issue #901: the rows below that carry their OWN unit (a consumption recipe line, a
+			// consumption mapping with a unit, a recipes_pos row that only checks a single unit, a
+			// barcode's package amount) are not rescaled by $factor - they are converted at read time
+			// through the owning product's resolved conversions, and after the merge that product is
+			// the kept one. Where the two products' effective factors for such a unit differ, the same
+			// row would mean a different quantity. So refuse, before anything is written, when
+			//   F_removed(unit -> removed stock unit) * $factor  !=  F_kept_after_merge(unit -> kept stock unit)
+			// "Effective" is the resolved conversion (global fallbacks and transitive paths included),
+			// and F_kept_after_merge is read from the state the conversion dedupe-then-move below
+			// leaves behind, which is reproduced inside a savepoint and rolled back.
+			// Classification of every column the merge repoints is in the pull request.
+			$fmt = fn(float $value): string => sprintf('%.12g', $value);
+
+			// Every cache row a reader might pick (the cache has no unique key and readers LIMIT 1
+			// without ordering) plus the view row, as floats; empty when there is no path at all.
+			$resolved = function (int $productId, int $toQuId, array $fromQuIds): array
+			{
+				$result = array_fill_keys($fromQuIds, []);
+				if ($fromQuIds === [])
+				{
+					return $result;
+				}
+
+				$pdo = DatabaseService::GetInstance()->GetDbConnectionRaw();
+				$in = implode(', ', array_map('intval', $fromQuIds));
+				foreach (['cache__quantity_unit_conversions_resolved', 'quantity_unit_conversions_resolved'] as $source)
+				{
+					$statement = $pdo->query('SELECT from_qu_id, factor FROM ' . $source . ' WHERE product_id = ' . $productId . ' AND to_qu_id = ' . $toQuId . ' AND from_qu_id IN (' . $in . ')');
+					foreach ($statement->fetchAll(\PDO::FETCH_NUM) as [$fromQuId, $factorText])
+					{
+						$result[(int)$fromQuId][] = (float)$factorText;
+					}
+				}
+
+				return $result;
+			};
+
+			// The distinct units the removed product's affected rows use, each with whether a unit
+			// that does not reach the kept stock unit is refused here. product_barcodes.qu_id is
+			// never NULL (default_qu_INS/_UPD fill it with the stock unit), so a barcode's unit is
+			// always its own column.
+			$units = [];
+
+			// Consumption lines and mappings: a unit that does not reach the kept stock unit is
+			// refused further down with its own message, so a missing path is not refused here.
+			// For recipes_pos (only rows with the single-unit flag read their unit, 05_views_l3.sql)
+			// and barcodes (a package amount with a unit) nothing else guards it, so it is here.
+			$ownUnitQueries = [
+				['SELECT DISTINCT qu_id FROM consumption_recipe_lines WHERE product_id = ' . $productIdToRemove, false],
+				['SELECT DISTINCT qu_id FROM consumption_mappings WHERE product_id = ' . $productIdToRemove . ' AND qu_id IS NOT NULL', false],
+				['SELECT DISTINCT qu_id FROM recipes_pos WHERE product_id = ' . $productIdToRemove . ' AND only_check_single_unit_in_stock = 1 AND qu_id IS NOT NULL', true],
+				['SELECT DISTINCT qu_id FROM product_barcodes WHERE product_id = ' . $productIdToRemove . ' AND amount IS NOT NULL AND qu_id IS NOT NULL', true],
+			];
+			foreach ($ownUnitQueries as [$sql, $refuseIfMissing])
+			{
+				foreach (DatabaseService::GetInstance()->GetDbConnectionRaw()->query($sql)->fetchAll(\PDO::FETCH_COLUMN) as $quId)
+				{
+					$units[(int)$quId] = ($units[(int)$quId] ?? false) || $refuseIfMissing;
+				}
+			}
+			$removedStockUnit = (int)$productToRemove->qu_id_stock;
+			$keptStockUnit = (int)$productToKeep->qu_id_stock;
+			$removedBefore = $resolved($productIdToRemove, $removedStockUnit, array_keys($units));
+
+			// A child of the removed product is aggregated into its parent through the child's own
+			// conversion to the parent's stock unit (a missing one counts as 1), and is repointed to
+			// the kept product by the merge.
+			$children = [];
+			$childRows = DatabaseService::GetInstance()->GetDbConnectionRaw()->query('SELECT id, qu_id_stock FROM products WHERE parent_product_id = ' . $productIdToRemove . ' AND id <> ' . $productIdToKeep . ' ORDER BY id')->fetchAll(\PDO::FETCH_NUM);
+			foreach ($childRows as [$childId, $childStockUnit])
+			{
+				$before = $resolved((int)$childId, $removedStockUnit, [(int)$childStockUnit])[(int)$childStockUnit];
+				$children[(int)$childId] = [(int)$childStockUnit, $before === [] ? [1.0] : $before];
+			}
+
+			$keptAfter = [];
+			$childrenAfter = [];
+			// Nothing to compare when no affected row and no sub product exists: skip the savepoint work.
+			if ($units !== [] || $children !== [])
+			{
+				DatabaseService::GetInstance()->ExecuteDbStatement('SAVEPOINT merge_products_conversion_check');
+				try
+				{
+					// Exactly the conversion and parent statements the merge itself runs further down.
+					DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM quantity_unit_conversions quc_remove WHERE quc_remove.product_id = ' . $productIdToRemove . ' AND EXISTS (SELECT 1 FROM quantity_unit_conversions quc_keep WHERE quc_keep.product_id = ' . $productIdToKeep . ' AND quc_keep.from_qu_id = quc_remove.from_qu_id AND quc_keep.to_qu_id = quc_remove.to_qu_id)');
+					DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE quantity_unit_conversions SET product_id = ' . $productIdToKeep . ' WHERE product_id = ' . $productIdToRemove);
+					DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE products SET parent_product_id = NULL WHERE id = ' . $productIdToKeep . ' AND parent_product_id = ' . $productIdToRemove);
+					DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE products SET parent_product_id = ' . $productIdToKeep . ' WHERE parent_product_id = ' . $productIdToRemove);
+
+					$keptAfter = $resolved($productIdToKeep, $keptStockUnit, array_keys($units));
+					foreach ($children as $childId => $child)
+					{
+						$childrenAfter[$childId] = $resolved($childId, $keptStockUnit, [$child[0]])[$child[0]];
+					}
+				}
+				finally
+				{
+					DatabaseService::GetInstance()->ExecuteDbStatement('ROLLBACK TO SAVEPOINT merge_products_conversion_check');
+					DatabaseService::GetInstance()->ExecuteDbStatement('RELEASE SAVEPOINT merge_products_conversion_check');
+				}
+			}
+
+			// Two factors agree when the removed product's, carried into the kept stock unit by
+			// $factor, equals the kept product's under the repository's amount rule (ADR-0032). That
+			// rule has an absolute floor, so two factors both below about 1e-8 always compare equal.
+			$agree = function (float $beforeFactor, float $afterFactor) use ($factor): bool
+			{
+				$carried = $beforeFactor * $factor;
+
+				return is_finite($carried) && is_finite($afterFactor) && StockService::CompareAmounts($carried, $afterFactor) === 0;
+			};
+
+			foreach ($units as $quId => $refuseIfMissing)
+			{
+				$beforeFactors = $removedBefore[$quId];
+				$afterFactors = $keptAfter[$quId];
+
+				if ($beforeFactors === [])
+				{
+					// Not convertible for the removed product today either, so the row has no
+					// meaning to carry over.
+					continue;
+				}
+
+				if ($afterFactors === [])
+				{
+					if ($refuseIfMissing)
+					{
+						throw new \Exception('Cannot merge: a row of product ' . $productIdToRemove . ' uses quantity unit ' . $quId . ', which has no quantity unit conversion to the stock unit of product ' . $productIdToKeep);
+					}
+
+					continue;
+				}
+
+				foreach ($beforeFactors as $beforeFactor)
+				{
+					foreach ($afterFactors as $afterFactor)
+					{
+						if (!$agree($beforeFactor, $afterFactor))
+						{
+							throw new \Exception('Cannot merge: quantity unit ' . $quId . ' would mean a different quantity after the merge. Product ' . $productIdToRemove . ' converts it to its stock unit at ' . $fmt($beforeFactor) . ', which the merge carries into product ' . $productIdToKeep . '\'s stock unit at ' . $fmt($beforeFactor * $factor) . ' (stock scale ' . $fmt((float)$factor) . '); product ' . $productIdToKeep . ' converts it at ' . $fmt($afterFactor));
+						}
+					}
+				}
+			}
+
+			foreach ($children as $childId => [$childStockUnit, $beforeFactors])
+			{
+				if ($childrenAfter[$childId] === [])
+				{
+					throw new \Exception('Cannot merge: sub product ' . $childId . ' of product ' . $productIdToRemove . ' has no quantity unit conversion from its stock unit ' . $childStockUnit . ' to the stock unit of product ' . $productIdToKeep);
+				}
+
+				foreach ($beforeFactors as $beforeFactor)
+				{
+					foreach ($childrenAfter[$childId] as $afterFactor)
+					{
+						if (!$agree($beforeFactor, $afterFactor))
+						{
+							throw new \Exception('Cannot merge: sub product ' . $childId . ' (stock unit ' . $childStockUnit . ') would be counted differently after the merge. It converts its stock unit to the stock unit of product ' . $productIdToRemove . ' at ' . $fmt($beforeFactor) . ', which the merge carries into product ' . $productIdToKeep . '\'s stock unit at ' . $fmt($beforeFactor * $factor) . ' (stock scale ' . $fmt((float)$factor) . '); it converts directly to product ' . $productIdToKeep . '\'s stock unit at ' . $fmt($afterFactor));
+						}
+					}
+				}
 			}
 
 			// ADR-0036 section 3: contributions and allocations are stock-unit amounts too and
