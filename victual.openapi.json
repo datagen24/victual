@@ -15112,11 +15112,7 @@
 					},
 					"consume_product_on_execution": {
 						"type": "integer",
-						"enum": [
-							0,
-							1
-						],
-						"description": "1 when tracking an execution also consumes product_amount of product_id from stock."
+						"description": "1 consumes the product on execution; any other value does not (chores.consume_product_on_execution is SMALLINT NOT NULL DEFAULT 0 with no CHECK)."
 					},
 					"product_id": {
 						"type": [
