@@ -5004,14 +5004,20 @@ class StockService extends BaseService
 
 			// Issue #901: the rows below that carry their OWN unit (a consumption recipe line, a
 			// consumption mapping with a unit, a recipes_pos row that only checks a single unit, a
-			// barcode's package amount) are not rescaled by $factor - they are converted at read time
-			// through the owning product's resolved conversions, and after the merge that product is
-			// the kept one. Where the two products' effective factors for such a unit differ, the same
-			// row would mean a different quantity. So refuse, before anything is written, when
-			//   F_removed(unit -> removed stock unit) * $factor  !=  F_kept_after_merge(unit -> kept stock unit)
-			// "Effective" is the resolved conversion (global fallbacks and transitive paths included),
-			// and F_kept_after_merge is read from the state the conversion dedupe-then-move below
-			// leaves behind, which is reproduced inside a savepoint and rolled back.
+			// barcode's package amount) are converted at read time through the owning product's
+			// resolved conversions, and after the merge that product is the kept one. The rule, per
+			// affected row and unit: take the factor the row's reader uses before and after the merge
+			// (the resolved conversion; where there is none, the reader's own fallback - 1.0 where it
+			// COALESCEs, "unreadable" where it fails or drops the row) and refuse iff
+			//   - the reader could read the row before and cannot after, or
+			//   - it reads it on both sides and
+			//       F_removed(unit -> removed stock unit) * $factor  !=  F_kept_after_merge(unit -> kept stock unit)
+			//     under CompareAmounts. $factor is the multiplier the merge applies to the row's own
+			//     amount only for stock-unit amounts; own-unit amounts are not rescaled (r = 1).
+			// A row that is unreadable before the merge never changes meaning by it. "Effective" is the
+			// resolved conversion (global fallbacks and transitive paths included), and
+			// F_kept_after_merge is read from the state the conversion dedupe-then-move below leaves
+			// behind, reproduced inside a savepoint and rolled back.
 			// Classification of every column the merge repoints is in the pull request.
 			$fmt = fn(float $value): string => sprintf('%.12g', $value);
 
@@ -5039,42 +5045,39 @@ class StockService extends BaseService
 				return $result;
 			};
 
-			// The distinct units the removed product's affected rows use, each with whether a unit
-			// that does not reach the kept stock unit is refused here. product_barcodes.qu_id is
-			// never NULL (default_qu_INS/_UPD fill it with the stock unit), so a barcode's unit is
-			// always its own column.
-			$units = [];
-
-			// Units of single-unit recipes_pos rows: the view reads a missing conversion as 1.0
-			// (COALESCE(qucr.factor, 1.0), 05_views_l3.sql :164, :174), so no conversion for the
-			// removed product means a factor of 1, which is compared rather than skipped.
-			$unitsReadAsOneWhenMissing = [];
-
-			// Consumption lines and mappings: a unit that does not reach the kept stock unit is
-			// refused further down with its own message, so a missing path is not refused here.
-			// For recipes_pos (only rows with the single-unit flag read their unit, 05_views_l3.sql)
-			// and barcodes (a package amount with a unit) nothing else guards it, so it is here.
-			$ownUnitQueries = [
-				['SELECT DISTINCT qu_id FROM consumption_recipe_lines WHERE product_id = ' . $productIdToRemove, false],
-				['SELECT DISTINCT qu_id FROM consumption_mappings WHERE product_id = ' . $productIdToRemove . ' AND qu_id IS NOT NULL', false],
-				['SELECT DISTINCT qu_id FROM recipes_pos WHERE product_id = ' . $productIdToRemove . ' AND only_check_single_unit_in_stock = 1 AND qu_id IS NOT NULL', true],
-				['SELECT DISTINCT qu_id FROM product_barcodes WHERE product_id = ' . $productIdToRemove . ' AND amount IS NOT NULL AND qu_id IS NOT NULL', true],
+			// One entry per (row type, unit). A recipes_pos row with the single-unit flag is read by the
+			// views with COALESCE(qucr.factor, 1.0) (05_views_l3.sql :164, :174): a missing conversion
+			// reads as 1.0 on either side. Consumption lines and mappings (422 at read time) and
+			// barcodes (the purchase screen offers only convertible units) are unreadable when there is
+			// none. A unit that does not reach the kept stock unit is refused here for barcodes; for
+			// lines and mappings the #848 refusal further down keeps its own message. A barcode's
+			// qu_id is never NULL (default_qu_INS/_UPD fill it with the stock unit).
+			// Pending maintainer decision: a barcode that was readable and is not after the merge
+			// refuses (table cell "P before / empty after"), and so do the child cells below.
+			$rowTypes = [
+				['SELECT DISTINCT qu_id FROM consumption_recipe_lines WHERE product_id = ' . $productIdToRemove, false, false],
+				['SELECT DISTINCT qu_id FROM consumption_mappings WHERE product_id = ' . $productIdToRemove . ' AND qu_id IS NOT NULL', false, false],
+				['SELECT DISTINCT qu_id FROM recipes_pos WHERE product_id = ' . $productIdToRemove . ' AND only_check_single_unit_in_stock = 1 AND qu_id IS NOT NULL', true, false],
+				['SELECT DISTINCT qu_id FROM product_barcodes WHERE product_id = ' . $productIdToRemove . ' AND amount IS NOT NULL AND qu_id IS NOT NULL', false, true],
 			];
-			foreach ($ownUnitQueries as [$sql, $refuseIfMissing])
+			$pairs = [];
+			$units = [];
+			foreach ($rowTypes as [$sql, $missingReadsAsOne, $refuseWhenUnreadableAfter])
 			{
 				foreach (DatabaseService::GetInstance()->GetDbConnectionRaw()->query($sql)->fetchAll(\PDO::FETCH_COLUMN) as $quId)
 				{
-					$units[(int)$quId] = ($units[(int)$quId] ?? false) || $refuseIfMissing;
-					if (str_contains($sql, 'FROM recipes_pos'))
-					{
-						$unitsReadAsOneWhenMissing[(int)$quId] = true;
-					}
+					$key = ($missingReadsAsOne ? 'one:' : 'unreadable:') . (int)$quId;
+					$pairs[$key] = [(int)$quId, $missingReadsAsOne, $refuseWhenUnreadableAfter || ($pairs[$key][2] ?? false)];
+					$units[(int)$quId] = true;
 				}
 			}
 			$removedStockUnit = (int)$productToRemove->qu_id_stock;
 			$keptStockUnit = (int)$productToKeep->qu_id_stock;
 			$removedBefore = $resolved($productIdToRemove, $removedStockUnit, array_keys($units));
 
+			// Pending maintainer decision (children): a child with no conversion before and a conversion
+			// after, and one with none on either side, keep the behaviour below (table cells "empty/P"
+			// and "empty/empty").
 			// A child of the removed product is aggregated into its parent through the child's own
 			// conversion to the parent's stock unit (a missing one counts as 1), and is repointed to
 			// the kept product by the merge.
@@ -5123,26 +5126,26 @@ class StockService extends BaseService
 				return is_finite($carried) && is_finite($afterFactor) && StockService::CompareAmounts($carried, $afterFactor) === 0;
 			};
 
-			foreach ($units as $quId => $refuseIfMissing)
+			foreach ($pairs as [$quId, $missingReadsAsOne, $refuseWhenUnreadableAfter])
 			{
 				$beforeFactors = $removedBefore[$quId];
 				$afterFactors = $keptAfter[$quId];
 
-				if ($beforeFactors === [] && isset($unitsReadAsOneWhenMissing[$quId]))
+				if ($missingReadsAsOne)
 				{
-					$beforeFactors = [1.0];
+					$beforeFactors = $beforeFactors === [] ? [1.0] : $beforeFactors;
+					$afterFactors = $afterFactors === [] ? [1.0] : $afterFactors;
 				}
 
 				if ($beforeFactors === [])
 				{
-					// Not convertible for the removed product today either, so the row has no
-					// meaning to carry over.
+					// Unreadable before the merge, so there is no meaning to carry over.
 					continue;
 				}
 
 				if ($afterFactors === [])
 				{
-					if ($refuseIfMissing)
+					if ($refuseWhenUnreadableAfter)
 					{
 						throw new \Exception('Cannot merge: a row of product ' . $productIdToRemove . ' uses quantity unit ' . $quId . ', which has no quantity unit conversion to the stock unit of product ' . $productIdToKeep);
 					}
@@ -5248,7 +5251,9 @@ class StockService extends BaseService
 			// price_factor is a unitless cost multiplier applied on top of amount * price in
 			// the recipe costs columns (db/pgsql/baseline/05_views_l3.sql), not a per-unit
 			// price itself, so only amount - the ingredient quantity - is converted.
-			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE recipes_pos SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
+			// A row with only_check_single_unit_in_stock = 1 holds its amount in its own qu_id (the views
+			// multiply by that unit's factor), so it is not a stock-unit amount and is not rescaled (#929).
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE recipes_pos SET product_id = ' . $productIdToKeep . ', amount = CASE WHEN only_check_single_unit_in_stock = 1 THEN amount ELSE amount * ' . $factor . ' END WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE recipes SET product_id = ' . $productIdToKeep . ' WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE meal_plan SET product_id = ' . $productIdToKeep . ', product_amount = product_amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE shopping_list SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);

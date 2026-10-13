@@ -93,11 +93,28 @@ class MergeProductsConversionConflictTest extends PgsqlSchemaTestCase
 		$statement->execute([self::USER, 'ref-' . bin2hex(random_bytes(4)), $productId, $quId]);
 	}
 
-	private static function recipesPos(int $productId, float $amount, ?int $quId, int $onlyCheckSingleUnit): void
+	private static function recipesPos(int $productId, float $amount, ?int $quId, int $onlyCheckSingleUnit): int
 	{
 		$recipeId = (int)self::$db->query("INSERT INTO recipes (name) VALUES ('MPCC pos " . bin2hex(random_bytes(3)) . "') RETURNING id")->fetchColumn();
 		$statement = self::$db->prepare('INSERT INTO recipes_pos (recipe_id, product_id, amount, qu_id, only_check_single_unit_in_stock) VALUES (?, ?, ?, ?, ?)');
 		$statement->execute([$recipeId, $productId, $amount, $quId, $onlyCheckSingleUnit]);
+
+		return (int)self::$db->query("SELECT id FROM recipes_pos WHERE recipe_id = $recipeId")->fetchColumn();
+	}
+
+	/** What the stored amount and the recipes_pos view's calories are for one row. */
+	private static function recipesPosReading(int $recipePosId): array
+	{
+		$calories = (float)self::$db->query("SELECT calories FROM recipes_pos_resolved WHERE recipe_pos_id = $recipePosId")->fetchColumn();
+
+		return [(float)self::$db->query("SELECT amount FROM recipes_pos WHERE id = $recipePosId")->fetchColumn(), $calories];
+	}
+
+	/** A conversion the cache holds for a product that the kept product will not have. */
+	private static function phantomCacheRow(int $productId, int $fromQuId, int $toQuId, string $factor): void
+	{
+		self::$db->prepare('INSERT INTO cache__quantity_unit_conversions_resolved (product_id, from_qu_id, to_qu_id, factor, path) VALUES (?, ?, ?, ?, ?)')
+			->execute([$productId, $fromQuId, $toQuId, $factor, '/' . $fromQuId . '/' . $toQuId . '/']);
 	}
 
 	private static function barcode(int $productId, ?float $amount, ?int $quId): void
@@ -516,5 +533,97 @@ class MergeProductsConversionConflictTest extends PgsqlSchemaTestCase
 		self::recipesPos($remove, 1, $box, 1);
 
 		$this->assertConflictRefusal($keep, $remove, [$box], '1', '25');
+	}
+
+	public function testASingleUnitRecipesPosAmountIsNotRescaledAndItsCaloriesAreKept(): void
+	{
+		$box = self::unit('MPCC box');
+		$tablet = self::unit('MPCC tablet');
+		$strip = self::unit('MPCC strip');
+		$keep = self::product('MPCC keep', $strip);
+		$remove = self::product('MPCC remove', $tablet);
+		// 1 box = 30 tablets = 3 strips; a tablet carries 2, a strip 20.
+		self::conversion($box, $tablet, 30, $remove);
+		self::conversion($tablet, $strip, 0.1, $remove);
+		self::conversion($box, $strip, 3, $keep);
+		self::$db->exec("UPDATE products SET calories = 2 WHERE id = $remove");
+		self::$db->exec("UPDATE products SET calories = 20 WHERE id = $keep");
+		$pos = self::recipesPos($remove, 1, $box, 1);
+		$stockPos = self::recipesPos($remove, 60, $tablet, 0);
+		[, $caloriesBefore] = self::recipesPosReading($pos);
+		self::assertEqualsWithDelta(60.0, $caloriesBefore, 1e-9, 'Given: 1 box is 30 tablets of 2');
+
+		self::assertNull(self::merge($keep, $remove), 'Then: the merge goes through');
+
+		[$amount, $caloriesAfter] = self::recipesPosReading($pos);
+		self::assertEqualsWithDelta(1.0, $amount, 1e-9, 'Then: an amount in the row\'s own unit is not rescaled');
+		self::assertEqualsWithDelta($caloriesBefore, $caloriesAfter, 1e-9, 'Then: the calories are the same before and after');
+		self::assertEqualsWithDelta(6.0, self::recipesPosReading($stockPos)[0], 1e-9, 'Then: a stock-unit amount is rescaled into strips');
+	}
+
+	public function testASingleUnitRowWithNoConversionOnEitherSideAndTheSameStockUnitMerges(): void
+	{
+		$box = self::unit('MPCC box');
+		$tablet = self::unit('MPCC tablet');
+		$keep = self::product('MPCC keep', $tablet);
+		$remove = self::product('MPCC remove', $tablet);
+		self::recipesPos($remove, 1, $box, 1);
+
+		self::assertNull(self::merge($keep, $remove), 'Then: both read 1.0, which agrees');
+	}
+
+	public function testASingleUnitRowWithNoConversionOnEitherSideRefusesWhenTheStockUnitsScaleDiffers(): void
+	{
+		$box = self::unit('MPCC box');
+		$tablet = self::unit('MPCC tablet');
+		$strip = self::unit('MPCC strip');
+		$keep = self::product('MPCC keep', $strip);
+		$remove = self::product('MPCC remove', $tablet);
+		self::conversion($tablet, $strip, 0.1, $remove);
+		self::recipesPos($remove, 1, $box, 1);
+
+		$this->assertConflictRefusal($keep, $remove, [$box], '1', '1');
+	}
+
+	public function testASingleUnitRowReadableBeforeAndNotAfterRefusesWhenItReadsOtherThanOne(): void
+	{
+		$box = self::unit('MPCC box');
+		$tablet = self::unit('MPCC tablet');
+		$keep = self::product('MPCC keep', $tablet);
+		$remove = self::product('MPCC remove', $tablet);
+		self::phantomCacheRow($remove, $box, $tablet, '30');
+		self::recipesPos($remove, 1, $box, 1);
+
+		$this->assertConflictRefusal($keep, $remove, [$box], '30', '1');
+	}
+
+	public function testASingleUnitRowReadableBeforeAndNotAfterMergesWhenItReadsOne(): void
+	{
+		$box = self::unit('MPCC box');
+		$tablet = self::unit('MPCC tablet');
+		$keep = self::product('MPCC keep', $tablet);
+		$remove = self::product('MPCC remove', $tablet);
+		self::phantomCacheRow($remove, $box, $tablet, '1');
+		self::recipesPos($remove, 1, $box, 1);
+
+		self::assertNull(self::merge($keep, $remove), 'Then: 1.0 before and 1.0 after agree');
+	}
+
+	public function testABarcodeOnTheSameUnitStillRefusesWhenTheSingleUnitRowAgrees(): void
+	{
+		$box = self::unit('MPCC box');
+		$tablet = self::unit('MPCC tablet');
+		$keep = self::product('MPCC keep', $tablet);
+		$remove = self::product('MPCC remove', $tablet);
+		self::phantomCacheRow($remove, $box, $tablet, '1');
+		self::recipesPos($remove, 1, $box, 1);
+		self::barcode($remove, 2, $box);
+
+		$before = self::snapshot();
+		$message = self::merge($keep, $remove);
+
+		self::assertNotNull($message, 'Then: the barcode, readable before and not after, refuses');
+		self::assertStringContainsString('no quantity unit conversion', $message);
+		self::assertSame($before, self::snapshot(), 'Then: no row changed');
 	}
 }
