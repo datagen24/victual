@@ -984,10 +984,11 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 	 * Strings the pattern cannot describe because the request body filter
 	 * (BaseApiController::GetParsedAndFilteredRequestBody(), HTMLPurifier) rewrites them
 	 * before any controller reads them: an embedded NUL is deleted ("1<NUL>2" is read as
-	 * 12) and a character reference is decoded ("&#50;" is read as 2). Reported on issue
+	 * 12) and a character reference is decoded ("&#50;" is read as 2) and a control character
+	 * at the edge is dropped ("2<SOH>" is read as 2). Reported on issue
 	 * #892 as a separate defect; the characterisation above pins what happens today.
 	 */
-	private const PRE_FILTER_REWRITTEN = ['"1\\u00002"', '"&#50;"'];
+	private const PRE_FILTER_REWRITTEN = ['"1\\u00002"', '"&#50;"', '"2\\u0001"'];
 
 	private static PDO $db;
 	private static string $apiKey;
@@ -1450,7 +1451,9 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 
 		foreach ($expected as $label => $cell)
 		{
-			if ($label[0] !== '"' || in_array($label, self::PRE_FILTER_REWRITTEN, true))
+			$label = (string)$label;
+			// "" on a price field means "no price", which is not a reading of the string.
+			if ($label[0] !== '"' || in_array($label, self::PRE_FILTER_REWRITTEN, true) || ($label === '""' && str_ends_with($field, 'price')))
 			{
 				continue;
 			}

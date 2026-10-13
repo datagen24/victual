@@ -128,6 +128,7 @@
 - `GET /files/{group}/{fileName}` now answers `400` for an invalid file group or file name. Every failure used to be answered `404`, so "you asked wrongly" and "it is not here" were the same answer; a file that does not exist is still `404`
 - Nine list endpoints no longer document a `500` response, because they no longer return one - an invalid filter or sort parameter has been a `400` since the previous release. The nine are `GET` `/objects/{entity}`, `/users`, `/stock/products/{productId}/locations`, `/stock/products/{productId}/entries`, `/stock/locations/{locationId}/entries`, `/recipes/fulfillment`, `/chores`, `/batteries` and `/tasks`. Clients that read `error_details` off those responses will no longer find it
 - The OpenAPI specification now documents the `401`, `403` and `404` responses that the API actually returns
+- The OpenAPI specification now states the string forms that stock amount, price and measurement fields already accepted (such as `"2.5"`, `"1e3"` or `" 2"`) and how `recipe_id`, `stock_label_type`, `permission_id` and the shopping list `product_id` read strings. No request is handled differently
 
 ### Users and permissions
 
