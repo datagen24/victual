@@ -890,13 +890,16 @@ class StockApiController extends BaseApiController
 	/**
 	 * GET /api/stock/barcodes/external-lookup/{barcode} - looks up the barcode via the
 	 * configured external barcode lookup plugin; with query parameter add=true the
-	 * found product is also created. Requires the MASTER_DATA_EDIT permission (403
-	 * otherwise). Returns the lookup result (200) or a 400 error response.
+	 * found product is also created (with its barcode and, when the plugin's purchase
+	 * and stock units differ, its purchase to stock conversion).
+	 * Requires the STOCK_VIEW permission, and additionally MASTER_DATA_ADD when add=true
+	 * (403 otherwise; ADR-0043). A picture the plugin names is stored only when no file
+	 * of that name exists; otherwise the product is created without one.
+	 * Returns the lookup result (200) or a 400 error response.
 	 */
 	public function ExternalBarcodeLookup(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
-		User::CheckPermission($request, User::PERMISSION_MASTER_DATA_EDIT);
 
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
@@ -904,6 +907,11 @@ class StockApiController extends BaseApiController
 			if (isset($request->getQueryParams()['add']) && ($request->getQueryParams()['add'] === 'true' || $request->getQueryParams()['add'] === 1))
 			{
 				$addFoundProduct = true;
+			}
+
+			if ($addFoundProduct)
+			{
+				User::CheckPermission($request, User::PERMISSION_MASTER_DATA_ADD);
 			}
 
 			return $this->ApiResponse($response, StockService::GetInstance()->ExternalBarcodeLookup($args['barcode'], $addFoundProduct));

@@ -258,7 +258,7 @@ class SubProductUnitConvertibilityTest extends PgsqlSchemaTestCase
 		$badUnit = self::quantityUnit('Non-Positive Factor Unit');
 		$parentId = self::product('Non-Positive Factor Parent', $locationA, 2);
 		$childId = self::product('Non-Positive Factor Child', $locationA, $badUnit, $parentId);
-		// Migration 0308 (issue #868) now refuses such a row with
+		// Migration 0309 (issue #868) now refuses such a row with
 		// quantity_unit_conversions_factor_positive, so this test removes that constraint for its
 		// own duration to keep exercising the read-side guard, and restores it afterwards.
 		self::$db->exec('ALTER TABLE quantity_unit_conversions DROP CONSTRAINT quantity_unit_conversions_factor_positive');

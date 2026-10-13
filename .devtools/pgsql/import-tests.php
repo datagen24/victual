@@ -395,6 +395,43 @@ foreach ([$min, $max] as $version)
 	Check('the Child role resolves CALENDAR_VIEW only', $childResolved === 'CALENDAR_VIEW',
 		'CALENDAR_VIEW', $childResolved === '' ? 'none' : $childResolved);
 
+	// Migration 0308's MASTER_DATA_ADD (ADR-0043 decision 1, issue 742), restored by
+	// db/pgsql/master-data-add-seed.sql for the same reason as the leaves above: the SQLite
+	// line is frozen below 0308, so TRUNCATE ... CASCADE leaves the importer nothing to copy.
+	// Without the restore, creating a product, location, unit, group or store through the API
+	// would be refused for every account after an import, ADMIN included.
+	$addParent = Scalar($target, "SELECT parent.name FROM permission_hierarchy child
+		JOIN permission_hierarchy parent ON parent.id = child.parent
+		WHERE child.name = 'MASTER_DATA_ADD'");
+	Check('MASTER_DATA_ADD hangs off MASTER_DATA_EDIT', $addParent === 'MASTER_DATA_EDIT',
+		'MASTER_DATA_EDIT', $addParent === false ? 'no row' : (string)$addParent);
+
+	$target->beginTransaction();
+
+	try
+	{
+		$target->exec("INSERT INTO users (username, password) VALUES ('import-test-adult', 'fixture'), ('import-test-child', 'fixture'), ('import-test-editor', 'fixture')");
+		$target->exec("DELETE FROM user_permissions WHERE user_id IN (SELECT id FROM users WHERE username IN ('import-test-adult', 'import-test-child', 'import-test-editor'))");
+		$target->exec("INSERT INTO user_roles (user_id, role_id) SELECT u.id, r.id FROM users u JOIN roles r
+			ON (u.username, r.code) IN (('import-test-adult', 'ADULT'), ('import-test-child', 'CHILD'))");
+		$target->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT u.id, p.id FROM users u, permission_hierarchy p
+			WHERE u.username = 'import-test-editor' AND p.name = 'MASTER_DATA_EDIT'");
+		$resolvesAdd = fn(string $username) => (int)Scalar($target, "SELECT COUNT(*) FROM user_permissions_resolved
+			WHERE user_id = (SELECT id FROM users WHERE username = '" . $username . "') AND permission_name = 'MASTER_DATA_ADD'");
+		$addAdmin = $resolvesAdd('admin');
+		$addEditor = $resolvesAdd('import-test-editor');
+		$addAdult = $resolvesAdd('import-test-adult');
+		$addChild = $resolvesAdd('import-test-child');
+	}
+	finally
+	{
+		$target->rollBack();
+	}
+	Check('ADMIN resolves MASTER_DATA_ADD', $addAdmin === 1, '1', (string)$addAdmin);
+	Check('a MASTER_DATA_EDIT-only account resolves MASTER_DATA_ADD', $addEditor === 1, '1', (string)$addEditor);
+	Check('the Adult role does not resolve MASTER_DATA_ADD', $addAdult === 0, '0', (string)$addAdult);
+	Check('the Child role does not resolve MASTER_DATA_ADD', $addChild === 0, '0', (string)$addChild);
+
 	// The two row transformations the target's own migration run could not see, because it
 	// ran against an empty database and the rows arrived afterwards.
 	$dangerous = Scalar($target, "SELECT COUNT(*) FROM recipes WHERE description LIKE '%<script%' OR description LIKE '%onerror%'");

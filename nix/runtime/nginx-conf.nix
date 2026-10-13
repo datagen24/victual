@@ -46,6 +46,17 @@ let
     fastcgi_read_timeout 60s;
     fastcgi_buffering on;
   '';
+
+  # The three origin-level security headers, in one place. nginx inherits `add_header`
+  # from the enclosing level only into a block that sets none of its own, so every
+  # location that adds a Cache-Control has to repeat these or its responses silently lose
+  # them. Three hand copies would drift; nix/checks.nix asserts each such location
+  # carries all three.
+  securityHeaders = ''
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header Referrer-Policy no-referrer always;
+  '';
 in
 writeText "victual-nginx.conf" ''
   # PID 1 is nginx itself; it must not fork away.
@@ -101,9 +112,7 @@ writeText "victual-nginx.conf" ''
 
       # TLS termination, HSTS and the rest belong to the ingress. What is set here is
       # what only the origin can know.
-      add_header X-Content-Type-Options nosniff always;
-      add_header X-Frame-Options SAMEORIGIN always;
-      add_header Referrer-Policy no-referrer always;
+      ${securityHeaders}
 
       location = /robots.txt {
         access_log off;
@@ -118,6 +127,13 @@ writeText "victual-nginx.conf" ''
         ${frontController}
       }
 
+      # Dotfiles are not assets. Named ahead of the asset locations below for the same
+      # first-match reason as `.mjs`: a regex location placed earlier would win for
+      # /packages/<pkg>/.<dotfile> and serve it, because nix/webroot.nix copies dotfiles.
+      location ~ /\. {
+        deny all;
+      }
+
       # nginx's own bundled mime.types is not the mime-db this box's /etc/mime.types
       # draws from, and has historically lagged it - `.mjs` is exactly the kind of entry
       # that goes missing, and an ES module served as application/octet-stream is a module
@@ -128,6 +144,7 @@ writeText "victual-nginx.conf" ''
         default_type application/javascript;
         expires 30d;
         add_header Cache-Control "public, immutable";
+        ${securityHeaders}
         try_files $uri =404;
       }
 
@@ -136,6 +153,7 @@ writeText "victual-nginx.conf" ''
       location ~* ^/(packages|css|js|viewjs|img|uisounds)/ {
         expires 30d;
         add_header Cache-Control "public, immutable";
+        ${securityHeaders}
         try_files $uri =404;
       }
 
@@ -159,11 +177,6 @@ writeText "victual-nginx.conf" ''
       # foo.php would be served as source.
       location ~ \.php$ {
         return 404;
-      }
-
-      # Dotfiles are not assets.
-      location ~ /\. {
-        deny all;
       }
     }
   }

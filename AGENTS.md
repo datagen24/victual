@@ -211,7 +211,7 @@ connective makes the order ambiguous. Those get full prose.
   the SQL logic every migration adds, run with `run-tests.sh pgtap`
   ([.devtools/pgtap/README.md](.devtools/pgtap/README.md) is the completeness list); the
   Playwright probes in `.devtools/frontend/` for the browser, unchanged.
-- Business logic lives in `services/`; routes in `routes.php`; permissions are the 37
+- Business logic lives in `services/`; routes in `routes.php`; permissions are the 41
   constants in `controllers/Users/User.php` resolved through `user_permissions_resolved`.
 - Container images: there is one answer now.
   [ADR-0013](docs/adr/0013-nix-built-container-images.md) was **accepted 2026-09-04** and

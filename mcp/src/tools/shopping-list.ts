@@ -28,6 +28,8 @@ export const shoppingList: ToolDefinition<typeof inputSchema, typeof outputSchem
   title: "Shopping list",
   description: "The items on a shopping list, not-yet-done first, with amounts and units.",
   permission: "SHOPPINGLIST_VIEW",
+  // The handler also reads products and quantity units, both STOCK_VIEW-gated.
+  alsoRequires: ["STOCK_VIEW"],
   inputSchema,
   outputSchema,
   handler: async (input, ctx) => {

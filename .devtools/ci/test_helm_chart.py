@@ -477,5 +477,75 @@ class SchemaRefusalTest(unittest.TestCase):
         self.refused(values, "/secrets/source")
 
 
+@needs_helm
+class PodHardeningTest(unittest.TestCase):
+    """Issues #851, #852, #861 and #862: what each pod can read, when it rolls, what it can reach."""
+
+    INLINE_ALL = CHART / "ci/inline-all-features.yaml"
+
+    def test_each_label_worker_mounts_only_its_own_key(self):
+        """#851: the renderer must not hold worker-key, nor the worker renderer-key."""
+        docs = render(self.INLINE_ALL)
+        cronjobs = by_kind(docs, "CronJob")
+        self.assertTrue(cronjobs, "no label-worker CronJob rendered")
+        seen = {}
+        for name, doc in cronjobs.items():
+            spec = pod_spec(doc)
+            (volume,) = [v for v in spec["volumes"] if v["name"] == "credentials"]
+            items = volume["secret"].get("items")
+            self.assertIsNotNone(items, f"{name}: the whole Secret is projected")
+            seen[name] = items
+        projected = sorted(i["key"] for items in seen.values() for i in items)
+        self.assertEqual(projected, ["renderer-key", "worker-key"])
+        for name, items in seen.items():
+            self.assertEqual(len(items), 1, name)
+            self.assertEqual(items[0]["key"], items[0]["path"], name)
+
+    def annotations(self, values, name="victual"):
+        docs = render(values)
+        return by_kind(docs, "Deployment")[name]["spec"]["template"]["metadata"].get("annotations") or {}
+
+    def test_a_setting_change_rolls_the_pods(self):
+        """#852: a ConfigMap change must change the pod template, so the Deployment rolls."""
+        base = yaml.safe_load(self.INLINE_ALL.read_text())
+        changed = copy.deepcopy(base)
+        changed["settings"] = {"CURRENCY": "EUR"}
+        for name in ("victual", "victual-mcp"):
+            a = self.annotations(base, name)
+            self.assertIn("checksum/config", a, name)
+            self.assertEqual(a, self.annotations(copy.deepcopy(base), name), f"{name}: not deterministic")
+        self.assertNotEqual(self.annotations(base)["checksum/config"], self.annotations(changed)["checksum/config"])
+        # The MCP sidecar's ConfigMap does not read settings:.
+        self.assertEqual(self.annotations(base, "victual-mcp"), self.annotations(changed, "victual-mcp"))
+
+    def test_an_inline_secret_change_rolls_the_pods(self):
+        base = filled_inline(True)
+        changed = copy.deepcopy(base)
+        changed["secrets"]["inline"]["appPassword"] = "rotated"
+        a = self.annotations(base)
+        self.assertIn("checksum/secrets", a)
+        self.assertEqual(a, self.annotations(copy.deepcopy(base)))
+        self.assertNotEqual(a["checksum/secrets"], self.annotations(changed)["checksum/secrets"])
+
+    def test_secrets_not_rendered_by_the_chart_have_no_checksum(self):
+        for values in (onepassword(True), CHART / "ci/existing-secrets.yaml"):
+            self.assertNotIn("checksum/secrets", self.annotations(values))
+
+    def test_no_pod_mounts_a_service_account_token(self):
+        """#861: nothing here calls the Kubernetes API."""
+        for path in MATRIX + DEPLOYMENTS:
+            for doc in render(path):
+                if doc["kind"] not in {"Deployment", "Job", "CronJob"}:
+                    continue
+                with self.subTest(file=path.name, kind=doc["kind"], name=doc["metadata"]["name"]):
+                    self.assertIs(pod_spec(doc).get("automountServiceAccountToken"), False)
+
+    def test_a_bootstrap_setting_is_refused(self):
+        """#862: the bootstrap password belongs in its Secret, not the ConfigMap."""
+        values = filled_inline(False)
+        values["settings"] = {"BOOTSTRAP_ADMIN_PASSWORD": "x"}
+        self.assertIn("/settings/BOOTSTRAP_ADMIN_PASSWORD", refusal(values))
+
+
 if __name__ == "__main__":
     unittest.main()

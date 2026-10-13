@@ -210,6 +210,12 @@ class RbacTest extends PgsqlSchemaTestCase
 		self::assertSame(0, (int)self::$db->query('SELECT COUNT(*) FROM user_roles')->fetchColumn(), 'Fresh user_roles is empty');
 		self::assertSame(4, (int)self::$db->query('SELECT COUNT(*) FROM roles WHERE builtin = 1')->fetchColumn(), 'Four built-in roles');
 		self::assertSame(6, (int)self::$db->query("SELECT COUNT(*) FROM user_permissions up JOIN permission_hierarchy p ON p.id=up.permission_id WHERE up.user_id=1 AND p.name LIKE '%_VIEW'")->fetchColumn(), 'Existing admin receives all six backfill leaves');
+
+		// ADR-0043 decision 1 (issue 742): migration 0308 adds MASTER_DATA_ADD as a child of
+		// MASTER_DATA_EDIT, so a fresh install carries it without InitialDataSeeder naming it.
+		$parent = self::$db->query("SELECT c.name FROM permission_hierarchy p JOIN permission_hierarchy c ON c.id = p.parent WHERE p.name = 'MASTER_DATA_ADD'")->fetchColumn();
+		self::assertSame('MASTER_DATA_EDIT', $parent, 'MASTER_DATA_ADD exists on a fresh database, nested under MASTER_DATA_EDIT');
+		self::assertSame(1, (int)self::$db->query("SELECT COUNT(*) FROM permission_hierarchy WHERE name = 'MASTER_DATA_ADD'")->fetchColumn(), 'Exactly one MASTER_DATA_ADD row');
 	}
 
 	public function testSeedFixtureUsers(): void
@@ -427,6 +433,48 @@ class RbacTest extends PgsqlSchemaTestCase
 	}
 
 	#[Depends('testPrivilegeEscalationRefusedForWeakerGrants')]
+	public function testMasterDataAddGrantNeedsTheCallerToHoldIt(): void
+	{
+		// ADR-0043 decision 1 (issue 742): MASTER_DATA_ADD is an ordinary permission for the
+		// no-escalation rule, so a USERS_EDIT account that does not resolve it cannot confer it
+		// on a user or on a role, and holders of MASTER_DATA_EDIT or ADMIN can.
+		$add = self::permissionId('MASTER_DATA_ADD');
+		self::assertGreaterThan(0, $add, 'The MASTER_DATA_ADD row exists');
+
+		self::grant(['USERS_EDIT', 'STOCK_VIEW']);
+		self::assertNotContains('MASTER_DATA_ADD', User::ResolvedPermissionNames(9000), 'Precondition: the caller lacks MASTER_DATA_ADD');
+		$this->expectStatus(fn() => self::$userApi->SetPermissions(self::request('PUT', ['permissions' => [$add]]), new Response(), ['userId' => 9001]), 403, 'USERS_EDIT without MASTER_DATA_ADD cannot grant it to a user');
+		$this->expectStatus(fn() => self::$roleApi->SetPermissions(self::request('PUT', ['permissions' => [$add]]), new Response(), ['roleId' => self::roleId('CHILD')]), 403, 'USERS_EDIT without MASTER_DATA_ADD cannot add it to a role');
+		self::assertSame(0, (int)self::$db->query('SELECT COUNT(*) FROM user_permissions WHERE user_id = 9001 AND permission_id = ' . $add)->fetchColumn(), 'The refused user grant wrote nothing');
+
+		// A custom role holding MASTER_DATA_ADD cannot be handed out through SetUserRoles by the same caller.
+		self::$db->exec("INSERT INTO roles (code, name, builtin) VALUES ('ADDER', 'Adder', 0)");
+		$adder = self::roleId('ADDER');
+		try
+		{
+			self::$db->exec("INSERT INTO role_permissions (role_id, permission_id) VALUES ($adder, $add)");
+			$this->expectStatus(fn() => self::$roleApi->SetUserRoles(self::request('PUT', ['roles' => [$adder]]), new Response(), ['userId' => 9001]), 403, 'USERS_EDIT without MASTER_DATA_ADD cannot assign a role that carries it');
+
+			// A caller holding MASTER_DATA_EDIT resolves MASTER_DATA_ADD through the hierarchy.
+			self::grant(['USERS_EDIT', 'STOCK_VIEW', 'MASTER_DATA_EDIT']);
+			self::assertContains('MASTER_DATA_ADD', User::ResolvedPermissionNames(9000), 'MASTER_DATA_EDIT resolves MASTER_DATA_ADD');
+			$this->expectStatus(fn() => self::$userApi->SetPermissions(self::request('PUT', ['permissions' => [$add]]), new Response(), ['userId' => 9001]), 204, 'MASTER_DATA_EDIT holder can grant MASTER_DATA_ADD to a user');
+			$this->expectStatus(fn() => self::$roleApi->SetUserRoles(self::request('PUT', ['roles' => [$adder]]), new Response(), ['userId' => 9001]), 204, 'MASTER_DATA_EDIT holder can assign the role that carries it');
+
+			// ADMIN too.
+			self::grant(['USERS_EDIT', 'STOCK_VIEW', 'ADMIN']);
+			$this->expectStatus(fn() => self::$userApi->SetPermissions(self::request('PUT', ['permissions' => [$add]]), new Response(), ['userId' => 9001]), 204, 'ADMIN can grant MASTER_DATA_ADD to a user');
+			$this->expectStatus(fn() => self::$roleApi->SetPermissions(self::request('PUT', ['permissions' => [$add]]), new Response(), ['roleId' => $adder]), 204, 'ADMIN can set MASTER_DATA_ADD on a role');
+		}
+		finally
+		{
+			// Restore the state the following tests were written against.
+			self::$db->exec("DELETE FROM user_roles WHERE role_id = $adder; DELETE FROM role_permissions WHERE role_id = $adder; DELETE FROM roles WHERE id = $adder; DELETE FROM user_permissions WHERE user_id = 9001");
+			self::$db->exec('INSERT INTO user_permissions (user_id, permission_id) VALUES (9001, ' . self::permissionId('STOCK_VIEW') . ')');
+		}
+	}
+
+	#[Depends('testMasterDataAddGrantNeedsTheCallerToHoldIt')]
 	public function testRoleOnlyEditorInheritsPictureOwnershipRule(): void
 	{
 		self::grant(['ADMIN']);

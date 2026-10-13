@@ -237,8 +237,8 @@
       "type": "object",
       "$comment": "Each name is one from docs/manual/configuration.md, without VICTUAL_, holding one value: a list cannot be set from the environment.",
       "patternProperties": {
-        "^(VICTUAL_.*|MODE|DB_.*|FILE_STORAGE|BASE_URL|BASE_PATH|MQTT_.*|INFLUXDB_.*)$": {
-          "$comment": "Set by another section of the values, or fixed by this chart. BASE_PATH is a build input baked into the image's route cache, not a runtime setting.",
+        "^(VICTUAL_.*|MODE|DB_.*|FILE_STORAGE|BASE_URL|BASE_PATH|MQTT_.*|INFLUXDB_.*|BOOTSTRAP_.*)$": {
+          "$comment": "Set by another section of the values, or fixed by this chart. BASE_PATH is a build input baked into the image's route cache, not a runtime setting. BOOTSTRAP_* is the first administrator's password, which belongs only in the migrate container's Secret (secrets.inline.bootstrapAdminPassword or its item); settings: renders into a ConfigMap that every pod reads and anyone with get on ConfigMaps can see.",
           "not": {}
         },
         "^[A-Z][A-Z0-9_]*$": {

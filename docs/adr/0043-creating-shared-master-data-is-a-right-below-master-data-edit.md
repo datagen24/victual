@@ -20,6 +20,11 @@
   - It states the answer's prohibition and the meaning of "validated" in decision 2.
   - It names the cases prerequisite 3 tests.
   - It labels the code reading under open question 5 as code reading.
+
+  A factual revision on 2026-10-12, against the implementation branch at `9456701f`, updates
+  two sentences that code since moved past. Decision 2 now records that the non-finite check
+  is on `master`, and open question 5 cites the lookup's current line numbers. The status and
+  the decisions are unchanged.
 - **Referenced by:** [issue 742](https://github.com/datagen24/victual/issues/742) and its
   evidence, [`.devtools/issue742/RESULTS.md`](../../.devtools/issue742/RESULTS.md).
 - **Relationship:** compatible with accepted
@@ -96,8 +101,10 @@ entities: `products`, `product_barcodes`, `locations`, `quantity_units`, `produc
   conversion write. The lookup must not modify a global conversion or a conversion that
   belongs to any other product. "Validated" means a finite number greater than zero. The
   plugin check on `master` at `1b05387f` (`helpers/BaseBarcodeLookupPlugin.php:192-196`)
-  refuses zero, negative and non-numeric values but not a non-finite one, so the
-  implementation must add that check.
+  refused zero, negative and non-numeric values but not a non-finite one. Issue #842 (PR
+  #845) added that check, and it is now on `master`
+  (`helpers/BaseBarcodeLookupPlugin.php:197`, on the implementation branch at `9456701f`,
+  based on `master` at `50181726`; revision note 2026-10-12 in the Recorded line).
 - Userfield values and definitions, label subsystem writes, and merges keep their gates.
 - `GET /api/stock/barcodes/external-lookup/{barcode}` checks `STOCK_VIEW` alone for a lookup
   that creates nothing. With `add=true` it also requires `MASTER_DATA_ADD`, which every
@@ -462,7 +469,10 @@ should move to `MASTER_DATA_EDIT`; that needs its own decision.
    `MASTER_DATA_ADD`, which `MASTER_DATA_EDIT` and `ADMIN` holders resolve through the tree.
    The permission check therefore moves after the controller reads `add`
    (`controllers/Api/StockApiController.php`, where on `master` at `9bd1df91` both checks run
-   at lines 872-873, before `add` is read at 878). Decision 2 states the resulting gate.
+   at lines 872-873, before `add` is read at 878). Decision 2 states the resulting gate. On
+   the implementation branch at `9456701f` (based on `master` at `50181726`), `STOCK_VIEW` is
+   checked at line 902, `add` is read at lines 906-910, and `MASTER_DATA_ADD` is checked at
+   line 914 only when `add` is true (revision note 2026-10-12 in the Recorded line).
 
    > **Response:** datagen24, 2026-10-12: A MASTER_DATA_ADD holder may initialize the new
    > product's purchase-to-stock conversion using the validated lookup factor, within the

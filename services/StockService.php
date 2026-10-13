@@ -8,6 +8,7 @@ use Victual\Helpers\Grocycode;
 use Victual\Services\Influx\BookingEventPublisher;
 use Victual\Services\Labels\LabelIdentityService;
 use Victual\Services\Labels\StockLabelRevivalService;
+use Victual\Services\Storage\FileAlreadyExistsException;
 use Victual\Services\Storage\FileStorage;
 
 /**
@@ -1382,7 +1383,7 @@ class StockService extends BaseService
 
 				// Add product to database and include new product id in output
 				$productData = $pluginOutput;
-				unset($productData['__barcode'], $productData['__qu_factor_purchase_to_stock'], $productData['__image_url']); // Virtual lookup plugin properties
+				unset($productData['__barcode'], $productData['__qu_factor_purchase_to_stock'], $productData['__image_url'], $productData['picture_file_name']); // Virtual lookup plugin properties, and the picture name only this method may set
 
 				// Download and save image if provided
 				if (isset($pluginOutput['__image_url']) && !empty($pluginOutput['__image_url']))
@@ -1534,14 +1535,40 @@ class StockService extends BaseService
 				// picture rather than failing the whole add.
 				if (isset($pictureFileName) && isset($pictureData))
 				{
+					$pictureCreated = false;
+
 					try
 					{
-						FileStorage::GetInstance()->Write('productpictures', $pictureFileName, $pictureData);
+						// Create, never Write: the name is derived from the looked-up
+						// barcode, so for any caller allowed to add (MASTER_DATA_ADD,
+						// issue 742 / ADR-0043) a Write would let a barcode that collides
+						// with an existing picture replace that file.
+						FileStorage::GetInstance()->Create('productpictures', $pictureFileName, $pictureData);
+						$pictureCreated = true;
 						$newProductRow->update(['picture_file_name' => $pictureFileName]);
+					}
+					catch (FileAlreadyExistsException)
+					{
+						// A file of that name is already stored. It is left exactly as it
+						// is and the new product is created without a picture; the add
+						// itself has already committed and does not fail.
 					}
 					catch (\Exception)
 					{
-						// Ignore
+						if ($pictureCreated)
+						{
+							// The file is this call's own (Create is exclusive), but the
+							// product never recorded it: remove it rather than leave an
+							// orphan that would also block the next add of this barcode.
+							try
+							{
+								FileStorage::GetInstance()->Delete('productpictures', $pictureFileName);
+							}
+							catch (\Exception)
+							{
+								// Ignore
+							}
+						}
 					}
 				}
 
@@ -2140,7 +2167,7 @@ class StockService extends BaseService
 			// migrations/0225.sql), so a plain `> 0` needs an explicit numeric CAST to even
 			// type-check on PostgreSQL; CAST(... AS NUMERIC) rather than the PG-only `::` sugar
 			// keeps this valid under DatabaseDialect::SQLITE_TOOLING_ENV too, where the
-			// differential suite can run this same code path against SQLite. Migration 0308
+			// differential suite can run this same code path against SQLite. Migration 0309
 			// puts quantity_unit_conversions_factor_positive (factor > 0 AND factor < 'Infinity')
 			// on quantity_unit_conversions.factor, so on a migrated database a non-positive factor
 			// cannot reach this cache table; the guard stays for a database where the constraint

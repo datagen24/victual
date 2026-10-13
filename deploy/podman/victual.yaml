@@ -26,6 +26,9 @@ metadata:
     app.kubernetes.io/name: victual
 spec:
   restartPolicy: Always
+  # Nothing here talks to the Kubernetes API (issue #861). Podman has no ServiceAccount to
+  # mount; the field is here so deploy/k3s/victual.yaml and this pod stay the same spec.
+  automountServiceAccountToken: false
 
   securityContext:
     runAsNonRoot: true

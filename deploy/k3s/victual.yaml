@@ -149,7 +149,17 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: victual
+      annotations:
+        # envFrom is read once, at container start, so without these a changed ConfigMap or
+        # Secret leaves the running pod on the old values until something else restarts it
+        # (issue #852). The hash is of what this chart renders and nothing more; Secrets
+        # the chart does not render (secrets.source existing / onepassword) are not hashed,
+        # see the note above secrets.source in values.yaml.
+        checksum/config: f7d94ea03605ea583770c09159d5af94fd7635dbf26c87828de2855773dfd8f3
     spec:
+      # Nothing here talks to the Kubernetes API, so the pod gets no ServiceAccount token
+      # (issue #861).
+      automountServiceAccountToken: false
       # `lifecycle.stopSignal` below is only accepted for a pod that says what OS it is for.
       os:
         name: linux

@@ -1,4 +1,4 @@
--- migrations/0308.pgsql.sql (issues #849, #853, #866, #868; 2026-10-12 audit remediation).
+-- migrations/0309.pgsql.sql (issues #849, #853, #866, #868; 2026-10-12 audit remediation).
 --
 -- #868: quantity_unit_conversions.factor is positive and finite by constraint, and
 --       trg_cascade_change_qu_id_stock refuses a resolved factor that is not.

@@ -824,7 +824,7 @@ class MergeProductsTest extends PgsqlSchemaTestCase
 			'qu_id_price' => $unit,
 		]);
 
-		// Given: a negative conversion factor. Until migration 0308 nothing declared a CHECK
+		// Given: a negative conversion factor. Until migration 0309 nothing declared a CHECK
 		// on quantity_unit_conversions.factor, and the write paths applied no positivity check.
 		// A factor of exactly 0 is a different story and is NOT used here: it was tried first,
 		// and quantity_unit_conversions_INS's own inverse-row computation, "1 /
@@ -834,7 +834,7 @@ class MergeProductsTest extends PgsqlSchemaTestCase
 		// cannot reach this table at all. A negative factor has no such obstacle: 1 / -5 is an
 		// ordinary finite value, so the INSERT below succeeds exactly like any other.
 		//
-		// Migration 0308 (issue #868) now refuses such a row with
+		// Migration 0309 (issue #868) now refuses such a row with
 		// quantity_unit_conversions_factor_positive, so this test removes that constraint for
 		// its own duration to reach the PHP guard this test is about, and restores it afterwards.
 		self::$db->exec('ALTER TABLE quantity_unit_conversions DROP CONSTRAINT quantity_unit_conversions_factor_positive');
