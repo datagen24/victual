@@ -4,6 +4,7 @@ namespace Victual\Tests\Pgsql;
 
 use PDO;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #510 ([M10] Outbox delivery has no row claim and MQTT uses QoS 0), re-decided by the
@@ -192,29 +193,21 @@ class OutboxClaimConcurrencyTest extends PgsqlSchemaTestCase
 		];
 	}
 
-	/** @return array{0: resource, 1: array} */
-	private static function startSubprocess(array $args, array $extraEnv = []): array
+	private static function startSubprocess(array $args, array $extraEnv = []): Subprocess
 	{
-		$process = proc_open(
+		return Subprocess::start(
 			array_merge([PHP_BINARY, __DIR__ . '/outbox-claim-subprocess-helper.php'], $args),
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
 			array_merge(self::subprocessEnv(), $extraEnv)
 		);
-
-		return [$process, $pipes];
 	}
 
 	/** @return array{status: int, error_message?: string, claimed_ids?: int[], delivered?: bool, stderr: string} */
-	private static function finishSubprocess(array $processAndPipes): array
+	private static function finishSubprocess(Subprocess $subprocess): array
 	{
-		[$process, $pipes] = $processAndPipes;
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = $subprocess->finish();
+		self::assertFalse($finished['timedOut'], 'the subprocess outlived its bound: ' . Subprocess::Describe($finished));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);
