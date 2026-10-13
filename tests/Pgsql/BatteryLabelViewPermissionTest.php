@@ -170,12 +170,22 @@ class BatteryLabelViewPermissionTest extends PgsqlSchemaTestCase
 	{
 		$seen = [];
 		self::$db->beginTransaction();
-		$capture = (new LabelCaptureService(self::$db, static function (string $permission) use (&$seen)
+		try
 		{
-			$seen[] = $permission;
-			return $permission === User::PERMISSION_BATTERIES_VIEW;
-		}))->Capture('battery', self::$batteryId, null, ['battery.name', 'battery.id'], 'en', 'UTC', self::VIEW_ONLY_USER);
-		self::$db->commit();
+			$capture = (new LabelCaptureService(self::$db, static function (string $permission) use (&$seen)
+			{
+				$seen[] = $permission;
+				return $permission === User::PERMISSION_BATTERIES_VIEW;
+			}))->Capture('battery', self::$batteryId, null, ['battery.name', 'battery.id'], 'en', 'UTC', self::VIEW_ONLY_USER);
+			self::$db->commit();
+		}
+		finally
+		{
+			if (self::$db->inTransaction())
+			{
+				self::$db->rollBack();
+			}
+		}
 
 		self::assertSame('Battery label view test', $capture['captured_fields']['battery.name']);
 		self::assertSame((string)self::$batteryId, $capture['captured_fields']['battery.id']);
@@ -197,11 +207,18 @@ class BatteryLabelViewPermissionTest extends PgsqlSchemaTestCase
 
 	public function testOperateGetsPastThePermissionGateForAHolderOfBothGrants(): void
 	{
-		$response = self::Send('POST', '/api/labels/battery/' . self::$batteryId . '/print', self::VIEW_AND_EDIT_USER,
-			['import_epoch' => 0, 'printer_id' => 0]);
+		$labels = self::LabelCount();
+		$requests = self::PrintRequestCount();
 
-		// The request carries no real printer, so it is refused further in - but not by the
-		// permission gate this issue is about.
-		self::assertNotSame(403, $response['status'], $response['body']);
+		$response = self::Send('POST', '/api/labels/battery/' . self::$batteryId . '/print', self::VIEW_AND_EDIT_USER,
+			['import_epoch' => 0, 'printer_id' => 999999]);
+
+		// The request names no real printer, so it is refused further in, by the printer
+		// check: the permission gate is the only thing that differs from the view-only caller.
+		self::assertSame(422, $response['status'], $response['body']);
+		self::assertSame('printer_id', $response['json']['field'] ?? null, $response['body']);
+		self::assertSame('inactive_printer', $response['json']['code'] ?? null, $response['body']);
+		self::assertSame($labels, self::LabelCount(), 'the refusal mints no label');
+		self::assertSame($requests, self::PrintRequestCount(), 'the refusal enqueues nothing');
 	}
 }
