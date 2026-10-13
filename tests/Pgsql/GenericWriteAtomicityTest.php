@@ -80,11 +80,13 @@ class GenericWriteAtomicityTest extends PgsqlSchemaTestCase
 		self::$generic = new GenericEntityApiController(self::$container);
 
 		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9000, 'atomicity-caller', 'fixture')");
-		self::grant(['MASTER_DATA_EDIT']);
+		// SHOPPINGLIST_ITEMS_ADD: see the HTTP caller below (ADR-0043 auto-add rule).
+		self::grant(['MASTER_DATA_EDIT', 'SHOPPINGLIST_ITEMS_ADD']);
 
 		// The separate-connection HTTP case needs its own authenticated identity.
 		self::$db->exec("INSERT INTO users(id, username, password) VALUES (" . self::HTTP_USER_ID . ", 'atomicity-http-caller', 'fixture')");
-		self::$db->exec('INSERT INTO user_permissions (user_id, permission_id) SELECT ' . self::HTTP_USER_ID . " , id FROM permission_hierarchy WHERE name IN ('MASTER_DATA_EDIT', 'STOCK_VIEW')");
+		// SHOPPINGLIST_ITEMS_ADD: AddObject() runs the shopping-list auto-add post-save step, which these tests make fail, only for a caller holding it (ADR-0043 auto-add rule).
+		self::$db->exec('INSERT INTO user_permissions (user_id, permission_id) SELECT ' . self::HTTP_USER_ID . " , id FROM permission_hierarchy WHERE name IN ('MASTER_DATA_EDIT', 'STOCK_VIEW', 'SHOPPINGLIST_ITEMS_ADD')");
 		self::$apiKey = bin2hex(random_bytes(25));
 		$statement = self::$db->prepare('INSERT INTO api_keys (api_key, key_hint, user_id, expires, key_type) '
 			. "VALUES (?, ?, ?, now() + interval '30 days', ?)");

@@ -16,7 +16,7 @@ authenticated the caller.
 | `ExceptionController.php` | Error handler registered in `app.php`. It answers an uncaught exception on an `/api` route with a JSON error and on a page route with an HTML error page. |
 | `GenericEntityController.php` | Pages for userfields, user-defined entity types (userentities) and their instances (userobjects). |
 | `Api/BaseApiController.php` | Base for REST controllers below `/api`: JSON response helpers, the `query[]`, `limit`, `offset` and `order` handling for list endpoints, and HTMLPurifier body sanitisation. `HandleApiCall()` maps exceptions to status codes; its doc comment has the table. |
-| `Api/GenericEntityApiController.php` | `/api/objects/{entity}` CRUD and `/api/userfields/{entity}/{objectId}`. The `ExposedEntity*` enums decide which entities each operation accepts. |
+| `Api/GenericEntityApiController.php` | `/api/objects/{entity}` CRUD and `/api/userfields/{entity}/{objectId}`. The `ExposedEntity*` enums decide which entities each operation accepts. Creating products, barcodes, locations, quantity units, product groups and stores needs `MASTER_DATA_ADD`; chores and tasks use `CHORES` and `TASKS` (ADR-0043). |
 | `Api/*ApiController.php` | One controller per API area. `OpenApiController` serves `victual.openapi.json`. |
 | `Api/EInvalidApiQuery.php`, `Api/EObjectNotFound.php` | Exceptions that `BaseApiController::HandleApiCall()` answers with 400 and 404. |
 | `Users/User.php` | The `PERMISSION_*` constants and the checks against them. |

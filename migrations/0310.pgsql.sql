@@ -42,7 +42,7 @@ BEGIN
 	INTO offender_count, sample;
 
 	IF offender_count > 0 THEN
-		RAISE EXCEPTION 'Migration 0309 stopped: % consumption events are linked to a stock transaction that is also an event''s own booking, which ADR-0041 rule 9 allows only for the same user''s own unlinked manual event. Sample (linking event, holder): %. Resolve these events, then run the migration again. Nothing has been changed.', offender_count, sample;
+		RAISE EXCEPTION 'Migration 0310 stopped: % consumption events are linked to a stock transaction that is also an event''s own booking, which ADR-0041 rule 9 allows only for the same user''s own unlinked manual event. Sample (linking event, holder): %. Resolve these events, then run the migration again. Nothing has been changed.', offender_count, sample;
 	END IF;
 END
 $$;

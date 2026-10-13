@@ -1,4 +1,4 @@
--- migrations/0309.pgsql.sql (audit 2026-10-12, issues #864 and #867): the transaction-roles trigger on
+-- migrations/0310.pgsql.sql (audit 2026-10-12, issues #864 and #867): the transaction-roles trigger on
 -- consumption_events and the SET NULL action of consumption_event_lines.location_id.
 --
 -- A stock transaction is the booking of one event or the link of another, never both, except that an

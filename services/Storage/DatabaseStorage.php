@@ -100,7 +100,7 @@ class DatabaseStorage extends FileStorage
 			// 23505 is unique_violation
 			if ($ex->getCode() === '23505')
 			{
-				throw new \Exception("Error while creating file $name");
+				throw new FileAlreadyExistsException("Error while creating file $name");
 			}
 
 			throw $ex;

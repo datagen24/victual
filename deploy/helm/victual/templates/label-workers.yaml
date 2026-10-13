@@ -97,6 +97,8 @@ spec:
       backoffLimit: 2
       template:
         spec:
+          # Nothing here talks to the Kubernetes API (issue #861).
+          automountServiceAccountToken: false
           restartPolicy: Never
           securityContext:
             runAsNonRoot: true
@@ -112,6 +114,10 @@ spec:
             - name: credentials
               secret:
                 secretName: {{ .Values.secrets.names.labelCredentials }}
+                # Only the renderer's key: the worker's must not be readable here (issue #851).
+                items:
+                  - key: renderer-key
+                    path: renderer-key
           containers:
             - name: renderer
               image: {{ include "victual.image" (dict "root" . "name" "victual-label-renderer") }}
@@ -188,6 +194,8 @@ spec:
       parallelism: 1
       template:
         spec:
+          # Nothing here talks to the Kubernetes API (issue #861).
+          automountServiceAccountToken: false
           restartPolicy: Never
           securityContext:
             runAsNonRoot: true
@@ -203,6 +211,10 @@ spec:
             - name: credentials
               secret:
                 secretName: {{ .Values.secrets.names.labelCredentials }}
+                # Only the worker's key: the renderer's must not be readable here (issue #851).
+                items:
+                  - key: worker-key
+                    path: worker-key
           containers:
             - name: worker
               image: {{ include "victual.image" (dict "root" . "name" "victual-label-worker") }}

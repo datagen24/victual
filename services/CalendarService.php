@@ -112,7 +112,7 @@ class CalendarService extends BaseService
 		}
 
 		$batteryEvents = [];
-		if (VICTUAL_FEATURE_FLAG_BATTERIES)
+		if (VICTUAL_FEATURE_FLAG_BATTERIES && User::HasPermissions(User::PERMISSION_BATTERIES_VIEW))
 		{
 			$batteries = $this->DB->batteries()->where('active = 1');
 			$titlePrefix = LocalizationService::GetInstance()->__t('Battery charge cycle due') . ': ';

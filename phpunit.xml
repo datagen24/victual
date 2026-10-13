@@ -25,6 +25,8 @@
 			<file>tests/Pgsql/RecipeRouteAuthzTest.php</file>
 			<file>tests/Pgsql/ViewPermissionGatingTest.php</file>
 			<file>tests/Pgsql/ViewPermissionMigrationTest.php</file>
+			<file>tests/Pgsql/MasterDataAddMigrationTest.php</file>
+			<file>tests/Pgsql/MasterDataAddPermissionTest.php</file>
 			<file>tests/Pgsql/MergeProductsPermissionTest.php</file>
 			<file>tests/Pgsql/StockBookingNeedsStockViewTest.php</file>
 		</testsuite>
@@ -82,6 +84,7 @@
 		<testsuite name="householdpages">
 			<file>tests/Pgsql/HouseholdPagesTest.php</file>
 			<file>tests/Pgsql/SortNumberFormsHttpTest.php</file>
+			<file>tests/Pgsql/Adr0035GenericReadsTest.php</file>
 		</testsuite>
 		<testsuite name="labelapi">
 			<file>tests/Pgsql/LabelApiTest.php</file>

@@ -1547,7 +1547,7 @@ class ConsumptionEventService extends BaseService
 		catch (\PDOException $exception)
 		{
 			// A concurrent link or booking took the transaction after the checks above: the unique indexes and
-			// the transaction-roles trigger (migration 0309) raise 23505. It is the same refusal as finding the
+			// the transaction-roles trigger (migration 0310) raise 23505. It is the same refusal as finding the
 			// holder first; the whole link, including the undo of the event's own booking, rolls back.
 			if (($exception->errorInfo[0] ?? $exception->getCode()) === '23505')
 			{

@@ -195,32 +195,16 @@
         }
     },
     "GET /api/objects/{entity} (batteries)": {
-        "status": 200,
-        "shape": [
-            {
-                "active": "integer",
-                "charge_interval_days": "integer",
-                "description": "null",
-                "id": "integer",
-                "import_epoch": "integer",
-                "name": "string",
-                "row_created_timestamp": "string(date-time)",
-                "used_in": "null"
-            }
-        ]
+        "status": 403,
+        "shape": {
+            "error_message": "string"
+        }
     },
     "GET /api/objects/{entity} (battery_charge_cycles)": {
-        "status": 200,
-        "shape": [
-            {
-                "battery_id": "integer",
-                "id": "integer",
-                "row_created_timestamp": "string(date-time)",
-                "tracked_time": "string(date-time)",
-                "undone": "integer",
-                "undone_timestamp": "null|string(date-time)"
-            }
-        ]
+        "status": 403,
+        "shape": {
+            "error_message": "string"
+        }
     },
     "GET /api/objects/{entity} (chores)": {
         "status": 200,
@@ -268,16 +252,10 @@
         ]
     },
     "GET /api/objects/{entity} (equipment)": {
-        "status": 200,
-        "shape": [
-            {
-                "description": "null",
-                "id": "integer",
-                "instruction_manual_file_name": "null",
-                "name": "string",
-                "row_created_timestamp": "string(date-time)"
-            }
-        ]
+        "status": 403,
+        "shape": {
+            "error_message": "string"
+        }
     },
     "GET /api/objects/{entity} (locations)": {
         "status": 200,
@@ -793,19 +771,9 @@
         }
     },
     "GET /api/objects/{entity}/{objectId} (batteries)": {
-        "status": 200,
+        "status": 403,
         "shape": {
-            "active": "integer",
-            "charge_interval_days": "integer",
-            "description": "null",
-            "id": "integer",
-            "import_epoch": "integer",
-            "name": "string",
-            "row_created_timestamp": "string(date-time)",
-            "used_in": "null",
-            "userfields": {
-                "__empty_list__": true
-            }
+            "error_message": "string"
         }
     },
     "GET /api/objects/{entity}/{objectId} (chores)": {
@@ -838,16 +806,9 @@
         }
     },
     "GET /api/objects/{entity}/{objectId} (equipment)": {
-        "status": 200,
+        "status": 403,
         "shape": {
-            "description": "null",
-            "id": "integer",
-            "instruction_manual_file_name": "null",
-            "name": "string",
-            "row_created_timestamp": "string(date-time)",
-            "userfields": {
-                "__empty_list__": true
-            }
+            "error_message": "string"
         }
     },
     "GET /api/objects/{entity}/{objectId} (locations)": {
@@ -1836,6 +1797,9 @@
                         "string"
                     ],
                     "EQUIPMENT": [
+                        "string"
+                    ],
+                    "MASTER_DATA_ADD": [
                         "string"
                     ],
                     "MASTER_DATA_EDIT": [

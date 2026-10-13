@@ -828,8 +828,8 @@ class ContractTest extends PgsqlSchemaTestCase
 		$calendar = self::controller(CalendarApiController::class);
 		$print = self::controller(PrintApiController::class);
 
-		// equipmentmanuals is openly readable (GROUP_READ_PERMISSIONS => null) and
-		// accepts pdf, so this needs no extra grant beyond MASTER_DATA_EDIT (Admin holds it).
+		// equipmentmanuals accepts pdf and reads under EQUIPMENT_VIEW (ADR-0035), so this
+		// needs no extra grant beyond what Admin holds.
 		$pdfBytes = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF";
 		$fileName = base64_encode('contract-manual.pdf');
 		self::invokeAdmin('PUT /api/files/{group}/{fileName}', fn() => $files->UploadFile(self::requestWithRawBody('PUT', $pdfBytes, 'application/pdf'), new Response(), ['group' => 'equipmentmanuals', 'fileName' => $fileName]));

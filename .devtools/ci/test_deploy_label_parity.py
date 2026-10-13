@@ -123,9 +123,11 @@ def _compose_descriptor(service_name):
         "cap_drop": sorted(service["cap_drop"]),
         "memory_bytes": _bytes(service["mem_limit"]),
         "tmpfs_bytes": _bytes(size),
-        # Compose mounts a secret at /run/secrets/<name>; the kube files mount the whole
-        # directory. Both put the key where the --key-file argument says it is, and that
-        # argument is compared above, so the mount point is the constant rather than the list.
+        # Compose mounts a secret at /run/secrets/<name>; the kube files mount a directory
+        # into which only that workload's own key is projected (`items:`, issue #851, so the
+        # renderer cannot read worker-key). Both put the key where the --key-file argument
+        # says it is, and that argument is compared above, so the mount point is the constant
+        # rather than the list.
         "secret_mount": ["/run/secrets"],
     }
 

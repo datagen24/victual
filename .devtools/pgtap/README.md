@@ -164,7 +164,7 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `trg_consumption_refill_date_not_before_fill` (trigger `consumption_refill_date_not_before_fill`) | function + trigger | 0307 | `033-consumption-refill.sql` |
 | `trg_consumption_refill_date_ends_once` (trigger `consumption_refill_date_ends_once`) | function + trigger | 0307 | `033-consumption-refill.sql` |
 | `trg_consumption_refill_order_closed_final` (trigger `consumption_refill_order_closed_final`) | function + trigger | 0307 | `033-consumption-refill.sql` |
-| `trg_consumption_event_transaction_roles` (trigger `consumption_event_transaction_roles`) | function + trigger | 0309 | `035-consumption-event-transaction-roles.sql` |
+| `trg_consumption_event_transaction_roles` (trigger `consumption_event_transaction_roles`) | function + trigger | 0310 | `035-consumption-event-transaction-roles.sql` |
 
 ## Completeness
 
