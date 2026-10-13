@@ -17,6 +17,12 @@ use RuntimeException;
  * waiter, say), do other work, and finish them afterwards. Output is never capped: the
  * full buffers come back. Stdin is not wired; the child inherits the parent's.
  *
+ * The bound counts from start(), not from finish(): a child started, left running, and
+ * finished late has less time than finish()'s argument suggests (a child that has already
+ * exited is never timed out for that). If the child exits but a descendant keeps its pipes
+ * open, finish() waits one second for output, closes the pipes, and reports pipesHeldOpen
+ * rather than signalling a pid it has already reaped.
+ *
  * With a string command PHP runs it through sh -c, so on timeout only the shell is
  * signalled; pass an array to signal the program itself.
  */
@@ -26,6 +32,8 @@ final class Subprocess
 	private const TICK_MICROSECONDS = 50000;
 	private const TERM_GRACE_SECONDS = 2.0;
 	private const REAP_SECONDS = 2.0;
+	private const PIPE_GRACE_SECONDS = 1.0;
+	private const TICK_READ_CAP = 1048576;
 	private const TAIL_BYTES = 4096;
 	private const SIGTERM = 15;
 	private const SIGKILL = 9;
@@ -68,7 +76,7 @@ final class Subprocess
 	/**
 	 * @param string[]|string $command
 	 * @param array<string, scalar>|null $env
-	 * @return array{exit: int, stdout: string, stderr: string, timedOut: bool, elapsed: float, command: string}
+	 * @return array{exit: int, stdout: string, stderr: string, timedOut: bool, pipesHeldOpen: bool, elapsed: float, command: string}
 	 */
 	public static function run(array|string $command, ?array $env = null, ?string $cwd = null, float $boundSeconds = 120.0): array
 	{
@@ -87,7 +95,7 @@ final class Subprocess
 	 * reported the child gone, or 128 + the signal number when a signal ended it.
 	 * "command" is the command line, for Describe().
 	 *
-	 * @return array{exit: int, stdout: string, stderr: string, timedOut: bool, elapsed: float, command: string}
+	 * @return array{exit: int, stdout: string, stderr: string, timedOut: bool, pipesHeldOpen: bool, elapsed: float, command: string}
 	 */
 	public function finish(float $boundSeconds = 120.0): array
 	{
@@ -108,15 +116,72 @@ final class Subprocess
 
 		$deadline = $this->startedAt + $boundSeconds;
 		$exit = null;
+		$exitedAt = null;
 		$timedOut = false;
+		$pipesHeldOpen = false;
 		$termSentAt = null;
 		$killSentAt = null;
 
 		while (true)
 		{
+			if ($open !== [])
+			{
+				$read = array_values($open);
+				$write = null;
+				$except = null;
+
+				// false is an interrupted system call; the warning is noise, so try again.
+				if (@stream_select($read, $write, $except, 0, self::TICK_MICROSECONDS) === false)
+				{
+					usleep(10000);
+				}
+				else
+				{
+					foreach ($open as $number => $pipe)
+					{
+						if (in_array($pipe, $read, true))
+						{
+							$this->drain($number, $pipe, $buffers, $open);
+						}
+					}
+				}
+			}
+			else
+			{
+				usleep(10000);
+			}
+
+			// Status before the deadline: a child that already exited cleanly is not timed out
+			// because finish() was called late.
+			if ($exit === null)
+			{
+				$exit = self::ExitOf(proc_get_status($process));
+
+				if ($exit !== null)
+				{
+					$exitedAt = microtime(true);
+				}
+			}
+
+			if ($open === [] && $exit !== null)
+			{
+				break;
+			}
+
 			$now = microtime(true);
 
-			if (!$timedOut && $now >= $deadline)
+			if ($exit !== null)
+			{
+				// The child is gone and reaped, so its pid may be reused: never signal it. A
+				// descendant that kept the pipes open gets a short grace to finish writing.
+				if ($now >= $exitedAt + self::PIPE_GRACE_SECONDS)
+				{
+					$pipesHeldOpen = true;
+
+					break;
+				}
+			}
+			elseif (!$timedOut && $now >= $deadline)
 			{
 				$timedOut = true;
 				$termSentAt = $now;
@@ -129,46 +194,12 @@ final class Subprocess
 			}
 			elseif ($killSentAt !== null && $now >= $killSentAt + self::REAP_SECONDS)
 			{
-				// SIGKILL does not return control of a pipe held open by a grandchild.
+				// Still not reaped two seconds after SIGKILL (uninterruptible sleep, say).
 				break;
-			}
-
-			if ($open !== [])
-			{
-				$read = array_values($open);
-				$write = null;
-				$except = null;
-
-				if (stream_select($read, $write, $except, 0, self::TICK_MICROSECONDS) !== false)
-				{
-					foreach ($open as $number => $pipe)
-					{
-						if (in_array($pipe, $read, true))
-						{
-							$this->drain($number, $pipe, $buffers, $open);
-						}
-					}
-				}
-			}
-
-			if ($exit === null)
-			{
-				$exit = self::ExitOf(proc_get_status($process));
-			}
-
-			if ($open === [] && $exit !== null)
-			{
-				break;
-			}
-
-			if ($open === [])
-			{
-				usleep(10000);
 			}
 		}
 
-		// Whatever is already in the pipes when the loop ends (the child may have exited
-		// between the last select and the status check).
+		// Whatever is already in the pipes when the loop ends.
 		foreach ($open as $number => $pipe)
 		{
 			$this->drain($number, $pipe, $buffers, $open);
@@ -179,14 +210,22 @@ final class Subprocess
 			fclose($pipe);
 		}
 
-		$closeCode = proc_close($process);
+		if ($exit !== null)
+		{
+			proc_close($process);
+		}
+		// else: the child survived SIGKILL, and proc_close() would block in waitpid() until
+		// it died. The handle is dropped unclosed instead, which leaks it until this PHP
+		// process ends.
+
 		$this->process = null;
 
 		return [
-			'exit' => $exit ?? $closeCode,
+			'exit' => $exit ?? -1,
 			'stdout' => $buffers[1],
 			'stderr' => $buffers[2],
 			'timedOut' => $timedOut,
+			'pipesHeldOpen' => $pipesHeldOpen,
 			'elapsed' => microtime(true) - $this->startedAt,
 			'command' => $this->commandLine
 		];
@@ -196,16 +235,17 @@ final class Subprocess
 	 * Assertion-message text for a finish() result: command, elapsed, exit, byte counts
 	 * and the last 4 KB of each stream.
 	 *
-	 * @param array{exit: int, stdout: string, stderr: string, timedOut: bool, elapsed: float, command?: string} $result
+	 * @param array{exit: int, stdout: string, stderr: string, timedOut: bool, pipesHeldOpen?: bool, elapsed: float, command?: string} $result
 	 */
 	public static function Describe(array $result): string
 	{
 		return sprintf(
-			"subprocess %s: %s after %.1f s, exit %d; stdout %d bytes, stderr %d bytes\n--- stdout (last %d bytes) ---\n%s\n--- stderr (last %d bytes) ---\n%s",
+			"subprocess %s: %s after %.1f s, exit %d%s; stdout %d bytes, stderr %d bytes\n--- stdout (last %d bytes) ---\n%s\n--- stderr (last %d bytes) ---\n%s",
 			$result['command'] ?? '(unknown command)',
 			$result['timedOut'] ? 'timed out and was killed' : 'finished',
 			$result['elapsed'],
 			$result['exit'],
+			($result['pipesHeldOpen'] ?? false) ? ' (a descendant still held the pipes open, so output may be incomplete)' : '',
 			strlen($result['stdout']),
 			strlen($result['stderr']),
 			self::TAIL_BYTES,
@@ -222,14 +262,18 @@ final class Subprocess
 	 */
 	private function drain(int $number, $pipe, array &$buffers, array &$open): void
 	{
-		// A non-blocking fread returns at most what is buffered; loop so one tick empties it.
-		while (true)
+		// A non-blocking fread returns at most what is buffered; loop so one tick empties it,
+		// but stop at a cap so a writer that keeps the pipe full cannot starve the deadline.
+		$taken = 0;
+
+		while ($taken < self::TICK_READ_CAP)
 		{
 			$chunk = fread($pipe, self::CHUNK);
 
 			if ($chunk !== false && $chunk !== '')
 			{
 				$buffers[$number] .= $chunk;
+				$taken += strlen($chunk);
 
 				continue;
 			}
