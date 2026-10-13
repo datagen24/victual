@@ -5180,9 +5180,17 @@ class StockService extends BaseService
 
 				if ($check['child'] && $before === [] && $after === [])
 				{
+					// Allowed only when the scale is 1 AND the relationship is unchanged: a factor near 1
+					// alone is not enough, since a child of the removed product would move from one
+					// parent stock unit to another (maintainer decision, #901).
 					if (!$agree(1.0, 1.0, $scale))
 					{
 						throw $refusal($who . ' has no quantity unit conversion to its parent\'s stock unit before or after the merge, which counts it at 1, but the merge scales stock by ' . $fmt($scale) . ' so it would be counted differently');
+					}
+
+					if ($check['removed'] && $removedStockUnit !== $keptStockUnit)
+					{
+						throw $refusal($who . ' has no quantity unit conversion to its parent\'s stock unit before or after the merge, and the merge would move it from stock unit ' . $removedStockUnit . ' of product ' . $productIdToRemove . ' to stock unit ' . $keptStockUnit . ' of product ' . $productIdToKeep);
 					}
 
 					continue;

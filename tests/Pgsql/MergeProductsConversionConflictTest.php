@@ -763,4 +763,17 @@ class MergeProductsConversionConflictTest extends PgsqlSchemaTestCase
 
 		$this->assertRefusalNaming($keep, $remove, [$child, $strip, 4]);
 	}
+
+	public function testAChildWithNoConversionIsRefusedWhenAOneToOneFactorMovesItBetweenStockUnits(): void
+	{
+		$strip = self::unit('MPCC strip');
+		$piece = self::unit('MPCC piece');
+		$each = self::unit('MPCC each');
+		$keep = self::product('MPCC keep', $each);
+		$remove = self::product('MPCC remove', $piece);
+		self::conversion($piece, $each, 1, $remove);
+		$child = self::product('MPCC child', $strip, $remove);
+
+		$this->assertRefusalNaming($keep, $remove, [$child, $strip, $piece, $each]);
+	}
 }
