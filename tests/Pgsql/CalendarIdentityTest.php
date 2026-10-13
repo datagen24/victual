@@ -4,6 +4,7 @@ namespace Victual\Tests\Pgsql;
 
 use PDO;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Regression tests for calendar event identity and date bounds (issue #511).
@@ -490,19 +491,9 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 			'VICTUAL_CALENDAR_UID_DOMAIN' => '',
 		], $extraEnv);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$environment
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $environment));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		$this->assertIsArray($result, "Request helper did not return JSON. stdout: $output\nstderr: $errors");

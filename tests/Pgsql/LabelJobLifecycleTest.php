@@ -14,6 +14,7 @@ use Victual\Services\Labels\LabelValidationException;
 use Victual\Services\Labels\PrintAttemptService;
 use Victual\Services\Labels\PrinterConfigurationService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #516 (audit finding M16): label job lifecycle boundary cases
@@ -358,7 +359,6 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 		$key = 'lifecycle-race-' . bin2hex(random_bytes(6));
 		$request = ['op' => 'print', 'seq' => 1];
 		$process = null;
-		$pipes = [];
 
 		// A plain try/finally rather than tx(): this test must hold the reservation open
 		// (uncommitted) *while* the child races it, which is the one shape none of this
@@ -381,11 +381,8 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 				'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 			]), 'is_scalar');
 
-			$process = proc_open(
+			$process = Subprocess::start(
 				[PHP_BINARY, __DIR__ . '/label-idempotency-subprocess-helper.php', (string)self::CALLER_USER, 'print', $key, json_encode($request)],
-				[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-				$pipes,
-				null,
 				$environment
 			);
 
@@ -410,11 +407,9 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 			}
 		}
 
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed($process->finish());
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		self::assertIsArray($result, "the child printed no JSON. stdout: $output\nstderr: $errors");
@@ -464,19 +459,9 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]), 'is_scalar');
 
-		$process = proc_open(
-			[PHP_BINARY, VICTUAL_ROOT_PATH . '/tests/Pgsql/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$environment
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, VICTUAL_ROOT_PATH . '/tests/Pgsql/request-subprocess-helper.php', base64_encode(json_encode($spec))], $environment));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		self::assertIsArray($result, "the request helper printed no JSON for $method $path. stdout: $output\nstderr: $errors");

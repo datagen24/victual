@@ -9,6 +9,7 @@ use Victual\Services\ApiKeyService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 use Victual\Tests\Support\RouteInventory;
 use Victual\Tests\Support\SfntFixture;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * The HTTP surface of the label subsystem: the five `/api/labels` controllers.
@@ -205,19 +206,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		$specFile = tempnam(getenv('VICTUAL_DATAPATH') ?: sys_get_temp_dir(), 'labelapi-request-');
 		file_put_contents($specFile, json_encode($spec));
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/labelapi-subprocess-helper.php', '@' . $specFile],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$environment
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/labelapi-subprocess-helper.php', '@' . $specFile], $environment));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 		unlink($specFile);
 
 		$result = json_decode((string)$output, true);

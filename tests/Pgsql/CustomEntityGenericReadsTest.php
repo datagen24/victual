@@ -5,6 +5,7 @@ namespace Victual\Tests\Pgsql;
 use PDO;
 use Victual\Services\ApiKeyService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #869: the generic read of custom-entity rows was open to any authenticated caller.
@@ -85,18 +86,8 @@ class CustomEntityGenericReadsTest extends PgsqlSchemaTestCase
 			'PGPASSWORD' => getenv('PGPASSWORD'),
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
 
 		$response = json_decode($output, true);
 		if (isset($response['body']) && is_string($response['body']))

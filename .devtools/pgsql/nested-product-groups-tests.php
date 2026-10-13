@@ -51,6 +51,7 @@ define('VICTUAL_DATAPATH', getenv('VICTUAL_DATAPATH'));
 require_once VICTUAL_ROOT_PATH . '/packages/autoload.php';
 require_once VICTUAL_DATAPATH . '/config.php';
 require_once VICTUAL_ROOT_PATH . '/config-dist.php';
+require_once VICTUAL_ROOT_PATH . '/tests/Support/Subprocess.php';
 define('VICTUAL_USER_ID', 9600);
 define('VICTUAL_IS_EMBEDDED_INSTALL', false);
 define('VICTUAL_LOCALE', 'en');
@@ -373,8 +374,8 @@ $childEnvironment = [
 	'PATH' => getenv('PATH')
 ];
 
-$childPipes = [];
-$child = proc_open([PHP_BINARY, '-r', $childCode], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $childPipes, null, $childEnvironment);
+// The helper drains the child's output while this process waits on the lock.
+$child = \Victual\Tests\Support\Subprocess::start([PHP_BINARY, '-r', $childCode], $childEnvironment);
 
 $childHoldsTheLock = false;
 
@@ -408,9 +409,8 @@ catch (PDOException $exception)
 
 $waited = microtime(true) - $startedWaiting;
 
-fclose($childPipes[1]);
-fclose($childPipes[2]);
-$childStatus = proc_close($child);
+$childRun = $child->finish();
+$childStatus = $childRun['exit'];
 $pdo->exec("SET lock_timeout = 0");
 
 check($childStatus === 0, 'the first re-parenting committed');

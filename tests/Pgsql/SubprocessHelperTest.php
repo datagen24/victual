@@ -241,11 +241,23 @@ class SubprocessHelperTest extends TestCase
 		$process = Subprocess::start([PHP_BINARY, '-r', 'sleep(60);']);
 		$pid = $process->Pid();
 
-		$process->abort();
+		$last = $process->abort();
 
 		self::assertFalse(posix_kill($pid, 0), 'the child is gone after abort()');
+		self::assertSame(['stdout' => '', 'stderr' => ''], $last);
+		self::assertSame(['stdout' => '', 'stderr' => ''], $process->abort(), 'a second abort() does nothing');
+	}
 
-		$process->abort();
+	public function testAbortReturnsWhatTheChildHadWritten(): void
+	{
+		$process = Subprocess::start([PHP_BINARY, '-r', 'fwrite(STDERR, "diagnosis"); fwrite(STDOUT, "first\nsecond"); sleep(60);']);
+
+		self::assertSame("first\n", $process->readLine(30.0));
+
+		$last = $process->abort();
+
+		self::assertSame('second', $last['stdout']);
+		self::assertSame('diagnosis', $last['stderr']);
 	}
 
 	public function testCompletedFailsTheTestOnATimeout(): void

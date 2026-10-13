@@ -3,6 +3,7 @@
 namespace Victual\Tests\Pgsql;
 
 use PHPUnit\Framework\TestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * The upload limit's clamp announcement is written once, at the CLI boot, and never by a
@@ -74,12 +75,10 @@ class FileSizeLimitTest extends TestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 			'REDIRECT_STATUS' => '1',
 		]);
-		$process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-		$output = stream_get_contents($pipes[1]);
-		$stderr = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		$exit = proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run($command, $env));
+		$output = $finished['stdout'];
+		$stderr = $finished['stderr'];
+		$exit = $finished['exit'];
 
 		$logged = file_get_contents($log);
 		unlink($log);

@@ -11,6 +11,7 @@ use Victual\Services\Labels\StockLabelRevivalService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 use Victual\Tests\Support\StockLineage;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * ADR-0037 (issue #612): an undo of the whole-row consumption that retired a stock-entry label
@@ -199,13 +200,9 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 			'PGPASSWORD' => getenv('PGPASSWORD'),
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
-		$process = proc_open([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);
 		self::assertIsArray($result, "the request helper printed no JSON. stdout: $output\nstderr: $errors");

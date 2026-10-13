@@ -15,6 +15,7 @@ use Victual\Services\Labels\PrintAttemptService;
 use Victual\Services\Labels\PrinterConfigurationService;
 use Victual\Services\Labels\RenderRequestService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issues #846, #857 and #858: a render request that can never be rendered must reach a
@@ -193,13 +194,9 @@ class LabelRenderLifecycleTest extends PgsqlSchemaTestCase
 			'VICTUAL_DATAPATH' => getenv('VICTUAL_DATAPATH'), 'PGHOST' => getenv('PGHOST'), 'PGPORT' => getenv('PGPORT'),
 			'PGUSER' => getenv('PGUSER'), 'PGPASSWORD' => getenv('PGPASSWORD'), 'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
-		$process = proc_open([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $environment);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $environment));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);

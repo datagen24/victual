@@ -9,6 +9,7 @@ use Victual\Services\Database\InitialDataSeeder;
 use Victual\Services\DatabaseMigrationService;
 use Victual\Services\DatabaseService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * The first administrator on a fresh installation, and what an account that has to change
@@ -94,18 +95,10 @@ class BootstrapAdminTest extends PgsqlSchemaTestCase
 			'PGPASSWORD' => getenv('PGPASSWORD'),
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/bootstrap-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		$exit = proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/bootstrap-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
+		$exit = $finished['exit'];
 
 		$decoded = json_decode($output, true);
 		self::assertIsArray($decoded, "The helper printed no JSON (exit $exit). stdout: $output stderr: $errors");

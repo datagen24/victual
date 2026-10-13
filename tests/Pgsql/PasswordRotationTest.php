@@ -6,6 +6,7 @@ use PDO;
 use Victual\Services\ApiKeyService;
 use Victual\Services\SessionService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Password rotation, end to end: what happens to other sessions and API keys when a
@@ -301,18 +302,10 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 			$env['VICTUAL_' . $name] = $value;
 		}
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/password-rotation-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		$exit = proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/password-rotation-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
+		$exit = $finished['exit'];
 
 		$decoded = json_decode($output, true);
 		self::assertIsArray($decoded, "The helper printed no JSON (exit $exit). stdout: $output stderr: $errors");

@@ -19,6 +19,7 @@ use Victual\Services\UsersService;
 use Victual\Tests\Support\Operation;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 use Victual\Tests\Support\RouteInventory;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * ADR-0025 spike 2: the largest bespoke phase (its own check()/status() helpers, session
@@ -190,18 +191,10 @@ class RbacTest extends PgsqlSchemaTestCase
 			'PGPASSWORD' => getenv('PGPASSWORD'),
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
-		$process = proc_open(
-			array_merge([PHP_BINARY, __DIR__ . '/rbac-subprocess-helper.php'], $args),
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		$exit = proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run(array_merge([PHP_BINARY, __DIR__ . '/rbac-subprocess-helper.php'], $args), $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
+		$exit = $finished['exit'];
 		return [$exit, $output, $errors];
 	}
 

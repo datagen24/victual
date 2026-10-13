@@ -18,6 +18,7 @@
 // No database, no application boot: this is about the instrument, not about what it measures.
 
 $root = dirname(__DIR__, 2);
+require_once $root . '/tests/Support/Subprocess.php';
 $prepend = $root . '/.devtools/coverage/prepend.php';
 $report = $root . '/.devtools/coverage/report.php';
 $inventory = $root . '/.devtools/coverage/inventory.php';
@@ -58,20 +59,14 @@ function run(array $arguments, array $environment): array
 		$command .= ' ' . escapeshellarg($argument);
 	}
 
-	$descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-	$process = proc_open($command, $descriptors, $pipes, null, $environment + ['PATH' => getenv('PATH')]);
+	$finished = \Victual\Tests\Support\Subprocess::run($command, $environment + ['PATH' => getenv('PATH')]);
 
-	if (!is_resource($process))
+	if ($finished['timedOut'] || $finished['pipesHeldOpen'])
 	{
-		throw new RuntimeException('could not start ' . $command);
+		throw new RuntimeException(\Victual\Tests\Support\Subprocess::Describe($finished));
 	}
 
-	$stdout = stream_get_contents($pipes[1]);
-	$stderr = stream_get_contents($pipes[2]);
-	fclose($pipes[1]);
-	fclose($pipes[2]);
-
-	return [proc_close($process), $stdout, $stderr];
+	return [$finished['exit'], $finished['stdout'], $finished['stderr']];
 }
 
 function labelled(string $directory, string $label): array

@@ -5,6 +5,7 @@ namespace Victual\Tests\Pgsql;
 use PDO;
 use Victual\Services\ApiKeyService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #782: POST /api/stock/products/{keep}/merge/{remove} deletes the second product
@@ -87,18 +88,9 @@ class MergeProductsPermissionTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$response = json_decode($output, true);
 		self::assertIsArray($response, 'The request helper answered: ' . $output . $errors);

@@ -19,6 +19,7 @@ use Victual\Services\Storage\FilesystemStorage;
 use Victual\Services\Storage\FileTooLargeException;
 use Victual\Services\Storage\InvalidFileNameException;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Files and the two storage backends (docs/plans/landed/01-file-storage.md).
@@ -1405,19 +1406,9 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 			'PGPASSWORD' => getenv('PGPASSWORD')
 		], $extraEnvironment);
 
-		$process = proc_open(
-			array_merge([PHP_BINARY, __DIR__ . '/storagefiles-subprocess-helper.php'], $arguments),
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$environment
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run(array_merge([PHP_BINARY, __DIR__ . '/storagefiles-subprocess-helper.php'], $arguments), $environment));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		self::assertIsArray($result, 'The storage files helper printed no JSON for ' . implode(' ', $arguments) . ". stdout: $output\nstderr: $errors");

@@ -205,14 +205,18 @@ final class Subprocess
 
 	/**
 	 * Gives up on the child: SIGTERM, up to two seconds of grace, SIGKILL, then closes the
-	 * pipes. For a test's finally block when the test failed before finish(). Does nothing
-	 * after finish().
+	 * pipes. For a test's finally block when the test failed before finish(). Returns what
+	 * had been read (stdout after the lines readLine() handed out, all of stderr), so a
+	 * caller can print the child's last words. Does nothing after finish(), and returns
+	 * empty strings.
+	 *
+	 * @return array{stdout: string, stderr: string}
 	 */
-	public function abort(): void
+	public function abort(): array
 	{
 		if ($this->finished)
 		{
-			return;
+			return ['stdout' => '', 'stderr' => ''];
 		}
 
 		$this->finished = true;
@@ -244,6 +248,11 @@ final class Subprocess
 			}
 		}
 
+		foreach ($this->open as $number => $pipe)
+		{
+			$this->drain($number, $pipe);
+		}
+
 		foreach ([1, 2] as $number)
 		{
 			fclose($this->pipes[$number]);
@@ -257,6 +266,8 @@ final class Subprocess
 		}
 
 		$this->process = null;
+
+		return ['stdout' => substr($this->buffers[1], $this->consumed), 'stderr' => $this->buffers[2]];
 	}
 
 	/**

@@ -7,6 +7,7 @@ use Victual\Services\Database\DatabaseImporter;
 use Victual\Services\DatabaseService;
 use Victual\Services\Labels\LabelPrintJobService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Regression coverage for issue #487's importer findings, #496 (H7) and #518 (M18).
@@ -471,20 +472,9 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 				'VICTUAL_MQTT_PORT' => (string)$port
 			]);
 
-			$process = proc_open(
-				[PHP_BINARY, __DIR__ . '/mqttcoverage-subprocess-helper.php', 'scenario', 'state', $resultFile],
-				[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-				$pipes,
-				null,
-				$environment
-			);
-
-			self::assertIsResource($process, 'could not start the scenario helper');
-			$output = stream_get_contents($pipes[1]);
-			$errors = stream_get_contents($pipes[2]);
-			fclose($pipes[1]);
-			fclose($pipes[2]);
-			proc_close($process);
+			$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/mqttcoverage-subprocess-helper.php', 'scenario', 'state', $resultFile], $environment));
+			$output = $finished['stdout'];
+			$errors = $finished['stderr'];
 
 			self::assertFileExists($resultFile, "the scenario helper wrote no result.\nstdout: $output\nstderr: $errors");
 			$result = json_decode((string)file_get_contents($resultFile), true);

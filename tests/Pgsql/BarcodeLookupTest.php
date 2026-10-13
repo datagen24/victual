@@ -5,6 +5,7 @@ namespace Victual\Tests\Pgsql;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Victual\Helpers\BaseBarcodeLookupPlugin;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * The external barcode lookup surface: the contract BaseBarcodeLookupPlugin enforces on
@@ -705,19 +706,9 @@ class BarcodeLookupTest extends TestCase
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
 		$environment = array_merge($inherited, ['VICTUAL_ROOT' => VICTUAL_ROOT_PATH]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/barcodelookup-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$environment
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/barcodelookup-subprocess-helper.php', base64_encode(json_encode($spec))], $environment));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		self::assertIsArray($result, "the lookup helper printed no JSON. stdout: $output\nstderr: $errors");
@@ -1085,19 +1076,9 @@ class BarcodeLookupTest extends TestCase
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
 		$environment = array_merge($inherited, ['VICTUAL_ROOT' => VICTUAL_ROOT_PATH]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/fetch-hardening-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$environment
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/fetch-hardening-subprocess-helper.php', base64_encode(json_encode($spec))], $environment));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode($output, true);
 		self::assertIsArray($result, "fetch-hardening-subprocess-helper.php printed no JSON. stdout: $output\nstderr: $errors");

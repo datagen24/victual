@@ -8,6 +8,7 @@ use Victual\Services\ApiKeyService;
 use Victual\Services\Labels\FieldCatalogue;
 use Victual\Services\Labels\LabelIdentityService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Contract verification: the OpenAPI spec's label resolve endpoint must declare
@@ -354,19 +355,9 @@ class LabelResolveSchemaTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/labelapi-subprocess-helper.php', '@' . $specFile],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$environment
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/labelapi-subprocess-helper.php', '@' . $specFile], $environment));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 		unlink($specFile);
 
 		$result = json_decode((string)$output, true);

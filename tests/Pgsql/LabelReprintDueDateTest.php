@@ -11,6 +11,7 @@ use Victual\Services\Labels\LabelValidationException;
 use Victual\Services\Labels\PrinterConfigurationService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 use Victual\Tests\Support\SfntFixture;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #523 (audit finding M23): StockService::OpenProduct() shortens a stock entry's due
@@ -247,18 +248,9 @@ class LabelReprintDueDateTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/label-reprint-duedate-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/label-reprint-duedate-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode($output, true);
 		self::assertIsArray($result, "the open-product helper printed no JSON. stdout: $output\nstderr: $errors");
@@ -280,18 +272,9 @@ class LabelReprintDueDateTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/label-reprint-duedate-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/label-reprint-duedate-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode($output, true);
 		self::assertIsArray($result, "the transfer-product helper printed no JSON. stdout: $output\nstderr: $errors");

@@ -8,6 +8,7 @@ use Victual\Services\Database\PostgresDialect;
 use Victual\Services\Labels\LabelIdentityService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * ADR-0037 acceptance prerequisite 5: the races of section 7 on two real connections.
@@ -60,21 +61,17 @@ class StockLabelRevivalRaceTest extends PgsqlSchemaTestCase
 		], $extra);
 	}
 
-	/** @return array{0: resource, 1: array} */
-	private static function start(string $helper, array $args, array $environment = []): array
+	/** @return Subprocess The running child, nothing read yet */
+	private static function start(string $helper, array $args, array $environment = []): Subprocess
 	{
-		$process = proc_open(array_merge([PHP_BINARY, __DIR__ . '/' . $helper], $args), [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, self::environment($environment));
-		return [$process, $pipes];
+		return Subprocess::start(array_merge([PHP_BINARY, __DIR__ . '/' . $helper], $args), self::environment($environment));
 	}
 
-	private static function finish(array $processAndPipes): array
+	private static function finish(Subprocess $process): array
 	{
-		[$process, $pipes] = $processAndPipes;
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed($process->finish());
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);
 		self::assertIsArray($result, "the subprocess printed no JSON. stdout: $output\nstderr: $errors");

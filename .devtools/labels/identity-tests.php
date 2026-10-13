@@ -3,6 +3,7 @@
 // Uses a disposable schema, never the configured application's tables.
 // LABEL_TEST_DSN='pgsql:host=...;dbname=...' PGUSER=... PGPASSWORD=... php ...
 define('VICTUAL_ROOT_PATH', dirname(__DIR__, 2));
+require_once VICTUAL_ROOT_PATH . '/tests/Support/Subprocess.php';
 spl_autoload_register(function ($class)
 {
 	$prefix = 'Victual\\Services\\';
@@ -105,27 +106,26 @@ function Refused(callable $work, string $message): void
 	throw new RuntimeException('Expected refusal: ' . $message);
 }
 
-function Child(PDO $db, string $schema, string $operation, string $event = 'advisory'): array
+function Child(PDO $db, string $schema, string $operation, string $event = 'advisory'): \Victual\Tests\Support\Subprocess
 {
-	$process = proc_open([PHP_BINARY, __FILE__, 'child', $schema, $operation], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+	$process = \Victual\Tests\Support\Subprocess::start([PHP_BINARY, __FILE__, 'child', $schema, $operation]);
 	$deadline = microtime(true) + 5;
 	do
 	{
 		$db->query('SELECT pg_stat_clear_snapshot()')->fetchColumn();
 		$query = $db->query("SELECT count(*) FROM pg_stat_activity WHERE application_name = '{$schema}_child' AND wait_event = '$event'");
-		if ((int)$query->fetchColumn() === 1) { return [$process, $pipes]; }
+		if ((int)$query->fetchColumn() === 1) { return $process; }
 		usleep(10000);
 	} while (microtime(true) < $deadline);
 	throw new RuntimeException('Concurrent operation did not block on the shared lock');
 }
 
-function Finish(array $child): string
+function Finish(\Victual\Tests\Support\Subprocess $child): string
 {
-	[$process, $pipes] = $child;
-	$output = stream_get_contents($pipes[1]);
-	$error = stream_get_contents($pipes[2]);
-	fclose($pipes[1]); fclose($pipes[2]);
-	Check(proc_close($process) === 0 && $error === '', 'Child failed: ' . $error);
+	$finished = $child->finish();
+	$output = $finished['stdout'];
+	$error = $finished['stderr'];
+	Check($finished['exit'] === 0 && !$finished['timedOut'] && $error === '', 'Child failed: ' . $error);
 	return $output;
 }
 

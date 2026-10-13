@@ -6,6 +6,7 @@ use PDO;
 use PHPUnit\Framework\Attributes\Depends;
 use Victual\Services\DemoDataGeneratorService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * The demo database, asserted through what a person opening a demo instance would see.
@@ -286,19 +287,10 @@ class DemoDataTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/demodata-subprocess-helper.php'],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$environment
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		$status = proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/demodata-subprocess-helper.php'], $environment));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
+		$status = $finished['exit'];
 
 		self::assertSame(0, $status, "the demo-mode helper failed.\nstdout: $output\nstderr: $errors");
 

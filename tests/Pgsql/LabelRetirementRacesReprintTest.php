@@ -8,6 +8,7 @@ use Victual\Services\Labels\LabelPrintJobService;
 use Victual\Services\Labels\LabelTemplateService;
 use Victual\Services\Labels\PrinterConfigurationService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #516 (M16, #487 remediation), maintainer decision D2 - a race a PR validator found
@@ -128,43 +129,24 @@ class LabelRetirementRacesReprintTest extends PgsqlSchemaTestCase
 		]);
 	}
 
-	/** @return array{0: resource, 1: array} */
-	private static function startReprintHoldSubprocess(int $sourceJobId, int $printerId, int $gateClass, int $gateObject): array
+	/** @return Subprocess The running child, nothing read yet */
+	private static function startReprintHoldSubprocess(int $sourceJobId, int $printerId, int $gateClass, int $gateObject): Subprocess
 	{
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/label-reprint-hold-subprocess-helper.php', (string)$sourceJobId, (string)$printerId, (string)$gateClass, (string)$gateObject],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			self::subprocessEnv()
-		);
-
-		return [$process, $pipes];
+		return Subprocess::start([PHP_BINARY, __DIR__ . '/label-reprint-hold-subprocess-helper.php', (string)$sourceJobId, (string)$printerId, (string)$gateClass, (string)$gateObject], self::subprocessEnv());
 	}
 
-	/** @return array{0: resource, 1: array} */
-	private static function startDeleteSubprocess(string $table, int $id): array
+	/** @return Subprocess The running child, nothing read yet */
+	private static function startDeleteSubprocess(string $table, int $id): Subprocess
 	{
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/label-retirement-delete-subprocess-helper.php', $table, (string)$id],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			self::subprocessEnv()
-		);
-
-		return [$process, $pipes];
+		return Subprocess::start([PHP_BINARY, __DIR__ . '/label-retirement-delete-subprocess-helper.php', $table, (string)$id], self::subprocessEnv());
 	}
 
 	/** @return array{status: int, stderr: string, error_message?: string} */
-	private static function finishSubprocess(array $processAndPipes): array
+	private static function finishSubprocess(Subprocess $process): array
 	{
-		[$process, $pipes] = $processAndPipes;
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed($process->finish());
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);

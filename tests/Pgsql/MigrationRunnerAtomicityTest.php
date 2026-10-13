@@ -407,6 +407,7 @@ PHP);
 		file_put_contents($probeFile, <<<'PHP'
 <?php
 use Victual\Services\DatabaseService;
+use Victual\Tests\Support\Subprocess;
 
 $db = DatabaseService::GetInstance()->GetDbConnectionRaw();
 $db->exec('CREATE TABLE migration_runner_probe_visible_writes (id integer)');
@@ -513,21 +514,17 @@ PHP);
 			$rolesEnv['MIGRATE_PASSWORD'] = $migratePassword;
 			$rolesEnv['APP_PASSWORD'] = $appPassword;
 
-			$rolesProcess = proc_open(
+			$rolesRun = Subprocess::Completed(Subprocess::run(
 				[
 					'psql', '--no-psqlrc', '--quiet',
 					'-v', 'ON_ERROR_STOP=1',
 					'-v', 'db=' . $database,
 					'-f', VICTUAL_ROOT_PATH . '/deploy/postgres/roles.sql',
 				],
-				[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-				$pipes,
-				null,
 				$rolesEnv
-			);
-			$this->assertIsResource($rolesProcess, 'psql could not be started');
-			$rolesOutput = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
-			$this->assertSame(0, proc_close($rolesProcess), "deploy/postgres/roles.sql failed:\n" . $rolesOutput);
+			));
+			$rolesOutput = $rolesRun['stdout'] . $rolesRun['stderr'];
+			$this->assertSame(0, $rolesRun['exit'], "deploy/postgres/roles.sql failed:\n" . $rolesOutput);
 			$rolesCreated = true;
 
 			// Fully migrated, as the migrate role - what the deploy's initContainer leaves a
@@ -669,18 +666,9 @@ PHP);
 		$env['VICTUAL_DB_PASSWORD'] = $password;
 		$env['VICTUAL_DATAPATH'] = $dataPath;
 
-		$process = proc_open(
-			[PHP_BINARY, VICTUAL_ROOT_PATH . '/bin/victual-migrate', '--quiet'],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$this->assertIsResource($process, 'bin/victual-migrate could not be started');
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, VICTUAL_ROOT_PATH . '/bin/victual-migrate', '--quiet'], $env));
 
-		$output = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
-
-		return [proc_close($process), $output];
+		return [$finished['exit'], $finished['stdout'] . $finished['stderr']];
 	}
 
 	/**

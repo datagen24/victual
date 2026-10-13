@@ -1,5 +1,6 @@
 <?php
 require __DIR__.'/test-support.php';
+require_once __DIR__.'/../../tests/Support/Subprocess.php';
 use Victual\Services\Labels\{LabelPrintJobService,PrintAttemptService};
 if(($argv[1]??'')==='child')
 {
@@ -67,8 +68,8 @@ runLabelTests(function(PDO $db,string $schema){
  {
   $job=issued($db,$jobs,$printer);$db->beginTransaction();
   $held=(new ReadyAttempts($db))->Claim($worker);check(count($held)===1,'Parent claims fixture');
-  $process=proc_open([PHP_BINARY,__FILE__,'child',$schema,$mode,(string)$worker],[0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes);
-  fclose($pipes[0]);
+  $process=\Victual\Tests\Support\Subprocess::start([PHP_BINARY,__FILE__,'child',$schema,$mode,(string)$worker],null,null,true);
+  $process->closeStdin();$finished=null;
   if($mode==='unlocked')
   {
    $observer=labelDb($schema);$blocked=false;$deadline=microtime(true)+5;
@@ -77,10 +78,11 @@ runLabelTests(function(PDO $db,string $schema){
   }
   else
   {
-   $deadline=microtime(true)+5;while(proc_get_status($process)['running']&&microtime(true)<$deadline)usleep(10000);
-   check(!proc_get_status($process)['running'],'SKIP LOCKED returns without waiting');
+   // Bounded at 5 s from start(): a child that is still running by then was waiting.
+   $finished=$process->finish(5.0);
+   check(!$finished['timedOut'],'SKIP LOCKED returns without waiting');
   }
-  $db->commit();$output=stream_get_contents($pipes[1]);$error=stream_get_contents($pipes[2]);fclose($pipes[1]);fclose($pipes[2]);proc_close($process);
+  $db->commit();$finished??=$process->finish();$output=$finished['stdout'];$error=$finished['stderr'];
   check($error===''&&json_decode($output,true)===[],'Second claim produces no duplicate: '.$error);
   check((int)$db->query('SELECT COUNT(*) FROM print_attempts WHERE job_id='.$job)->fetchColumn()===1,'Unique fence permits one attempt');
  }

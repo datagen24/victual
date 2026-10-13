@@ -5,6 +5,7 @@ namespace Victual\Tests\Pgsql;
 use PDO;
 use PHPUnit\Framework\Attributes\Depends;
 use PHPUnit\Framework\TestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Plan 20 verification 8 (issue #133): deploy/postgres/roles.sql really does split the
@@ -199,33 +200,25 @@ class CredentialSplitTest extends TestCase
 		$env['MIGRATE_PASSWORD'] = self::MIGRATE_PASSWORD;
 		$env['APP_PASSWORD'] = self::APP_PASSWORD;
 
-		$process = proc_open(
+		$finished = Subprocess::Completed(Subprocess::run(
 			[
 				'psql', '--no-psqlrc', '--quiet',
 				'-v', 'ON_ERROR_STOP=1',
 				'-v', 'db=' . self::$database,
 				'-f', VICTUAL_ROOT_PATH . '/deploy/postgres/roles.sql',
 			],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
 			$env
-		);
-		self::assertIsResource($process, 'psql could not be started - the suite needs the PostgreSQL client tools, as run-tests.sh itself does');
-
-		$output = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
-		self::assertSame(0, proc_close($process), "deploy/postgres/roles.sql failed:\n" . $output);
+		));
+		$output = $finished['stdout'] . $finished['stderr'];
+		self::assertSame(0, $finished['exit'], "deploy/postgres/roles.sql failed:\n" . $output);
 	}
 
 	/** @return array{0:int,1:string} exit status, and stdout and stderr together */
 	private function runProcess(array $command, string $role, string $password): array
 	{
-		$process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, self::environment($role, $password, true));
-		$this->assertIsResource($process);
+		$finished = Subprocess::Completed(Subprocess::run($command, self::environment($role, $password, true)));
 
-		$output = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
-
-		return [proc_close($process), $output];
+		return [$finished['exit'], $finished['stdout'] . $finished['stderr']];
 	}
 
 	/**

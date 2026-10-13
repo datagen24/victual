@@ -4,6 +4,7 @@ namespace Victual\Tests\Pgsql;
 
 use PDO;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * `GET /` in production mode, through the whole middleware stack.
@@ -68,18 +69,10 @@ class RootEntryTest extends PgsqlSchemaTestCase
 			'PGPASSWORD' => getenv('PGPASSWORD'),
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		], $entryPage === null ? [] : ['VICTUAL_ENTRY_PAGE' => $entryPage]);
-		$process = proc_open(
-			array_merge([PHP_BINARY, __DIR__ . '/root-subprocess-helper.php'], $sessionKey === null ? [] : [$sessionKey]),
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		$exit = proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run(array_merge([PHP_BINARY, __DIR__ . '/root-subprocess-helper.php'], $sessionKey === null ? [] : [$sessionKey]), $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
+		$exit = $finished['exit'];
 
 		$decoded = json_decode($output, true);
 		self::assertIsArray($decoded, "The helper printed no JSON (exit $exit). stdout: $output stderr: $errors");

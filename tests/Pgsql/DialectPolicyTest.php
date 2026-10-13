@@ -10,6 +10,7 @@ use Victual\Services\Database\DatabaseDialect;
 use Victual\Services\Database\PostgresDialect;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 use Slim\Psr7\Factory\ServerRequestFactory;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Two small things nothing else asks: which entity a caller may read at all, and what a
@@ -69,19 +70,10 @@ class DialectPolicyTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		], $extraEnvironment);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/dialect-subprocess-helper.php', $scenario],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$environment
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		$status = proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/dialect-subprocess-helper.php', $scenario], $environment));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
+		$status = $finished['exit'];
 
 		self::assertSame(0, $status, "the $scenario helper failed.\nstdout: $output\nstderr: $errors");
 
@@ -390,12 +382,11 @@ class DialectPolicyTest extends PgsqlSchemaTestCase
 	 * started (not yet finished) before this method's own loop of AdvanceIdentitySequence()
 	 * calls on the very same sequence begins.
 	 *
-	 * The subprocess is wrapped in try/finally: proc_terminate() plus proc_close() run no
-	 * matter how the loop below exits, so a thrown assertion or an unexpected error never
-	 * leaves the subprocess running past this test. proc_terminate() on a process that has
-	 * already exited on its own - the ordinary path, since stream_get_contents() below
-	 * already blocks until the subprocess closes its output - is a documented no-op, so
-	 * this costs nothing there and only matters on the abnormal path.
+	 * The subprocess is wrapped in try/finally: Subprocess::abort() runs no matter how the
+	 * loop below exits, so a thrown assertion or an unexpected error never leaves the
+	 * subprocess running past this test. abort() after finish() - the ordinary path, since
+	 * finish() below already waits until the subprocess has exited - does nothing, so this
+	 * costs nothing there and only matters on the abnormal path.
 	 */
 	public function testAdvanceIdentitySequenceNeverReissuesAConcurrentlyClaimedId(): void
 	{
@@ -415,13 +406,7 @@ class DialectPolicyTest extends PgsqlSchemaTestCase
 			'PGPASSWORD' => getenv('PGPASSWORD'),
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/sequence-race-subprocess-helper.php', $sequenceName, (string)$durationSeconds],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
+		$process = Subprocess::start([PHP_BINARY, __DIR__ . '/sequence-race-subprocess-helper.php', $sequenceName, (string)$durationSeconds], $env);
 
 		$output = '';
 		$errors = '';
@@ -443,15 +428,16 @@ class DialectPolicyTest extends PgsqlSchemaTestCase
 				$callCount++;
 			}
 
-			$output = stream_get_contents($pipes[1]);
-			$errors = stream_get_contents($pipes[2]);
+			// The child runs for $durationSeconds by its own clock; the bound is that plus the
+			// default 120 s, counted from start().
+			$finished = Subprocess::Completed($process->finish($durationSeconds + 120.0));
+			$output = $finished['stdout'];
+			$errors = $finished['stderr'];
+			$status = $finished['exit'];
 		}
 		finally
 		{
-			proc_terminate($process);
-			fclose($pipes[1]);
-			fclose($pipes[2]);
-			$status = proc_close($process);
+			$process->abort();
 		}
 
 		self::assertSame(0, $status, "the sequence-race subprocess failed.\nstdout: $output\nstderr: $errors");
