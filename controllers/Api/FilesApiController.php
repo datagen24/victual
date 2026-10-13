@@ -204,7 +204,10 @@ class FilesApiController extends BaseApiController
 	{
 		$this->CheckGroupIsKnown($group);
 
+		// Never for a derivative name: the column is caller-writable, so "<victim>__downscaledto..."
+		// would otherwise be a way to a cached or freshly made thumbnail of the victim's picture
 		if ($group === 'userpictures' && $fileName !== null
+			&& !str_contains($fileName, FilesService::DOWNSCALED_INFIX)
 			&& defined('VICTUAL_USER_PICTURE_FILE_NAME') && $fileName === VICTUAL_USER_PICTURE_FILE_NAME)
 		{
 			$otherOwner = $this->DB->users()->where('picture_file_name = :1 AND id != :2', $fileName, (int)VICTUAL_USER_ID)->fetch();
@@ -551,9 +554,14 @@ class FilesApiController extends BaseApiController
 				$bestFitWidth = $this->ClampBestFitSize($queryParams['best_fit_width']);
 			}
 
-			// Always from the root original: a request that names a derivative must not make a
-			// derivative of a derivative, whose name would carry two suffixes
-			return FilesService::GetInstance()->DownscaleImage($group, FilesService::RootOf($fileName), $bestFitHeight, $bestFitWidth);
+			// userfiles only: the owner rule reduces a derivative name to its root original, so a
+			// request naming one derives from the root and never makes a derivative of a
+			// derivative. Every other group derives from the name as asked, as it always did -
+			// reducing it there would let a name the caller wrote themselves (the own-picture
+			// exception) reach a thumbnail of somebody else's original.
+			$source = $group === 'userfiles' ? FilesService::RootOf($fileName) : $fileName;
+
+			return FilesService::GetInstance()->DownscaleImage($group, $source, $bestFitHeight, $bestFitWidth);
 		}
 
 		return $fileName;
