@@ -1438,11 +1438,23 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 		$expected = self::EXPECTED[$field] ?? [];
 		self::assertNotSame([], $expected, "$field has no pinned behaviour");
 
-		$schema = self::DocumentedSchema($field);
-		self::assertNotNull($schema, "the document gives $field no oneOf with a string branch");
-		$branches = array_values(array_filter($schema['oneOf'], fn ($b) => ($b['type'] ?? null) === 'string'));
-		self::assertCount(1, $branches, "$field: exactly one string branch expected");
-		self::assertSame($pattern, $branches[0]['pattern'] ?? null, "$field: the document's pattern");
+		// Every route that carries the field, not only the first: the by-barcode and
+		// by-label wrappers have their own copy of the schema.
+		foreach (self::DocumentedSchemas($field) as $openApiPath => $schema)
+		{
+			self::assertNotNull($schema, "the document gives $field on $openApiPath no oneOf with a string branch");
+			$branches = array_values(array_filter($schema['oneOf'], fn ($b) => ($b['type'] ?? null) === 'string'));
+			self::assertCount(1, $branches, "$field on $openApiPath: exactly one string branch expected");
+			self::assertSame($pattern, $branches[0]['pattern'] ?? null, "$field on $openApiPath: the document's pattern");
+
+			// A price of null or "" means "no price" (or, on edit, "clear it"), so the schema
+			// must name both beside the number and the string.
+			if (str_ends_with($field, 'price'))
+			{
+				self::assertContains(['type' => 'null'], $schema['oneOf'], "$field on $openApiPath: null branch");
+				self::assertContains(['const' => ''], $schema['oneOf'], "$field on $openApiPath: empty string branch");
+			}
+		}
 
 		// measure.amount has one refusal message for "not numeric" and "not positive", so its
 		// guard flag is always 1; for it only "accepted implies the pattern matches" and
@@ -1452,8 +1464,7 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 		foreach ($expected as $label => $cell)
 		{
 			$label = (string)$label;
-			// "" on a price field means "no price", which is not a reading of the string.
-			if ($label[0] !== '"' || in_array($label, self::PRE_FILTER_REWRITTEN, true) || ($label === '""' && str_ends_with($field, 'price')))
+			if ($label[0] !== '"' || in_array($label, self::PRE_FILTER_REWRITTEN, true))
 			{
 				continue;
 			}
@@ -1469,18 +1480,37 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 		}
 	}
 
-	/** The request-body property schema for $field on its first route, per victual.openapi.json. */
-	private static function DocumentedSchema(string $field): ?array
+	/**
+	 * The request-body property schema for $field on every route that carries it, per
+	 * victual.openapi.json, keyed by document path.
+	 *
+	 * @return array<string, array|null>
+	 */
+	private static function DocumentedSchemas(string $field): array
 	{
 		[$method, $pathTemplate] = self::Fields()[$field];
 		$property = substr($field, strrpos($field, '.') + 1);
-		$openApiPath = preg_replace_callback('/\{(\w+)\}/', fn ($m) => '{' . self::OPENAPI_PARAMETER[$m[1]] . '}', substr($pathTemplate, strlen('/api')));
+		$paths = [substr($pathTemplate, strlen('/api'))];
+		if (str_starts_with($pathTemplate, '/api/stock/products/{product}/'))
+		{
+			$paths[] = '/stock/products/by-barcode/{barcode}/' . substr($pathTemplate, strlen('/api/stock/products/{product}/'));
+		}
+		if ($pathTemplate === '/api/stock/locations/{location}/weigh')
+		{
+			$paths[] = '/stock/locations/by-label/{code}/weigh';
+		}
 
 		$document = json_decode((string)file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), true);
-		$operation = $document['paths'][$openApiPath][strtolower($method)] ?? null;
-		$schema = $operation['requestBody']['content']['application/json']['schema']['properties'][$property] ?? null;
+		$schemas = [];
+		foreach (array_unique($paths) as $path)
+		{
+			$openApiPath = preg_replace_callback('/\{(\w+)\}/', fn ($m) => '{' . self::OPENAPI_PARAMETER[$m[1]] . '}', $path);
+			$operation = $document['paths'][$openApiPath][strtolower($method)] ?? null;
+			$schema = $operation['requestBody']['content']['application/json']['schema']['properties'][$property] ?? null;
+			$schemas[$openApiPath] = is_array($schema) && isset($schema['oneOf']) ? $schema : null;
+		}
 
-		return is_array($schema) && isset($schema['oneOf']) ? $schema : null;
+		return $schemas;
 	}
 
 	private const OPENAPI_PARAMETER = [
@@ -1488,6 +1518,7 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 		'entry' => 'entryId',
 		'location' => 'locationId',
 		'barcode' => 'barcode',
+		'code' => 'code',
 		'user' => 'userId',
 	];
 }
