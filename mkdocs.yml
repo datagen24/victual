@@ -167,6 +167,7 @@ nav:
           - 0045 An unknown stock value is distinguishable from a known zero: development/adr/0045-an-unknown-stock-value-is-distinguishable-from-a-known-zero.md
           - 0046 Stock bookings accept an optional idempotency key: development/adr/0046-stock-bookings-accept-an-optional-idempotency-key.md
           - 0047 One trunk, release branches, checks run once: development/adr/0047-one-trunk-release-branches-and-promoted-images.md
+          - 0049 Label print job dead-letter causes as the code applies them: development/adr/0049-label-print-job-dead-letter-causes-as-the-code-applies-them.md
       - Build and deployment:
           - Container images: development/images.md
           - Deployment: development/deployment.md
