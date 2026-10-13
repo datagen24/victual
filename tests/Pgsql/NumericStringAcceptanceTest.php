@@ -1471,6 +1471,8 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 			$string = json_decode($label === '"400 digits"' ? '"' . str_repeat('9', 400) . '"' : $label);
 			[$status, $guard] = explode('|', $cell, 3);
 			$matches = preg_match('/' . str_replace('/', '\/', $pattern) . '/D', $string) === 1;
+			// The schema's const "" branch (asserted above) covers the empty price.
+			$matches = $matches || ($string === '' && str_ends_with($field, 'price'));
 			if ($directional)
 			{
 				self::assertTrue($matches || $status !== '200', "$field with $label: accepted, but the documented pattern does not match");
