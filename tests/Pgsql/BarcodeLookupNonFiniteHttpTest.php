@@ -145,6 +145,7 @@ PLUGIN);
 			'INF numeric product field' => ["'min_stock_amount' => INF", 'Plugin output contains a non-finite number at min_stock_amount', '4000417844003'],
 			'NAN nested one level' => ["'extra' => ['calories' => NAN]", 'Plugin output contains a non-finite number at extra.calories', '4000417844004'],
 			'NAN in a nested object, add=true' => ["'extra' => (object)['calories' => NAN]", 'Plugin output contains a non-finite number at extra.calories', '4000417844007'],
+			'object that contains itself, add=true' => ["'extra' => (function () { \$o = new stdClass(); \$o->self = \$o; return \$o; })()", 'Plugin output contains a circular reference at extra.self', '4000417844008'],
 			'int name' => ["'name' => 123", 'Provided name must be a string', '4000417844005'],
 			'array name' => ["'name' => ['Beans']", 'Provided name must be a string', '4000417844006'],
 		];

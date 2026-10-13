@@ -109,6 +109,58 @@ class BarcodeLookupNonFiniteTest extends TestCase
 		);
 	}
 
+	public function testAnObjectThatContainsItselfIsRefusedAtOnce(): void
+	{
+		$cycle = new \stdClass();
+		$cycle->self = $cycle;
+
+		$this->assertRefused(
+			self::validOutput(['extra' => $cycle]),
+			'Plugin output contains a circular reference at extra.self'
+		);
+	}
+
+	/** One object reachable twice is not a cycle. */
+	public function testAnObjectSharedBetweenSiblingsIsNotACycle(): void
+	{
+		$shared = (object)['calories' => 1.5];
+		$canned = self::validOutput(['a' => $shared, 'b' => $shared]);
+
+		self::assertSame($canned, self::plugin($canned)->Lookup(self::BARCODE));
+	}
+
+	public function testAnArrayThatContainsItselfByReferenceIsRefusedAtTheDepthLimit(): void
+	{
+		$cycle = ['x' => 1];
+		$cycle['self'] = &$cycle;
+
+		$this->assertRefusedBeyondDepthLimit(self::validOutput(['extra' => $cycle]));
+	}
+
+	public function testNestingDeeperThanTheDepthLimitIsRefused(): void
+	{
+		$deep = 1;
+		for ($i = 0; $i < 600; $i++)
+		{
+			$deep = ['n' => $deep];
+		}
+
+		$this->assertRefusedBeyondDepthLimit(self::validOutput(['extra' => $deep]));
+	}
+
+	private function assertRefusedBeyondDepthLimit(array $canned): void
+	{
+		try
+		{
+			self::plugin($canned)->Lookup(self::BARCODE);
+			self::fail('Lookup() returned instead of throwing');
+		}
+		catch (\Exception $ex)
+		{
+			self::assertMatchesRegularExpression('/\APlugin output is nested deeper than 512 levels at extra(\.\w+)+\z/', $ex->getMessage());
+		}
+	}
+
 	/** An id's own refusal message embeds the value, so the walk has to come first. */
 	public function testANonFiniteIdIsRefusedWithThePathAndNotTheValue(): void
 	{

@@ -41,13 +41,22 @@ abstract class BaseBarcodeLookupPlugin
 	 */
 	private const FETCH_MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 
+	/** json_encode()'s own default depth: output nested deeper than this could not be encoded anyway. */
+	private const MAX_OUTPUT_DEPTH = 512;
+
 	/**
 	 * Refuses a float that is not finite anywhere in $value, naming the dotted key path
 	 * and never the value.
 	 *
+	 * Bounded like json_encode(): beyond MAX_OUTPUT_DEPTH levels is refused, which is what
+	 * stops a plugin's self-referencing array (by reference) from recursing until memory
+	 * runs out. An object that contains itself is refused at once; $ancestors holds the
+	 * ids of the objects on the way down, so one object shared by two siblings is fine.
+	 *
+	 * @param array<int, true> $ancestors
 	 * @throws \Exception
 	 */
-	private static function AssertAllNumbersAreFinite($value, string $path): void
+	private static function AssertAllNumbersAreFinite($value, string $path, int $depth = 0, array $ancestors = []): void
 	{
 		if (is_float($value) && !is_finite($value))
 		{
@@ -58,14 +67,26 @@ abstract class BaseBarcodeLookupPlugin
 		// JSON document), and json_encode() reaches its floats just the same.
 		if (is_object($value))
 		{
+			$id = spl_object_id($value);
+			if (isset($ancestors[$id]))
+			{
+				throw new \Exception("Plugin output contains a circular reference at $path");
+			}
+
+			$ancestors[$id] = true;
 			$value = get_object_vars($value);
 		}
 
 		if (is_array($value))
 		{
+			if ($depth >= self::MAX_OUTPUT_DEPTH)
+			{
+				throw new \Exception('Plugin output is nested deeper than ' . self::MAX_OUTPUT_DEPTH . " levels at $path");
+			}
+
 			foreach ($value as $key => $child)
 			{
-				self::AssertAllNumbersAreFinite($child, $path === '' ? (string)$key : "$path.$key");
+				self::AssertAllNumbersAreFinite($child, $path === '' ? (string)$key : "$path.$key", $depth + 1, $ancestors);
 			}
 		}
 	}
