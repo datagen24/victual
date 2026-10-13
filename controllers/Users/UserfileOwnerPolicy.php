@@ -27,9 +27,11 @@ use Victual\Services\FilesService;
  *   caller - untouched (F3');
  * - the user's own row admits that user, as GetUserfields does (F4);
  * - a view row is resolved by the key GetObject uses and admits whoever the view's read
- *   permission admits; one that no longer exists is unresolved. The label_* and print_*
- *   entities are not looked up, so they are unresolved, which is ADMIN only - exactly their
- *   EntityReadPolicy permission.
+ *   permission admits; one that no longer exists is unresolved. label_printer_status is
+ *   looked up by printer_id, as GetObject reads it; the other label_* and print_* entities
+ *   are not looked up, so they are unresolved, which is ADMIN only. Every one of them,
+ *   label_printer_status included, has ADMIN as its EntityReadPolicy permission, so the
+ *   outcome is ADMIN only either way.
  *
  * The check runs on the original file's name before anything is read or a picture
  * derivative is created, and every refusal is the same exception: it must not tell a
@@ -205,8 +207,9 @@ class UserfileOwnerPolicy
 		if (!self::OwnerExists($entity, $objectId))
 		{
 			// F1: a reference nobody can resolve is an orphan. That includes an entity with a
-			// read policy but no lookup (the label and print tables, all ADMIN) whose record
-			// this class does not look for, so only ADMIN, who may read all of them, passes
+			// read policy but no lookup (the label and print tables other than
+			// label_printer_status, all ADMIN) whose record this class does not look for, so
+			// only ADMIN, who may read all of them, passes
 			return User::HasPermissions(User::PERMISSION_ADMIN);
 		}
 
