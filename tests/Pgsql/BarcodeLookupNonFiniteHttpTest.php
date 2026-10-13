@@ -144,6 +144,7 @@ PLUGIN);
 			'NAN numeric product field' => ["'min_stock_amount' => NAN", 'Plugin output contains a non-finite number at min_stock_amount', '4000417844002'],
 			'INF numeric product field' => ["'min_stock_amount' => INF", 'Plugin output contains a non-finite number at min_stock_amount', '4000417844003'],
 			'NAN nested one level' => ["'extra' => ['calories' => NAN]", 'Plugin output contains a non-finite number at extra.calories', '4000417844004'],
+			'NAN in a nested object, add=true' => ["'extra' => (object)['calories' => NAN]", 'Plugin output contains a non-finite number at extra.calories', '4000417844007'],
 			'int name' => ["'name' => 123", 'Provided name must be a string', '4000417844005'],
 			'array name' => ["'name' => ['Beans']", 'Provided name must be a string', '4000417844006'],
 		];
@@ -169,6 +170,30 @@ PLUGIN);
 			$barcodeRows = self::$db->prepare('SELECT COUNT(*) FROM product_barcodes WHERE barcode = ?');
 			$barcodeRows->execute([$barcode]);
 			self::assertSame(0, (int)$barcodeRows->fetchColumn(), 'and the barcode the plugin was asked about is not stored');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+		}
+	}
+
+	/** A nested object is walked too; without add=true nothing is written either way, so the status is the point. */
+	#[Depends('testTheSubprocessCanReadStock')]
+	public function testALookupWithoutAddWhoseSourceOutputHoldsANestedNonFiniteObjectIsRefusedWith400(): void
+	{
+		$barcode = '4000417844021';
+		$class = 'NonFiniteLookupPlugin' . $barcode;
+		$pluginFile = self::writePlugin($class, "'extra' => (object)['calories' => NAN]");
+
+		try
+		{
+			$before = self::rowCounts();
+
+			$response = self::send('/api/stock/barcodes/external-lookup/' . $barcode, $class);
+
+			self::assertSame(400, $response['status'], "the lookup is refused, not answered 500: {$response['body']}");
+			self::assertStringContainsString('Plugin output contains a non-finite number at extra.calories', $response['body']);
+			self::assertSame($before, self::rowCounts(), 'nothing was written');
 		}
 		finally
 		{

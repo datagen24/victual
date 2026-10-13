@@ -96,6 +96,28 @@ class BarcodeLookupNonFiniteTest extends TestCase
 		);
 	}
 
+	public function testANonFiniteNumberInsideANestedObjectIsRefusedAndNamesItsPath(): void
+	{
+		$this->assertRefused(
+			self::validOutput(['extra' => (object)['calories' => NAN]]),
+			'Plugin output contains a non-finite number at extra.calories'
+		);
+
+		$this->assertRefused(
+			self::validOutput(['extra' => ['inner' => (object)['list' => [1.0, INF]]]]),
+			'Plugin output contains a non-finite number at extra.inner.list.1'
+		);
+	}
+
+	/** An id's own refusal message embeds the value, so the walk has to come first. */
+	public function testANonFiniteIdIsRefusedWithThePathAndNotTheValue(): void
+	{
+		$this->assertRefused(
+			self::validOutput(['location_id' => INF]),
+			'Plugin output contains a non-finite number at location_id'
+		);
+	}
+
 	/** @return array<string, array{0: mixed}> */
 	public static function nonStringNameProvider(): array
 	{

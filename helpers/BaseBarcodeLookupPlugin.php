@@ -54,6 +54,13 @@ abstract class BaseBarcodeLookupPlugin
 			throw new \Exception("Plugin output contains a non-finite number at $path");
 		}
 
+		// An object is walked as its public properties: a plugin may nest one (a decoded
+		// JSON document), and json_encode() reaches its floats just the same.
+		if (is_object($value))
+		{
+			$value = get_object_vars($value);
+		}
+
 		if (is_array($value))
 		{
 			foreach ($value as $key => $child)
@@ -198,6 +205,27 @@ abstract class BaseBarcodeLookupPlugin
 			throw new \Exception('Provided name is empty');
 		}
 
+		// A divisor in every conversion StockService::ExternalBarcodeLookup() makes with
+		// it, so zero, blank, non-numeric and negative are all refused - not just the
+		// first two, which is what empty() alone catches. Non-finite values are refused
+		// too (issue #842): is_numeric() accepts a float NAN and a string such as "1e400"
+		// (which casts to INF), and NAN <= 0 is false, so neither would be caught by the
+		// comparison; quantity_unit_conversions.factor is DOUBLE PRECISION, which would
+		// store NaN or Infinity and corrupt every later booking in the purchase unit.
+		$quFactor = $pluginOutput['__qu_factor_purchase_to_stock'];
+		if (!is_numeric($quFactor) || !is_finite((float)$quFactor) || (float)$quFactor <= 0)
+		{
+			throw new \Exception('Provided __qu_factor_purchase_to_stock must be a finite number greater than zero');
+		}
+
+		// Issue #844: every other field is written as sent too, and a float INF or NAN
+		// (a plugin's json_decode('1e400'), a division) is accepted by PostgreSQL's numeric
+		// and double columns but cannot be json_encode()d, so ApiResponse() would answer
+		// 500 after the rows had committed. Refused here, anywhere in the output, before
+		// anything is written. After the factor check so that one keeps its own message, and ahead of
+		// the id checks below, whose messages embed the value they refuse.
+		self::AssertAllNumbersAreFinite($pluginOutput, '');
+
 		// Check if referenced entity ids are valid
 		$locationId = $pluginOutput['location_id'];
 		if (FindObjectInArrayByPropertyValue($this->Locations, 'id', $locationId) === null)
@@ -216,26 +244,6 @@ abstract class BaseBarcodeLookupPlugin
 		{
 			throw new \Exception("Provided qu_id_stock ($quIdStock) is not a valid quantity unit id");
 		}
-
-		// A divisor in every conversion StockService::ExternalBarcodeLookup() makes with
-		// it, so zero, blank, non-numeric and negative are all refused - not just the
-		// first two, which is what empty() alone catches. Non-finite values are refused
-		// too (issue #842): is_numeric() accepts a float NAN and a string such as "1e400"
-		// (which casts to INF), and NAN <= 0 is false, so neither would be caught by the
-		// comparison; quantity_unit_conversions.factor is DOUBLE PRECISION, which would
-		// store NaN or Infinity and corrupt every later booking in the purchase unit.
-		$quFactor = $pluginOutput['__qu_factor_purchase_to_stock'];
-		if (!is_numeric($quFactor) || !is_finite((float)$quFactor) || (float)$quFactor <= 0)
-		{
-			throw new \Exception('Provided __qu_factor_purchase_to_stock must be a finite number greater than zero');
-		}
-
-		// Issue #844: every other field is written as sent too, and a float INF or NAN
-		// (a plugin's json_decode('1e400'), a division) is accepted by PostgreSQL's numeric
-		// and double columns but cannot be json_encode()d, so ApiResponse() would answer
-		// 500 after the rows had committed. Refused here, anywhere in the output, before
-		// anything is written. After the factor check so that one keeps its own message.
-		self::AssertAllNumbersAreFinite($pluginOutput, '');
 
 		// __barcode is not just an identifier: services/StockService.php builds the stored
 		// picture's file name from it directly, so every source has to agree on what a safe
