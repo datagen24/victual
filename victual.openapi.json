@@ -14529,7 +14529,7 @@
 					},
 					"next_estimated_execution_time": "2019-05-05T11:31:04.563000Z",
 					"next_execution_assigned_user": null,
-					"average_execution_frequency_hours": 24
+					"average_execution_frequency_hours": null
 				}
 			},
 			"BatteryDetailsResponse": {

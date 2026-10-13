@@ -70,9 +70,14 @@ This is separate from the instant changes above and needs no server change: the 
 `tracked_count`; `victual.openapi.json` also declared `track_count`, which no response carried.
 The declaration is now gone, and the schema's example shows `tracked_count`.
 
-It lands with the server revision that merges the pull request for #922; regenerate from the
+It lands with the server revision that merges pull request #934 (for #922); regenerate from the
 `victual.openapi.json` at that merge commit or a later one.
 
 Generated-client impact: the generated `ChoreDetailsResponse` loses its optional
 `trackCount` property, which was always `nil`. Code that read it must read `trackedCount`
 (an integer, which the server always sends).
+
+`trackedCount` exists only in clients regenerated from a `victual.openapi.json` at or after
+the merge of #915 (`0547d275`), which added `tracked_count` to the schema. It is generated
+as an optional property because `ChoreDetailsResponse` has no `required` array, although the
+server always sends it.
