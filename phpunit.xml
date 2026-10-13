@@ -85,6 +85,7 @@
 			<file>tests/Pgsql/HouseholdPagesTest.php</file>
 			<file>tests/Pgsql/SortNumberFormsHttpTest.php</file>
 			<file>tests/Pgsql/Adr0035GenericReadsTest.php</file>
+			<file>tests/Pgsql/CustomEntityGenericReadsTest.php</file>
 		</testsuite>
 		<testsuite name="labelapi">
 			<file>tests/Pgsql/LabelApiTest.php</file>

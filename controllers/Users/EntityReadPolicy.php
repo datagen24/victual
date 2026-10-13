@@ -72,9 +72,13 @@ class EntityReadPolicy
 		'battery_charge_cycles' => User::PERMISSION_BATTERIES_VIEW,
 		'equipment' => User::PERMISSION_EQUIPMENT_VIEW,
 		'api_keys' => null,
+		// Definitions stay open to any authenticated caller: ordinary pages read them to
+		// render user-field inputs and the sidebar (ADR-0035, amended 2026-10-13, #869).
 		'userfields' => null,
 		'userentities' => null,
-		'userobjects' => null,
+		// The rows of a custom entity are what the custom-entity pages show, and those
+		// pages require MASTER_DATA_EDIT; the generic read is no way round that (#869).
+		'userobjects' => User::PERMISSION_MASTER_DATA_EDIT,
 	];
 
 	/**
@@ -91,6 +95,9 @@ class EntityReadPolicy
 	{
 		if (str_starts_with($entity, 'userentity-'))
 		{
+			// The data of a custom entity is its userfield values, stored under
+			// 'userentity-<name>'; the pages that show it need MASTER_DATA_EDIT (#869).
+			User::CheckPermission($request, User::PERMISSION_MASTER_DATA_EDIT);
 			return;
 		}
 		if (!array_key_exists($entity, self::PERMISSIONS))
