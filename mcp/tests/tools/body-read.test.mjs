@@ -68,7 +68,7 @@ test("a non-2xx answer keeps its status category even if its body would stall", 
   });
 });
 
-test("over a real socket, a body that stops after the headers times out as outcome_unknown", opts, async () => {
+test("over a real socket, a body that stops after the headers times out as outcome_unknown", opts, async (t) => {
   const sockets = new Set();
   const stalled = createServer((_req, res) => {
     res.writeHead(200, { "content-type": "application/json", "content-length": "100" });
@@ -76,12 +76,13 @@ test("over a real socket, a body that stops after the headers times out as outco
   });
   stalled.on("connection", (s) => sockets.add(s));
   await new Promise((resolve) => stalled.listen(0, "127.0.0.1", resolve));
-  try {
-    const client = new VictualClient({ ...config, VICTUAL_BASE_URL: `http://127.0.0.1:${stalled.address().port}` });
-    assert.equal(await categoryOf(client.post("/api/x", cred, {})), "outcome_unknown");
-    assert.equal(await categoryOf(client.get("/api/x", cred)), "victual_unavailable");
-  } finally {
+  // t.after, not try/finally: on a regression the awaits below never settle, and only a
+  // registered hook still runs when node:test times the test out.
+  t.after(async () => {
     for (const s of sockets) s.destroy();
     await new Promise((resolve) => stalled.close(resolve));
-  }
+  });
+  const client = new VictualClient({ ...config, VICTUAL_BASE_URL: `http://127.0.0.1:${stalled.address().port}` });
+  assert.equal(await categoryOf(client.post("/api/x", cred, {})), "outcome_unknown");
+  assert.equal(await categoryOf(client.get("/api/x", cred)), "victual_unavailable");
 });

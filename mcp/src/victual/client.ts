@@ -99,7 +99,7 @@ export class VictualClient {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.MCP_REQUEST_TIMEOUT_MS);
 
-    const write = init.method !== "GET";
+    const write = (init.method ?? "GET") !== "GET";
     try {
       let response: Response;
       try {
