@@ -237,6 +237,7 @@
 			<file>tests/Pgsql/OrganizerWorkflowTest.php</file>
 			<file>tests/Pgsql/OrganizerApiTest.php</file>
 			<file>tests/Pgsql/OrganizerLabelDisclosureTest.php</file>
+			<file>tests/Pgsql/ConsumptionEventsAuditTest.php</file>
 		</testsuite>
 	</testsuites>
 </phpunit>
