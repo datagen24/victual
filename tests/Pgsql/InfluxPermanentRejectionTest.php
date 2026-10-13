@@ -306,6 +306,40 @@ class InfluxPermanentRejectionTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * When the endpoint refuses every row, the walk stops while nothing has been delivered:
+	 * a handful of writes, not the 2n-1 a full bisection costs on every drain, inside the
+	 * claim transaction, for ever.
+	 * (50 rows stays under the 64 KB of child stderr this harness reads after stdout.)
+	 */
+	public function testAnEndpointRefusingEveryRowIsNotWalkedRowByRow(): void
+	{
+		$ids = [];
+
+		for ($i = 0; $i < 50; $i++)
+		{
+			$ids[] = $this->queue('reject-row-' . $i);
+		}
+
+		file_put_contents(self::$standinControl, 'status:400');
+
+		$result = self::Drain();
+
+		self::assertFalse($result['delivered']);
+
+		$posts = substr_count((string)file_get_contents(self::$standinLog), '=== POST');
+		self::assertLessThanOrEqual((int)ceil(log(50, 2)) + 2, $posts, 'POSTs made for one drain of 50 refused rows');
+		self::assertSame(3, $posts, 'the whole batch, the first row alone, then the rest in one write');
+
+		foreach ($ids as $id)
+		{
+			$this->assertRetryable($id, 'HTTP 400 for every row');
+		}
+
+		self::assertLessThanOrEqual(3, substr_count($result['stderr'], 'was not acknowledged'),
+			'the isolation writes are summarised once, not logged one by one');
+	}
+
 	public function testOneRowUnderAnEverythingRejectedEndpointIsNotDeadLettered(): void
 	{
 		$only = $this->queue('reject-one');

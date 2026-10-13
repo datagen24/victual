@@ -65,6 +65,9 @@ class InfluxEventWriter
 	 */
 	private $LastStatus = null;
 
+	/** @var bool Whether Reject() logs; see Write()'s $logRejection */
+	private $LogRejection = true;
+
 	/**
 	 * The statuses InfluxDB answers with when it has understood the request and refused this
 	 * body: 400 (a line it cannot parse), 413 (a body over its size limit) and 422 (a line
@@ -114,11 +117,14 @@ class InfluxEventWriter
 	 * could not be reached or is not configured right. What is sent is not affected.
 	 *
 	 * @param string[] $lines
+	 * @param bool $logRejection False to leave the log line to the caller, for the many writes of
+	 *                           one isolation walk (BookingEventPublisher::Drain() logs one summary)
 	 * @return bool True when the write endpoint acknowledged the batch
 	 */
-	public function Write(array $lines): bool
+	public function Write(array $lines, bool $logRejection = true): bool
 	{
 		$this->LastStatus = null;
+		$this->LogRejection = $logRejection;
 
 		if (count($lines) === 0)
 		{
@@ -258,6 +264,11 @@ class InfluxEventWriter
 	private function Reject(string $reason): bool
 	{
 		$this->LastError = $reason;
+
+		if (!$this->LogRejection)
+		{
+			return false;
+		}
 
 		error_log('Victual: writing events to InfluxDB at ' . VICTUAL_INFLUXDB_URL
 			. ' was not acknowledged, the events stay in the outbox for the next drain: ' . $reason);
