@@ -6,7 +6,7 @@
 -- Linking, locking and the service's mapping of the violation are PHP and are covered by
 -- tests/Pgsql/ConsumptionEventsAuditTest.php.
 
-SELECT plan(16);
+SELECT plan(17);
 
 INSERT INTO users (username, password) VALUES ('c34 a', 'fixture'), ('c34 b', 'fixture');
 INSERT INTO locations (name) VALUES ('C34 location');
@@ -53,6 +53,11 @@ INSERT INTO consumption_events (user_id, source_system, source_event_id, state, 
 VALUES (pg_temp.u('a'), 'manual', 'manual-6', 'linked', 't34-6', 't34-6x', now());
 SELECT throws_ok(format($$INSERT INTO consumption_events (user_id, source_system, source_event_id, state, linked_transaction_id, occurred_at)
 	VALUES (%s, 'healthkit', 'link-6', 'linked', 't34-6', now())$$, pg_temp.u('a')), '23505', NULL, 'a manual holder that is itself linked is not a rule 9 holder');
+-- The other order: an event is linked to T7 first, then a manual event that is itself linked books T7.
+INSERT INTO consumption_events (user_id, source_system, source_event_id, state, linked_transaction_id, occurred_at)
+VALUES (pg_temp.u('a'), 'healthkit', 'link-7', 'linked', 't34-7', now());
+SELECT throws_ok(format($$INSERT INTO consumption_events (user_id, source_system, source_event_id, state, transaction_id, linked_transaction_id, occurred_at)
+	VALUES (%s, 'manual', 'manual-7', 'linked', 't34-7', 't34-7x', now())$$, pg_temp.u('a')), '23505', NULL, 'a linked manual event cannot hold a transaction another event links to');
 SELECT has_index('stock_log', 'ix_stock_log_transaction_id', 'stock_log is indexed by transaction id');
 SELECT has_index('stock_log', 'ix_stock_log_transaction_id', ARRAY['transaction_id'], 'on exactly that column');
 

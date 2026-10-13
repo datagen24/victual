@@ -22,6 +22,7 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 	private const ME = 9000;
 	private const OTHER = 9312;
 	private const ADMIN = 9411;
+	private const ADMIN_WITH_USERS = 9412;
 
 	private static PDO $db;
 	private static ConsumptionEventService $events;
@@ -30,6 +31,7 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 	private static int $shelf;
 	private static int $sequence = 0;
 	private static string $adminKey;
+	private static string $adminWithUsersKey;
 
 	public static function setUpBeforeClass(): void
 	{
@@ -40,7 +42,7 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 		self::$mappings = ConsumptionMappingService::GetInstance();
 
 		self::$db->exec("INSERT INTO users (id, username, password) VALUES (9000, 'phpunit-caller', 'fixture') ON CONFLICT DO NOTHING");
-		self::$db->exec('INSERT INTO users (id, username, password) VALUES (' . self::OTHER . ", 'cea-other', 'fixture'), (" . self::ADMIN . ", 'cea-admin', 'fixture')");
+		self::$db->exec('INSERT INTO users (id, username, password) VALUES (' . self::OTHER . ", 'cea-other', 'fixture'), (" . self::ADMIN . ", 'cea-admin', 'fixture'), (" . self::ADMIN_WITH_USERS . ", 'cea-admin-users', 'fixture')");
 		$grant = self::$db->prepare('INSERT INTO user_permissions (user_id, permission_id) SELECT ?, id FROM permission_hierarchy WHERE name = ?');
 		foreach ([self::ME, self::OTHER] as $id)
 		{
@@ -50,10 +52,15 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 			}
 		}
 		$grant->execute([self::ADMIN, 'MASTER_DATA_EDIT']);
+		$grant->execute([self::ADMIN_WITH_USERS, 'MASTER_DATA_EDIT']);
+		$grant->execute([self::ADMIN_WITH_USERS, 'USERS_READ']);
 
 		self::$adminKey = bin2hex(random_bytes(25));
 		self::$db->prepare("INSERT INTO api_keys (api_key, key_hint, user_id, expires, key_type, read_only) VALUES (?, ?, ?, now() + interval '30 days', ?, 0)")
 			->execute([ApiKeyService::HashKey(self::$adminKey), substr(self::$adminKey, -4), self::ADMIN, ApiKeyService::API_KEY_TYPE_DEFAULT]);
+		self::$adminWithUsersKey = bin2hex(random_bytes(25));
+		self::$db->prepare("INSERT INTO api_keys (api_key, key_hint, user_id, expires, key_type, read_only) VALUES (?, ?, ?, now() + interval '30 days', ?, 0)")
+			->execute([ApiKeyService::HashKey(self::$adminWithUsersKey), substr(self::$adminWithUsersKey, -4), self::ADMIN_WITH_USERS, ApiKeyService::API_KEY_TYPE_DEFAULT]);
 
 		self::$tablet = (int)self::$db->query("INSERT INTO quantity_units (name) VALUES ('CEA tablet') RETURNING id")->fetchColumn();
 		self::$shelf = self::location('CEA shelf');
@@ -144,9 +151,9 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 	}
 
 	/** @return array{status: int, body: mixed} */
-	private static function send(string $method, string $path): array
+	private static function send(string $method, string $path, bool $withUsersRead = false): array
 	{
-		$spec = ['method' => $method, 'path' => $path, 'headers' => ['VICTUAL-API-KEY' => self::$adminKey]];
+		$spec = ['method' => $method, 'path' => $path, 'headers' => ['VICTUAL-API-KEY' => $withUsersRead ? self::$adminWithUsersKey : self::$adminKey]];
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
 		$env = array_merge($inherited, [
 			'RBAC_TEST_SCHEMA' => self::Schema(), 'PHPUNIT_DB_NAME' => getenv('PHPUNIT_DB_NAME'), 'VICTUAL_DATAPATH' => getenv('VICTUAL_DATAPATH'),
@@ -281,8 +288,8 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 		}
 		finally
 		{
-			self::$db->exec('SET lock_timeout = 0');
 			$holder->rollBack();
+			self::$db->exec('RESET lock_timeout');
 		}
 
 		$row = self::eventRow($id);
@@ -431,10 +438,16 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 		$response = self::send('DELETE', '/api/objects/locations/' . $location);
 
 		self::assertSame(400, $response['status']);
-		self::assertStringContainsString('consumption mapping', $response['body']['error_message']);
 		self::assertStringContainsString('1 consumption mapping', $response['body']['error_message']);
-		self::assertStringContainsString($username, $response['body']['error_message'], 'the owner is named');
-		self::assertStringNotContainsString($ref, $response['body']['error_message'], 'the medication is not');
+		self::assertStringNotContainsString($username, $response['body']['error_message'], 'a caller who cannot list users is not told whose it is');
+		self::assertStringNotContainsString($ref, $response['body']['error_message'], 'the medication is not named either');
+
+		$withUsers = self::send('DELETE', '/api/objects/locations/' . $location, true);
+
+		self::assertSame(400, $withUsers['status']);
+		self::assertStringContainsString('1 consumption mapping', $withUsers['body']['error_message']);
+		self::assertStringContainsString($username, $withUsers['body']['error_message'], 'a caller with USERS_READ is told the owner');
+		self::assertStringNotContainsString($ref, $withUsers['body']['error_message']);
 		self::assertSame(1, (int)self::$db->query("SELECT count(*) FROM locations WHERE id = $location")->fetchColumn(), 'the location is still there');
 		self::assertSame($location, (int)self::$db->query('SELECT location_id FROM consumption_mappings WHERE id = ' . $mappingId)->fetchColumn(), 'and so is the mapping');
 	}
