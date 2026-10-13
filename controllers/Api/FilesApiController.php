@@ -58,11 +58,12 @@ class FilesApiController extends BaseApiController
 	 * other group, including one nobody had decided about yet, through to any
 	 * authenticated caller.
 	 *
-	 * null is a decided "no further permission needed", not an omission, and is kept in
-	 * step with EntityReadPolicy's read policy for the same underlying entity:
-	 * 'userfields' => null there is why userfiles is null here - a caller who may already
-	 * read the userfield entry without a permission needs none for the file hanging off
-	 * it either. equipmentmanuals maps to EQUIPMENT_VIEW, the leaf ADR-0035 requires for
+	 * null is a decided "no further permission needed", not an omission. 'userfiles' is
+	 * null because file and image user fields render through /api/files/userfiles/ on
+	 * pages gated only by STOCK_VIEW, EQUIPMENT_VIEW and the like; it stays open until
+	 * #905 makes a file follow the read leaf of the record that owns it. It is not tied
+	 * to EntityReadPolicy: 'userobjects' there requires MASTER_DATA_EDIT (#869), and
+	 * gating this group the same way would break those pages. equipmentmanuals maps to EQUIPMENT_VIEW, the leaf ADR-0035 requires for
 	 * the equipment pages and APIs and EntityReadPolicy now requires for 'equipment'
 	 * (#847): a manual is equipment data and must not be readable by a caller who is
 	 * refused the equipment record. userpictures maps to USERS_READ for the same reason 'users' => USERS_READ

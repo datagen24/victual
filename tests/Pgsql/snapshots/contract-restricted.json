@@ -765,9 +765,9 @@
         }
     },
     "GET /api/objects/{entity} (userobjects)": {
-        "status": 200,
+        "status": 403,
         "shape": {
-            "__empty_list__": true
+            "error_message": "string"
         }
     },
     "GET /api/objects/{entity}/{objectId} (batteries)": {

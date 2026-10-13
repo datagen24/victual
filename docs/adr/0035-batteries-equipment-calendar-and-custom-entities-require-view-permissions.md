@@ -7,6 +7,17 @@
   and plan 19's Executed section statement that piece 1 "does not add view leaves for them,"
   no longer hold. Every other part of ADR-0018 — roles as permission bundles, the six original
   view leaves, role and grant administration — is unchanged.
+- **Amended 2026-10-13** by the maintainer, in [issue #869](https://github.com/datagen24/victual/issues/869):
+  the generic read `GET /api/objects/userobjects` requires `MASTER_DATA_EDIT`, the permission its
+  pages require, so the API is no way round the page gate. `userentities` and `userfields`
+  (the definitions) stay readable by any authenticated caller, because ordinary pages read
+  them to render user-field inputs and the sidebar. The `userfiles` file group is deliberately
+  left open for now: file and image user fields render through `/api/files/userfiles/` on
+  pages that need only `STOCK_VIEW`, `EQUIPMENT_VIEW` and similar, so a blanket
+  `MASTER_DATA_EDIT` gate would break them. [Issue #905](https://github.com/datagen24/victual/issues/905)
+  will make a file follow the read permission of the record that owns it. This narrows
+  "`EntityReadPolicy.php` already maps all three entities to no read policy at all" in the
+  decision below: that was true when written and is true now only of the two definitions.
 - **Decider:** datagen24
 - **Recorded:** 2026-09-29
 - **Referenced by:** [plan 19](../plans/19-rbac.md)
