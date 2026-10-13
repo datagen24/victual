@@ -76,7 +76,7 @@
 					"Labels"
 				],
 				"summary": "Resolve an opaque label",
-				"description": "Accepts a bare uid or vctl: payload, ignoring case and folding I/L to 1 and O to 0. Each kind resolves under the caller's domain permission (FieldCatalogue::DomainPermission): STOCK_VIEW for location, product, and stock_entry; RECIPES_VIEW for recipe; CHORES_VIEW for chore; BATTERIES for battery. Unauthorized and unknown labels both return 200 with status unknown; a caller holding none of these permissions performs no label lookup.",
+				"description": "Accepts a bare uid or vctl: payload, ignoring case and folding I/L to 1 and O to 0. Each kind resolves under the caller's domain permission (FieldCatalogue::DomainPermission): STOCK_VIEW for location, product, and stock_entry; RECIPES_VIEW for recipe; CHORES_VIEW for chore; BATTERIES_VIEW for battery. Unauthorized and unknown labels both return 200 with status unknown; a caller holding none of these permissions performs no label lookup.",
 				"parameters": [
 					{
 						"name": "code",
@@ -363,7 +363,7 @@
 					"Labels"
 				],
 				"summary": "Read the target and import epoch for a label request (plan 32)",
-				"description": "The generic form of GET /labels/locations/{locationId}/context for the five kinds plan 32 added: product, stock_entry, recipe, chore, battery. Requires the kind's own domain read permission (FieldCatalogue::DomainPermission()) - STOCK_VIEW for product and stock_entry, RECIPES_VIEW, CHORES_VIEW, or BATTERIES. Compose a future print request with this import_epoch; issuance refuses if an import has replaced the target set. This endpoint does not issue or print a label.",
+				"description": "The generic form of GET /labels/locations/{locationId}/context for the five kinds plan 32 added: product, stock_entry, recipe, chore, battery. Requires the kind's own domain read permission (FieldCatalogue::DomainPermission()) - STOCK_VIEW for product and stock_entry, RECIPES_VIEW, CHORES_VIEW, or BATTERIES_VIEW. Compose a future print request with this import_epoch; issuance refuses if an import has replaced the target set. This endpoint does not issue or print a label.",
 				"parameters": [
 					{
 						"name": "kind",
@@ -8542,7 +8542,7 @@
 					"Labels"
 				],
 				"summary": "Queue a label for any of the six kinds (plan 32)",
-				"description": "Requires MASTER_DATA_EDIT plus the kind's own domain read permission (FieldCatalogue::DomainPermission()): STOCK_VIEW for location/product/stock_entry, RECIPES_VIEW, CHORES_VIEW, or BATTERIES. Atomically issues the label and enqueues the job, the same as POST /labels/locations/{locationId}/print for kind=location.",
+				"description": "Requires MASTER_DATA_EDIT plus the kind's own domain read permission (FieldCatalogue::DomainPermission()): STOCK_VIEW for location/product/stock_entry, RECIPES_VIEW, CHORES_VIEW, or BATTERIES_VIEW. Atomically issues the label and enqueues the job, the same as POST /labels/locations/{locationId}/print for kind=location.",
 				"parameters": [
 					{
 						"name": "kind",
