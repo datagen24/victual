@@ -135,6 +135,8 @@
 			<file>tests/Pgsql/QuIdStockCascadeMinStockAndMeasurementTest.php</file>
 			<file>tests/Pgsql/StockAggregatedSubProductConvertibilityTest.php</file>
 			<file>tests/Pgsql/CrossOperationLedgerInvariantTest.php</file>
+			<file>tests/Pgsql/MergeProductsConsumptionTest.php</file>
+			<file>tests/Pgsql/MergeProductsChoreLockOrderTest.php</file>
 		</testsuite>
 		<testsuite name="stockconcurrency">
 			<file>tests/Pgsql/StockConcurrencyTest.php</file>
