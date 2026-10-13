@@ -362,7 +362,16 @@ class RbacTest extends PgsqlSchemaTestCase
 		foreach (FilesApiController::GROUP_READ_PERMISSIONS as $group => $permission)
 		{
 			$args = ['group' => $group, 'fileName' => base64_encode('nonexistent.png')];
-			if ($permission === null)
+			if ($permission === FilesApiController::OWNER_GOVERNED)
+			{
+				// #905: no leaf of its own; a name nothing references is an orphan, which only ADMIN reads.
+				// The owner rule itself is UserfileOwnerReadTest's.
+				$this->expectStatus(fn() => self::$files->ServeFile(self::request(), new Response(), $args), 403, "$group is refused for an unreferenced name");
+				self::grant(['ADMIN']);
+				$this->expectStatus(fn() => self::$files->ServeFile(self::request(), new Response(), $args), 404, "$group allowed for ADMIN, falls through to the file lookup");
+				self::grant([]);
+			}
+			elseif ($permission === null)
 			{
 				$this->expectStatus(fn() => self::$files->ServeFile(self::request(), new Response(), $args), 404, "$group is deliberately open and falls through to the file lookup");
 			}

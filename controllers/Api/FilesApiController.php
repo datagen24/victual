@@ -4,6 +4,7 @@ namespace Victual\Controllers\Api;
 
 use Victual\Controllers\Users\PermissionMissingException;
 use Victual\Controllers\Users\User;
+use Victual\Controllers\Users\UserfileOwnerPolicy;
 use Victual\Services\FilesService;
 use Victual\Services\Storage\FileStorage;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -51,6 +52,12 @@ class FilesApiController extends BaseApiController
 	];
 
 	/**
+	 * The GROUP_READ_PERMISSIONS value of a group with no leaf of its own, whose files are
+	 * readable by whoever UserfileOwnerPolicy says. Not a permission name.
+	 */
+	const OWNER_GOVERNED = 'OWNER_GOVERNED';
+
+	/**
 	 * Which permission lets a caller read a file from a group. Fail-closed: a group
 	 * missing from this table is refused rather than falling through to authentication
 	 * alone. Sweep finding S32 - before this table existed, ServeFile gated
@@ -58,12 +65,13 @@ class FilesApiController extends BaseApiController
 	 * other group, including one nobody had decided about yet, through to any
 	 * authenticated caller.
 	 *
-	 * null is a decided "no further permission needed", not an omission. 'userfiles' is
-	 * null because file and image user fields render through /api/files/userfiles/ on
-	 * pages gated only by STOCK_VIEW, EQUIPMENT_VIEW and the like; it stays open until
-	 * #905 makes a file follow the read leaf of the record that owns it. It is not tied
-	 * to EntityReadPolicy: 'userobjects' there requires MASTER_DATA_EDIT (#869), and
-	 * gating this group the same way would break those pages. equipmentmanuals maps to
+	 * null is a decided "no further permission needed"; no group is null at the moment.
+	 * 'userfiles' is OWNER_GOVERNED (#905): file and image user fields render through
+	 * /api/files/userfiles/ on pages gated by the read leaf of the record the field hangs
+	 * off, so a file follows the record(s) that reference it rather than a leaf of its own -
+	 * see UserfileOwnerPolicy for the rule. It is not tied to EntityReadPolicy as a whole:
+	 * 'userobjects' there requires MASTER_DATA_EDIT (#869), and gating this group the same
+	 * way would break the pages of every other owner. equipmentmanuals maps to
 	 * EQUIPMENT_VIEW, the leaf ADR-0035 requires for the equipment pages and APIs and EntityReadPolicy now requires for 'equipment'
 	 * (#847): a manual is equipment data and must not be readable by a caller who is
 	 * refused the equipment record. userpictures maps to USERS_READ for the same reason 'users' => USERS_READ
@@ -81,7 +89,7 @@ class FilesApiController extends BaseApiController
 		'productpictures' => User::PERMISSION_STOCK_VIEW,
 		'recipepictures' => User::PERMISSION_RECIPES_VIEW,
 		'equipmentmanuals' => User::PERMISSION_EQUIPMENT_VIEW,
-		'userfiles' => null,
+		'userfiles' => self::OWNER_GOVERNED,
 		'userpictures' => User::PERMISSION_USERS_READ
 	];
 
@@ -173,7 +181,7 @@ class FilesApiController extends BaseApiController
 	/**
 	 * Throws unless the caller may read a file from the given group. Fail-closed via
 	 * CheckGroupIsKnown; a mapped null permission is a decided "open to any
-	 * authenticated caller".
+	 * authenticated caller", and OWNER_GOVERNED defers to UserfileOwnerPolicy.
 	 *
 	 * $fileName carries the same own-picture exception CheckUserPictureDeletion
 	 * enforces on delete: every authenticated user's own avatar renders in the nav bar
@@ -208,7 +216,13 @@ class FilesApiController extends BaseApiController
 		}
 
 		$permission = self::GROUP_READ_PERMISSIONS[$group];
-		if ($permission !== null)
+		if ($permission === self::OWNER_GOVERNED)
+		{
+			// Decided before the file is looked up and before a derivative is made, from the
+			// original's name: a refused caller learns neither that it exists nor who owns it
+			UserfileOwnerPolicy::Check($request, (string)$fileName);
+		}
+		elseif ($permission !== null)
 		{
 			User::CheckPermission($request, $permission);
 		}

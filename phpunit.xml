@@ -122,6 +122,7 @@
 		</testsuite>
 		<testsuite name="storagefiles">
 			<file>tests/Pgsql/StorageFilesTest.php</file>
+			<file>tests/Pgsql/UserfileOwnerReadTest.php</file>
 		</testsuite>
 		<testsuite name="stockcoverage">
 			<file>tests/Pgsql/StockCoverageTest.php</file>
