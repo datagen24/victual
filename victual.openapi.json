@@ -1348,7 +1348,7 @@
 		"/files/{group}/{fileName}": {
 			"get": {
 				"summary": "Serves the given file",
-				"description": "With proper Content-Type header",
+				"description": "With proper Content-Type header. Each group needs the read permission of the records it belongs to: STOCK_VIEW for productpictures, RECIPES_VIEW for recipepictures, EQUIPMENT_VIEW for equipmentmanuals and USERS_READ for userpictures (a user may always read their own picture). A file in userfiles is readable only by a caller whom every record that references it admits, by the read permission that record requires; a file no record references, or one whose referencing record no longer exists, is readable by ADMIN only. The refusal is the same 403 in every case, so it does not reveal whether the file exists or what owns it.",
 				"tags": [
 					"Files"
 				],
@@ -1461,6 +1461,16 @@
 					},
 					"401": {
 						"description": "The request carried no valid API key or session",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "The caller lacks the read permission the group, or for userfiles the owning records, require",
 						"content": {
 							"application/json": {
 								"schema": {
