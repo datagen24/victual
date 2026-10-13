@@ -259,6 +259,30 @@ const ACCEPTED = [
 	},
 
 	{
+		id: 'undo-restores-reschedule',
+		reference: 'services/ChoresService.php',
+		reason:
+			'Undoing a chore execution restores the chore\'s rescheduled_date and ' +
+			'rescheduled_next_execution_assigned_to_user_id that tracking cleared, together or not at ' +
+			'all: when the undone row is the chore\'s most recent live execution (by insertion order), ' +
+			'both fields are empty and the saved assignee still exists. If a person rescheduled after ' +
+			'tracking and cleared it again, the earlier reschedule still returns, because the undo ' +
+			'undoes what tracking cleared. Upstream 4.6.0 leaves both empty, so a chore read after the ' +
+			'undo has them null there and set here. ' +
+			'Maintainer decision of 2026-10-12, issue #865; the values are kept in ' +
+			'chores_log.prior_rescheduled_date and chores_log.prior_rescheduled_next_execution_assigned_to_user_id ' +
+			'(migration 0311).\n\n' +
+			'**The fork is the intended side and this must not be "fixed" towards upstream.** The ' +
+			'matcher is narrow: those two chore fields, upstream null, the fork non-null, on a chore read.',
+		match: ({ step, difference }) =>
+			(difference.kind === 'type' || difference.kind === 'value') &&
+			/^\/(objects\/)?chores(\/\d+)?(\?|$)/.test(String(step.path)) &&
+			/\/(rescheduled_date|rescheduled_next_execution_assigned_to_user_id)$/.test(difference.pointer) &&
+			difference.upstream === null &&
+			difference.victual !== null
+	},
+
+	{
 		id: 'fork-only-entities',
 		reference: 'docs/plans/README.md',
 		reason:
@@ -660,6 +684,11 @@ const FORK_ADDED_FIELDS = new Map([
 	// to, on every table a label import writes.
 	['import_epoch', [...ROUTES.productRows, ...ROUTES.recipes, ...ROUTES.choresAndBatteries,
 		/^GET \/objects\/stock(\/\d+)?$/, /^GET \/stock\/locations\/\d+\/entries$/]],
+	// issue #865, migration 0311 — the reschedule values tracking cleared, kept on the
+	// execution row so an undo can restore them. Nullable, so a client that ignores them is
+	// unaffected.
+	['prior_rescheduled_date', [/^GET \/objects\/chores_log(\/\d+)?$/, /^POST \/chores\/\d+\/execute$/]],
+	['prior_rescheduled_next_execution_assigned_to_user_id', [/^GET \/objects\/chores_log(\/\d+)?$/, /^POST \/chores\/\d+\/execute$/]],
 	// plans 25/27/32 — the label subsystem's feature flag.
 	['FEATURE_FLAG_LABELS', ROUTES.systemConfig]
 ]);

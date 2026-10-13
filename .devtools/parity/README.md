@@ -120,7 +120,7 @@ seen downstream — `chores.next_estimated_execution_time`, which is `null` upst
 a date-only `start_date` breaks the positional `SUBSTR` upstream slices the time of day out
 of.
 
-The rest are the fork's deliberate divergences, and three of those are worth knowing about
+The rest are the fork's deliberate divergences, and several of those are worth knowing about
 because they are the fork being *more careful* than upstream rather than merely different:
 
 - **`exposed-settings-allowlist`** — `GET /api/system/config` returns 21 fewer settings
@@ -143,6 +143,22 @@ because they are the fork being *more careful* than upstream rather than merely 
   object. This suite's first run recorded the `null`-against-`"0"` difference and said the
   `200` was the defect; [plan 11](../../docs/plans/11-api-error-handling.md) has since
   refused the request instead.
+- A skipped chore execution (`POST /api/chores/{choreId}/execute` with `skipped`) consumes no
+  product and needs no `STOCK_CONSUME` here. Upstream 4.6.0 consumes the chore's product on a
+  skip as it does on an execution. Maintainer decision of 2026-10-12, issue #856: a skip
+  records that a scheduled execution was passed over, not that the chore was performed. No
+  scenario skips a chore, and an accepted entry would also hide a real stock regression, so
+  this has no id in `harness/lib/accepted.js`.
+- **`undo-restores-reschedule`** — undoing a chore execution restores the `rescheduled_date`
+  and `rescheduled_next_execution_assigned_to_user_id` that tracking cleared, together or not
+  at all. It does so only when the undone row is the chore's most recent live execution (by
+  insertion order), both fields on the chore are empty, and the saved assignee still exists.
+  If a person rescheduled after tracking and then cleared the reschedule again, both fields
+  are empty and the undo still brings the earlier reschedule back, because it undoes what
+  tracking cleared. Upstream 4.6.0 leaves both empty. The values are kept in two new nullable
+  `chores_log` columns, `prior_rescheduled_date` and
+  `prior_rescheduled_next_execution_assigned_to_user_id`, so `/api/objects/chores_log`
+  carries two fields upstream does not. Maintainer decision of 2026-10-12, issue #865.
 
 What normalisation erases is listed in [`harness/lib/normalize.js`](harness/lib/normalize.js)
 and is deliberately thin: wall-clock moments, `uniqid()`-derived opaque handles, the

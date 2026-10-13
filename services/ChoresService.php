@@ -64,7 +64,7 @@ class ChoresService extends BaseService
 		else
 		{
 			$choreLastTrackedTime = $this->DB->chores_log()->where('chore_id = :1 AND undone = 0', $choreId)->max('tracked_time');
-			$lastChoreLogRow = $this->DB->chores_log()->where('chore_id = :1 AND tracked_time = :2 AND undone = 0', $choreId, $choreLastTrackedTime)->orderBy('row_created_timestamp', 'DESC')->fetch();
+			$lastChoreLogRow = $this->DB->chores_log()->where('chore_id = :1 AND tracked_time = :2 AND undone = 0', $choreId, $choreLastTrackedTime)->orderBy('row_created_timestamp', 'DESC')->orderBy('id', 'DESC')->fetch();
 
 			// A chore that has never been executed - every chore, once - has no last row,
 			// and reading ->done_by_user_id off it was "Attempt to read property on null".
@@ -256,7 +256,8 @@ class ChoresService extends BaseService
 	 *
 	 * @param string $trackedTime "Y-m-d H:i:s"; truncated to the day for chores which track the date only
 	 * @param int $doneBy User id of the executing user, defaults to the current user
-	 * @param bool $skipped True to record a skip instead of an execution (not possible for unscheduled chores)
+	 * @param bool $skipped True to record a skip instead of an execution (not possible for unscheduled chores).
+	 *              A skip consumes no product and needs no STOCK_CONSUME (issue #856)
 	 * @param \Psr\Http\Message\ServerRequestInterface|null $request Only shapes the exception a
 	 *              missing STOCK_CONSUME throws for a stock-consuming chore; the permission
 	 *              check itself is unconditional (see above)
@@ -345,10 +346,17 @@ class ChoresService extends BaseService
 		// back independently of it.
 		return DatabaseService::GetInstance()->InTransaction(function () use ($choreId, $chore, $trackedTime, $doneBy, $skipped, $scheduledExecutionTime, $request)
 		{
+			// Issue #865: serialize with a concurrent track or undo of the same chore, then
+			// read the chore again - the row read before the transaction may be stale, and
+			// the values captured below must be the ones this transaction clears.
+			$this->LockChore($choreId);
+			$chore = $this->DB->chores($choreId);
+
 			// Checked before any write (issue #604) - including the chores_log insert just
 			// below, so a refusal leaves no row at all, not merely an execution with no
 			// linked consumption.
-			if ($chore->consume_product_on_execution == 1 && !empty($chore->product_id) && !User::HasPermissions(User::PERMISSION_STOCK_CONSUME))
+			// Issue #856: a skipped execution consumes nothing, so it needs no STOCK_CONSUME.
+			if (!$skipped && $chore->consume_product_on_execution == 1 && !empty($chore->product_id) && !User::HasPermissions(User::PERMISSION_STOCK_CONSUME))
 			{
 				if ($request !== null)
 				{
@@ -363,12 +371,20 @@ class ChoresService extends BaseService
 				'tracked_time' => $trackedTime,
 				'done_by_user_id' => $doneBy,
 				'skipped' => BoolToInt($skipped),
-				'scheduled_execution_time' => $scheduledExecutionTime
+				'scheduled_execution_time' => $scheduledExecutionTime,
+				// Issue #865: what this execution clears off the chore below, kept so that
+				// UndoChoreExecution() can put it back.
+				'prior_rescheduled_date' => empty($chore->rescheduled_date) ? null : $chore->rescheduled_date,
+				'prior_rescheduled_next_execution_assigned_to_user_id' => empty($chore->rescheduled_next_execution_assigned_to_user_id) ? null : $chore->rescheduled_next_execution_assigned_to_user_id
 			]);
 			$logRow->save();
 			$lastInsertId = $this->DB->lastInsertId();
 
-			if ($chore->consume_product_on_execution == 1 && !empty($chore->product_id))
+			// Issue #856 (maintainer decision, 2026-10-12): a skipped execution records that
+			// a scheduled execution was passed over. It is not a performance of the chore,
+			// so it consumes nothing and its stock_transaction_id stays NULL, which makes
+			// UndoChoreExecution() treat it as chore-only.
+			if (!$skipped && $chore->consume_product_on_execution == 1 && !empty($chore->product_id))
 			{
 				$transactionId = uniqid();
 				StockService::GetInstance()->ConsumeProduct($chore->product_id, $chore->product_amount, false, StockService::TRANSACTION_TYPE_CONSUME, 'default', null, null, $transactionId, true);
@@ -426,8 +442,22 @@ class ChoresService extends BaseService
 	 * column has neither failure mode: it names one specific transaction_id, or it is
 	 * NULL, decided once, when the execution's own consumption (if any) was booked.
 	 *
+	 * Issue #865 (maintainer decision, 2026-10-12): the reschedule date and assignee that
+	 * TrackChore() cleared are put back from chores_log.prior_rescheduled_date and
+	 * chores_log.prior_rescheduled_next_execution_assigned_to_user_id (migration 0311), in
+	 * this same transaction, as a pair or not at all. They are restored only if this row has
+	 * the highest id among the chore's non-undone executions (insertion order, not
+	 * tracked_time, which can be backdated), BOTH reschedule fields on the chore are empty
+	 * now, and the saved assignee still exists. A reschedule made after tracking therefore
+	 * wins, and a half-set chore is never completed from the saved values. Accepted
+	 * consequence: if a person rescheduled after tracking and then cleared it again, both
+	 * fields are empty and the undo brings back the pre-tracking reschedule, because it
+	 * undoes what tracking cleared. A row recorded before the migration has nothing saved
+	 * and restores nothing.
+	 *
 	 * A NULL stock_transaction_id - an execution that never consumed anything
-	 * (consume_product_on_execution was 0, or the chore named no product), one recorded
+	 * (consume_product_on_execution was 0, or the chore named no product, or it was a
+	 * skip, issue #856), one recorded
 	 * before this column existed, or one an import brought in from another database -
 	 * undoes the chore alone, exactly as before decision D1 (its "legacy executions"
 	 * case), rather than refusing.
@@ -493,6 +523,15 @@ class ChoresService extends BaseService
 				throw new \Exception('Execution does not exist or was already undone');
 			}
 
+			// Issue #865: lock the chore, then read the row again so a concurrent undo or
+			// track of the same chore is seen before the restore decision below.
+			$this->LockChore($logRow->chore_id);
+			$logRow = $this->DB->chores_log()->where('id = :1 AND undone = 0', $executionId)->fetch();
+			if ($logRow == null)
+			{
+				throw new \Exception('Execution does not exist or was already undone');
+			}
+
 			if (!empty($logRow->stock_transaction_id) && $this->HasLiveStockBooking($logRow->stock_transaction_id))
 			{
 				if (!User::HasPermissions(User::PERMISSION_STOCK_EDIT))
@@ -511,11 +550,43 @@ class ChoresService extends BaseService
 				$labelRevival = StockService::GetInstance()->UndoTransaction($logRow->stock_transaction_id);
 			}
 
+			// Issue #865: decided before this row is marked undone, because "most recent
+			// non-undone execution" must still include it.
+			$restoresReschedule = $this->IsMostRecentLiveExecution($logRow);
+
 			// Update log entry
 			$logRow->update([
 				'undone' => 1,
 				'undone_timestamp' => Instant::Now()
 			]);
+
+			// Issue #865 (maintainer decision, 2026-10-12): give back what tracking cleared, as
+			// a pair or not at all. Only when this is the chore's most recent live execution
+			// by insertion order (undoing an older one must not resurrect a reschedule a later
+			// execution already consumed), and only when both reschedule fields are empty now
+			// (anything set after tracking is newer and wins, and a half-set chore is not
+			// completed from saved values). If a person rescheduled after tracking and then
+			// cleared it, both fields are empty and the saved pair returns: undoing the
+			// tracking undoes what tracking cleared. A saved assignee who no longer exists
+			// restores nothing, and so does a row without saved values (recorded before
+			// migration 0311).
+			if ($restoresReschedule)
+			{
+				$chore = $this->DB->chores($logRow->chore_id);
+				$savedDate = $logRow->prior_rescheduled_date;
+				$savedAssignee = $logRow->prior_rescheduled_next_execution_assigned_to_user_id;
+				if ($chore !== null
+					&& (!empty($savedDate) || !empty($savedAssignee))
+					&& empty($chore->rescheduled_date)
+					&& empty($chore->rescheduled_next_execution_assigned_to_user_id)
+					&& (empty($savedAssignee) || $this->DB->users()->where('id = :1', $savedAssignee)->fetch() !== null))
+				{
+					$chore->update([
+						'rescheduled_date' => empty($savedDate) ? null : $savedDate,
+						'rescheduled_next_execution_assigned_to_user_id' => empty($savedAssignee) ? null : $savedAssignee
+					]);
+				}
+			}
 
 			$this->CalculateNextExecutionAssignment($logRow->chore_id);
 
@@ -523,6 +594,34 @@ class ChoresService extends BaseService
 			// this transaction so the caller reports them only once it has committed.
 			return $labelRevival;
 		});
+	}
+
+	/**
+	 * Whether $logRow is its chore's most recent execution that is not undone: the highest
+	 * id among the chore's live rows. Insertion order, not tracked_time, because TrackChore()
+	 * clears the reschedule in insertion order and tracked_time can be backdated. A skipped
+	 * execution counts, because it clears a reschedule like any other.
+	 *
+	 * @param \LessQL\Row $logRow A live (not undone) chores_log row
+	 * @return bool
+	 */
+	private function IsMostRecentLiveExecution($logRow): bool
+	{
+		$latestId = $this->DB->chores_log()->where('chore_id = :1 AND undone = 0', $logRow->chore_id)->max('id');
+
+		return (int)$latestId === (int)$logRow->id;
+	}
+
+	/**
+	 * Takes the row lock of a chore for the rest of the current transaction (issue #865), so
+	 * two tracks or undos of the same chore cannot both decide from the same reschedule.
+	 *
+	 * @param int $choreId
+	 */
+	private function LockChore($choreId): void
+	{
+		$statement = DatabaseService::GetInstance()->GetDbConnectionRaw()->prepare('SELECT id FROM chores WHERE id = ? FOR UPDATE');
+		$statement->execute([(int)$choreId]);
 	}
 
 	/**
