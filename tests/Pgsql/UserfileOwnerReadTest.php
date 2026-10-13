@@ -474,6 +474,182 @@ class UserfileOwnerReadTest extends PgsqlSchemaTestCase
 	}
 
 	// -------------------------------------------------------------------------------
+	// Derivative chains: a derivative is not a file in its own right
+	// -------------------------------------------------------------------------------
+
+	/** The validator's round-2 probe: a derivative of a referenced derivative of a battery file. */
+	#[DataProvider('backends')]
+	public function testADerivativeOfAReferencedDerivativeDoesNotBypassTheRoot(string $backend): void
+	{
+		$token = $this->fixtureFile($backend, 'x1.png', self::$png);
+		self::reference('batteries', (string)self::$batteryId, 'x1.png');
+		self::grant(['BATTERIES_VIEW']);
+		self::assertSame(200, self::serve($token, ['force_serve_as' => 'picture', 'best_fit_width' => '32'])['status'], 'the battery reader makes the thumbnail');
+		$d1 = self::derivativeNames($backend)[0];
+		self::reference('products', (string)self::$productId, $d1, 'file', 'attach_derivative');
+
+		// A caller who may read both makes the thumbnail of the thumbnail, as a page view would
+		self::grant(['STOCK_VIEW', 'BATTERIES_VIEW']);
+		self::assertSame(200, self::serve(base64_encode($d1), ['force_serve_as' => 'picture', 'best_fit_width' => '64'])['status']);
+
+		self::grant(['STOCK_VIEW']);
+		$this->assertRefused(self::serve(base64_encode($d1), ['force_serve_as' => 'picture', 'best_fit_width' => '64']), 'STOCK_VIEW asking for a thumbnail of the thumbnail');
+		foreach (self::derivativeNames($backend) as $name)
+		{
+			$this->assertRefused(self::serve(base64_encode($name)), "STOCK_VIEW asking for $name");
+		}
+		self::assertSame([], array_filter(self::derivativeNames($backend), fn ($name) => substr_count($name, '__downscaledto') > 1), 'and no derivative of a derivative exists');
+	}
+
+	#[DataProvider('backends')]
+	public function testEveryNameInADerivativeChainCanOnlyNarrow(string $backend): void
+	{
+		$root = 'x2.png';
+		$d1 = 'x2__downscaledtoautox32.png';
+		$d2 = 'x2__downscaledtoautox32__downscaledtoautox64.png';
+		$d3 = 'x2__downscaledtoautox32__downscaledtoautox64__downscaledto32x32.png';
+		foreach ([$root, $d1, $d2, $d3] as $name)
+		{
+			$this->fixtureFile($backend, $name, self::$png);
+		}
+		self::reference('batteries', (string)self::$batteryId, $root);
+		self::reference('products', (string)self::$productId, $d2, 'file', 'attach_derivative');
+
+		// D1 is above the product-referenced D2, so its chain does not include that value
+		self::grant(['STOCK_VIEW']);
+		$this->assertRefused(self::serve(base64_encode($d1)), 'D1: STOCK_VIEW');
+		self::grant(['BATTERIES_VIEW']);
+		self::assertSame(200, self::serve(base64_encode($d1))['status'], 'D1: the root\'s owner');
+
+		foreach ([$d3, $d2] as $requested)
+		{
+			self::grant(['STOCK_VIEW']);
+			$this->assertRefused(self::serve(base64_encode($requested)), "$requested: STOCK_VIEW");
+			self::grant(['BATTERIES_VIEW']);
+			$this->assertRefused(self::serve(base64_encode($requested)), "$requested: BATTERIES_VIEW");
+			self::grant(['STOCK_VIEW', 'BATTERIES_VIEW']);
+			self::assertSame(200, self::serve(base64_encode($requested))['status'], "$requested: both");
+		}
+	}
+
+	#[DataProvider('backends')]
+	public function testAutoAndMixedSizeChainsReduceToTheirRoot(string $backend): void
+	{
+		$chains = [
+			['y3.png', 'y3__downscaledtoautoxauto.png', 'y3__downscaledtoautoxauto__downscaledtoautoxauto.png'],
+			['w3.png', 'w3__downscaledtoautox64.png', 'w3__downscaledtoautox64__downscaledto32xauto.png']
+		];
+
+		foreach ($chains as [$root, $d1, $d2])
+		{
+			self::$db->exec('DELETE FROM userfield_values');
+			foreach ([$root, $d1, $d2] as $name)
+			{
+				$this->fixtureFile($backend, $name, self::$png);
+			}
+			self::reference('batteries', (string)self::$batteryId, $root);
+
+			self::grant(['STOCK_VIEW']);
+			$this->assertRefused(self::serve(base64_encode($d2)), "$d2: STOCK_VIEW");
+			self::grant(['BATTERIES_VIEW']);
+			self::assertSame(200, self::serve(base64_encode($d2))['status'], "$d2: the root's owner");
+		}
+	}
+
+	#[DataProvider('backends')]
+	public function testAValueWithADisplayNameForADerivativeDecidesLikeThePlainOne(string $backend): void
+	{
+		$root = 'x4.png';
+		$d2 = 'x4__downscaledtoautox32__downscaledtoautox64.png';
+		$this->fixtureFile($backend, $root, self::$png);
+		$this->fixtureFile($backend, $d2, self::$png);
+		self::reference('batteries', (string)self::$batteryId, $root);
+		self::reference('products', (string)self::$productId, null, 'file', 'attach_derivative', base64_encode($d2) . '_' . base64_encode('x__downscaledto32x32.png'));
+
+		self::grant(['STOCK_VIEW']);
+		$this->assertRefused(self::serve(base64_encode($d2)), 'STOCK_VIEW');
+		self::grant(['BATTERIES_VIEW']);
+		$this->assertRefused(self::serve(base64_encode($d2)), 'BATTERIES_VIEW alone');
+		self::grant(['STOCK_VIEW', 'BATTERIES_VIEW']);
+		self::assertSame(200, self::serve(base64_encode($d2))['status']);
+	}
+
+	#[DataProvider('backends')]
+	public function testAReferencedDerivativeNeedsTheRootsOwnersAsWell(string $backend): void
+	{
+		$root = 'x5.png';
+		$d1 = 'x5__downscaledtoautox32.png';
+		$d2 = 'x5__downscaledtoautox32__downscaledtoautox64.png';
+		foreach ([$root, $d1, $d2] as $name)
+		{
+			$this->fixtureFile($backend, $name, self::$png);
+		}
+		self::reference('batteries', (string)self::$batteryId, $root);
+		self::reference('products', (string)self::$productId, $d2, 'file', 'attach_derivative');
+
+		self::grant(['STOCK_VIEW']);
+		$this->assertRefused(self::serve(base64_encode($d2)), 'D2 on a product, root on a battery: STOCK_VIEW');
+		self::grant(['BATTERIES_VIEW']);
+		$this->assertRefused(self::serve(base64_encode($d2)), 'BATTERIES_VIEW alone');
+		self::grant(['STOCK_VIEW', 'BATTERIES_VIEW']);
+		self::assertSame(200, self::serve(base64_encode($d2))['status'], 'both');
+	}
+
+	#[DataProvider('backends')]
+	public function testAPictureRequestNamingADerivativeDerivesFromTheRoot(string $backend): void
+	{
+		$token = $this->fixtureFile($backend, 'x6.png', self::$png);
+		self::reference('products', (string)self::$productId, 'x6.png');
+		self::grant(['STOCK_VIEW']);
+		self::serve($token, ['force_serve_as' => 'picture', 'best_fit_width' => '32']);
+		$d1 = self::derivativeNames($backend)[0];
+
+		self::assertSame(200, self::serve(base64_encode($d1), ['force_serve_as' => 'picture', 'best_fit_width' => '64'])['status']);
+		foreach (self::durableNames($backend) as $name)
+		{
+			self::assertLessThanOrEqual(1, substr_count($name, '__downscaledto'), "$name has at most one derivative suffix");
+		}
+	}
+
+	#[DataProvider('backends')]
+	public function testAReferencedDerivativeOfAnUnreferencedRootIsAdminOnly(string $backend): void
+	{
+		$this->fixtureFile($backend, 'x7.png', self::$png);
+		$d1 = 'x7__downscaledtoautox32.png';
+		$this->fixtureFile($backend, $d1, self::$png);
+		self::reference('products', (string)self::$productId, $d1);
+
+		self::grant(['STOCK_VIEW']);
+		$this->assertRefused(self::serve(base64_encode($d1)), 'STOCK_VIEW');
+		self::grant(self::everyLeafButAdmin());
+		$this->assertRefused(self::serve(base64_encode($d1)), 'every leaf but ADMIN');
+		self::grant(['ADMIN']);
+		self::assertSame(200, self::serve(base64_encode($d1))['status']);
+	}
+
+	public function testDerivativeNamesRoundTripToTheirRoot(): void
+	{
+		foreach (['a.png', 'a.b.png', 'a_b.png', "a\nb.png", 'a__downscaledtob.png'] as $name)
+		{
+			foreach ([null, 32, 64, 250, 400, 800] as $height)
+			{
+				foreach ([null, 32, 800] as $width)
+				{
+					$derived = \Victual\Services\FilesService::DerivativeName($name, $height, $width);
+					self::assertSame($name, \Victual\Services\FilesService::RootOf($derived), "root of $derived");
+					self::assertSame([$derived, $name], \Victual\Services\FilesService::DerivativeChain($derived));
+				}
+			}
+		}
+
+		$d1 = \Victual\Services\FilesService::DerivativeName('a.png', null, 32);
+		$d2 = \Victual\Services\FilesService::DerivativeName($d1, 64, null);
+		$d3 = \Victual\Services\FilesService::DerivativeName($d2, 32, 32);
+		self::assertSame([$d3, $d2, $d1, 'a.png'], \Victual\Services\FilesService::DerivativeChain($d3));
+		self::assertSame(['plain.png'], \Victual\Services\FilesService::DerivativeChain('plain.png'));
+	}
+
+	// -------------------------------------------------------------------------------
 	// Reference forms
 	// -------------------------------------------------------------------------------
 

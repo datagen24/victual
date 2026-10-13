@@ -91,28 +91,34 @@ class UserfileOwnerPolicy
 
 	public static function MayRead(string $storedName): bool
 	{
-		// A cached picture derivative is read on the terms of its original: the owners of the
-		// original and of the derivative's own name all have to admit the caller, so a value
-		// that names a derivative can only narrow who may read it, never widen it
-		$names = [$storedName];
-		$original = self::OriginalOfDerivative($storedName);
-		if ($original !== null)
-		{
-			$names[] = $original;
-		}
+		// A derivative is not a file in its own right: every derivative suffix is stripped to the
+		// root original, the caller must be able to read the root, and a value naming any name in
+		// the chain can only narrow who may. Otherwise a value that names a thumbnail made for one
+		// caller would hand the original's bytes (resized) to whoever may read that value's record.
+		$chain = FilesService::DerivativeChain($storedName);
+		$references = self::ReferencesTo($chain);
 
-		$references = self::ReferencesTo($names);
-
-		if (count($references) === 0)
+		if (count($references[FilesService::RootOf($storedName)] ?? []) === 0)
 		{
+			// F1: the root is unreferenced, whatever references its derivatives have
 			return User::HasPermissions(User::PERMISSION_ADMIN);
 		}
 
-		foreach ($references as [$entity, $objectId])
+		$checked = [];
+		foreach ($references as $namedReferences)
 		{
-			if (!self::MayReadAsOwner($entity, $objectId))
+			foreach ($namedReferences as $key => [$entity, $objectId])
 			{
-				return false;
+				if (isset($checked[$key]))
+				{
+					continue;
+				}
+				$checked[$key] = true;
+
+				if (!self::MayReadAsOwner($entity, $objectId))
+				{
+					return false;
+				}
 			}
 		}
 
@@ -130,7 +136,9 @@ class UserfileOwnerPolicy
 	 * reference too. That is also why this cannot be narrowed in SQL: those encodings do
 	 * not share a prefix, and there is no index on the value.
 	 *
-	 * @return array<int, array{0: string, 1: string}>
+	 * @param string[] $storedNames The names to look for
+	 * @return array<string, array<string, array{0: ?string, 1: string}>> By name, then by
+	 * "entity NUL object id" (one key for every value with no definition row)
 	 */
 	private static function ReferencesTo(array $storedNames): array
 	{
@@ -143,28 +151,14 @@ class UserfileOwnerPolicy
 		$found = [];
 		while (($row = $statement->fetch(PDO::FETCH_NUM)) !== false)
 		{
-			if (in_array(base64_decode(explode('_', $row[2])[0]), $storedNames, true))
+			$name = base64_decode(explode('_', $row[2])[0]);
+			if (in_array($name, $storedNames, true))
 			{
-				$found[$row[0] === null ? "\0undefined" : $row[0] . "\0" . $row[1]] = [$row[0], $row[1]];
+				$found[$name][$row[0] === null ? "\0undefined" : $row[0] . "\0" . $row[1]] = [$row[0], $row[1]];
 			}
 		}
 
-		return array_values($found);
-	}
-
-	/**
-	 * The stored name of the original, when $storedName is a cached picture derivative
-	 * ("<name>__downscaledto<h>x<w>.<ext>", see FilesService::DownscaleImage), else null.
-	 */
-	private static function OriginalOfDerivative(string $storedName): ?string
-	{
-		$infix = preg_quote(FilesService::DOWNSCALED_INFIX, '/');
-		if (preg_match('/^(.+)' . $infix . '(?:\d+|auto)x(?:\d+|auto)\.([^.]+)$/s', $storedName, $match) !== 1)
-		{
-			return null;
-		}
-
-		return $match[1] . '.' . $match[2];
+		return $found;
 	}
 
 	private static function MayReadAsOwner(?string $entity, string $objectId): bool

@@ -551,7 +551,9 @@ class FilesApiController extends BaseApiController
 				$bestFitWidth = $this->ClampBestFitSize($queryParams['best_fit_width']);
 			}
 
-			return FilesService::GetInstance()->DownscaleImage($group, $fileName, $bestFitHeight, $bestFitWidth);
+			// Always from the root original: a request that names a derivative must not make a
+			// derivative of a derivative, whose name would carry two suffixes
+			return FilesService::GetInstance()->DownscaleImage($group, FilesService::RootOf($fileName), $bestFitHeight, $bestFitWidth);
 		}
 
 		return $fileName;
