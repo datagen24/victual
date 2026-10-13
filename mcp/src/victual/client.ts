@@ -99,25 +99,39 @@ export class VictualClient {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.MCP_REQUEST_TIMEOUT_MS);
 
-    let response: Response;
+    const write = (init.method ?? "GET") !== "GET";
     try {
-      response = await fetch(url, { ...init, signal: controller.signal });
-    } catch (cause) {
-      const category = init.method !== "GET" && !neverSent(cause) ? "outcome_unknown" : "victual_unavailable";
-      throw new VictualApiError(category, `could not reach Victual: ${String(cause)}`);
+      let response: Response;
+      try {
+        response = await fetch(url, { ...init, signal: controller.signal });
+      } catch (cause) {
+        const category = write && !neverSent(cause) ? "outcome_unknown" : "victual_unavailable";
+        throw new VictualApiError(category, `could not reach Victual: ${String(cause)}`);
+      }
+
+      if (!response.ok) {
+        throw new VictualApiError(
+          categorize(response.status, init.method ?? "GET"),
+          `Victual answered ${response.status} for ${path}`,
+          response.status,
+        );
+      }
+
+      // The timer keeps running through the body: a server that sends headers and then stalls,
+      // or cuts the body short, must not hang the call or surface as a raw TypeError. The
+      // headers said 2xx, so a write may well have been applied.
+      try {
+        const text = await response.text();
+        return (text === "" ? undefined : JSON.parse(text)) as T;
+      } catch (cause) {
+        throw new VictualApiError(
+          write ? "outcome_unknown" : "victual_unavailable",
+          `could not read Victual's ${response.status} answer for ${path}: ${String(cause)}`,
+          response.status,
+        );
+      }
     } finally {
       clearTimeout(timeout);
     }
-
-    if (!response.ok) {
-      throw new VictualApiError(
-        categorize(response.status, init.method ?? "GET"),
-        `Victual answered ${response.status} for ${path}`,
-        response.status,
-      );
-    }
-
-    const text = await response.text();
-    return (text === "" ? undefined : JSON.parse(text)) as T;
   }
 }

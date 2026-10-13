@@ -142,6 +142,51 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Issue 889: a label operation's 4xx must name its body's shape, not just have a schema. 19
+	 * operations declared their 422 as `{"type": "object"}`, which satisfies the check above and
+	 * tells a generated client nothing; every server 422 on those routes is a LabelRefusal.
+	 */
+	public function testNoLabelErrorResponseIsABareObject(): void
+	{
+		$bare = [];
+
+		foreach (self::Operations() as [$method, $path, $operation])
+		{
+			if (!str_starts_with($path, '/labels/'))
+			{
+				continue;
+			}
+
+			foreach ($operation['responses'] as $status => $response)
+			{
+				if (substr((string)$status, 0, 1) !== '4')
+				{
+					continue;
+				}
+
+				foreach (self::ResolveResponse($response)['content'] ?? [] as $media)
+				{
+					$schema = $media['schema'] ?? [];
+
+					// A $ref to a component is followed, so a reference to a bare-object
+					// component is caught as well as an inline one.
+					while (isset($schema['$ref']))
+					{
+						$schema = self::Spec()['components']['schemas'][substr($schema['$ref'], strlen('#/components/schemas/'))] ?? [];
+					}
+
+					if (!isset($schema['properties']) && !isset($schema['oneOf']) && !isset($schema['anyOf']) && !isset($schema['allOf']))
+					{
+						$bare[] = "$method $path $status";
+					}
+				}
+			}
+		}
+
+		self::assertSame([], $bare, count($bare) . " label error responses are a bare object:\n" . implode("\n", $bare));
+	}
+
 	public function testEveryComponentResponseIsUsed(): void
 	{
 		$document = file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json');
@@ -246,6 +291,37 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 
 		self::AssertBody($response, 'POST', '/labels/pair', 422, [
 			'field' => 'material', 'code' => 'value_out_of_range', 'error_message' => 'Expected 32 bytes as lowercase hexadecimal',
+		]);
+	}
+
+	/**
+	 * Issue 889: one runtime case per code path behind the 19 operations that now reference
+	 * LabelRefused - the Operate arm, the Dispatch arm and PreviewImage.
+	 */
+	public function testAPromotionWithoutAPrinterIsALabelRefusal(): void
+	{
+		$response = self::Send('POST', '/api/labels/artifacts/999999/promote', [], self::$adminKey);
+
+		self::AssertBody($response, 'POST', '/labels/artifacts/{artifactId}/promote', 422, [
+			'field' => 'printer_id', 'code' => 'value_out_of_range', 'error_message' => 'An integer printer_id is required',
+		]);
+	}
+
+	public function testAnAssetUploadWithoutBytesIsALabelRefusal(): void
+	{
+		$response = self::Send('POST', '/api/labels/assets', [], self::$adminKey);
+
+		self::AssertBody($response, 'POST', '/labels/assets', 422, [
+			'field' => 'content_base64', 'code' => 'invalid_value', 'error_message' => 'An asset upload carries its bytes',
+		]);
+	}
+
+	public function testAPreviewImageOfAnUnknownArtifactIsALabelRefusal(): void
+	{
+		$response = self::Send('GET', '/api/labels/artifacts/999999/image', null, self::$adminKey);
+
+		self::AssertBody($response, 'GET', '/labels/artifacts/{artifactId}/image', 422, [
+			'field' => 'artifact_id', 'code' => 'not_found', 'error_message' => 'No such artifact',
 		]);
 	}
 

@@ -538,6 +538,9 @@ class ContractTest extends PgsqlSchemaTestCase
 		self::invokeAdmin('POST /api/stock/shoppinglist/add-expired-products', fn() => $stock->AddExpiredProductsToShoppingList(self::request('POST', []), new Response(), []));
 		self::invokeAdmin('POST /api/stock/shoppinglist/remove-product', fn() => $stock->RemoveProductFromShoppingList(self::request('POST', ['product_id' => $productId, 'product_amount' => 1]), new Response(), []));
 		self::invokeAdmin('POST /api/stock/shoppinglist/clear', fn() => $stock->ClearShoppingList(self::request('POST', []), new Response(), []));
+		// One row stays on the list for the rest of the run: the generic sweep reads shopping_list and
+		// uihelper_shopping_list after this method, and an empty list records no row shape for them (issue #888).
+		self::invokeAdmin('POST /api/stock/shoppinglist/add-product (kept for the sweep)', fn() => $stock->AddProductToShoppingList(self::request('POST', ['product_id' => $productId, 'product_amount' => 2]), new Response(), []));
 
 		// Issue #772: a price change (the stock-edit-old/-new pair) and a measurement (the
 		// stock-measured-old/-new pair) on the due-soon product's single unit, so the ledger
