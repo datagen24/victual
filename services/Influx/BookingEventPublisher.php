@@ -458,7 +458,7 @@ class BookingEventPublisher
 				{
 					try
 					{
-						$rows[] = ['id' => $event['id'], 'lines' => self::BuildLines([$event['payload']])];
+						$rows[] = ['id' => $event['id'], 'attempts' => (int)($event['attempts'] ?? 0), 'lines' => self::BuildLines([$event['payload']])];
 					}
 					catch (\Throwable $ex)
 					{
@@ -523,7 +523,14 @@ class BookingEventPublisher
 
 				// InfluxDB refused the body. Whether that is the fault of a row or of every
 				// row alike cannot be told from this one answer, so find out below.
-				$state = ['delivered' => false, 'deliveredRows' => 0, 'rejected' => [], 'unresolved' => [], 'error' => null];
+				// What the endpoint said to the whole batch, kept for the log and for the
+				// reasons recorded below: the walk's own writes overwrite the writer's state.
+				$refusalStatus = $writer->GetLastStatus();
+				$refusalError = $writer->GetLastError() ?? 'no reason given';
+				$state = [
+					'delivered' => false, 'deliveredRows' => 0, 'rejected' => [], 'failed' => [], 'unresolved' => [],
+					'error' => null, 'untriedReason' => null, 'refusalStatus' => $refusalStatus
+				];
 
 				self::ResolveRefusedBatch($withLines, $writer, $outbox, $state);
 
@@ -548,16 +555,25 @@ class BookingEventPublisher
 					}
 				}
 
+				// Rows that met a failure that was not about them, and rows the walk never got to
+				if (count($state['failed']) > 0)
+				{
+					$outbox->RecordFailure($state['failed'], $state['error'] ?? 'the write was rejected');
+				}
+
 				if (count($state['unresolved']) > 0)
 				{
-					$outbox->RecordFailure($state['unresolved'], $state['error'] ?? 'the write was rejected');
+					$outbox->RecordFailure($state['unresolved'], $state['untriedReason'] ?? $state['error'] ?? 'the write was rejected');
 				}
 
 				// One line for the whole walk: its writes were not logged one by one
-				error_log('Victual: InfluxDB refused a batch of ' . count($withLines) . ' events (HTTP ' . $writer->GetLastStatus() . '): '
+				error_log('Victual: InfluxDB refused a batch of ' . count($withLines) . ' events (HTTP ' . $refusalStatus . ': ' . $refusalError . '): '
 					. $state['deliveredRows'] . ' delivered, '
-					. ($state['delivered'] ? count($state['rejected']) . ' set aside' : count($state['rejected']) . ' kept for retry') . ', '
-					. count($state['unresolved']) . ' not tried and kept for retry; last error: ' . ($writer->GetLastError() ?? 'none'));
+					. ($state['delivered'] ? count($state['rejected']) : 0) . ' set aside, '
+					. ($state['delivered'] ? 0 : count($state['rejected'])) . ' kept after refusal, '
+					. count($state['failed']) . ' kept after a retryable failure'
+					. ($state['error'] !== null && count($state['failed']) > 0 ? ' (' . $state['error'] . ')' : '') . ', '
+					. count($state['unresolved']) . ' not tried');
 
 				// Progress is a row delivered, or a row dead-lettered because one was
 				// delivered, which is the same condition. --drain stops on false.
@@ -592,7 +608,11 @@ class BookingEventPublisher
 	 *   delivered. If every sampled row is refused too, nothing has been shown about any row
 	 *   and the walk stops: nothing is dead-lettered and every row is recorded as failed and
 	 *   stays queued. That is at most 2 + ceil(log2(n)) writes per drain, counting the
-	 *   whole-batch write - 10 for 200 rows. What stays blocked is a batch in which the first
+	 *   whole-batch write - 10 for 200 rows - when no proof is found. Once a row is accepted
+	 *   the bisection of the rest costs about twice log2(n) writes per bad row left in it, so
+	 *   it grows with the number of bad rows. The sample positions are rotated by the first
+	 *   row's attempts, so a batch whose samples all happened to be bad is sampled differently
+	 *   by the next drain. What stays blocked is a batch in which the first
 	 *   row and every sampled row are all refused, which in practice is an endpoint-wide
 	 *   refusal.
 	 *
@@ -604,7 +624,7 @@ class BookingEventPublisher
 	 * A failure that is not row-level (a timeout, a 500, a 401) stops the walk wherever it
 	 * happens: rows resolved so far stay resolved and the rest go to $state['unresolved'].
 	 *
-	 * @param array<int, array{id: int, lines: string[]}> $rows One or more rows, every one with lines
+	 * @param array<int, array{id: int, attempts: int, lines: string[]}> $rows One or more rows, every one with lines
 	 * @param array{delivered: bool, deliveredRows: int, rejected: array<int, string>, unresolved: int[], error: string|null} $state
 	 */
 	private static function ResolveRefusedBatch(array $rows, InfluxEventWriter $writer, OutboxService $outbox, array &$state): void
@@ -639,14 +659,19 @@ class BookingEventPublisher
 
 		$state['rejected'][$first[0]['id']] = self::DescribeRejection($writer);
 
-		// Look for proof among the rest: ceil(log2(n)) single rows, evenly spaced across the batch
+		// Look for proof among the rest: ceil(log2(n)) single rows, evenly spaced across the
+		// batch. The positions are rotated by the first row's attempts: the claim is
+		// ORDER BY id LIMIT, so an unchanged batch comes back identical after a failed drain,
+		// and fixed positions would sample the same rows - all bad, say - for ever. Each failed
+		// drain advances the first row's attempts, so the next one samples different rows.
 		$count = count($rows);
 		$samples = (int)ceil(log($count, 2));
 		$positions = [];
 
 		for ($i = 1; $i <= $samples; $i++)
 		{
-			$positions[min($count - 1, intdiv($i * $count, $samples))] = true;
+			$base = min($count - 1, intdiv($i * $count, $samples));
+			$positions[1 + (($base - 1 + $first[0]['attempts']) % ($count - 1))] = true;
 		}
 
 		$refused = [];
@@ -691,6 +716,8 @@ class BookingEventPublisher
 		// Every sampled row was refused as well: stop, and keep everything
 		$state['rejected'] += $refused;
 		$state['error'] = self::DescribeRejection($writer);
+		$state['untriedReason'] = 'not tried: the batch was refused (HTTP ' . $state['refusalStatus']
+			. ') and no row was accepted to prove the endpoint takes Victual\'s lines';
 		array_push($state['unresolved'], ...array_column(array_filter($rest, function ($row) use ($refused)
 		{
 			return !array_key_exists($row['id'], $refused);
@@ -755,7 +782,8 @@ class BookingEventPublisher
 		}
 
 		$state['error'] = $writer->GetLastError() ?? 'the write was rejected';
-		array_push($state['unresolved'], ...array_column($rows, 'id'));
+		$state['untriedReason'] = $state['error'];
+		array_push($state['failed'], ...array_column($rows, 'id'));
 
 		return 'failed';
 	}
@@ -822,7 +850,8 @@ class BookingEventPublisher
 			elseif (!$writer->WasRowLevelRejection())
 			{
 				$state['error'] = $writer->GetLastError() ?? 'the write was rejected';
-				array_push($state['unresolved'], ...array_column($half, 'id'));
+				$state['untriedReason'] = $state['error'];
+				array_push($state['failed'], ...array_column($half, 'id'));
 			}
 			elseif (count($half) === 1)
 			{

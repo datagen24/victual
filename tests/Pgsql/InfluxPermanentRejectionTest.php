@@ -328,8 +328,24 @@ class InfluxPermanentRejectionTest extends PgsqlSchemaTestCase
 		self::assertFalse($result['delivered']);
 
 		$posts = substr_count((string)file_get_contents(self::$standinLog), '=== POST');
-		self::assertLessThanOrEqual((int)ceil(log(50, 2)) + 2, $posts, 'POSTs made for one drain of 50 refused rows');
-		self::assertSame(2 + (int)ceil(log(50, 2)), $posts, 'the whole batch, the first row alone, the rest in one write, then ceil(log2 n) sampled rows alone');
+		self::assertSame(2 + (int)ceil(log(50, 2)), $posts, 'the whole batch, the first row alone, then ceil(log2 n) sampled rows alone');
+
+		// 1 first row + 6 sampled rows were refused themselves; the other 43 were never tried
+		$untried = 0;
+
+		foreach ($ids as $id)
+		{
+			if (str_contains((string)$this->row($id)['last_error'], 'not tried'))
+			{
+				$untried++;
+			}
+			else
+			{
+				self::assertStringContainsString('HTTP 400', (string)$this->row($id)['last_error']);
+			}
+		}
+
+		self::assertSame(43, $untried, 'rows the walk never wrote say so rather than claiming a refusal');
 
 		foreach ($ids as $id)
 		{
@@ -436,10 +452,50 @@ class InfluxPermanentRejectionTest extends PgsqlSchemaTestCase
 		$result = self::Drain();
 
 		self::assertFalse($result['delivered']);
+		self::assertSame(3, substr_count((string)file_get_contents(self::$standinLog), '=== POST'),
+			'the whole batch, BADROW alone, then the first sample');
 
 		foreach ($rows as $id)
 		{
 			$this->assertRetryable($id, 'nothing was accepted before the abort');
+		}
+
+		self::assertStringContainsString('500', (string)$this->row($rows[2])['last_error'], 'the row never tried carries the failure that stopped the walk');
+	}
+
+	/**
+	 * [BAD, good, BAD, BAD]: the samples on the first drain are rows 2 and 3, both bad, so the
+	 * batch stays queued. Claimed again, it is the same batch - but the first row's attempts
+	 * moved the sample positions, which now reach the good row. Resolved on the second drain.
+	 */
+	public function testSamplePositionsRotateSoARepeatedBatchIsEventuallyResolved(): void
+	{
+		$bad1 = $this->queue('reject-BADROW-1');
+		$good = $this->queue('reject-good');
+		$bad2 = $this->queue('reject-BADROW-2');
+		$bad3 = $this->queue('reject-BADROW-3');
+
+		file_put_contents(self::$standinControl, 'lines:BADROW=400');
+
+		$result = self::Drain();
+
+		self::assertFalse($result['delivered'], 'drain 1 samples only bad rows');
+
+		foreach ([$bad1, $good, $bad2, $bad3] as $id)
+		{
+			$this->assertRetryable($id, 'after drain 1');
+		}
+
+		$result = self::Drain();
+
+		self::assertTrue($result['delivered'], 'drain 2 samples the good row');
+		self::assertNotNull($this->row($good)['delivered_at'], 'the good row is delivered on drain 2');
+		self::assertNull($this->row($good)['dead_lettered_at']);
+		self::assertSame(1, (int)$this->row($good)['attempts'], 'its only failed attempt was drain 1, when it was kept');
+
+		foreach ([$bad1, $bad2, $bad3] as $id)
+		{
+			self::assertNotNull($this->row($id)['dead_lettered_at'], 'dead-lettered on drain 2');
 		}
 	}
 
