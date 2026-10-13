@@ -5,10 +5,10 @@
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-13, against `master` at `33fbec60`. Design record only: it changes
   no code and reserves no migration number. The maintainer's decisions F1 to F5 and F3′ on
-  [issue 905](https://github.com/datagen24/victual/issues/905) are the source of every
-  decision item below.
+  [issue 905](https://github.com/datagen24/victual/issues/905), and the view-owner decision
+  of 2026-10-13 recorded in decision item 8, are the source of every decision item below.
 - **Referenced by:** [issue 905](https://github.com/datagen24/victual/issues/905),
-  [issue 920](https://github.com/datagen24/victual/issues/920), and the draft implementation
+  [issue 920](https://github.com/datagen24/victual/issues/920), and the implementation
   in [PR 919](https://github.com/datagen24/victual/pull/919).
 - **Relationship:** would partly supersede accepted
   [ADR-0035](0035-batteries-equipment-calendar-and-custom-entities-require-view-permissions.md):
@@ -45,7 +45,8 @@ derivative has its own stored name and no reference of its own.
 
 ## Decision (proposed)
 
-Each item quotes the maintainer's wording from issue 905, 2026-10-13.
+Each item quotes the maintainer's wording from issue 905, 2026-10-13. Item 8 quotes the
+maintainer's answer on PR 919, recorded in a comment on issue 905 the same day.
 
 ### 1. Every owning record must admit the caller
 
@@ -126,10 +127,30 @@ Source, F5: "Keep the read fix bounded and file owner-based write authorization 
 Check whether the existing write paths can bypass the new read rule." The maintainer
 recorded on 2026-10-13 that the deferral of F5 is not acceptance of this bypass.
 
+### 8. A view row is resolved by the view's key and admits what the view admits
+
+A userfile reference may name a row of one of the read-only views that
+`EntityReadPolicy` covers, because any exposed entity view can carry userfields. The owner
+is looked up in the view by the same key `GetObject` uses: `id` (the decision also names
+`stock_id` for `stock`, a table already keyed that way). The view's `EntityReadPolicy` permission decides whether the caller is admitted.
+
+A view row that no longer exists makes the reference unresolved. The file then follows the
+orphan rule in item 3 and is readable by ADMIN only. The `label_*` and `print_*` entities
+other than `label_printer_status` (looked up by `printer_id`) are not looked up, so they
+are unresolved too. All of them, `label_printer_status` included, have the
+`EntityReadPolicy` permission `ADMIN`, so the outcome is the same as their policy gives.
+
+Source, maintainer decision of 2026-10-13. It answers a question raised during review of PR 919.
+The answer is recorded in
+[a comment on issue 905](https://github.com/datagen24/victual/issues/905#issuecomment-6153663817):
+"**resolve via the view key** — look the owner up in the view by the same key GetObject
+uses (`id`; `stock_id` for `stock`) and apply the view's `EntityReadPolicy` permission. A
+view row that no longer exists makes the reference unresolved, so ADMIN only."
+
 ## Consequences
 
 **Compatibility.** A caller who could read a userfile before can now receive a 403. Items 1
-to 6 authorize this wire change, and it needs a line in the unreleased changelog. Upstream
+to 6 and 8 authorize this wire change, and it needs a line in the unreleased changelog. Upstream
 Grocy serves userfiles openly, so the fork diverges from it here and the parity suite is
 expected to report the difference.
 
@@ -142,9 +163,15 @@ base64 spellings cannot be prefiltered in SQL, so the scan runs in PHP. The vali
 PR 919 measured about 8.7 ms per request at 5,020 values and about 36 ms at 25,020 values
 (in-process, 20 cached thumbnails). No index is decided.
 
-**Owner types.** The implementation resolves owners from an explicit table of entities. A
-reference to an entity outside that table is unresolved, so the file is ADMIN only.
-`roles` resolves through its own read policy.
+**Owner types.** The implementation resolves owners from an explicit table of entities
+and, under item 8, twelve views. A reference to an entity outside both lists is
+unresolved, so the file is ADMIN only. `roles` resolves through its own read policy.
+
+**Degenerate view ids.** Seven of the twelve views do not expose a unique row id. Six
+select the constant `1 AS id`, `quantity_unit_conversions_resolved` selects -1 or 1, and
+`product_barcodes_view` combines barcode and product ids. For these views the check in
+PR 919 amounts to "the caller holds the view's permission and the view has a row with that
+id". It does not tie the reference to one underlying record.
 
 **Alternatives ruled out.** A blanket `MASTER_DATA_EDIT` or `ADMIN` gate on the whole group
 breaks pages that render images for `STOCK_VIEW` holders. Treating orphans as readable
@@ -155,18 +182,17 @@ because deleting them is a lesser right was rejected in F1.
 1. **Write authorization (issue 920).** The write rule that closes the bypass in decision
    item 7 is undecided. Until it lands, the disclosure issue 905 describes is only partly
    fixed.
-2. **Entities with a read policy but no owner lookup.** Draft PR 919 treats such an owner
-   as unresolved, so its files are ADMIN only. That is an implementation choice awaiting
-   review, not a maintainer decision. Denying everyone is the alternative.
-3. **Views that may carry userfields.** PR 919 makes files owned through these views ADMIN
-   only. Whether each view should instead admit the permission its page requires is a
-   maintainer decision.
-4. **An index on the owner lookup.** The measurements under Consequences give no threshold.
+2. **Entities with a read policy but no owner lookup.** With item 8 in place, only the
+   `label_*` and `print_*` entities other than `label_printer_status` are in this group.
+   PR 919 treats such an owner as unresolved, so its files are ADMIN only, which equals
+   their own `EntityReadPolicy` permission. This is an implementation fact, not a maintainer decision. Denying everyone
+   is the alternative.
+3. **An index on the owner lookup.** The measurements under Consequences give no threshold.
    Decide on an index only if a larger install shows the per-request scan matters.
 
 ## Implementation
 
-[PR 919](https://github.com/datagen24/victual/pull/919) (draft) implements items 1 to 6.
+[PR 919](https://github.com/datagen24/victual/pull/919) implements items 1 to 6 and 8.
 Implementing this record does not accept it. Acceptance is a separate pull request that
 changes only the status line, the index row, a forward pointer on ADR-0035 and this
 record's reference to it.
