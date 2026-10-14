@@ -28,8 +28,8 @@ goals.
 
 ## Current state
 
-**Latest release: [0.4.1](docs/releases/0.4.1.md), 2026-10-14**, tagged
-`v0.4.1`, with images on GHCR for amd64 and arm64 and a Helm chart
+**Latest release: [0.4.1-hotfix1](docs/releases/0.4.1-hotfix1.md), 2026-10-14**, tagged
+`v0.4.1-hotfix1`, with images on GHCR for amd64 and arm64 and a Helm chart
 (`oci://ghcr.io/datagen24/charts/victual`); the first release was
 [0.1.0-MVP](docs/releases/0.1.0-MVP.md) on 2026-09-19. The
 version line stays at 0.x while the release soaks in the household it was built for; 1.0
