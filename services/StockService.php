@@ -5087,12 +5087,13 @@ class StockService extends BaseService
 			}
 
 			// A child is aggregated into its parent through the child's own conversion to the parent's
-			// stock unit; the view reads 1.0 when there is none (04_views_l1a.sql :47-50). The removed
+			// stock unit. With none, stock_current (migration 0298) and the recipe cost and calorie views
+			// (migration 0300) count the child as nothing. The removed
 			// product's children are repointed to the kept product by the merge; the kept product's
 			// own children keep their parent. Rules (maintainer, #901): readable on both sides ->
 			// compare; readable before and not after, or not before and readable after -> refuse; none
-			// on either side -> allowed only when the merge's stock scale is 1 (CompareAmounts), since
-			// the view reads 1.0 on both sides.
+			// on either side -> allowed only when the merge's stock scale is 1 (CompareAmounts) and, for
+			// differing stock units, the kept product resolves a factor of 1 between them after the merge.
 			$childRows = $connection->query('SELECT id, qu_id_stock, parent_product_id FROM products WHERE parent_product_id IN (' . $productIdToRemove . ', ' . $productIdToKeep . ') AND id NOT IN (' . $productIdToRemove . ', ' . $productIdToKeep . ') ORDER BY id')->fetchAll(\PDO::FETCH_NUM);
 			foreach ($childRows as [$childId, $childStockUnit, $childParent])
 			{
@@ -5115,9 +5116,17 @@ class StockService extends BaseService
 			$removedBefore = $resolved($productIdToRemove, $removedStockUnit, array_keys($unitsByReading['removed'] ?? []));
 			$keptBefore = $resolved($productIdToKeep, $keptStockUnit, array_keys($unitsByReading['kept'] ?? []));
 
-			// Nothing to compare when no affected row and no sub product exists: skip the savepoint work.
+			// The removed product's stock rows are rescaled by $factor, but the kept product keeps (or
+			// gains) whatever conversion between the two stock units survives the dedupe-then-move below,
+			// so the unit pair itself is compared too: the kept product's resolved factor now and in the
+			// proposed merged state. Without it a merge with no affected row would move 3 pieces at the
+			// removed product's 1 while the kept product says a piece is 2 each (#901).
+			$stockUnitsDiffer = $removedStockUnit !== $keptStockUnit;
+			$keptPairBefore = $stockUnitsDiffer ? $resolved($productIdToKeep, $keptStockUnit, [$removedStockUnit])[$removedStockUnit] : [];
+
+			// Nothing to compare when no affected row, no sub product and no stock-unit pair exists: skip the savepoint work.
 			$keptAfter = [];
-			if ($checks !== [])
+			if ($checks !== [] || $stockUnitsDiffer)
 			{
 				DatabaseService::GetInstance()->ExecuteDbStatement('SAVEPOINT merge_products_conversion_check');
 				try
@@ -5128,7 +5137,7 @@ class StockService extends BaseService
 					DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE products SET parent_product_id = NULL WHERE id = ' . $productIdToKeep . ' AND parent_product_id = ' . $productIdToRemove);
 					DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE products SET parent_product_id = ' . $productIdToKeep . ' WHERE parent_product_id = ' . $productIdToRemove);
 
-					$keptAfter = $resolved($productIdToKeep, $keptStockUnit, array_keys(($unitsByReading['removed'] ?? []) + ($unitsByReading['kept'] ?? [])));
+					$keptAfter = $resolved($productIdToKeep, $keptStockUnit, array_keys(($unitsByReading['removed'] ?? []) + ($unitsByReading['kept'] ?? []) + [$removedStockUnit => true]));
 					foreach ($checks as $index => $check)
 					{
 						if ($check['child'])
@@ -5156,9 +5165,28 @@ class StockService extends BaseService
 			$list = fn(array $factors): string => $factors === [] ? 'none' : implode(', ', array_map($fmt, $factors));
 			$refusal = fn(string $text): \Exception => new \Exception('Cannot merge product ' . $productIdToRemove . ' into product ' . $productIdToKeep . ': ' . $text);
 
+			if ($stockUnitsDiffer)
+			{
+				// Maintainer decision M (#901): refuse conflicting conversion factors before any mutation,
+				// comparing the effective conversions (global fallbacks included). The factor the stock is
+				// rescaled by must equal the kept product's resolved factor for the same pair before the
+				// merge (when it has one) and in the merged state (where it must have one).
+				$keptPairAfter = $keptAfter[$removedStockUnit] ?? [];
+				$pairAgrees = $keptPairAfter !== [];
+				foreach (array_merge($keptPairBefore, $keptPairAfter) as $keptPairFactor)
+				{
+					$pairAgrees = $pairAgrees && $agree((float)$factor, $keptPairFactor, 1.0);
+				}
+
+				if (!$pairAgrees)
+				{
+					throw $refusal('stock unit ' . $removedStockUnit . ' of product ' . $productIdToRemove . ' converts to stock unit ' . $keptStockUnit . ' of product ' . $productIdToKeep . ' at ' . $fmt((float)$factor) . ', but product ' . $productIdToKeep . ' converts it at ' . $list(array_values(array_unique($keptPairBefore))) . ' before the merge and at ' . $list(array_values(array_unique($keptPairAfter))) . ' after it, so the moved stock would mean a different quantity');
+				}
+			}
+
 			foreach ($checks as $check)
 			{
-				$scale = $check['removed'] ? (float)$factor : 1.0;
+				$scale =$check['removed'] ? (float)$factor : 1.0;
 				if ($check['child'])
 				{
 					$before = $check['before'];
@@ -5180,17 +5208,39 @@ class StockService extends BaseService
 
 				if ($check['child'] && $before === [] && $after === [])
 				{
-					// Allowed only when the scale is 1 AND the relationship is unchanged: a factor near 1
-					// alone is not enough, since a child of the removed product would move from one
-					// parent stock unit to another (maintainer decision, #901).
+					// Allowed only when the scale is 1 under the tolerance (maintainer decisions, #901 and
+					// the ones on #921): a child with no conversion has the same (unconverted) contribution
+					// on both sides, so it is unaffected exactly when the parent's stock unit is the same
+					// unit relationship after the merge. That is the identical unit, or two units whose
+					// GOVERNING conversion is 1 both before and after: before, the removed product's
+					// resolved stock-unit pair ($conversion: its own row over a global one, in the
+					// removed -> kept direction); after, the kept product's resolved pair in the
+					// proposed merged state ($keptAfter: which rows survive the dedupe, the kept
+					// product's own row over a global one). A 1 on a row that does not govern - shadowed
+					// by precedence, deleted by the dedupe, or only in the inverse direction - does not
+					// count, and a missing conversion's fallback of 1 is never evidence of equivalence.
 					if (!$agree(1.0, 1.0, $scale))
 					{
-						throw $refusal($who . ' has no quantity unit conversion to its parent\'s stock unit before or after the merge, which counts it at 1, but the merge scales stock by ' . $fmt($scale) . ' so it would be counted differently');
+						throw $refusal($who . ' has no quantity unit conversion to its parent\'s stock unit before or after the merge, but the merge scales stock by ' . $fmt($scale) . ' so it would be counted differently');
 					}
 
 					if ($check['removed'] && $removedStockUnit !== $keptStockUnit)
 					{
-						throw $refusal($who . ' has no quantity unit conversion to its parent\'s stock unit before or after the merge, and the merge would move it from stock unit ' . $removedStockUnit . ' of product ' . $productIdToRemove . ' to stock unit ' . $keptStockUnit . ' of product ' . $productIdToKeep);
+						// Evaluated against the proposed merged state: the kept product's own conversion
+						// between the two stock units can override the removed product's or a global one
+						// (the dedupe above drops the removed product's row for the same unit pair), so
+						// the factor 1 that passed the scale check may not be what the kept product says.
+						$keptFactors = $keptAfter[$removedStockUnit] ?? [];
+						$joined = $keptFactors !== [];
+						foreach ($keptFactors as $keptFactor)
+						{
+							$joined = $joined && $agree(1.0, $keptFactor, 1.0);
+						}
+
+						if (!$joined)
+						{
+							throw $refusal($who . ' has no quantity unit conversion to its parent\'s stock unit before or after the merge, and the stock units are not shown to be the same unit: stock unit ' . $removedStockUnit . ' of product ' . $productIdToRemove . ' converts to stock unit ' . $keptStockUnit . ' of product ' . $productIdToKeep . ' at ' . $fmt((float)$factor) . ' before the merge and at ' . $list($keptFactors) . ' after it');
+						}
 					}
 
 					continue;
