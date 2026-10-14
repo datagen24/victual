@@ -161,7 +161,7 @@ spec:
                 path: renderer-key
       containers:
         - name: renderer
-          image: localhost/victual-label-renderer:0.4.0
+          image: localhost/victual-label-renderer:0.4.1
           imagePullPolicy: Never
           args:
             - "--api"
@@ -242,7 +242,7 @@ spec:
                 path: worker-key
       containers:
         - name: worker
-          image: localhost/victual-label-worker:0.4.0
+          image: localhost/victual-label-worker:0.4.1
           imagePullPolicy: Never
           args:
             - "--api"

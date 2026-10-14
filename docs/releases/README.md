@@ -11,8 +11,18 @@ tags the flake produces, the Helm chart's `version` and `appVersion`, and the ve
 `GET /api/system/info` reports are the same string, read from `version.json`; `nix flake
 check` refuses a mismatch in the images and `.devtools/ci/test_helm_chart.py` in the
 chart ([ADR-0038](../adr/0038-kubernetes-deployments-ship-as-a-helm-chart.md) decision 4).
-A version bump therefore edits `version.json` and `deploy/helm/victual/Chart.yaml`
-together, both keys.
+The string is also copied into the OpenAPI document, `phpdoc.dist.xml`, the podman and
+Compose image tags and the README, so a bump is one command, not a list of edits:
+
+```bash
+python3 .devtools/ci/release_version.py <version>
+```
+
+It writes every copy, re-renders `deploy/k3s/`, adds the row to the table below, and
+drafts `<version>.md` from the pull requests merged since the previous tag. The draft is a
+list, not a record: the `lint` job's `release_version.py --check` fails until its comment
+is deleted. Write the effect of each change and the checks that ran, delete the comment,
+and commit the result as the release pull request.
 
 ## Placing a tag
 
@@ -46,6 +56,7 @@ These records are not published on the documentation site
 
 | Version | Date | Record |
 |---|---|---|
+| 0.4.1 | 2026-10-14 | [0.4.1.md](0.4.1.md) |
 | 0.4.0 | 2026-10-10 | [0.4.0.md](0.4.0.md) |
 | 0.3.2 | 2026-10-08 | [0.3.2.md](0.3.2.md) |
 | 0.3.1 | 2026-10-08 | [0.3.1.md](0.3.1.md) |

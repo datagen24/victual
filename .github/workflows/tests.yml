@@ -94,6 +94,13 @@ jobs:
       - name: Check deploy/k3s is the chart's rendering
         run: python3 .devtools/ci/render_k3s.py --check
 
+      # ADR-0038 decision 4: one version. release.yml refuses a tag that disagrees with
+      # version.json, but only once the tag is pushed; this refuses a copy that disagrees
+      # (Chart.yaml, the OpenAPI info.version, the podman and Compose image tags, ...), a
+      # missing release record, and one still in its generated draft, on the pull request.
+      - name: Check every copy of the release version agrees
+        run: python3 .devtools/ci/release_version.py --check
+
       # There is no configured linter in this repository, so this is a syntax sweep
       # rather than a style check. It is cheap and it catches the parse error that
       # would otherwise fail every job below with a much less obvious message.

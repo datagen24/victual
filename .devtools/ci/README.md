@@ -97,6 +97,30 @@ python3 .devtools/ci/render_k3s.py           # after editing the chart
 python3 .devtools/ci/render_k3s.py --check
 ```
 
+## One release version
+
+`version.json`'s `Version` is the release version
+([ADR-0038](../../docs/adr/0038-kubernetes-deployments-ship-as-a-helm-chart.md) decision 4),
+and other files spell it out because what reads them cannot read `version.json`:
+`Chart.yaml`'s `version` and `appVersion`, `victual.openapi.json`'s `info.version`,
+`phpdoc.dist.xml`, the `localhost/victual-*` image tags in `deploy/podman/` and
+`deploy/compose/`, the parity README's image table, and the root README's latest-release
+line. `release_version.py` writes all of them, re-renders `deploy/k3s/`, adds the row to
+`docs/releases/README.md`, and drafts `docs/releases/<version>.md` from the pull requests
+merged since the previous version's tag.
+
+The `lint` job runs it with `--check`, which names each copy that disagrees with
+`version.json`, a version with no record or no index row, and a record that still carries
+the draft comment. `release.yml` makes the same refusals at the tag; this makes them on the
+pull request, before a tag can be placed on a commit that would fail. A new copy of the
+version goes into `COPIES` in the script; `test_release_version.py` fails if a pattern
+there stops matching its file.
+
+```sh
+python3 .devtools/ci/release_version.py 0.4.1    # bump, dated today; --date to override
+python3 .devtools/ci/release_version.py --check
+```
+
 ## Vendor paths in tests
 
 The `lint` job runs `check_vendor_paths.py` over every `.php` file under `tests/` and
