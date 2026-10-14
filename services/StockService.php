@@ -5116,9 +5116,17 @@ class StockService extends BaseService
 			$removedBefore = $resolved($productIdToRemove, $removedStockUnit, array_keys($unitsByReading['removed'] ?? []));
 			$keptBefore = $resolved($productIdToKeep, $keptStockUnit, array_keys($unitsByReading['kept'] ?? []));
 
-			// Nothing to compare when no affected row and no sub product exists: skip the savepoint work.
+			// The removed product's stock rows are rescaled by $factor, but the kept product keeps (or
+			// gains) whatever conversion between the two stock units survives the dedupe-then-move below,
+			// so the unit pair itself is compared too: the kept product's resolved factor now and in the
+			// proposed merged state. Without it a merge with no affected row would move 3 pieces at the
+			// removed product's 1 while the kept product says a piece is 2 each (#901).
+			$stockUnitsDiffer = $removedStockUnit !== $keptStockUnit;
+			$keptPairBefore = $stockUnitsDiffer ? $resolved($productIdToKeep, $keptStockUnit, [$removedStockUnit])[$removedStockUnit] : [];
+
+			// Nothing to compare when no affected row, no sub product and no stock-unit pair exists: skip the savepoint work.
 			$keptAfter = [];
-			if ($checks !== [])
+			if ($checks !== [] || $stockUnitsDiffer)
 			{
 				DatabaseService::GetInstance()->ExecuteDbStatement('SAVEPOINT merge_products_conversion_check');
 				try
@@ -5157,9 +5165,28 @@ class StockService extends BaseService
 			$list = fn(array $factors): string => $factors === [] ? 'none' : implode(', ', array_map($fmt, $factors));
 			$refusal = fn(string $text): \Exception => new \Exception('Cannot merge product ' . $productIdToRemove . ' into product ' . $productIdToKeep . ': ' . $text);
 
+			if ($stockUnitsDiffer)
+			{
+				// Maintainer decision M (#901): refuse conflicting conversion factors before any mutation,
+				// comparing the effective conversions (global fallbacks included). The factor the stock is
+				// rescaled by must equal the kept product's resolved factor for the same pair before the
+				// merge (when it has one) and in the merged state (where it must have one).
+				$keptPairAfter = $keptAfter[$removedStockUnit] ?? [];
+				$pairAgrees = $keptPairAfter !== [];
+				foreach (array_merge($keptPairBefore, $keptPairAfter) as $keptPairFactor)
+				{
+					$pairAgrees = $pairAgrees && $agree((float)$factor, $keptPairFactor, 1.0);
+				}
+
+				if (!$pairAgrees)
+				{
+					throw $refusal('stock unit ' . $removedStockUnit . ' of product ' . $productIdToRemove . ' converts to stock unit ' . $keptStockUnit . ' of product ' . $productIdToKeep . ' at ' . $fmt((float)$factor) . ', but product ' . $productIdToKeep . ' converts it at ' . $list(array_values(array_unique($keptPairBefore))) . ' before the merge and at ' . $list(array_values(array_unique($keptPairAfter))) . ' after it, so the moved stock would mean a different quantity');
+				}
+			}
+
 			foreach ($checks as $check)
 			{
-				$scale = $check['removed'] ? (float)$factor : 1.0;
+				$scale =$check['removed'] ? (float)$factor : 1.0;
 				if ($check['child'])
 				{
 					$before = $check['before'];
