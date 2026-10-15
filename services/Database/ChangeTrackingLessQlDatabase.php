@@ -57,6 +57,12 @@ class ChangeTrackingLessQlDatabase extends Database
 	/** @var (callable(): void)|null */
 	private $onWriteSucceeded = null;
 
+	/** LessQL casts formatted insert values and quotes update values before PDO sees them. */
+	public function format($value)
+	{
+		return is_float($value) ? RoundTripFloat::Format($value) : parent::format($value);
+	}
+
 	/**
 	 * Registers work to run once, immediately after the insert()/update()/delete() call
 	 * currently in progress returns without throwing. Overwrites whatever was registered

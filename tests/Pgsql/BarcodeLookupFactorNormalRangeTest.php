@@ -6,6 +6,7 @@ use PDO;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Depends;
 use Victual\Services\ApiKeyService;
+use Victual\Services\DatabaseService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
 /**
@@ -87,6 +88,7 @@ class BarcodeLookupFactorNormalRangeTest extends PgsqlSchemaTestCase
 
 		$cases = [
 			['PHP_FLOAT_MIN', $min, true, 'ok'],
+			['next double above PHP_FLOAT_MIN', self::neighbour($min, 1), true, 'ok'],
 			['next double below PHP_FLOAT_MIN (subnormal)', self::neighbour($min, -1), false, 'ok'],
 			['smallest subnormal (5e-324)', self::fromBits(1), false, 'overflow'],
 			['1 / PHP_FLOAT_MIN', $invMin, true, 'ok'],
@@ -105,6 +107,12 @@ class BarcodeLookupFactorNormalRangeTest extends PgsqlSchemaTestCase
 		}
 
 		return $provider;
+	}
+
+	/** @return array<string, array{0: int, 1: bool, 2: string, 3: string}> */
+	public static function acceptedBoundaryProvider(): array
+	{
+		return array_filter(self::boundaryProvider(), static fn(array $case) => $case[1]);
 	}
 
 	public function testPhpAndTheFixtureAgreeOnWhatIsNormal(): void
@@ -159,15 +167,15 @@ class BarcodeLookupFactorNormalRangeTest extends PgsqlSchemaTestCase
 	}
 
 	/** A user plugin returning a valid product whose factor is the double with the given bits. */
-	private static function writePlugin(string $class, int $factorBits): string
+	private static function writePlugin(string $class, int $factorBits, ?int $quPurchase = null, ?int $quStock = null): string
 	{
 		$pluginDirectory = getenv('VICTUAL_DATAPATH') . '/plugins';
 		$pluginFile = $pluginDirectory . '/' . $class . '.php';
 		@mkdir($pluginDirectory, 0777, true);
 
 		$locationId = self::$locationId;
-		$quPurchase = self::$quPurchase;
-		$quStock = self::$quStock;
+		$quPurchase ??= self::$quPurchase;
+		$quStock ??= self::$quStock;
 
 		file_put_contents($pluginFile, <<<PLUGIN
 <?php
@@ -223,6 +231,9 @@ PLUGIN);
 		try
 		{
 			$before = self::rowCounts();
+			$global = self::$db->prepare('SELECT COUNT(*) FROM quantity_unit_conversions WHERE product_id IS NULL AND from_qu_id = ? AND to_qu_id = ?');
+			$global->execute([self::$quPurchase, self::$quStock]);
+			self::assertSame(0, (int)$global->fetchColumn(), 'without a global conversion, the product trigger creates the row lookup updates');
 
 			$response = self::send('/api/stock/barcodes/external-lookup/' . $barcode . '?add=true', $class);
 
@@ -246,23 +257,110 @@ PLUGIN);
 			$productId = (int)$product->fetchColumn();
 			self::assertGreaterThan(0, $productId, 'the product row was written');
 
-			$conversion = self::$db->prepare('SELECT factor FROM quantity_unit_conversions WHERE product_id = ? AND from_qu_id = ? AND to_qu_id = ?');
+			$conversion = self::$db->prepare('SELECT id, factor FROM quantity_unit_conversions WHERE product_id = ? AND from_qu_id = ? AND to_qu_id = ?');
 
 			$conversion->execute([$productId, self::$quPurchase, self::$quStock]);
-			$stored = $conversion->fetchAll(PDO::FETCH_COLUMN);
+			$stored = $conversion->fetchAll(PDO::FETCH_ASSOC);
 			self::assertCount(1, $stored, 'one purchase -> stock conversion');
-			self::assertGreaterThan(0.0, (float)$stored[0]);
+			self::assertSame($factor, (float)$stored[0]['factor'], 'the validated PHP float survives the lookup update exactly');
+			self::assertTrue(is_finite((float)$stored[0]['factor']));
+			self::assertGreaterThanOrEqual(PHP_FLOAT_MIN, (float)$stored[0]['factor'], 'the stored factor remains normal');
 
 			$conversion->execute([$productId, self::$quStock, self::$quPurchase]);
-			$inverse = $conversion->fetchAll(PDO::FETCH_COLUMN);
+			$inverse = $conversion->fetchAll(PDO::FETCH_ASSOC);
 			self::assertCount(1, $inverse, 'and the trigger wrote one inverse row without error');
-			self::assertGreaterThan(0.0, (float)$inverse[0], 'the inverse is positive');
-			self::assertLessThan(INF, (float)$inverse[0], 'and finite');
+			self::assertSame(1.0 / $factor, (float)$inverse[0]['factor'], 'the trigger used the exact stored factor');
+			self::assertTrue(is_finite((float)$inverse[0]['factor']));
+			self::assertGreaterThanOrEqual(PHP_FLOAT_MIN, (float)$inverse[0]['factor'], 'the stored inverse remains normal');
+
+			// The generic API exposes these persisted fields. Keep the JSON numbers and
+			// assert the low bits it emits for a representative boundary value.
+			if ($factor === PHP_FLOAT_MIN)
+			{
+				foreach ([[$stored[0], $factor], [$inverse[0], 1.0 / $factor]] as [$row, $expected])
+				{
+					$api = self::send('/api/objects/quantity_unit_conversions/' . $row['id'], $class);
+					self::assertSame(200, $api['status'], $api['body']);
+					$body = json_decode($api['body'], true);
+					self::assertIsFloat($body['factor']);
+					self::assertSame($expected, $body['factor']);
+				}
+			}
 		}
 		finally
 		{
 			@unlink($pluginFile);
 		}
+	}
+
+	/** A global conversion suppresses the product trigger's default, so lookup inserts its own row. */
+	#[DataProvider('acceptedBoundaryProvider')]
+	public function testLookupInsertKeepsAcceptedBoundaryFloatsExact(int $factorBits, bool $accepted, string $pgOutcome, string $barcode): void
+	{
+		$factor = self::fromBits($factorBits);
+		$barcode = '5' . $barcode;
+		$units = [];
+		foreach (['purchase', 'stock'] as $side)
+		{
+			$insert = self::$db->prepare('INSERT INTO quantity_units (name, name_plural) VALUES (?, ?) RETURNING id');
+			$name = "FactorInsert $side $barcode";
+			$insert->execute([$name, $name . 's']);
+			$units[$side] = (int)$insert->fetchColumn();
+		}
+
+		self::$db->prepare('INSERT INTO quantity_unit_conversions (from_qu_id, to_qu_id, factor) VALUES (?, ?, 1)')
+			->execute([$units['purchase'], $units['stock']]);
+
+		$class = 'FactorNormalLookupPlugin' . $barcode;
+		$pluginFile = self::writePlugin($class, $factorBits, $units['purchase'], $units['stock']);
+		try
+		{
+			$response = self::send('/api/stock/barcodes/external-lookup/' . $barcode . '?add=true', $class);
+			self::assertSame(200, $response['status'], $response['body']);
+
+			$product = self::$db->prepare('SELECT id FROM products WHERE name = ?');
+			$product->execute(['FactorNormal Product ' . $barcode]);
+			$productId = (int)$product->fetchColumn();
+			self::assertGreaterThan(0, $productId);
+
+			$read = self::$db->prepare('SELECT factor FROM quantity_unit_conversions WHERE product_id = ? AND from_qu_id = ? AND to_qu_id = ?');
+			$read->execute([$productId, $units['purchase'], $units['stock']]);
+			self::assertSame($factor, (float)$read->fetchColumn(), 'lookup inserted the exact validated float');
+			$read->execute([$productId, $units['stock'], $units['purchase']]);
+			$inverse = (float)$read->fetchColumn();
+			self::assertSame(1.0 / $factor, $inverse, 'the trigger used the exact inserted factor');
+			self::assertTrue(is_finite($inverse));
+			self::assertGreaterThanOrEqual(PHP_FLOAT_MIN, $inverse);
+		}
+		finally
+		{
+			@unlink($pluginFile);
+		}
+	}
+
+	public function testSharedStatementPreservesDirectPdoFloatAndOtherParameterValues(): void
+	{
+		$pdo = DatabaseService::GetInstance()->GetDbConnectionRaw();
+		$pdo->exec('CREATE TEMP TABLE factor_binding_probe (id integer, factor double precision, integer_value integer, text_value text, boolean_value boolean, null_value text)');
+
+		$factor = self::neighbour(PHP_FLOAT_MIN, 1);
+		$insert = $pdo->prepare('INSERT INTO factor_binding_probe VALUES (?, ?, ?, ?, ?, ?)');
+		$insert->execute([1, $factor, 42, '001', true, null]);
+		DatabaseService::GetInstance()->ExecuteDbStatement(
+			'INSERT INTO factor_binding_probe VALUES (?, ?, ?, ?, ?, ?)',
+			[2, $factor, 42, '001', true, null]
+		);
+
+		$rows = $pdo->query('SELECT * FROM factor_binding_probe ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
+		self::assertCount(2, $rows);
+		foreach ($rows as $row)
+		{
+			self::assertSame($factor, (float)$row['factor']);
+			self::assertSame(42, (int)$row['integer_value']);
+			self::assertSame('001', $row['text_value']);
+			self::assertNull($row['null_value']);
+		}
+		self::assertSame(2, (int)$pdo->query('SELECT COUNT(*) FROM factor_binding_probe WHERE boolean_value IS TRUE')->fetchColumn());
 	}
 
 	/**
