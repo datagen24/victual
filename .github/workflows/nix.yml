@@ -149,11 +149,13 @@ jobs:
           docker run -d --name victual-db \
             -e POSTGRES_USER=victual -e POSTGRES_PASSWORD=victual -e POSTGRES_DB=victual \
             -p 5432:5432 postgres:16
+          # The initialization server listens only on a Unix socket and then stops.
+          # Wait for the final TCP listener, not that temporary server.
           for _ in $(seq 1 60); do
-            if docker exec victual-db pg_isready -U victual >/dev/null 2>&1; then break; fi
+            if docker exec victual-db pg_isready -h 127.0.0.1 -U victual -d victual >/dev/null 2>&1; then break; fi
             sleep 1
           done
-          docker exec victual-db pg_isready -U victual
+          docker exec victual-db pg_isready -h 127.0.0.1 -U victual -d victual
 
       # The credential split, exactly as an operator applies it (plan 20 verification 8): the
       # `victual` superuser above exists only to bootstrap the database, and nothing below

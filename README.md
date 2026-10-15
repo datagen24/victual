@@ -28,13 +28,18 @@ goals.
 
 ## Current state
 
-**Latest release: [0.4.1-hotfix1](docs/releases/0.4.1-hotfix1.md), 2026-10-14**, tagged
-`v0.4.1-hotfix1`, with images on GHCR for amd64 and arm64 and a Helm chart
-(`oci://ghcr.io/datagen24/charts/victual`); the first release was
-[0.1.0-MVP](docs/releases/0.1.0-MVP.md) on 2026-09-19. The
+**Current version: [0.4.2](docs/releases/0.4.2.md), 2026-10-15**; release tag
+`v0.4.2` is planned. This is an unpublished candidate. Use the last published release,
+[0.4.1-hotfix1](docs/releases/0.4.1-hotfix1.md), for deployment until the candidate's
+signed tag and GHCR artifacts are available.
+
+Images and the Helm chart are published
+by the tag-triggered release workflow; changing the version here does not publish them.
+
+The first release was [0.1.0-MVP](docs/releases/0.1.0-MVP.md) on 2026-09-19. The
 version line stays at 0.x while the release soaks in the household it was built for; 1.0
 follows that, not a date. There is no release schedule, and a tag is placed only on a commit
-that was verified working. As of the release:
+that was verified working. The recorded deployment evidence is:
 
 - The Nix-built application serves under podman and on a kind cluster.
 - A location label has been printed and scanned back through the fork's own label subsystem.

@@ -51,8 +51,8 @@ COPIES = [
     ("deploy/compose/*.yml", LOCAL_IMAGE),
     (".devtools/parity/README.md", LOCAL_IMAGE),
     ("README.md",
-     r"\*\*Latest release: \[(?P<v1>[^\]]+)\]\(docs/releases/(?P<v2>[^)]+)\.md\), "
-     r"(?P<d1>\d{4}-\d{2}-\d{2})\*\*, tagged\n`v(?P<v3>[^`]+)`"),
+     r"\*\*Current version: \[(?P<v1>[^\]]+)\]\(docs/releases/(?P<v2>[^)]+)\.md\), "
+     r"(?P<d1>\d{4}-\d{2}-\d{2})\*\*; release tag\n`v(?P<v3>[^`]+)`"),
 ]
 
 
