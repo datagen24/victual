@@ -27,6 +27,9 @@ define('VICTUAL_ROOT_PATH', getenv('VICTUAL_ROOT') ?: dirname(__DIR__, 2));
 require_once VICTUAL_ROOT_PATH . '/packages/autoload.php';
 
 use Victual\Services\Database\DatabaseImporter;
+use Victual\Services\Database\PostgresDialect;
+use Victual\Services\Database\RoundTripFloat;
+use Victual\Services\Database\ValueComparison;
 
 const FIXTURE_DIR = __DIR__ . '/fixtures/import';
 
@@ -180,6 +183,33 @@ function Target(string $dbName): \PDO
 function Scalar(\PDO $pdo, string $sql)
 {
 	return $pdo->query($sql)->fetchColumn();
+}
+
+/** All target rows, identity counters and trigger states, including target-only tables. */
+function TargetState(\PDO $pdo): array
+{
+	$state = [];
+	$tables = $pdo->query("SELECT table_name FROM information_schema.tables
+		WHERE table_schema = current_schema() AND table_type = 'BASE TABLE' ORDER BY table_name")->fetchAll(\PDO::FETCH_COLUMN);
+	foreach ($tables as $table)
+	{
+		$rows = $pdo->query('SELECT row_to_json(t)::text FROM "' . $table . '" t')->fetchAll(\PDO::FETCH_COLUMN);
+		sort($rows);
+		$state[$table] = $rows;
+	}
+	$sequences = $pdo->query('SELECT sequencename FROM pg_sequences
+		WHERE schemaname = current_schema() ORDER BY sequencename')->fetchAll(\PDO::FETCH_COLUMN);
+	foreach ($sequences as $sequence)
+	{
+		$state['identity sequences'][$sequence] = $pdo->query('SELECT last_value, is_called FROM "' . $sequence . '"')->fetch(\PDO::FETCH_ASSOC);
+	}
+	$state['trigger states'] = $pdo->query("SELECT c.relname, t.tgname, t.tgenabled
+		FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = current_schema() AND NOT t.tgisinternal
+		ORDER BY c.relname, t.tgname")->fetchAll(\PDO::FETCH_ASSOC);
+
+	return $state;
 }
 
 function RemoveTree(string $path): void
@@ -636,6 +666,123 @@ if ($code === 0)
 }
 
 unlink($residueSource);
+
+// --- Finite REAL precision and a value-verification rollback --------------------------
+echo PHP_EOL . 'H. Finite REAL values and verification rollback' . PHP_EOL;
+
+$precisionSource = $scratch . '/precision.db';
+copy($fixture, $precisionSource);
+$source = new \PDO('sqlite:' . $precisionSource);
+$source->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+$source->setAttribute(\PDO::ATTR_ORACLE_NULLS, \PDO::NULL_NATURAL);
+$values = [3 => PHP_FLOAT_MAX, 4 => 9223372036854775808.0, 5 => 0.12345678901234566];
+foreach ($values as $id => $value)
+{
+	// SQL literals preserve the intended binary64 source before the importer reads it.
+	$source->exec('UPDATE products SET calories = ' . RoundTripFloat::Format($value) . ' WHERE id = ' . $id);
+	$stored = Scalar($source, 'SELECT calories FROM products WHERE id = ' . $id);
+	Check('SQLite REAL ' . $id . ' holds the source value', is_float($stored) && $stored === $value,
+		RoundTripFloat::Format($value), (string)$stored);
+}
+
+$target = Target($dbName); // Plain PDO: exercise the importer's own float binding.
+$target->exec("INSERT INTO login_attempts (username) VALUES ('precision-rollback')");
+$target->exec("INSERT INTO outbox (event_type, payload) VALUES ('precision-rollback', '{}')");
+$before = TargetState($target);
+$beforeEpoch = (int)Scalar($target, 'SELECT epoch FROM label_import_state WHERE id = 1');
+$replacementObserved = false;
+$source->beginTransaction(); // Import must leave a caller-owned source snapshot open.
+$importer = new DatabaseImporter($source, $target, new PostgresDialect(),
+	function (string $message) use ($target, $source, &$replacementObserved, $beforeEpoch): void
+	{
+		if (!str_contains($message, 'outbox: deleted'))
+		{
+			return;
+		}
+		$replacementObserved = $target->inTransaction()
+			&& $source->inTransaction()
+			&& (int)Scalar($target, 'SELECT epoch FROM label_import_state WHERE id = 1') === $beforeEpoch + 1
+			&& (int)Scalar($target, "SELECT COUNT(*) FROM login_attempts WHERE username = 'precision-rollback'") === 0
+			&& (int)Scalar($target, "SELECT COUNT(*) FROM outbox WHERE event_type = 'precision-rollback'") === 0;
+		// The copy has finished. Corrupt one ordinary copied value so verification fails.
+		$target->exec("UPDATE shopping_locations SET description = 'verification mismatch'
+			WHERE id = (SELECT MIN(id) FROM shopping_locations)");
+	});
+
+$mismatch = '';
+try
+{
+	$importer->Import(true);
+}
+catch (\Throwable $ex)
+{
+	$mismatch = $ex->getMessage();
+}
+Check('forced mismatch reached value verification', $replacementObserved && str_contains($mismatch, 'Values differ after import: shopping_locations'),
+	'copied target, then a shopping_locations mismatch', $mismatch === '' ? 'no exception' : $mismatch);
+Check('mismatch rolls back all target rows and ancillary state', TargetState($target) === $before,
+	'all table rows, identities and triggers unchanged', 'full target state compared');
+Check('mismatch releases only its target transaction', !$target->inTransaction() && $source->inTransaction(),
+	'target closed, caller source open', 'transaction ownership checked');
+$source->rollBack();
+
+// A caller's target transaction cannot be silently committed or rolled back.
+$target->beginTransaction();
+$nestedRefused = false;
+try
+{
+	(new DatabaseImporter($source, $target, new PostgresDialect()))->Import(true);
+}
+catch (\PDOException $ex)
+{
+	$nestedRefused = true;
+}
+Check('nested target transaction remains caller-owned', $nestedRefused && $target->inTransaction(),
+	'refused with outer transaction still open', 'transaction ownership checked');
+$target->rollBack();
+
+$previousPrecision = ini_get('precision');
+ini_set('precision', '14');
+try
+{
+	$report = (new DatabaseImporter($source, $target, new PostgresDialect()))->Import(true, false);
+}
+finally
+{
+	ini_set('precision', (string)$previousPrecision);
+}
+Check('successful plain-PDO import commits', !$target->inTransaction() && array_sum($report) > 0,
+	'committed copied rows', array_sum($report) . ' copied rows');
+foreach ($values as $id => $value)
+{
+	$readback = Scalar($target, 'SELECT calories FROM products WHERE id = ' . $id);
+	Check('PostgreSQL readback equals SQLite REAL ' . $id, $readback !== false && (float)$readback === $value,
+		RoundTripFloat::Format($value), (string)$readback);
+}
+Check('successful import clears target-derived attempts and outbox',
+	(int)Scalar($target, "SELECT COUNT(*) FROM login_attempts WHERE username = 'precision-rollback'") === 0
+		&& (int)Scalar($target, "SELECT COUNT(*) FROM outbox WHERE event_type = 'precision-rollback'") === 0,
+	'cleared', 'derived state checked');
+Check('successful import increments the label epoch',
+	(int)Scalar($target, 'SELECT epoch FROM label_import_state WHERE id = 1') === $beforeEpoch + 1,
+	'epoch incremented once', 'label epoch checked');
+$source = null;
+[$code, $output] = RunImport($dataPath, $precisionSource, ['--force']);
+Check('operator command commits post-copy processing', $code === 0, 'exit 0',
+	'exit ' . $code . ($code === 0 ? '' : ': ' . trim($output)));
+Check('operator command retains exact REAL values', $code === 0 && array_reduce(array_keys($values),
+	fn(bool $exact, int $id): bool => $exact && (float)Scalar($target, 'SELECT calories FROM products WHERE id = ' . $id) === $values[$id], true),
+	'3 exact readbacks', 'readbacks checked');
+Check('operator command runs post-copy key hashing and permission seeding',
+	(int)Scalar($target, "SELECT COUNT(*) FROM api_keys WHERE key_type = 'default' AND api_key !~ '^[0-9a-f]{64}$'") === 0
+		&& (int)Scalar($target, "SELECT COUNT(*) FROM permission_hierarchy WHERE name = 'MASTER_DATA_ADD'") === 1,
+	'hashed keys and restored leaf', 'post-copy work checked');
+Check('ordinary six-decimal comparisons remain unchanged', ValueComparison::COMPARISON_PRECISION === 6
+	&& ValueComparison::Normalise(1.0000004) === ValueComparison::Normalise(1.0)
+	&& ValueComparison::Normalise(1.000002) !== ValueComparison::Normalise(1.0),
+	'six decimals absorb a sub-micro difference and expose a larger one', 'comparison behavior checked');
+$target = null;
+unlink($precisionSource);
 
 // The scratch directory, not the committed fixtures. Recursive because the data directory
 // gains a view cache: the command under test loads the configuration, and HTMLPurifier's

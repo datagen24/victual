@@ -114,6 +114,10 @@ still names `sqlite` is refused at startup, with the exact command that moves it
 Stop the application, and stop any label workers with it, before running the import. The
 import replaces the product, stock, and print-job data those workers act on, the same reason
 [Restoring](operator/backup-restore.md#restoring) gives for a restore.
+Keep the SQLite source and a PostgreSQL backup until the import completes and the application
+has been checked. A copy-verification mismatch rolls back the target replacement. A failure
+in later row cleanup or cache rebuilding can leave the imported target partly processed;
+restore the PostgreSQL backup before retrying in that case.
 
 ```
 php bin/victual-migrate                                    # create the schema in the empty PostgreSQL database

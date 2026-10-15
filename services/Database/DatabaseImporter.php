@@ -868,8 +868,17 @@ class DatabaseImporter
 			$this->ClearOutbox();
 
 			$this->SetTriggersEnabled($tables, true);
+
+			// Verify while the replacement can still be rolled back. Resynchronizing
+			// identity sequences uses setval(), which is not rolled back by PostgreSQL,
+			// and the lineage backfill may consume sequence values. Both belong after
+			// verification so a mismatch also leaves ancillary state untouched.
+			$this->AssertRowCountsMatch($report);
+			$this->AssertValuesMatch($tables);
+
 			$this->TargetDialect->ResyncGeneratedIdCounters($this->Target);
 			$this->RebuildStockLineage();
+			$this->Target->commit();
 		}
 		catch (\Throwable $ex)
 		{
@@ -880,13 +889,6 @@ class DatabaseImporter
 
 			throw $ex;
 		}
-
-		$this->Target->commit();
-
-		// Generated id counters were resynchronized before releasing the import lock.
-
-		$this->AssertRowCountsMatch($report);
-		$this->AssertValuesMatch($tables);
 
 		// After the assertions, never before them. The copy's job is to be verbatim and
 		// AssertValuesMatch is what proves it was; rewriting rows mid-copy would make every
@@ -1179,7 +1181,11 @@ class DatabaseImporter
 		{
 			foreach ($columns as $column)
 			{
-				$values[] = $row[$column];
+				$value = $row[$column];
+				// A plain PDO target (including the differential suite) has no
+				// InstantStatement. Use the same serializer as application writes so
+				// PDO cannot round a SQLite REAL at PHP's default precision.
+				$values[] = is_float($value) ? RoundTripFloat::Format($value) : $value;
 			}
 		}
 
