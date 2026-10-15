@@ -47,11 +47,25 @@ Prices are shown when the flag is on *and* the user holds the permission.
 
 ## Domain reads
 
-Six domains each carry their own `*_VIEW` leaf, and a page, an API response or a generic
-object read from that domain requires it: `STOCK_VIEW`, `SHOPPINGLIST_VIEW`, `CHORES_VIEW`,
-`TASKS_VIEW`, `RECIPES_VIEW`, `MEALPLAN_VIEW`. The calendar overview includes only the
-events from domains the caller can read. An installation upgraded from before this model
-existed keeps all six for its existing users; only a newly created user starts without them.
+Nine domains have a read permission: `STOCK_VIEW`, `SHOPPINGLIST_VIEW`, `CHORES_VIEW`,
+`TASKS_VIEW`, `RECIPES_VIEW`, `MEALPLAN_VIEW`, `BATTERIES_VIEW`, `CALENDAR_VIEW` and
+`EQUIPMENT_VIEW`. Prices have the additional `STOCK_PRICES_VIEW` gate described above.
+The calendar includes only events from domains the caller can read.
+
+The original six domain leaves were granted to existing users when introduced.
+The battery, calendar and equipment leaves follow a different upgrade rule under
+[ADR-0035](../../adr/0035-batteries-equipment-calendar-and-custom-entities-require-view-permissions.md):
+each is a child of its domain permission. An account holding `BATTERIES`, `CALENDAR`,
+`EQUIPMENT` or `ADMIN` inherits the corresponding read permission. The upgrade does not
+grant these three leaves directly to every existing user.
+
+`BATTERIES_VIEW` permits battery pages, current battery state, details and generic battery
+and charge-cycle reads. `EQUIPMENT_VIEW` permits equipment pages, generic equipment reads
+and equipment manual downloads. These read grants do not confer write permissions.
+
+`CALENDAR_VIEW` permits the calendar page, session-based iCal access and creating or reading
+a calendar sharing link. An external calendar client holding a valid sharing secret can
+read the iCal feed without a separate permission check. Treat that link as a credential.
 
 A stock booking through the API also needs `STOCK_VIEW`, because its answer lists the
 `stock_log` rows it wrote. This covers purchase, consume, transfer, open and inventory, their
@@ -218,9 +232,9 @@ design decision.
 | Tasks | `TASKS_VIEW`, `TASKS`, `TASKS_MARK_COMPLETED`, `TASKS_UNDO_EXECUTION` |
 | Recipes | `RECIPES_VIEW`, `RECIPES` |
 | Meal plan | `MEALPLAN_VIEW`, `RECIPES_MEALPLAN` |
-| Batteries | `BATTERIES`, `BATTERIES_TRACK_CHARGE_CYCLE`, `BATTERIES_UNDO_CHARGE_CYCLE` |
-| Equipment | `EQUIPMENT` |
-| Calendar | `CALENDAR` |
+| Batteries | `BATTERIES_VIEW` (pages, current state, details and generic reads), `BATTERIES`, `BATTERIES_TRACK_CHARGE_CYCLE`, `BATTERIES_UNDO_CHARGE_CYCLE` |
+| Equipment | `EQUIPMENT_VIEW` (pages, generic reads and manual downloads), `EQUIPMENT` |
+| Calendar | `CALENDAR_VIEW` (page, session iCal and sharing-link access), `CALENDAR` |
 | Master data | `MASTER_DATA_ADD` (create products, locations, quantity units, barcodes, stores and product groups; a child of `MASTER_DATA_EDIT`), `MASTER_DATA_EDIT` (edit and delete of products, locations, quantity units, barcodes, stores and product groups, quantity unit conversions, batteries, task categories and userfield values, delete and merge of chores, delete of tasks, and — with the label subsystem — printing itself; see [Adding a product, unit or location](#adding-a-product-unit-or-location)) |
 | Users | `USERS`, `USERS_READ`, `USERS_CREATE`, `USERS_EDIT`, `USERS_EDIT_SELF` |
 | Everything | `ADMIN` |

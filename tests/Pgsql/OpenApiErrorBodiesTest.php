@@ -224,6 +224,21 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::AssertBody(self::Send('POST', '/api/labels/jobs/claim', ['limit' => 1]), 'POST', '/labels/jobs/claim', 401, ['error_message' => 'Unauthorized']);
 	}
 
+	public function testNewlyDocumentedPermissionGatesAnswer403(): void
+	{
+		$cases = [
+			['/api/stock', '/stock', User::PERMISSION_STOCK_VIEW],
+			['/api/labels/templates', '/labels/templates', User::PERMISSION_ADMIN],
+			['/api/calendar/ical', '/calendar/ical', User::PERMISSION_CALENDAR_VIEW],
+		];
+
+		foreach ($cases as [$url, $path, $permission])
+		{
+			self::AssertBody(self::Send('GET', $url, null, self::$nobodyKey), 'GET', $path, 403,
+				['error_message' => 'Permission missing: ' . $permission]);
+		}
+	}
+
 	public function testACallerWithoutAdminOnAnAdminLabelRouteIsAnApiError(): void
 	{
 		$response = self::Send('POST', '/api/labels/printers', self::PrinterBody(self::$ownerWorkerId), self::$operatorKey);
@@ -357,6 +372,21 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::AssertBody($response, 'POST', '/labels/printers', 422, [
 			'field' => 'driver_schema_version', 'code' => 'unknown_driver_version', 'error_message' => 'Unknown driver version',
 		]);
+	}
+
+	public function testANulInAWorkerCapabilityDocumentAnswersTheDocumented400(): void
+	{
+		$driver = self::Driver();
+		$driver['driver_id'] = 'errbodies.nul-capability';
+		$model = "QL-820NWBc\0";
+		$driver['capability_document']['models'][0] = $model;
+		$driver['capability_document']['combinations'][0]['model'] = $model;
+		$response = self::Send('POST', '/api/labels/register', ['drivers' => [$driver]], self::$ownerKey);
+
+		self::AssertBody($response, 'POST', '/labels/register', 400, [
+			'error_message' => 'The database rejected this request - check that every value it carries suits the field it is for',
+		]);
+		self::assertSame(0, (int)self::$db->query("SELECT COUNT(*) FROM label_drivers WHERE driver_id = 'errbodies.nul-capability'")->fetchColumn());
 	}
 
 	public function testAnInvalidPrintRequestIsALabelRefusal(): void
@@ -680,6 +710,47 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		}
 
 		self::assertSame([], $missing, count($missing) . " operations inherit security and declare no 401:\n" . implode("\n", $missing));
+	}
+
+	public function testEveryOperationWithAReachable403DeclaresIt(): void
+	{
+		// Ordinary routes reach BaseAuthMiddleware's untrusted-proxy refusal;
+		// authenticated writes can also meet read-only and cross-origin refusals.
+		// Typed worker routes bypass those checks, but some have their own 403 for
+		// attempt/printer/artifact ownership. These ten have no reachable 403:
+		// public pairing, three worker operations, and six renderer/byte routes.
+		$without403 = [
+			'POST /labels/pair',
+			'POST /labels/credentials/rotate',
+			'POST /labels/register',
+			'POST /labels/jobs/claim',
+			'GET /labels/assets/{assetId}/bytes',
+			'POST /labels/render/claim',
+			'POST /labels/render/{requestId}/result',
+			'POST /labels/render/{requestId}/invalid',
+			'POST /labels/render/{requestId}/failed',
+			'GET /labels/artifacts/{artifactId}/bytes',
+		];
+		$missing = [];
+		$unexpected = [];
+
+		foreach (self::Operations() as [$method, $path, $operation])
+		{
+			$key = "$method $path";
+			$declared = isset($operation['responses']['403']);
+
+			if (!in_array($key, $without403, true) && !$declared)
+			{
+				$missing[] = $key;
+			}
+			if (in_array($key, $without403, true) && $declared)
+			{
+				$unexpected[] = $key;
+			}
+		}
+
+		self::assertSame([], $missing, 'Operations missing reachable 403: ' . implode(', ', $missing));
+		self::assertSame([], $unexpected, 'Operations with unreachable 403: ' . implode(', ', $unexpected));
 	}
 
 	public function testEveryOperationWithAnIntegerPathParameterDeclaresA400(): void

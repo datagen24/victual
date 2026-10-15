@@ -2,7 +2,7 @@
 	"openapi": "3.2.0",
 	"info": {
 		"title": "Victual REST API",
-		"description": "Authentication uses one of the credentials below. Which one is accepted depends on the operation.<br><br>**API key.** Send an API key you manage [here](PlaceHolderManageApiKeysUrl) in the *VICTUAL-API-KEY* header. Add the optional *VICTUAL-API-KEY-TYPE* header to narrow which key types may match; it can only remove authority, never add it. A read-only key is limited to GET, HEAD and OPTIONS and gets **403** on anything else; it also gets **403** on three GET operations that write: GET /calendar/ical/sharing-link, GET /stock/barcodes/external-lookup/{barcode} and GET /print/shoppinglist/thermal. A general API key is never accepted in the query string; the calendar secret on GET /calendar/ical is the only query-string credential.<br><br>**Session cookie.** Requests from the frontend authenticate with the *victual_session* cookie. On API routes, a request authenticated by the session cookie other than GET, HEAD or OPTIONS is refused with **403** when its Origin header (or its Referer header, if there is no Origin) names another origin. A request with neither header is allowed. Requests authenticated by an API key rather than the session cookie are exempt.<br><br>**Calendar secret.** The calendar feed link carries a calendar key in the *secret* query parameter. It is accepted on GET /calendar/ical only. GET /calendar/ical/sharing-link does not accept it, and no other operation does.<br><br>**Label worker, verifier and renderer keys.** These use the same *VICTUAL-API-KEY* header but are accepted only on the label worker and renderer operations that name them. On those operations user API keys, session cookies and a disabled-authentication setup are refused with **401**. POST /labels/pair is public.<br><br>**Deployment modes.** These are not credentials. With reverse-proxy authentication the server takes the user's identity from a header set by the proxy. In dev, demo and prerelease modes, in an embedded install, and with authentication disabled, requests run as the default user without a credential, except on the label worker and renderer operations above.<br><br>**Dates and times.** Every instant this API stores or sends is RFC 3339 in UTC with exactly six fractional digits - `2026-10-04T18:30:00.000000Z` - typed *format: date-time* (ADR-0027 decision 2, issue #650). The fixed width is part of the contract: text order is chronological order, so two values may be compared as strings. The one exception is *time_local* on the system time endpoint, the same instant with the server's offset (`2026-10-04T14:30:00.000000-04:00`). Fields whose column is a SQL DATE are calendar dates, typed *format: date* and written `YYYY-MM-DD`; they are never converted between zones. Days the server computes - due today, overdue, expiring in N days - are days in the server's configured time zone. A value sent without an offset - to the three write fields *tracked_time* and *done_time*, to a generic entity write, or as a `query[]` comparison - is a wall clock in the server's configured zone: a repeated hour names the earlier instant, and a skipped hour is refused with **400**. Send an offset to name any instant unambiguously. These values were local wall clocks in the server's zone, `YYYY-MM-DD HH:MM:SS`, until migration 0301 converted them.",
+		"description": "Authentication uses one of the credentials below. Which one is accepted depends on the operation.<br><br>**API key.** Send an API key you manage [here](PlaceHolderManageApiKeysUrl) in the *VICTUAL-API-KEY* header. Add the optional *VICTUAL-API-KEY-TYPE* header to narrow which key types may match; it can only remove authority, never add it. A read-only key is limited to GET, HEAD and OPTIONS and gets **403** on anything else; it also gets **403** on three GET operations that write: GET /calendar/ical/sharing-link, GET /stock/barcodes/external-lookup/{barcode} and GET /print/shoppinglist/thermal. A general API key is never accepted in the query string; the calendar secret on GET /calendar/ical is the only query-string credential.<br><br>**Session cookie.** Requests from the frontend authenticate with the *victual_session* cookie. On API routes, a request authenticated by the session cookie other than GET, HEAD or OPTIONS is refused with **403** when its Origin header (or its Referer header, if there is no Origin) names another origin. A request with neither header is allowed. Requests authenticated by an API key rather than the session cookie are exempt.<br><br>**Calendar secret.** The calendar feed link carries a calendar key in the *secret* query parameter. It is accepted on GET /calendar/ical only. GET /calendar/ical/sharing-link does not accept it, and no other operation does.<br><br>**Label worker, verifier and renderer keys.** These use the same *VICTUAL-API-KEY* header but are accepted only on the label worker and renderer operations that name them. On those operations user API keys, session cookies and a disabled-authentication setup are refused with **401**. POST /labels/pair is public.<br><br>**Deployment modes.** These are not credentials. With reverse-proxy authentication the server takes the user's identity from a header set by the proxy. In dev, demo and prerelease modes, in an embedded install, and with authentication disabled, requests run as the default user without a credential, except on the label worker and renderer operations above.<br><br>**Dates and times.** Every instant this API stores or sends is RFC 3339 in UTC with exactly six fractional digits - `2026-10-04T18:30:00.000000Z` - typed *format: date-time* (ADR-0027 decision 2, issue #650). The fixed width is part of the contract: text order is chronological order, so two values may be compared as strings. The one exception is *time_local* on the system time endpoint, the same instant with the server's offset (`2026-10-04T14:30:00.000000-04:00`). Fields whose column is a SQL DATE are calendar dates, typed *format: date* and written `YYYY-MM-DD`; they are never converted between zones. Days the server computes - due today, overdue, expiring in N days - are days in the server's configured time zone. A value sent without an offset - to the three write fields *tracked_time* and *done_time*, to a generic entity write, or as a `query[]` comparison - is a wall clock in the server's configured zone: a repeated hour names the earlier instant, and a skipped hour is refused with **400**. Send an offset to name any instant unambiguously. These values were local wall clocks in the server's zone, `YYYY-MM-DD HH:MM:SS`, until migration 0301 converted them.<br><br>**Routing failures.** A path that matches no API route answers 404, and an unsupported method on a matched path answers 405. These routing outcomes are not listed on individual operations. A missing domain resource still uses the 404 response documented on its operation.",
 		"version": "0.4.1-hotfix1",
 		"license": {
 			"name": "MIT (code originating from upstream grocy) AND BSD-3-Clause (Victual)",
@@ -282,6 +282,15 @@
 					"401": {
 						"$ref": "#/components/responses/Unauthorized",
 						"description": "Missing, invalid or expired API key"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -353,6 +362,12 @@
 					"404": {
 						"$ref": "#/components/responses/NotFound",
 						"description": "Location not found"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -440,6 +455,12 @@
 					"404": {
 						"$ref": "#/components/responses/NotFound",
 						"description": "Target not found"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -470,6 +491,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -537,6 +567,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -567,6 +606,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -608,6 +656,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -653,6 +710,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -684,6 +750,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -729,6 +804,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -851,6 +935,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW, MEALPLAN_VIEW, BATTERIES_VIEW (batteries, battery_charge_cycles) or EQUIPMENT_VIEW (equipment) domain permission. Roles and the permission hierarchy require USERS_READ. Custom-entity rows (userobjects) require MASTER_DATA_EDIT."
@@ -929,6 +1022,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -1051,6 +1150,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW, MEALPLAN_VIEW, BATTERIES_VIEW (batteries, battery_charge_cycles) or EQUIPMENT_VIEW (equipment) domain permission. Roles and the permission hierarchy require USERS_READ. Custom-entity rows (userobjects) require MASTER_DATA_EDIT."
@@ -1135,6 +1243,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			},
@@ -1207,6 +1321,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -1268,6 +1388,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW, MEALPLAN_VIEW, BATTERIES_VIEW (batteries, battery_charge_cycles) or EQUIPMENT_VIEW (equipment) domain permission. Roles and the permission hierarchy require USERS_READ. Custom-entity rows (userobjects) and the field values of custom entities (userentity-*) require MASTER_DATA_EDIT."
@@ -1341,6 +1470,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -1488,6 +1623,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			},
@@ -1567,6 +1708,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			},
@@ -1628,6 +1775,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -1695,6 +1848,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"description": "Requires USERS_READ. "
@@ -1748,6 +1907,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -1813,6 +1978,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"description": "Requires USERS_EDIT to edit another user, or USERS_EDIT_SELF to edit your own account - except a must_change_password-flagged account editing itself, which needs neither permission (issue #514): the flag alone authorizes it to change its own password, with the correct current_password, and nothing else in the same request. On this flagged path only, an omitted username, first_name, last_name or picture_file_name defaults to its stored value - the 403 refusal below is about a field that is present and different, not about which fields happen to be sent at all, so a request that sends only the new password and current_password (what this same route's own 403 body, when the flag is still set, recommends) is exactly as valid as one that resubmits every field unchanged. A flagged self-edit that sends no new password, or its current password again, is refused with 400 before anything else is checked. One that does send a new password but also sends a username, first_name, last_name or picture_file_name that differs from what is stored is refused with 403, the same answer a missing permission gets - this is an authorization refusal, not a data one, and applies whether or not a current password was also supplied.\n\nChanging your own password - flagged or not - additionally requires the current one, sent as current_password (or current_password_base64). A password change that succeeds revokes every other session already open on the account (issue #513): when the account being changed is also the acting one and was not flagged, the session that made the request is spared; when it was flagged, every session on the account is revoked, including the one that made the request, and a freshly minted session cookie replaces it."
@@ -1866,6 +2037,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -1931,6 +2108,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			},
@@ -2003,6 +2186,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			},
@@ -2079,6 +2268,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -2123,6 +2318,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -2164,6 +2368,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -2205,6 +2418,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -2256,6 +2478,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			},
@@ -2309,6 +2540,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			},
@@ -2351,6 +2591,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -2384,6 +2633,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -2436,6 +2694,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -2610,6 +2877,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -2736,6 +3009,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -2778,6 +3057,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -2830,6 +3118,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -2906,6 +3203,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -2995,6 +3301,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -3051,6 +3366,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -3131,7 +3455,7 @@
 									},
 									"stock_label_type": {
 										"type": "integer",
-										"description": "`1` = No label, `2` = Single label, `3` = Label per unit. A numeric string is read like the same number. A value that is not numeric (\"abc\", \"\") is ignored and the default 0 is used. Only the value 2 was observed to change the result: it books one stock entry per unit; every other value books a single entry. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
+										"description": "`0` = No label, `1` = Single label, `2` = Label per unit (one stock entry and label per unit). A numeric string is read like the same number. A value that is not numeric (\"abc\", \"\") is ignored and the default 0 is used. Every other numeric value, including `3`, books a single entry without a label; only `1` prints a label for a single entry. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"note": {
 										"type": "string",
@@ -3191,6 +3515,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -3314,6 +3644,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -3424,6 +3760,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -3500,7 +3842,7 @@
 									},
 									"stock_label_type": {
 										"type": "integer",
-										"description": "`1` = No label, `2` = Single label, `3` = Label per unit (only applies to added products). A numeric string is read like the same number. A value that is not numeric (\"abc\", \"\") is ignored and the default 0 is used. Only the value 2 was observed to change the result: it books one stock entry per unit; every other value books a single entry. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
+										"description": "`0` = No label, `1` = Single label, `2` = Label per unit (one stock entry and label per unit; only applies to added products). A numeric string is read like the same number. A value that is not numeric (\"abc\", \"\") is ignored and the default 0 is used. Every other numeric value, including `3`, books a single entry without a label; only `1` prints a label for a single entry. The request body filter also removes unknown tags and comments, removes control characters inside a string, strips vertical tab, form feed and NEL at the edges, and decodes character references before the value is read, so a string containing them is not read as written."
 									},
 									"note": {
 										"type": "string",
@@ -3554,6 +3896,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -3697,6 +4045,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -3760,6 +4114,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -3811,6 +4171,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -3929,6 +4298,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -4042,6 +4420,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -4142,6 +4529,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -4250,6 +4646,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -4383,6 +4788,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -4449,6 +4863,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -4553,6 +4976,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"description": "Requires STOCK_EDIT. "
@@ -4657,6 +5086,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"description": "Requires STOCK_EDIT. "
@@ -4720,6 +5155,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -4782,6 +5223,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -4844,6 +5291,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -4911,6 +5364,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -4996,6 +5455,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -5072,6 +5537,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -5123,6 +5594,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -5189,6 +5669,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -5243,6 +5729,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -5309,6 +5804,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -5380,6 +5881,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"description": "Requires STOCK_VIEW. With add=true it also requires MASTER_DATA_ADD (403 otherwise); MASTER_DATA_EDIT is not required. A picture the plugin names is stored only when no file of that name exists; if one does, the product is created without a picture and the existing file is left unchanged. A read-only API key is refused on this operation whether or not add is set."
@@ -5448,6 +5955,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"description": "Requires RECIPES_VIEW to read the recipe and SHOPPINGLIST_ITEMS_ADD to add its missing ingredients to the shopping list."
@@ -5500,6 +6013,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires RECIPES_VIEW. "
@@ -5555,6 +6077,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"description": "Requires RECIPES_VIEW to read the recipe and STOCK_CONSUME to consume it. A recipe that produces a product, including through a meal-plan shadow's original recipe, also requires STOCK_PURCHASE."
@@ -5613,6 +6141,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires RECIPES_VIEW. "
@@ -5681,6 +6218,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"description": "Requires RECIPES to copy and RECIPES_VIEW to read the source recipe."
@@ -5729,6 +6272,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires CHORES_VIEW. "
@@ -5781,6 +6333,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires CHORES_VIEW. "
@@ -5869,6 +6430,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -5933,6 +6500,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -5995,6 +6568,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -6058,6 +6637,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -6105,6 +6690,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -6156,6 +6750,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -6234,6 +6837,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -6288,6 +6897,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -6335,6 +6950,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires TASKS_VIEW. "
@@ -6407,6 +7031,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -6461,6 +7091,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -6512,8 +7148,18 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
-				}
+				},
+				"description": "If an internal calendar event lacks the type or entity ID needed for a stable UID, the current 500 error_message names the missing fields and may include that event\u2019s title. Access to this endpoint follows its documented credentials; the title disclosure is tracked separately."
 			}
 		},
 		"/calendar/ical/sharing-link": {
@@ -6547,6 +7193,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -6624,6 +7279,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"description": "Requires SHOPPINGLIST_VIEW. "
@@ -6695,6 +7356,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			},
@@ -6768,6 +7435,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"requestBody": {
@@ -6867,6 +7540,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"requestBody": {
@@ -6959,6 +7638,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -7046,6 +7731,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			},
@@ -7113,6 +7804,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"requestBody": {
@@ -7214,6 +7911,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			},
@@ -7281,6 +7984,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"requestBody": {
@@ -7338,6 +8047,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"security": [],
@@ -7392,6 +8107,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"requestBody": {
@@ -7450,6 +8171,22 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"400": {
+						"description": "A NUL byte in a capability_document string can trigger a PostgreSQL refusal. The handler returns a generic ApiError with no driver detail and rolls back registration. A NUL byte in driver_id currently receives 200; its stored representation has not been verified. Other validation failures use 422 LabelRefusal.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
 					}
 				},
 				"requestBody": {
@@ -7506,6 +8243,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"requestBody": {
@@ -7566,6 +8309,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -7630,6 +8379,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -7694,6 +8449,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -7776,6 +8537,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -7870,6 +8637,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -7938,6 +8711,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"requestBody": {
@@ -7985,6 +8764,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -8041,6 +8826,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -8089,6 +8880,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -8143,6 +8940,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"requestBody": {
@@ -8216,6 +9019,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -8300,6 +9109,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -8359,6 +9174,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -8416,6 +9237,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -8463,6 +9290,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -8500,6 +9333,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -8560,6 +9399,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -8649,6 +9494,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -8708,6 +9562,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -8795,6 +9658,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -8870,6 +9742,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -8929,6 +9810,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -8988,6 +9878,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9047,6 +9946,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9076,6 +9984,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			},
@@ -9114,6 +10031,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9158,6 +10084,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			},
@@ -9215,6 +10150,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9259,6 +10203,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9303,6 +10256,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9358,6 +10320,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9402,6 +10373,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9457,6 +10437,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9486,6 +10475,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			},
@@ -9524,6 +10522,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9587,6 +10594,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -9631,6 +10644,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9671,6 +10693,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -9737,6 +10765,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -9803,6 +10837,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -9869,6 +10909,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -9922,6 +10968,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -9964,6 +11016,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -10008,6 +11069,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -10040,6 +11110,12 @@
 					"403": {
 						"$ref": "#/components/responses/Forbidden",
 						"description": "Permission missing"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			},
@@ -10102,6 +11178,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -10145,6 +11227,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10215,6 +11303,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10259,6 +11353,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10358,6 +11458,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10414,6 +11520,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10477,6 +11589,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10541,6 +11659,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10611,6 +11735,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10683,6 +11813,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10735,6 +11871,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10823,6 +11965,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10919,6 +12067,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -10976,6 +12130,12 @@
 					"403": {
 						"$ref": "#/components/responses/Forbidden",
 						"description": "Permission missing"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -11015,7 +12175,13 @@
 								"properties": {
 									"reason": {
 										"type": "string",
-										"enum": ["entered_in_error", "history_cleared", "medication_archived", "access_revoked", "unknown"]
+										"enum": [
+											"entered_in_error",
+											"history_cleared",
+											"medication_archived",
+											"access_revoked",
+											"unknown"
+										]
 									}
 								}
 							}
@@ -11061,6 +12227,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -11175,6 +12347,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -11254,6 +12432,12 @@
 					"403": {
 						"$ref": "#/components/responses/Forbidden",
 						"description": "Permission missing"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -11337,6 +12521,12 @@
 					"403": {
 						"$ref": "#/components/responses/Forbidden",
 						"description": "Permission missing"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -11369,6 +12559,12 @@
 					"403": {
 						"$ref": "#/components/responses/Forbidden",
 						"description": "Permission missing"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -11448,6 +12644,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -11505,6 +12707,12 @@
 					"403": {
 						"$ref": "#/components/responses/Forbidden",
 						"description": "Permission missing"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -11555,6 +12763,12 @@
 					"403": {
 						"$ref": "#/components/responses/Forbidden",
 						"description": "Permission missing"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -11634,6 +12848,12 @@
 					"403": {
 						"$ref": "#/components/responses/Forbidden",
 						"description": "Permission missing"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -11683,6 +12903,12 @@
 					"403": {
 						"$ref": "#/components/responses/Forbidden",
 						"description": "Permission missing"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -11740,6 +12966,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -11828,6 +13060,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -11918,6 +13156,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -12018,6 +13262,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -12126,6 +13376,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -12226,6 +13482,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -12318,6 +13580,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -12398,6 +13666,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -12462,6 +13736,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -12546,6 +13826,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -14558,7 +15844,7 @@
 					},
 					"average_execution_frequency_hours": {
 						"type": [
-							"integer",
+							"number",
 							"null"
 						],
 						"description": "Contains the average past execution frequency in hours or `null`, when the chore was never executed before"
@@ -15480,7 +16766,7 @@
 			},
 			"ApiError": {
 				"type": "object",
-				"description": "The error body of an answer that carries one message and no detail object: error_message is always present. The same shape as Error400, under a name that does not claim a status code - it is what a 401, a 403 and a 404 return too. It is not the body of every non-2xx answer: a label route that refuses a request with a named field answers LabelRefusal, a consumption service refusal answers ConsumptionError, and the 503 schema-version response is text/plain.",
+				"description": "The error body of an answer that carries one message and no detail object: error_message is always present. The same shape as Error400, under a name that does not claim a status code - it is what a 401, a 403, a 404 and a production 500 return too. It is not the body of every non-2xx answer: a label route that refuses a request with a named field answers LabelRefusal, a consumption service refusal answers ConsumptionError, and the 503 schema-version response is text/plain.",
 				"required": [
 					"error_message"
 				],
@@ -15557,7 +16843,8 @@
 				},
 				"example": {
 					"error_message": "The error message..."
-				}
+				},
+				"description": "Development-only API error body. Production 500 responses contain error_message alone, as ApiError; error_details is present only when development error details are enabled."
 			},
 			"CurrentStockResponse": {
 				"type": "object",
@@ -16648,7 +17935,7 @@
 						"type": "number",
 						"exclusiveMinimum": 0,
 						"default": 1,
-						"description": "Product target only; a recipe target ignores it. A multiplier on the event quantity, which is expressed in qu_id (the stock unit when qu_id is null or absent). Absent or null means 1. The booked stock amount is quantity × quantity_factor × conversion, where the conversion is the entered factor from qu_id to the stock unit (1 for the stock unit). A finite number greater than 0. Use 1 unless one event should book a fixed multiple of its reported quantity."
+						"description": "Product target only; a recipe target ignores it. A multiplier on the event quantity, which is expressed in qu_id (the stock unit when qu_id is null or absent). Absent or null means 1. The booked stock amount is quantity \u00d7 quantity_factor \u00d7 conversion, where the conversion is the entered factor from qu_id to the stock unit (1 for the stock unit). A finite number greater than 0. Use 1 unless one event should book a fixed multiple of its reported quantity."
 					},
 					"location": {
 						"type": "object",
@@ -17691,7 +18978,7 @@
 				}
 			},
 			"Forbidden": {
-				"description": "The caller lacks a permission the route requires. The body is {\"error_message\": \"Permission missing: <PERMISSION>\"}. The middleware's own 403s (a read-only key on a write, a cross-origin request, a forced password change) share the ApiError shape.",
+				"description": "The caller lacks a permission the route requires, or authentication middleware refuses an otherwise authenticated request. A permission refusal uses {\"error_message\": \"Permission missing: <PERMISSION>\"}. Middleware 403s use the same ApiError shape for a read-only key on a write, a cross-origin session write, an untrusted reverse proxy, or an account pending a password change.",
 				"content": {
 					"application/json": {
 						"schema": {
@@ -17763,6 +19050,27 @@
 									"$ref": "#/components/schemas/ConsumptionError"
 								}
 							]
+						}
+					}
+				}
+			},
+			"ServerError": {
+				"description": "An uncaught server error in production. The body contains error_message; its text is not a stable client code. Development mode can add error_details with stack_trace, file and line.",
+				"content": {
+					"application/json": {
+						"schema": {
+							"$ref": "#/components/schemas/ApiError"
+						}
+					}
+				}
+			},
+			"SchemaUnavailable": {
+				"description": "The schema-version gate refused the request before routing or authentication because the database could not be queried or its applied migrations do not match this code. The UTF-8 plain-text body explains the mismatch or connection failure. Development mode can append the database driver message to a connection-failure body.",
+				"content": {
+					"text/plain": {
+						"schema": {
+							"type": "string",
+							"description": "Human-readable schema or database availability failure, beginning with Victual cannot serve requests."
 						}
 					}
 				}
