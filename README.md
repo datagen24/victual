@@ -28,9 +28,9 @@ goals.
 
 ## Current state
 
-**Current version: [0.4.2](docs/releases/0.4.2.md), 2026-10-15**; release tag
-`v0.4.2` is planned. This is an unpublished candidate. Use the last published release,
-[0.4.1-hotfix1](docs/releases/0.4.1-hotfix1.md), for deployment until the candidate's
+**Current version: [0.4.3](docs/releases/0.4.3.md), 2026-10-15**; release tag
+`v0.4.3` is planned. This is an unpublished candidate. Use the last published release,
+[0.4.2](docs/releases/0.4.2.md), for deployment until the candidate's
 signed tag and GHCR artifacts are available.
 
 Images and the Helm chart are published
