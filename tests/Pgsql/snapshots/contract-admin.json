@@ -148,6 +148,48 @@
             "tracked_count": "integer"
         }
     },
+    "GET /api/chores/{choreId} (fractional average)": {
+        "status": 200,
+        "shape": {
+            "average_execution_frequency_hours": "number",
+            "chore": {
+                "active": "integer",
+                "assignment_config": "null",
+                "assignment_type": "null",
+                "consume_product_on_execution": "integer",
+                "description": "null",
+                "id": "integer",
+                "import_epoch": "integer",
+                "name": "string",
+                "next_execution_assigned_to_user_id": "null",
+                "period_config": "null",
+                "period_days": "null",
+                "period_interval": "integer",
+                "period_type": "string",
+                "product_amount": "null",
+                "product_id": "null",
+                "rescheduled_date": "null",
+                "rescheduled_next_execution_assigned_to_user_id": "null",
+                "rollover": "boolean",
+                "row_created_timestamp": "string(date-time)",
+                "start_date": "string(date-time)",
+                "track_date_only": "boolean"
+            },
+            "last_done_by": {
+                "display_name": "string",
+                "first_name": "null",
+                "id": "integer",
+                "last_name": "null",
+                "picture_file_name": "null",
+                "row_created_timestamp": "string(date-time)",
+                "username": "string"
+            },
+            "last_tracked": "string(date-time)",
+            "next_estimated_execution_time": "null",
+            "next_execution_assigned_user": "null",
+            "tracked_count": "integer"
+        }
+    },
     "GET /api/consumption/capabilities": {
         "status": 200,
         "shape": {
@@ -3144,6 +3186,12 @@
         }
     },
     "POST /api/objects/{entity} (chores)": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "integer"
+        }
+    },
+    "POST /api/objects/{entity} (chores, fractional average)": {
         "status": 200,
         "shape": {
             "created_object_id": "integer"

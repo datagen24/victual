@@ -111,7 +111,8 @@ $response = $controller(request('/api/stock'), connectFailure(), false, true, tr
 $payload = json_decode((string)$response->getBody(), true);
 
 check($response->getStatusCode() === 500, 'An API route answers 500, got ' . $response->getStatusCode());
-check(is_array($payload) && isset($payload['error_message']), 'The API 500 carries error_message');
+check($response->getHeaderLine('Content-Type') === 'application/json', 'The production API 500 is JSON');
+check(is_array($payload) && array_keys($payload) === ['error_message'], 'The production API 500 carries only error_message');
 check(!str_contains($payload['error_message'], 'SQLSTATE'), 'The API 500 does not quote the driver');
 
 // A 404 goes through the same rendering path, so it is the case where the page that

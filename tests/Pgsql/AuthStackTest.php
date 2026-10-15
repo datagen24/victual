@@ -328,9 +328,18 @@ class AuthStackTest extends PgsqlSchemaTestCase
 			$response = self::send('GET', '/api/user', ['headers' => ['VICTUAL-API-KEY' => self::$adminKey]]);
 
 			self::assertSame(503, $response['status'], $response['body']);
-			self::assertStringContainsString('text/plain', self::header($response, 'Content-Type'));
+			self::assertSame('text/plain; charset=utf-8', self::header($response, 'Content-Type'));
 			self::assertStringContainsString('Applied but unknown to this code: ' . $ahead, $response['body']);
 			self::assertStringContainsString('The database is ahead of the code', $response['body']);
+
+			// The gate runs before authentication, including on a public pairing route.
+			foreach ([['GET', '/api/user'], ['POST', '/api/labels/pair']] as [$method, $path])
+			{
+				$beforeAuth = self::send($method, $path);
+				self::assertSame(503, $beforeAuth['status'], "$method $path: {$beforeAuth['body']}");
+				self::assertSame('text/plain; charset=utf-8', self::header($beforeAuth, 'Content-Type'));
+				self::assertStringStartsWith('Victual cannot serve requests:', $beforeAuth['body']);
+			}
 
 			// The advice for the opposite direction must not be given here: running
 			// migrations cannot help a database that is already past the code
@@ -770,6 +779,7 @@ class AuthStackTest extends PgsqlSchemaTestCase
 
 		$anonymous = self::send('POST', '/api/labels/jobs/claim', ['body' => $claim]);
 		self::assertSame(401, $anonymous['status'], $anonymous['body']);
+		self::assertStringContainsString('application/json', self::header($anonymous, 'Content-Type'));
 		self::assertSame(['error_message' => 'Unauthorized'], json_decode($anonymous['body'], true));
 
 		$asAdmin = self::send('POST', '/api/labels/jobs/claim', [
@@ -807,6 +817,7 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		// The refusal comes from the pairing service weighing the material, not from the
 		// middleware refusing to let the request reach it
 		$decoded = json_decode($response['body'], true);
+		self::assertStringContainsString('application/json', self::header($response, 'Content-Type'));
 		self::assertSame('material', $decoded['field'] ?? null, $response['body']);
 		self::assertNotSame('Unauthorized', $decoded['error_message'] ?? null, $response['body']);
 	}

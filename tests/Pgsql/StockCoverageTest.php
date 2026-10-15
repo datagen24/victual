@@ -324,6 +324,14 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	#[Depends('testPurchaseCarriesEveryOptionalBodyFieldOntoTheLedger')]
 	public function testPurchasePerUnitLabelTypeWritesOneStockEntryPerUnit(): void
 	{
+		$spec = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), true, flags: JSON_THROW_ON_ERROR);
+		foreach (['/stock/products/{productId}/add', '/stock/products/{productId}/inventory'] as $path)
+		{
+			$description = $spec['paths'][$path]['post']['requestBody']['content']['application/json']['schema']['properties']['stock_label_type']['description'];
+			self::assertStringContainsString('`0` = No label, `1` = Single label, `2` = Label per unit', $description, "$path documents the selected modes");
+			self::assertStringContainsString('including `3`, books a single entry without a label', $description, "$path documents other accepted numbers");
+		}
+
 		$body = [
 			'amount' => 3,
 			'price' => 2.0,
@@ -360,6 +368,19 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		sort($amounts);
 		self::assertSame([1.0, 1.0, 1.0, 3.0], $amounts, 'The unlabelled units are one entry; the labelled ones are not merged into it');
 		self::assertSame(6.0, self::stockAmount(self::$ids['spare']), 'Six units in stock either way');
+
+		// The document names all three selected modes and the accepted out-of-range mode.
+		// A value of 3 must not silently acquire the per-unit meaning the old description gave it.
+		foreach ([1, 3] as $labelType)
+		{
+			$booked = $this->expectStatus(
+				fn() => self::$stock->AddProduct(self::request('POST', array_merge($body, ['stock_label_type' => $labelType])), new Response(), ['productId' => self::$ids['spare']]),
+				200,
+				"Label mode $labelType is accepted"
+			);
+			self::assertCount(1, $booked, "Label mode $labelType books one entry for three units");
+			self::assertSame(3.0, (float)$booked[0]['amount']);
+		}
 	}
 
 	/**
