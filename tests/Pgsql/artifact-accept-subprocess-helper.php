@@ -3,7 +3,7 @@
 // Runs one artifact write on an independent PostgreSQL connection so the collection test
 // can observe the writer waiting on the shared per-file advisory lock.
 $spec = json_decode(base64_decode($argv[1] ?? '', true) ?: '', true, 512, JSON_THROW_ON_ERROR);
-require_once dirname(__DIR__, 2) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/bootstrap.php';
 
 ini_set('display_errors', 'stderr');
 $db = new PDO(
