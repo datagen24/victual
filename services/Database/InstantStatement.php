@@ -15,6 +15,7 @@ use Victual\Services\Time\Instant;
  * reads (LessQL), the hand-built service responses, the Blade pages, the MQTT and InfluxDB
  * publishers and the iCal feed all receive the same rendering, so none of them can render
  * a timestamp differently from the others.
+ * execute() also preserves PHP floats on direct PDO writes, before PDO stringifies them.
  *
  * **What decides that a value is an instant is the column's type, never its name or its
  * look.** pdo_pgsql reports a result column's type through getColumnMeta() - for table
@@ -49,6 +50,27 @@ class InstantStatement extends \PDOStatement
 
 	protected function __construct()
 	{
+	}
+
+	/**
+	 * PDO stringifies float values in execute()'s parameter array with PHP's default
+	 * precision (normally 14 digits). Send only floats as round-trip decimal strings;
+	 * every other value keeps PDO's existing binding and type conversion behavior.
+	 */
+	public function execute(?array $params = null): bool
+	{
+		if ($params !== null)
+		{
+			foreach ($params as $key => $value)
+			{
+				if (is_float($value))
+				{
+					$params[$key] = RoundTripFloat::Format($value);
+				}
+			}
+		}
+
+		return parent::execute($params);
 	}
 
 	public function setFetchMode(int $mode, mixed ...$args): true
