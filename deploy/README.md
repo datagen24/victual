@@ -17,7 +17,20 @@ not ship, and everything cluster-specific lives there.
 ([ADR-0038](../docs/adr/0038-kubernetes-deployments-ship-as-a-helm-chart.md), **Proposed**).
 `k3s/` is its rendering with [`ci/k3s-values.yaml`](helm/victual/ci/k3s-values.yaml),
 committed so that `kubectl apply -k deploy/k3s` and the parity tests keep reading plain
-files.
+files. Before a direct apply, use the publication check below. It renders once, checks
+all referenced image manifests, and submits that same rendering only if every check
+succeeds. It needs `kubectl` and the Docker CLI's `manifest inspect` command; it does not
+need a running Docker daemon.
+
+```sh
+bash deploy/k3s/apply.sh
+```
+
+A release candidate can name image tags that have not been published yet. In that case
+the check exits before applying any resource. Use a published release checkout, or wait
+for the signed tag's publication workflow to finish. A raw `kubectl apply -k deploy/k3s`
+bypasses this check and must only be used after verifying artifact availability.
+
 **Do not edit `k3s/*.yaml` by hand:** edit the chart's templates and run
 `python3 .devtools/ci/render_k3s.py`. The `lint` job fails when the two differ.
 `k3s/kustomization.yaml` stays hand-written.
