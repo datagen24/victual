@@ -44,6 +44,7 @@ class LabelApiTest extends PgsqlSchemaTestCase
 	/** Fixture dates are pinned: an unpinned best-before flips a JSON type with the calendar. */
 	private const BEST_BEFORE = '2099-12-31';
 	private const PURCHASED = '2026-01-01';
+	private const LONG_AGO = '2000-01-01T00:00:00.000000Z';
 
 	private static PDO $db;
 	private static string $adminKey;
@@ -1378,8 +1379,12 @@ class LabelApiTest extends PgsqlSchemaTestCase
 	#[Depends('testClaimLimitOutsideOneThroughFiftyIsRefused')]
 	public function testTheRendererClaimsRendersAndAttachesAnArtifactToTheWaitingJob(): void
 	{
+		self::$db->exec("UPDATE system_db_changed_time SET changed_time = '" . self::LONG_AGO . "' WHERE id = 1");
 		$claim = self::Send('POST', '/api/labels/render/claim', [], self::$rendererKey);
 		self::assertSame(200, $claim['status'], $claim['body']);
+		self::assertGreaterThan(self::LONG_AGO,
+			(string)self::$db->query('SELECT changed_time FROM system_db_changed_time WHERE id = 1')->fetchColumn(),
+			'Claiming a render lease advances the changed time for clients observing request state');
 
 		$input = $claim['json'];
 		self::assertSame('production', $input['purpose']);
