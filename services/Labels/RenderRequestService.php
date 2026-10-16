@@ -105,7 +105,7 @@ class RenderRequestService extends LabelService
      * and keep being reported as something worth waiting for. No attempt is spent: nothing
      * was tried, and `failed` with `expired` says so.
      */
-    private function ExpirePending(): void
+    private function ExpirePending(): int
     {
         $expired = $this->Query("UPDATE label_render_requests
             SET state='failed', error_code='expired', error_detail='The preview expired before it was rendered'
@@ -116,6 +116,7 @@ class RenderRequestService extends LabelService
         foreach ($expired as $requestId) {
             $this->DeadLetterWaitingJobs((int)$requestId, 'failed', 'expired', 'The preview expired before it was rendered');
         }
+        return count($expired);
     }
 
     /**
@@ -157,17 +158,33 @@ class RenderRequestService extends LabelService
      */
     public function Claim(): ?array
     {
+        return $this->ClaimWithStatus()['request'];
+    }
+
+    /**
+     * Claims work and reports whether the periodic queue tick changed visible state.
+     * The HTTP poll must advance db-changed-time when a lease is claimed, expired work is
+     * settled, or dependent jobs are dead-lettered, while an empty no-op poll stays quiet.
+     *
+     * @return array{request: ?array, changed: bool}
+     */
+    public function ClaimWithStatus(): array
+    {
         $this->Transaction();
-        $this->ReapExpired();
-        $this->ExpirePending();
-        (new ArtifactService($this->db))->CollectExpiredPreviews(self::EXPIRY_BATCH);
+        $changed = $this->ReapExpired() > 0;
+        if ($this->ExpirePending() > 0) {
+            $changed = true;
+        }
+        if ((new ArtifactService($this->db))->CollectExpiredPreviews(self::EXPIRY_BATCH) > 0) {
+            $changed = true;
+        }
 
         for ($settled = 0; $settled < self::CLAIM_SETTLE_LIMIT; $settled++) {
             $request = $this->Query("SELECT * FROM label_render_requests
                 WHERE state='pending' AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP)
                 ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1")->fetch(\PDO::FETCH_ASSOC);
             if (!$request) {
-                return null;
+                return ['request' => null, 'changed' => $changed];
             }
 
             $token = bin2hex(random_bytes(16));
@@ -175,14 +192,15 @@ class RenderRequestService extends LabelService
                 SET state='rendering', generation=generation+1, generation_token=?, attempts=attempts+1,
                     lease_expires_at=CURRENT_TIMESTAMP+make_interval(secs=>?)
                 WHERE id=? RETURNING *", [$token, $this->leaseSeconds, $request['id']])->fetch(\PDO::FETCH_ASSOC);
+            $changed = true;
 
             try {
-                return $this->Input($request);
+                return ['request' => $this->Input($request), 'changed' => true];
             } catch (LabelValidationException $refusal) {
                 $this->RecordInvalid((int)$request['id'], $token, $refusal->errorCode, $this->UnavailableAssetElement($request, $refusal), $refusal->getMessage());
             }
         }
-        return null;
+        return ['request' => null, 'changed' => $changed];
     }
 
     /** The resolved render input for a request, without claiming it. */

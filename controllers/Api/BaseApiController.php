@@ -145,17 +145,22 @@ class BaseApiController extends BaseController
 	 *
 	 * Statements on the raw connection never reach LessQL's change-tracking callback, so a
 	 * request that commits and is not a read advances the changed time here. $changesData
-	 * overrides the method-based default for the one caller, the label worker, whose POST
-	 * routes include polling that is not a change to anything a person sees.
+	 * overrides the method-based default for callers whose POST routes include polling that is
+	 * not a change to anything a person sees. A predicate can decide from the committed work
+	 * whether a poll changed visible data.
 	 *
 	 * @return mixed Whatever $work returns
 	 */
-	protected function InRequestTransaction(Request $request, callable $work, ?bool $changesData = null)
+	protected function InRequestTransaction(Request $request, callable $work, bool|callable|null $changesData = null)
 	{
 		$database = DatabaseService::GetInstance();
 		$result = $database->InTransaction($work);
 
-		if ($changesData ?? !in_array($request->getMethod(), ['GET', 'HEAD', 'OPTIONS'], true))
+		$shouldMarkDataChanged = is_callable($changesData)
+			? $changesData($result)
+			: ($changesData ?? !in_array($request->getMethod(), ['GET', 'HEAD', 'OPTIONS'], true));
+
+		if ($shouldMarkDataChanged)
 		{
 			$database->MarkDbChanged();
 		}
