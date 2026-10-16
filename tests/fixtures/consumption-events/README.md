@@ -69,7 +69,9 @@ One scenario per file, `NN-slug.json`, UTF-8, tab-indented.
 * `expect.count` maps a dotted path in the response (`""` is the response itself) to the expected
   number of elements, for lists whose length matters.
 * `save` stores values from the response under a name, by dotted path (`lines.0.product_id`), for
-  `{{saved.NAME}}` in later steps.
+  `{{saved.NAME}}` in later steps. An unordered response list can select one row with
+  `{"match": {"product_id": "{{product.tablet_a}}"}, "field": "id"}`. The match must identify
+  exactly one row. Transaction booking lists have no ordering guarantee.
 * `stock` is checked after the step: `NAME` is the on-hand total of a product, `NAME@LOCATION` the
   amount at one location. This reads the database, not the API.
 * The undo a user performs in the stock journal is an ordinary step
