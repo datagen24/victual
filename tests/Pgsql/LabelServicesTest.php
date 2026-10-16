@@ -1487,6 +1487,103 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'Negative control: nothing expired, nothing collected');
 	}
 
+	/** A collected digest is historical metadata, not a live byte-store reference. */
+	public function testARepeatedPreviewAfterCollectionStoresItsBytesAgain(): void
+	{
+		$capture = (int)self::tx(static fn () => (new LabelCaptureService(self::$db))
+			->Capture('location', 9001, '0PREVIEWUID02', ['location.name'], 'en', 'UTC', 9000))['id'];
+		[$firstInput, $first, $bytes] = self::acceptArtifact('preview_live', $capture);
+		self::$db->exec('UPDATE label_render_requests SET expires_at = CURRENT_TIMESTAMP - INTERVAL \'1 hour\' WHERE id = '
+			. (int)$firstInput['render_request_id']);
+
+		[, $second, $secondBytes] = self::acceptArtifact('preview_live', $capture);
+
+		self::assertSame($bytes, $secondBytes, 'The same capture renders to the same content-addressed name');
+		self::assertSame($first['file_name'], $second['file_name'], 'Both manifests name the same digest');
+		self::assertNotSame((int)$first['id'], (int)$second['id'], 'Each render keeps its own manifest');
+		self::assertNotNull(self::artifacts()->Get((int)$first['id'])['collected_at'], 'The old manifest remains marked collected');
+		self::assertNull(self::artifacts()->Get((int)$second['id'])['collected_at'], 'The new manifest is live');
+		self::assertSame($bytes, self::artifacts()->Bytes((int)$second['id']), 'The new manifest has exact bytes again');
+		self::assertRefused(static fn () => self::artifacts()->Bytes((int)$first['id']),
+			'artifact_id', 'artifact_collected', 'The old collected manifest still refuses reprint');
+	}
+
+	/** Store waits for an in-flight collector, then restores bytes for the new manifest. */
+	public function testStoreSerializesWithAnInFlightLastPreviewCollection(): void
+	{
+		$capture = (int)self::tx(static fn () => (new LabelCaptureService(self::$db))
+			->Capture('location', 9001, '0PREVIEWUID03', ['location.name'], 'en', 'UTC', 9000))['id'];
+		[$firstInput, $first, $bytes] = self::acceptArtifact('preview_live', $capture);
+		$input = self::claimFresh(null, $capture, null, 'preview_live');
+		self::assertSame($bytes, self::paint($input), 'The second generation references the same captured label');
+		self::$db->exec('UPDATE label_render_requests SET expires_at = CURRENT_TIMESTAMP - INTERVAL \'1 hour\' WHERE id = '
+			. (int)$firstInput['render_request_id']);
+
+		$ready = tempnam(sys_get_temp_dir(), 'victual-artifact-accept-');
+		unlink($ready);
+		$spec = base64_encode(json_encode([
+			'request_id' => (int)$input['render_request_id'],
+			'generation_token' => (string)$input['generation_token'],
+			'bytes' => base64_encode($bytes),
+			'ready_file' => $ready,
+		], JSON_THROW_ON_ERROR));
+		$process = null;
+		try {
+			self::$db->beginTransaction();
+			self::assertSame(1, self::artifacts()->CollectExpiredPreviews(), 'Collection removes the last old reference and holds its file lock');
+			$env = array_merge(array_filter($_SERVER, 'is_scalar'), array_filter($_ENV, 'is_scalar'));
+			foreach (['PGHOST', 'PGPORT', 'PHPUNIT_DB_NAME', 'PGUSER', 'PGPASSWORD'] as $key) {
+				$value = getenv($key);
+				if ($value !== false) $env[$key] = $value;
+			}
+			$env['RBAC_TEST_SCHEMA'] = self::Schema();
+			$process = proc_open([PHP_BINARY, __DIR__ . '/artifact-accept-subprocess-helper.php', $spec],
+				[1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
+			self::assertIsResource($process, 'The independent writer process starts');
+			$deadline = microtime(true) + 5;
+			while (!is_file($ready) && microtime(true) < $deadline) {
+				usleep(10000);
+			}
+			self::assertFileExists($ready, 'The child connected and reached artifact storage');
+			$pid = (int)file_get_contents($ready);
+			$waiting = false;
+			$waitDeadline = microtime(true) + 3;
+			$activity = self::$db->prepare('SELECT wait_event_type FROM pg_stat_activity WHERE pid=?');
+			while (microtime(true) < $waitDeadline) {
+				$activity->execute([$pid]);
+				if ($activity->fetchColumn() === 'Lock') {
+					$waiting = true;
+					break;
+				}
+				usleep(10000);
+			}
+			self::$db->commit();
+			$stdout = stream_get_contents($pipes[1]);
+			$stderr = stream_get_contents($pipes[2]);
+			fclose($pipes[1]);
+			fclose($pipes[2]);
+			$exit = proc_close($process);
+			$process = null;
+			self::assertTrue($waiting, 'Store waited on the collector\'s per-file transaction lock');
+			self::assertSame(0, $exit, 'The writer completes after collection commits: ' . $stderr);
+			$result = json_decode($stdout, true, 512, JSON_THROW_ON_ERROR);
+			self::assertSame($bytes, self::artifacts()->Bytes((int)$result['artifact_id']), 'The new manifest reads the restored bytes');
+			self::assertNotNull(self::artifacts()->Get((int)$first['id'])['collected_at'], 'Collection keeps the old manifest collected');
+		} finally {
+			if (self::$db->inTransaction()) {
+				self::$db->rollBack();
+			}
+			if (is_resource($process)) {
+				proc_terminate($process);
+				foreach ($pipes as $pipe) {
+					if (is_resource($pipe)) fclose($pipe);
+				}
+				proc_close($process);
+			}
+			if (is_file($ready)) unlink($ready);
+		}
+	}
+
 	// --- LabelCaptureService ---------------------------------------------------------------
 
 	private static function captures($permissionCheck = null): LabelCaptureService

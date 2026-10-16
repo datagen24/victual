@@ -77,9 +77,14 @@ class ArtifactService extends LabelService
         $digest = hash('sha256', $bytes);
         $fileName = LabelByteStore::NameFor('artifact', $digest, 'png');
 
-        $existing = $this->Query('SELECT * FROM label_artifacts WHERE file_group=? AND file_name=?', [LabelByteStore::GROUP_ARTIFACTS, $fileName])->fetch(\PDO::FETCH_ASSOC);
-        if (!$existing) {
-            (new LabelByteStore($this->db))->Put(LabelByteStore::GROUP_ARTIFACTS, $fileName, $bytes, self::MIME_TYPE);
+        // Collection owns the same lock while deciding whether the last uncollected
+        // reference still needs the bytes. Wait for that decision before checking for a
+        // live manifest or recreating the file. The collector only try-locks, so this
+        // blocking acquisition cannot form a lock cycle with another collection.
+        $this->LockFile(LabelByteStore::GROUP_ARTIFACTS, $fileName);
+        $store = new LabelByteStore($this->db);
+        if ($store->Get(LabelByteStore::GROUP_ARTIFACTS, $fileName) === null) {
+            $store->Put(LabelByteStore::GROUP_ARTIFACTS, $fileName, $bytes, self::MIME_TYPE);
         }
 
         $manifest = [
@@ -239,6 +244,12 @@ class ArtifactService extends LabelService
     private function TryLockFile(string $group, string $name): bool
     {
         return (bool)$this->Query('SELECT pg_try_advisory_xact_lock(?::int, hashtext(?))', [self::FILE_LOCK_CLASS, $group . '/' . $name])->fetchColumn();
+    }
+
+    /** Takes the transaction-scoped lock shared with collection, waiting for its decision. */
+    private function LockFile(string $group, string $name): void
+    {
+        $this->Query('SELECT pg_advisory_xact_lock(?::int, hashtext(?))', [self::FILE_LOCK_CLASS, $group . '/' . $name]);
     }
 
     private function AssertLength(int $height, array $profile): void
