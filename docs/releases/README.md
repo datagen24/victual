@@ -56,6 +56,7 @@ These records are not published on the documentation site
 
 | Version | Date | Record |
 |---|---|---|
+| 0.4.4 | 2026-10-16 | [0.4.4.md](0.4.4.md) |
 | 0.4.3 | 2026-10-15 | [0.4.3.md](0.4.3.md) |
 | 0.4.2 | 2026-10-15 | [0.4.2.md](0.4.2.md) |
 | 0.4.1-hotfix1 | 2026-10-14 | [0.4.1-hotfix1.md](0.4.1-hotfix1.md) |

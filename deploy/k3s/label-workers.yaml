@@ -125,7 +125,7 @@ spec:
                     path: renderer-key
           containers:
             - name: renderer
-              image: ghcr.io/datagen24/victual-label-renderer:0.4.3
+              image: ghcr.io/datagen24/victual-label-renderer:0.4.4
               args:
                 - "--api"
                 - "$(VICTUAL_API_BASE)"
@@ -225,7 +225,7 @@ spec:
                     path: worker-key
           containers:
             - name: worker
-              image: ghcr.io/datagen24/victual-label-worker:0.4.3
+              image: ghcr.io/datagen24/victual-label-worker:0.4.4
               args:
                 - "--api"
                 - "$(VICTUAL_API_BASE)"
