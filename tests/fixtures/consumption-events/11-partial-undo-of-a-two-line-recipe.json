@@ -119,11 +119,14 @@
 				}
 			},
 			"save": {
-				"line": "0.id"
+				"line": {
+					"match": {"product_id": "{{product.tablet_a}}"},
+					"field": "id"
+				}
 			}
 		},
 		{
-			"note": "The person undoes the first line only",
+			"note": "The person undoes the tablet_a booking only",
 			"request": {
 				"method": "POST",
 				"path": "/api/stock/bookings/{{saved.line}}/undo"
