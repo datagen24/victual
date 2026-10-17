@@ -21,6 +21,8 @@ use Slim\Exception\HttpForbiddenException;
  */
 class UsersApiController extends BaseApiController
 {
+	protected const NUMERIC_BODY_FIELDS = ['permission_id'];
+
 	/**
 	 * POST /api/users/{userId}/permissions - assigns the permission given by the body
 	 * field permission_id to the user. Requires the USERS_EDIT permission (403 otherwise), that
