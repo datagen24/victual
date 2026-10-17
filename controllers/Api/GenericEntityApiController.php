@@ -3,6 +3,7 @@
 namespace Victual\Controllers\Api;
 
 use Victual\Controllers\Users\User;
+use Victual\Controllers\Users\UserfileOwnerPolicy;
 use Victual\Controllers\Users\EntityReadPolicy;
 use Victual\Services\DatabaseService;
 use Victual\Services\FieldPolicy;
@@ -339,7 +340,16 @@ class GenericEntityApiController extends BaseApiController
 
 			try
 			{
-				$row->delete();
+				if (in_array($args['entity'], UserfileOwnerPolicy::CASCADING_OWNER_ENTITIES, true))
+				{
+					// The row's userfield values are deleted with it, and with them any
+					// reference that protected a file (#920)
+					UserfileOwnerPolicy::GuardOwnershipChange($request, fn () => $row->delete());
+				}
+				else
+				{
+					$row->delete();
+				}
 			}
 			catch (\PDOException $ex)
 			{
@@ -466,7 +476,7 @@ class GenericEntityApiController extends BaseApiController
 				// class edit triggers) commit or roll back together - audit finding H5 / issue
 				// #494, and M9 / issue #509 for the class-edit propagation specifically.
 				// EditObject() is likewise always this request's outermost transaction.
-				return $this->InRequestTransaction($request, function () use ($args, $requestBody, $response, $row)
+				return $this->InRequestTransaction($request, function () use ($args, $request, $requestBody, $response, $row)
 				{
 					if ($args['entity'] === 'locations')
 					{
@@ -477,7 +487,16 @@ class GenericEntityApiController extends BaseApiController
 						$requestBody = $this->WithDerivedIsFreezer($requestBody, $row->storage_class_id);
 					}
 
-					$row->update($requestBody);
+					if ($args['entity'] === 'userfields')
+					{
+						// A definition's entity decides which record each of its values hangs
+						// off, so changing it moves every reference the field holds (#920)
+						UserfileOwnerPolicy::GuardOwnershipChange($request, fn () => $row->update($requestBody));
+					}
+					else
+					{
+						$row->update($requestBody);
+					}
 
 					if ($args['entity'] === 'storage_classes' && array_key_exists('treats_as_freezer', $requestBody))
 					{
@@ -660,14 +679,17 @@ class GenericEntityApiController extends BaseApiController
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-		return $this->HandleApiCall($response, function () use ($args, $requestBody, $response)
+		return $this->HandleApiCall($response, function () use ($args, $request, $requestBody, $response)
 		{
 			if ($requestBody === null)
 			{
 				throw new \Exception('Request body could not be parsed (probably invalid JSON format or missing/wrong Content-Type header)');
 			}
 
-			UserfieldsService::GetInstance()->SetValues($args['entity'], $args['objectId'], $requestBody);
+			// Clearing or replacing a value that names a file removes that owner's reference,
+			// which can widen who may read the file (#920): the write needs read permission on
+			// every owner of each file whose references it changes
+			UserfileOwnerPolicy::GuardOwnershipChange($request, fn () => UserfieldsService::GetInstance()->SetValues($args['entity'], $args['objectId'], $requestBody));
 			return $this->EmptyApiResponse($response);
 		});
 	}

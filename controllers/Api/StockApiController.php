@@ -3,6 +3,7 @@
 namespace Victual\Controllers\Api;
 
 use Victual\Controllers\Users\User;
+use Victual\Controllers\Users\UserfileOwnerPolicy;
 use Victual\Helpers\Grocycode;
 use Victual\Services\DatabaseService;
 use Victual\Services\FieldPolicy;
@@ -1656,14 +1657,15 @@ class StockApiController extends BaseApiController
 		User::CheckPermission($request, User::PERMISSION_STOCK_EDIT);
 		User::CheckPermission($request, User::PERMISSION_MASTER_DATA_EDIT);
 
-		return $this->HandleApiCall($response, function () use ($args, $response)
+		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
 			if (filter_var($args['productIdToKeep'], FILTER_VALIDATE_INT) === false || filter_var($args['productIdToRemove'], FILTER_VALIDATE_INT) === false)
 			{
 				throw new \Exception('Provided {productIdToKeep} or {productIdToRemove} is not a valid integer');
 			}
 
-			$this->ApiResponse($response, StockService::GetInstance()->MergeProducts($args['productIdToKeep'], $args['productIdToRemove']));
+			// The removed product is deleted, and its userfield values with it (#920)
+			$this->ApiResponse($response, UserfileOwnerPolicy::GuardOwnershipChange($request, fn () => StockService::GetInstance()->MergeProducts($args['productIdToKeep'], $args['productIdToRemove'])));
 			return $this->EmptyApiResponse($response);
 		});
 	}

@@ -868,7 +868,8 @@ class UserfileOwnerReadTest extends PgsqlSchemaTestCase
 	}
 
 	// -------------------------------------------------------------------------------
-	// F5: what the unchanged write paths can do to the read rule
+	// #920 / decision D3: a write that changes a file's owners needs read permission on
+	// every owner it had, so no write path can widen the read rule above
 	// -------------------------------------------------------------------------------
 
 	#[DataProvider('backends')]
@@ -882,21 +883,13 @@ class UserfileOwnerReadTest extends PgsqlSchemaTestCase
 		$request = (new ServerRequestFactory())->createServerRequest('PUT', 'http://localhost/api')
 			->withParsedBody(['attach_field' => $token])->withHeader('Content-Type', 'application/json');
 		$api = new GenericEntityApiController(self::$container);
-		self::assertSame(204, $api->SetUserfields($request, new Response(), ['entity' => 'products', 'objectId' => (string)self::$productId])->getStatusCode(), 'the write path accepts the attachment');
+		self::assertSame(403, $api->SetUserfields($request, new Response(), ['entity' => 'products', 'objectId' => (string)self::$productId])->getStatusCode(), 'attachment requires every current owner');
 
 		$this->assertRefused(self::serve($token), 'the attacher still cannot read it: the battery reference remains');
 	}
 
-	/**
-	 * RESIDUAL FINDING (F5), asserting today's behaviour rather than the behaviour we want:
-	 * SetUserfields checks only MASTER_DATA_EDIT, not the read permission of the record it
-	 * edits, so a caller who can read the file through a second owner can remove the
-	 * protected owner's reference and have the file widen to the second owner. Deleting
-	 * the owning record has the same effect (values cascade for products, batteries, chores).
-	 * Fixing it is owner-based write authorization, filed separately.
-	 */
 	#[DataProvider('backends')]
-	public function testResidualF5DetachingTheProtectedOwnerWidensTheRead(string $backend): void
+	public function testF5DetachingTheProtectedOwnerIsRefused(string $backend): void
 	{
 		$token = $this->fixtureFile($backend, 'detach.txt', 'detach');
 		self::reference('batteries', (string)self::$batteryId, 'detach.txt', 'file', 'battery_doc');
@@ -908,9 +901,205 @@ class UserfileOwnerReadTest extends PgsqlSchemaTestCase
 		$request = (new ServerRequestFactory())->createServerRequest('PUT', 'http://localhost/api')
 			->withParsedBody(['battery_doc' => ''])->withHeader('Content-Type', 'application/json');
 		$api = new GenericEntityApiController(self::$container);
-		self::assertSame(204, $api->SetUserfields($request, new Response(), ['entity' => 'batteries', 'objectId' => (string)self::$batteryId])->getStatusCode());
+		self::assertSame(403, $api->SetUserfields($request, new Response(), ['entity' => 'batteries', 'objectId' => (string)self::$batteryId])->getStatusCode());
 
-		self::assertSame(200, self::serve($token)['status'], 'CURRENT BEHAVIOUR: after the battery reference is emptied the product alone decides');
+		$this->assertRefused(self::serve($token), 'the protected battery reference remains');
+	}
+
+	#[DataProvider('backends')]
+	public function testReplacingTheProtectedValueIsRefused(string $backend): void
+	{
+		$token = $this->fixtureFile($backend, 'replace.txt', 'replace');
+		$this->fixtureFile($backend, 'other.txt', 'other');
+		self::reference('batteries', (string)self::$batteryId, 'replace.txt', 'file', 'battery_doc');
+		self::reference('products', (string)self::$productId, 'replace.txt');
+
+		self::grant(['MASTER_DATA_EDIT', 'STOCK_VIEW']);
+		self::assertSame(403, self::setUserfields('batteries', (string)self::$batteryId, ['battery_doc' => base64_encode('other.txt') . '_' . base64_encode('other')]));
+
+		$this->assertRefused(self::serve($token), 'the battery still names the file');
+		self::assertSame(1, self::valuesNaming('replace.txt', 'batteries'), 'and the refused write left the value as it was');
+	}
+
+	#[DataProvider('backends')]
+	public function testDeletingTheProtectedOwnerIsRefused(string $backend): void
+	{
+		// Reproduction 2: the battery's values cascade with it, which left the product alone
+		$batteryId = (int)self::$db->query("INSERT INTO batteries (name) VALUES ('ufo-battery-delete-" . uniqid() . "') RETURNING id")->fetchColumn();
+		$token = $this->fixtureFile($backend, 'cascade.txt', 'cascade');
+		self::reference('batteries', (string)$batteryId, 'cascade.txt', 'file', 'battery_doc');
+		self::reference('products', (string)self::$productId, 'cascade.txt');
+
+		self::grant(['MASTER_DATA_EDIT', 'STOCK_VIEW']);
+		self::assertSame(403, self::deleteObject('batteries', $batteryId));
+
+		self::assertSame(1, (int)self::$db->query("SELECT COUNT(*) FROM batteries WHERE id = $batteryId")->fetchColumn(), 'the battery is still there');
+		$this->assertRefused(self::serve($token), 'and still protects the file');
+	}
+
+	#[DataProvider('backends')]
+	public function testDeletingAProtectedProductIsRefusedAndAnOwnerReaderMayDeleteIt(string $backend): void
+	{
+		$productId = self::freshProduct('ufo-product-delete');
+		$token = $this->fixtureFile($backend, 'product-cascade.txt', 'product cascade');
+		self::reference('products', (string)$productId, 'product-cascade.txt');
+		self::reference('chores', (string)self::$choreId, 'product-cascade.txt', 'file', 'chore_doc');
+
+		self::grant(['MASTER_DATA_EDIT', 'CHORES_VIEW']);
+		self::assertSame(403, self::deleteObject('products', $productId), 'the caller cannot read the product that protects the file');
+		$this->assertRefused(self::serve($token), 'the product reference remains');
+
+		self::grant(['MASTER_DATA_EDIT', 'CHORES_VIEW', 'STOCK_VIEW']);
+		self::assertSame(204, self::deleteObject('products', $productId), 'a caller who may read every owner may remove one');
+		self::assertSame(200, self::serve($token)['status'], 'and the chore alone then decides');
+	}
+
+	#[DataProvider('backends')]
+	public function testMergingAwayAProtectedProductIsRefused(string $backend): void
+	{
+		$productId = self::freshProduct('ufo-product-merge');
+		$token = $this->fixtureFile($backend, 'merge.txt', 'merge');
+		self::reference('products', (string)$productId, 'merge.txt');
+		self::reference('chores', (string)self::$choreId, 'merge.txt', 'file', 'chore_doc');
+
+		self::grant(['MASTER_DATA_EDIT', 'STOCK_EDIT', 'CHORES_VIEW']);
+		$request = (new ServerRequestFactory())->createServerRequest('POST', 'http://localhost/api');
+		$api = new \Victual\Controllers\Api\StockApiController(self::$container);
+		self::assertSame(403, $api->MergeProducts($request, new Response(), ['productIdToKeep' => (string)self::$productId, 'productIdToRemove' => (string)$productId])->getStatusCode());
+
+		self::assertSame(1, (int)self::$db->query("SELECT COUNT(*) FROM products WHERE id = $productId")->fetchColumn(), 'the merge was rolled back');
+		$this->assertRefused(self::serve($token), 'and the product still protects the file');
+	}
+
+	#[DataProvider('backends')]
+	public function testMergingAwayAProtectedChoreIsRefused(string $backend): void
+	{
+		$choreId = (int)self::$db->query("INSERT INTO chores (name, period_type, period_interval, start_date, active, track_date_only) VALUES ('ufo-chore-merge-" . uniqid() . "', 'daily', 1, '2028-03-01 09:00:00', 1, 0) RETURNING id")->fetchColumn();
+		$token = $this->fixtureFile($backend, 'chore-merge.txt', 'chore merge');
+		self::reference('chores', (string)$choreId, 'chore-merge.txt', 'file', 'chore_doc');
+		self::reference('products', (string)self::$productId, 'chore-merge.txt');
+
+		self::grant(['MASTER_DATA_EDIT', 'STOCK_VIEW']);
+		$request = (new ServerRequestFactory())->createServerRequest('POST', 'http://localhost/api');
+		$api = new \Victual\Controllers\Api\ChoresApiController(self::$container);
+		self::assertSame(403, $api->MergeChores($request, new Response(), ['choreIdToKeep' => (string)self::$choreId, 'choreIdToRemove' => (string)$choreId])->getStatusCode());
+
+		self::assertSame(1, (int)self::$db->query("SELECT COUNT(*) FROM chores WHERE id = $choreId")->fetchColumn(), 'the merge was rolled back');
+		$this->assertRefused(self::serve($token), 'and the chore still protects the file');
+	}
+
+	#[DataProvider('backends')]
+	public function testMovingADefinitionsValuesToAnotherEntityIsRefused(string $backend): void
+	{
+		// A definition's entity decides which record its values hang off. An api_keys owner
+		// admits nobody, ADMIN included, so even ADMIN may not move its values onto products
+		$keyId = (int)self::$db->query("INSERT INTO api_keys (api_key, user_id, key_type) VALUES ('ufo-move-" . uniqid() . "', " . self::CALLER_ID . ", 'default') RETURNING id")->fetchColumn();
+		$token = $this->fixtureFile($backend, 'moved.txt', 'moved');
+		self::reference('api_keys', (string)$keyId, 'moved.txt', 'file', 'key_doc');
+		self::$db->exec("INSERT INTO products (id, name, location_id, qu_id_purchase, qu_id_stock) SELECT $keyId, 'ufo-moved-target-' || $keyId, (SELECT MIN(id) FROM locations), MIN(id), MIN(id) FROM quantity_units ON CONFLICT (id) DO NOTHING");
+		self::$db->query("SELECT setval(pg_get_serial_sequence('products', 'id'), (SELECT MAX(id) FROM products))");
+		$fieldId = (int)self::$db->query("SELECT id FROM userfields WHERE entity = 'api_keys' AND name = 'key_doc'")->fetchColumn();
+
+		self::grant(['ADMIN']);
+		$request = (new ServerRequestFactory())->createServerRequest('PUT', 'http://localhost/api')
+			->withParsedBody(['entity' => 'products'])->withHeader('Content-Type', 'application/json');
+		try
+		{
+			$status = (new GenericEntityApiController(self::$container))->EditObject($request, new Response(), ['entity' => 'userfields', 'objectId' => (string)$fieldId])->getStatusCode();
+		}
+		catch (HttpException $ex)
+		{
+			$status = $ex->getCode();
+		}
+
+		self::assertSame(403, $status);
+		self::assertSame('api_keys', self::$db->query("SELECT entity FROM userfields WHERE id = $fieldId")->fetchColumn(), 'the edit was rolled back');
+		$this->assertRefused(self::serve($token), 'and the api key still admits nobody');
+	}
+
+	#[DataProvider('backends')]
+	public function testAnOwnerReaderMayDetach(string $backend): void
+	{
+		$token = $this->fixtureFile($backend, 'detach-allowed.txt', 'detach allowed');
+		self::reference('batteries', (string)self::$batteryId, 'detach-allowed.txt', 'file', 'battery_doc');
+		self::reference('products', (string)self::$productId, 'detach-allowed.txt');
+
+		self::grant(['MASTER_DATA_EDIT', 'STOCK_VIEW', 'BATTERIES_VIEW']);
+		self::assertSame(204, self::setUserfields('batteries', (string)self::$batteryId, ['battery_doc' => '']));
+		self::assertSame(0, self::valuesNaming('detach-allowed.txt', 'batteries'));
+	}
+
+	#[DataProvider('backends')]
+	public function testDeletingOrReuploadingAProtectedFileIsRefusedWhetherOrNotItExists(string $backend): void
+	{
+		$token = $this->fixtureFile($backend, 'bytes.txt', 'original bytes');
+		self::reference('batteries', (string)self::$batteryId, 'bytes.txt', 'file', 'battery_doc');
+
+		self::grant(['MASTER_DATA_EDIT']);
+		self::assertSame(403, self::deleteFile($token), 'deleting needs the battery');
+		self::assertSame('original bytes', stream_get_contents(FileStorage::GetInstance()->Read('userfiles', 'bytes.txt')));
+		self::assertSame(403, self::uploadFile($token, 'replacement'), 'an upload under the name is refused before it can say the name exists');
+
+		// A referenced name that holds no bytes answers the same, so the answer says nothing
+		$missing = base64_encode('missing-bytes.txt');
+		self::reference('batteries', (string)self::$batteryId, 'missing-bytes.txt', 'file', 'battery_doc2');
+		self::assertSame(403, self::uploadFile($missing, 'new'));
+
+		self::grant(['MASTER_DATA_EDIT', 'BATTERIES_VIEW']);
+		self::assertSame(204, self::deleteFile($token), 'a battery reader may delete it');
+	}
+
+	#[DataProvider('backends')]
+	public function testTheBrowsersReplaceFlowStillWorksForAnOwnerReader(string $backend): void
+	{
+		// userfieldsform.js saves the new value first, then deletes the old file (by then
+		// unreferenced) and uploads the new one (by then referenced by a record it can read)
+		$productId = self::freshProduct('ufo-product-replace');
+		$old = $this->fixtureFile($backend, 'old-doc.txt', 'the previous document, long enough to be sniffed');
+		self::reference('products', (string)$productId, 'old-doc.txt');
+
+		self::grant(['MASTER_DATA_EDIT', 'STOCK_VIEW']);
+		self::assertSame(204, self::setUserfields('products', (string)$productId, ['ufo_file' => base64_encode('new-doc.txt') . '_' . base64_encode('new')]));
+		self::assertSame(204, self::deleteFile($old));
+		self::assertSame(204, self::uploadFile(base64_encode('new-doc.txt'), 'new bytes'));
+		self::assertSame(200, self::serve(base64_encode('new-doc.txt'))['status']);
+	}
+
+	public function testWritesThatTouchNoFileAreUnchanged(): void
+	{
+		$productId = self::freshProduct('ufo-product-plain');
+		self::$db->exec("INSERT INTO userfields(entity, name, caption, type) VALUES ('products', 'plain_text', 'Plain', 'text-single-line') ON CONFLICT DO NOTHING");
+
+		self::grant(['MASTER_DATA_EDIT']);
+		self::assertSame(204, self::setUserfields('products', (string)$productId, ['plain_text' => 'hello']));
+		self::assertSame(204, self::deleteObject('products', $productId));
+	}
+
+	#[DataProvider('backends')]
+	public function testDerivativeNamesCannotBeUploadedOrStored(string $backend): void
+	{
+		$this->fixtureFile($backend, 'pic.png', self::$png);
+		self::grant(['MASTER_DATA_EDIT', 'STOCK_VIEW']);
+
+		$derivative = 'pic__downscaledto32x32.png';
+		self::assertSame(400, self::uploadFile(base64_encode($derivative), self::$png), 'only FilesService makes resized copies');
+		self::assertFalse(FileStorage::GetInstance()->Exists('userfiles', $derivative));
+
+		self::$db->exec("INSERT INTO userfields(entity, name, caption, type) VALUES ('products', 'ufo_file', 'ufo_file', 'file') ON CONFLICT DO NOTHING");
+		self::assertSame(400, self::setUserfields('products', (string)self::$productId, ['ufo_file' => base64_encode($derivative) . '_' . base64_encode('x')]));
+	}
+
+	public function testTheCascadingOwnerListMatchesTheTriggers(): void
+	{
+		// Every table with a trigger whose function deletes userfield values, other than
+		// userfield_values itself (whose trigger removes a value set to empty, a write that
+		// SetUserfields already guards)
+		$tables = self::$db->query(
+			"SELECT DISTINCT c.relname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_proc p ON p.oid = t.tgfoid
+			 WHERE NOT t.tgisinternal AND p.prosrc ILIKE '%DELETE FROM userfield_values%' AND c.relname <> 'userfield_values' ORDER BY 1"
+		)->fetchAll(PDO::FETCH_COLUMN);
+
+		self::assertSame(\Victual\Controllers\Users\UserfileOwnerPolicy::CASCADING_OWNER_ENTITIES, $tables);
 	}
 
 	// -------------------------------------------------------------------------------
@@ -998,6 +1187,59 @@ class UserfileOwnerReadTest extends PgsqlSchemaTestCase
 			$objectId = $transactionId;
 		}
 		self::$db->prepare('INSERT INTO userfield_values(field_id, object_id, value) VALUES (?, ?, ?)')->execute([$fieldId, $objectId, $value]);
+	}
+
+	private static function freshProduct(string $name): int
+	{
+		$statement = self::$db->prepare("INSERT INTO products(name, location_id, qu_id_purchase, qu_id_stock) SELECT ?, (SELECT MIN(id) FROM locations), MIN(id), MIN(id) FROM quantity_units RETURNING id");
+		$statement->execute([$name . '-' . uniqid()]);
+
+		return (int)$statement->fetchColumn();
+	}
+
+	private static function valuesNaming(string $name, string $entity): int
+	{
+		$statement = self::$db->prepare("SELECT COUNT(*) FROM userfield_values uv JOIN userfields uf ON uf.id = uv.field_id WHERE uf.entity = ? AND uv.value LIKE ?");
+		$statement->execute([$entity, base64_encode($name) . '%']);
+
+		return (int)$statement->fetchColumn();
+	}
+
+	private static function setUserfields(string $entity, string $objectId, array $values): int
+	{
+		$request = (new ServerRequestFactory())->createServerRequest('PUT', 'http://localhost/api')
+			->withParsedBody($values)->withHeader('Content-Type', 'application/json');
+
+		return (new GenericEntityApiController(self::$container))->SetUserfields($request, new Response(), ['entity' => $entity, 'objectId' => $objectId])->getStatusCode();
+	}
+
+	/** The status the application answers: a refusal outside HandleApiCall is an HttpException. */
+	private static function deleteObject(string $entity, int $id): int
+	{
+		$request = (new ServerRequestFactory())->createServerRequest('DELETE', 'http://localhost/api');
+		try
+		{
+			return (new GenericEntityApiController(self::$container))->DeleteObject($request, new Response(), ['entity' => $entity, 'objectId' => (string)$id])->getStatusCode();
+		}
+		catch (HttpException $ex)
+		{
+			return $ex->getCode();
+		}
+	}
+
+	private static function deleteFile(string $token): int
+	{
+		$request = (new ServerRequestFactory())->createServerRequest('DELETE', 'http://localhost/api');
+
+		return self::$files->DeleteFile($request, new Response(), ['group' => 'userfiles', 'fileName' => $token])->getStatusCode();
+	}
+
+	private static function uploadFile(string $token, string $bytes): int
+	{
+		$request = (new ServerRequestFactory())->createServerRequest('PUT', 'http://localhost/api')
+			->withBody((new \Slim\Psr7\Factory\StreamFactory())->createStream($bytes));
+
+		return self::$files->UploadFile($request, new Response(), ['group' => 'userfiles', 'fileName' => $token])->getStatusCode();
 	}
 
 	/** @return array{status: int, body: string} */
