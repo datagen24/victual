@@ -22,6 +22,8 @@ use Psr\Http\Message\ServerRequestInterface as Request;
  */
 class StockApiController extends BaseApiController
 {
+	protected const NUMERIC_BODY_FIELDS = ['amount', 'price', 'new_amount', 'gross_amount', 'product_amount', 'product_id', 'recipe_id', 'location_id', 'location_id_from', 'location_id_to', 'qu_id', 'list_id', 'shopping_location_id', 'stock_label_type'];
+
 	/**
 	 * Refuses a non-numeric body field before it reaches a service method's float/int
 	 * parameter: passing it through unchecked would raise a TypeError there, and
@@ -34,6 +36,16 @@ class StockApiController extends BaseApiController
 		if (!is_numeric($requestBody[$field]))
 		{
 			throw new \Exception('The ' . str_replace('_', ' ', $field) . ' must be a number');
+		}
+	}
+
+	/** Refuses invalid supplied shopping amounts and product ids before any mutation. */
+	private function RequirePositiveNumericField(array $requestBody, string $field): void
+	{
+		$this->RequireNumericAmount($requestBody, $field);
+		if (!is_finite((float)$requestBody[$field]) || (float)$requestBody[$field] <= 0)
+		{
+			throw new \Exception('The ' . str_replace('_', ' ', $field) . ' must be finite and positive');
 		}
 	}
 
@@ -446,13 +458,15 @@ class StockApiController extends BaseApiController
 				$listId = $this->RequirePositiveIntegerId($requestBody, 'list_id');
 			}
 
-			if (array_key_exists('product_amount', $requestBody) && !empty($requestBody['product_amount']) && is_numeric($requestBody['product_amount']))
+			if (array_key_exists('product_amount', $requestBody))
 			{
+				$this->RequirePositiveNumericField($requestBody, 'product_amount');
 				$amount = $requestBody['product_amount'];
 			}
 
-			if (array_key_exists('product_id', $requestBody) && !empty($requestBody['product_id']) && is_numeric($requestBody['product_id']))
+			if (array_key_exists('product_id', $requestBody))
 			{
+				$this->RequirePositiveNumericField($requestBody, 'product_id');
 				$productId = $requestBody['product_id'];
 			}
 
@@ -589,8 +603,13 @@ class StockApiController extends BaseApiController
 			}
 
 			$recipeId = null;
-			if (array_key_exists('recipe_id', $requestBody) && is_numeric($requestBody['recipe_id']))
+			if (array_key_exists('recipe_id', $requestBody))
 			{
+				$this->RequireNumericAmount($requestBody, 'recipe_id');
+				if (!is_finite((float)$requestBody['recipe_id']))
+				{
+					throw new \Exception('The recipe id must be finite');
+				}
 				$recipeId = $requestBody['recipe_id'];
 			}
 
@@ -1288,13 +1307,15 @@ class StockApiController extends BaseApiController
 				$listId = $this->RequirePositiveIntegerId($requestBody, 'list_id');
 			}
 
-			if (array_key_exists('product_amount', $requestBody) && !empty($requestBody['product_amount']) && is_numeric($requestBody['product_amount']))
+			if (array_key_exists('product_amount', $requestBody))
 			{
+				$this->RequirePositiveNumericField($requestBody, 'product_amount');
 				$amount = $requestBody['product_amount'];
 			}
 
-			if (array_key_exists('product_id', $requestBody) && !empty($requestBody['product_id']) && is_numeric($requestBody['product_id']))
+			if (array_key_exists('product_id', $requestBody))
 			{
+				$this->RequirePositiveNumericField($requestBody, 'product_id');
 				$productId = $requestBody['product_id'];
 			}
 
