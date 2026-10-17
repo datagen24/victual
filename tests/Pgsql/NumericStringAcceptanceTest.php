@@ -325,6 +325,18 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 			'2147483648' => '400|1|rows=1 sum=10 price=null recipe_id=-',
 			'99999999999' => '400|1|rows=1 sum=10 price=null recipe_id=-',
 			'"99999999999"' => '400|1|rows=1 sum=10 price=null recipe_id=-',
+			'-1e309' => '400|1|rows=1 sum=10 price=null recipe_id=-',
+			'-2147483648' => '200|1|rows=1 sum=9 price=null recipe_id=-2147483648',
+		],
+		'consume.by-barcode.recipe_id' => [
+			'2' => '200|1|rows=1 sum=9 price=null recipe_id=2',
+			'1e309' => '400|1|rows=1 sum=10 price=null recipe_id=-',
+			'400 digits (number)' => '400|1|rows=1 sum=10 price=null recipe_id=-',
+			'"2"' => '200|1|rows=1 sum=9 price=null recipe_id=2',
+			'"2 "' => '200|1|rows=1 sum=9 price=null recipe_id=2',
+			'"\\u00a02"' => '400|1|rows=1 sum=10 price=null recipe_id=-',
+			'"abc"' => '400|1|rows=1 sum=10 price=null recipe_id=-',
+			'-1e309' => '400|1|rows=1 sum=10 price=null recipe_id=-',
 		],
 		'edit.amount' => [
 			'2' => '200|1|rows=1 sum=2 price=null',
@@ -935,6 +947,8 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 			'2147483648' => '400|1|rows=-',
 			'99999999999' => '400|1|rows=-',
 			'"99999999999"' => '400|1|rows=-',
+			'-1e309' => '400|1|rows=-',
+			'-2147483648' => '400|1|rows=-',
 		],
 		'shoppinglist.remove.product_amount' => [
 			'2' => '204|1|rows=8',
@@ -1048,6 +1062,8 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 			'2147483648' => '400|1|rows=2:10,1000:10',
 			'99999999999' => '400|1|rows=2:10,1000:10',
 			'"99999999999"' => '400|1|rows=2:10,1000:10',
+			'-1e309' => '400|1|rows=2:10,1000:10',
+			'-2147483648' => '400|1|rows=2:10,1000:10',
 		],
 		'users.permission_id' => [
 			'2' => '204|1|granted=2',
@@ -1106,6 +1122,8 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 			'2147483648' => '400|1|granted=-',
 			'99999999999' => '400|1|granted=-',
 			'"99999999999"' => '400|1|granted=-',
+			'-1e309' => '400|1|granted=-',
+			'-2147483648' => '400|1|granted=-',
 		],
 	];
 
@@ -1346,6 +1364,21 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 				fn (array $c) => self::stockState($c['product']) . ' recipe_id=' . self::scalar("SELECT string_agg(coalesce(recipe_id::text, 'null'), ',') FROM stock_log WHERE product_id = ? AND transaction_type = 'consume'", [$c['product']]),
 				null, null,
 			],
+			// #950 observed the by-barcode consume route by probe only; it delegates to
+			// ConsumeProduct, and a few inputs pin that it keeps doing so.
+			'consume.by-barcode.recipe_id' => [
+				'POST', '/api/stock/products/by-barcode/{barcode}/consume', '{"amount":1,"recipe_id":%V%}',
+				function () use ($stockSetup): array
+				{
+					$context = $stockSetup(10.0)();
+					$context['barcode'] = 'num-consume-barcode-' . $context['product'];
+					self::insertRow('product_barcodes', ['product_id' => $context['product'], 'barcode' => $context['barcode']]);
+
+					return $context;
+				},
+				fn (array $c) => self::stockState($c['product']) . ' recipe_id=' . self::scalar("SELECT string_agg(coalesce(recipe_id::text, 'null'), ',') FROM stock_log WHERE product_id = ? AND transaction_type = 'consume'", [$c['product']]),
+				null, null,
+			],
 			'edit.amount' => [
 				'PUT', '/api/stock/entry/{entry}', '{"amount":%V%}', $stockSetup(5.0), $stateObserve, $guardMessage, self::NUMERIC_PATTERN,
 			],
@@ -1488,6 +1521,12 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 		{
 			return array_intersect_key($inputs, array_flip(['2', '"2"', '" 2"', '"abc"', '1e309', '"1e3"']));
 		}
+		if ($field === 'consume.by-barcode.recipe_id')
+		{
+			$inputs['-1e309'] = '-1e309';
+
+			return array_intersect_key($inputs, array_flip(['2', '"2"', '"2 "', '"\\u00a02"', '1e309', '-1e309', '400 digits (number)', '"abc"']));
+		}
 
 		// Integer-valued fields: a value outside a 32-bit integer is a valid number to PHP and
 		// is refused (or not) further down, so the document has to say which.
@@ -1496,6 +1535,9 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 			$inputs['2147483648'] = '2147483648';
 			$inputs['99999999999'] = '99999999999';
 			$inputs['"99999999999"'] = '"99999999999"';
+			// Negative extremes #950 probed: an infinite double and the 32-bit minimum.
+			$inputs['-1e309'] = '-1e309';
+			$inputs['-2147483648'] = '-2147483648';
 		}
 
 		// A price of null is "no price" (or, on edit, "clear it"), which the document says.
