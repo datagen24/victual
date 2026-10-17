@@ -112,22 +112,23 @@ denied the request.
 
 Source, F2: "Authorize the original file before reading or creating a picture derivative."
 
-### 7. Writes are out of scope, and the read rule alone does not close the disclosure
+### 7. Items 1 to 6 are a read rule, and alone they do not close the disclosure
 
-This record does not change who can write userfield values or upload files. Writes stay at
-the group-level `MASTER_DATA_EDIT` check. Owner-based write authorization is tracked
-separately in [issue 920](https://github.com/datagen24/victual/issues/920).
+Items 1 to 6 decide who may read a userfile. On their own they do not change who can
+write userfield values or upload files: those writes stayed at the group-level
+`MASTER_DATA_EDIT` check. Item 9 adds owner-based write authorization
+([issue 920](https://github.com/datagen24/victual/issues/920)).
 
-That leaves a demonstrated bypass. A `MASTER_DATA_EDIT` holder can clear the value that
-references a protected file, or delete the owning record. The file then follows only its
-remaining owners, so the read widens to whoever those owners admit. The read rule alone
+That left a demonstrated bypass. A `MASTER_DATA_EDIT` holder could clear the value that
+references a protected file, or delete the owning record. The file then followed only its
+remaining owners, so the read widened to whoever those owners admit. The read rule alone
 therefore does not close the issue 905 disclosure.
 
 Source, F5: "Keep the read fix bounded and file owner-based write authorization separately.
 Check whether the existing write paths can bypass the new read rule." The maintainer
 recorded on 2026-10-13 that the deferral of F5 is not acceptance of this bypass.
 
-Item 9 closes this bypass.
+Item 9 closes this bypass for writes.
 
 ### 8. A view row is resolved by the view's key and admits what the view admits
 
@@ -148,36 +149,6 @@ The answer is recorded in
 "**resolve via the view key** — look the owner up in the view by the same key GetObject
 uses (`id`; `stock_id` for `stock`) and apply the view's `EntityReadPolicy` permission. A
 view row that no longer exists makes the reference unresolved, so ADMIN only."
-
-## Consequences
-
-**Compatibility.** A caller who could read a userfile before can now receive a 403. Items 1
-to 6 and 8 authorize this wire change, and it needs a line in the unreleased changelog. Upstream
-Grocy serves userfiles openly, so the fork diverges from it here and the parity suite is
-expected to report the difference.
-
-**Refusals are indistinguishable.** In the validation of PR 919 on 2026-10-13, refusals
-were byte-identical across nine cases. A caller cannot use the endpoint to learn whether a
-name exists or which record owns it.
-
-**Cost.** Resolving owners scans `userfield_values` once per userfile request. Irregular
-base64 spellings cannot be prefiltered in SQL, so the scan runs in PHP. The validation of
-PR 919 measured about 8.7 ms per request at 5,020 values and about 36 ms at 25,020 values
-(in-process, 20 cached thumbnails). No index is decided.
-
-**Owner types.** The implementation resolves owners from an explicit table of entities
-and, under item 8, twelve views. A reference to an entity outside both lists is
-unresolved, so the file is ADMIN only. `roles` resolves through its own read policy.
-
-**Degenerate view ids.** Seven of the twelve views do not expose a unique row id. Six
-select the constant `1 AS id`, `quantity_unit_conversions_resolved` selects -1 or 1, and
-`product_barcodes_view` combines barcode and product ids. For these views the check in
-PR 919 amounts to "the caller holds the view's permission and the view has a row with that
-id". It does not tie the reference to one underlying record.
-
-**Alternatives ruled out.** A blanket `MASTER_DATA_EDIT` or `ADMIN` gate on the whole group
-breaks pages that render images for `STOCK_VIEW` holders. Treating orphans as readable
-because deleting them is a lesser right was rejected in F1.
 
 ### 9. A write that changes a file's owners needs read permission on every owner it had
 
@@ -211,6 +182,37 @@ current owner, checked atomically with the mutation."
 That is how an upload is attached, and nothing records whether an unreferenced file was
 uploaded a moment ago or left behind by an earlier owner. An upload under an existing
 unreferenced name still answers 400, so it tells the caller that the name exists.
+
+## Consequences
+
+**Compatibility.** A caller who could read a userfile before can now receive a 403. Items 1
+to 6 and 8 authorize this wire change for reads. Item 9 adds 403s to the write paths it
+covers. Both need a line in the unreleased changelog. Upstream
+Grocy serves userfiles openly, so the fork diverges from it here and the parity suite is
+expected to report the difference.
+
+**Refusals are indistinguishable.** In the validation of PR 919 on 2026-10-13, refusals
+were byte-identical across nine cases. A caller cannot use the endpoint to learn whether a
+name exists or which record owns it.
+
+**Cost.** Resolving owners scans `userfield_values` once per userfile request. Irregular
+base64 spellings cannot be prefiltered in SQL, so the scan runs in PHP. The validation of
+PR 919 measured about 8.7 ms per request at 5,020 values and about 36 ms at 25,020 values
+(in-process, 20 cached thumbnails). No index is decided.
+
+**Owner types.** The implementation resolves owners from an explicit table of entities
+and, under item 8, twelve views. A reference to an entity outside both lists is
+unresolved, so the file is ADMIN only. `roles` resolves through its own read policy.
+
+**Degenerate view ids.** Seven of the twelve views do not expose a unique row id. Six
+select the constant `1 AS id`, `quantity_unit_conversions_resolved` selects -1 or 1, and
+`product_barcodes_view` combines barcode and product ids. For these views the check in
+PR 919 amounts to "the caller holds the view's permission and the view has a row with that
+id". It does not tie the reference to one underlying record.
+
+**Alternatives ruled out.** A blanket `MASTER_DATA_EDIT` or `ADMIN` gate on the whole group
+breaks pages that render images for `STOCK_VIEW` holders. Treating orphans as readable
+because deleting them is a lesser right was rejected in F1.
 
 ## Open questions
 
