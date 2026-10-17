@@ -146,6 +146,139 @@ class UserfileOwnerPolicy
 	}
 
 	/**
+	 * Entities whose row deletion deletes userfield values (the trg_cascade_*_removal
+	 * triggers), so deleting one of their rows can remove the reference that protects a
+	 * file. Deleting any other owner leaves its value behind as an unresolved reference,
+	 * which is ADMIN only and so can only narrow. UserfileOwnerWriteTest pins this list
+	 * against the triggers.
+	 */
+	const CASCADING_OWNER_ENTITIES = ['batteries', 'chores', 'products', 'userfields'];
+
+	/**
+	 * Runs $work, a write that can change which records reference a userfile, and refuses
+	 * it unless the caller may read every owner of each file whose owners it changed, as
+	 * those owners stood before the write (issue #920, decision D3). Removing a protected
+	 * record's reference, by clearing or replacing the value or by deleting a record whose
+	 * values cascade, would otherwise widen the read to the owners that remain; adding a
+	 * reference to a file the caller cannot read is refused the same way. The comparison
+	 * runs in one transaction around the write, so cascades are seen whatever path causes
+	 * them, and a refusal rolls the write back.
+	 *
+	 * A file nothing referenced before the write can be attached by anyone allowed to make
+	 * the write: that is how a client attaches a file it is about to upload.
+	 *
+	 * @throws PermissionMissingException The same refusal Check() gives, so it says nothing
+	 * about which record owns the file
+	 */
+	public static function GuardOwnershipChange($request, callable $work)
+	{
+		return DatabaseService::GetInstance()->InTransaction(function () use ($request, $work)
+		{
+			self::LockOwnership();
+
+			// Read authority is decided on the records as they stand before the write: after
+			// it, a deleted owner no longer exists and would admit ADMIN only.
+			$before = self::OwnersByRoot();
+			$readable = [];
+			foreach ($before as $owners)
+			{
+				foreach ($owners as $key => [$entity, $objectId])
+				{
+					$readable[$key] ??= self::MayReadAsOwner($entity, $objectId);
+				}
+			}
+
+			$result = $work();
+
+			$after = self::OwnersByRoot();
+			foreach ($before as $root => $owners)
+			{
+				$remaining = $after[$root] ?? [];
+				ksort($remaining);
+				ksort($owners);
+				if (array_keys($owners) === array_keys($remaining))
+				{
+					continue;
+				}
+
+				foreach (array_keys($owners) as $key)
+				{
+					if (!$readable[$key])
+					{
+						throw new PermissionMissingException($request, self::REFUSAL);
+					}
+				}
+			}
+
+			return $result;
+		});
+	}
+
+	/**
+	 * Authorizes creating or deleting a userfile's bytes, before the name is looked up, so
+	 * neither the answer nor the error says whether a protected file exists. A referenced
+	 * file needs read permission on every owner (D3: delete-then-upload under the same name
+	 * replaced a protected file's bytes). An unreferenced name keeps the group-level right:
+	 * a client uploads a file after saving the value that names it, and deletes a replaced
+	 * file after saving the value that no longer does.
+	 *
+	 * Must run inside the transaction that holds LockOwnership() until the bytes are written,
+	 * so a reference cannot be attached between the check and the write.
+	 *
+	 * @throws PermissionMissingException
+	 */
+	public static function CheckByteMutation($request, string $storedName): void
+	{
+		$references = self::ReferencesTo(FilesService::DerivativeChain($storedName));
+		if (count($references) > 0 && !self::MayRead($storedName))
+		{
+			throw new PermissionMissingException($request, self::REFUSAL);
+		}
+	}
+
+	/**
+	 * Serializes the writes GuardOwnershipChange() and CheckByteMutation() authorize. Only
+	 * they take it: a write outside them can delete a non-cascading owner or nothing at all,
+	 * and either way only narrows who may read a file.
+	 */
+	public static function LockOwnership(): void
+	{
+		$pdo = DatabaseService::GetInstance()->GetDbConnectionRaw();
+		if (!$pdo->inTransaction())
+		{
+			throw new \LogicException('The userfile ownership lock is held for a transaction');
+		}
+		$pdo->query('SELECT pg_advisory_xact_lock(920, 905)');
+	}
+
+	/**
+	 * Every referenced file's root original, with the distinct owners whose values name it
+	 * or one of its derivatives - the reference set MayRead() checks.
+	 *
+	 * @return array<string, array<string, array{0: ?string, 1: string}>> By root name, then
+	 * by the owner key ReferencesTo() uses
+	 */
+	private static function OwnersByRoot(): array
+	{
+		$statement = DatabaseService::GetInstance()->GetDbConnectionRaw()->query(
+			"SELECT uf.entity, uv.object_id, uv.value FROM userfield_values uv LEFT JOIN userfields uf ON uf.id = uv.field_id WHERE uv.value <> ''"
+		);
+
+		$owners = [];
+		while (($row = $statement->fetch(PDO::FETCH_NUM)) !== false)
+		{
+			$name = base64_decode(explode('_', $row[2])[0]);
+			if ($name === '' || !IsValidFileName($name))
+			{
+				continue;
+			}
+			$owners[FilesService::RootOf($name)][$row[0] === null ? "\0undefined" : $row[0] . "\0" . $row[1]] = [$row[0], $row[1]];
+		}
+
+		return $owners;
+	}
+
+	/**
 	 * The distinct (entity, object id) pairs holding a value that names $storedName, of any
 	 * field type: a field retyped after its values were saved still counts, and counting
 	 * more can only narrow access.

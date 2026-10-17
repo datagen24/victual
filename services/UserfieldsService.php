@@ -174,6 +174,17 @@ class UserfieldsService extends BaseService
 				throw new \Exception("Field $key is not a valid userfield of the given entity");
 			}
 
+			// A file value naming a resized copy rather than an original (#920 addendum): only
+			// FilesService makes those names, and a stored one would be served as the resize
+			if (in_array($fieldRow->type, [self::USERFIELD_TYPE_FILE, self::USERFIELD_TYPE_IMAGE], true) && is_string($value) && $value !== '')
+			{
+				$storedName = base64_decode(explode('_', $value)[0]);
+				if (FilesService::RootOf($storedName) !== $storedName)
+				{
+					throw new \Exception("Field $key names a resized picture rather than a file");
+				}
+			}
+
 			$fieldIdsByKey[$key] = $fieldRow->id;
 		}
 

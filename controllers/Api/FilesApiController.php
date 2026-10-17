@@ -5,6 +5,7 @@ namespace Victual\Controllers\Api;
 use Victual\Controllers\Users\PermissionMissingException;
 use Victual\Controllers\Users\User;
 use Victual\Controllers\Users\UserfileOwnerPolicy;
+use Victual\Services\DatabaseService;
 use Victual\Services\FilesService;
 use Victual\Services\Storage\FileStorage;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -270,7 +271,21 @@ class FilesApiController extends BaseApiController
 				$this->CheckUserPictureDeletion($request, $fileName);
 			}
 
-			FilesService::GetInstance()->DeleteFile($args['group'], $fileName);
+			if ($args['group'] === 'userfiles')
+			{
+				// A referenced file needs every owner's read permission, or deleting it and
+				// uploading new bytes under the same name replaces a protected file (#920)
+				DatabaseService::GetInstance()->InTransaction(function () use ($request, $args, $fileName)
+				{
+					UserfileOwnerPolicy::LockOwnership();
+					UserfileOwnerPolicy::CheckByteMutation($request, $fileName);
+					FilesService::GetInstance()->DeleteFile($args['group'], $fileName);
+				});
+			}
+			else
+			{
+				FilesService::GetInstance()->DeleteFile($args['group'], $fileName);
+			}
 
 			return $this->EmptyApiResponse($response);
 		});
@@ -365,8 +380,30 @@ class FilesApiController extends BaseApiController
 			$fileName = $this->CheckFileName($args['fileName']);
 			$this->CheckFileExtension($args['group'], $fileName);
 
+			// A stored name in the derivative form is served as the cached resize of its
+			// original, so uploading one before the real resize exists replaced what the
+			// original's readers are shown (#920 addendum). Only FilesService makes them.
+			if (FilesService::RootOf($fileName) !== $fileName)
+			{
+				throw new EInvalidApiQuery('A file name cannot have the form of a resized picture');
+			}
+
 			$storage = FileStorage::GetInstance();
-			$storage->Create($args['group'], $fileName, $this->GetRequestBodyStream($request));
+			if ($args['group'] === 'userfiles')
+			{
+				// Authorized before the exclusive create can say whether the name exists, and
+				// under the ownership lock so no reference is attached in between (#920)
+				DatabaseService::GetInstance()->InTransaction(function () use ($request, $args, $fileName, $storage)
+				{
+					UserfileOwnerPolicy::LockOwnership();
+					UserfileOwnerPolicy::CheckByteMutation($request, $fileName);
+					$storage->Create($args['group'], $fileName, $this->GetRequestBodyStream($request));
+				});
+			}
+			else
+			{
+				$storage->Create($args['group'], $fileName, $this->GetRequestBodyStream($request));
+			}
 
 			// A name ending in .png that holds a script is the whole of the problem, so
 			// what was stored has to be what the extension said it was.

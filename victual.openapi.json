@@ -1254,7 +1254,7 @@
 			},
 			"delete": {
 				"summary": "Deletes a single object of the given entity",
-				"description": "Deleting a location with child locations or any stock is refused with HTTP 400. Move or consume stock before deleting its location. Deleting any object still referenced by another object through an enforced foreign key - for example a product or a location named by a location's minimum stock, or a storage class or quantity unit set on a location - is refused the same way, leaving both objects unchanged.",
+				"description": "Deleting a location with child locations or any stock is refused with HTTP 400. Move or consume stock before deleting its location. Deleting any object still referenced by another object through an enforced foreign key - for example a product or a location named by a location's minimum stock, or a storage class or quantity unit set on a location - is refused the same way, leaving both objects unchanged. A write that changes which records reference a userfile also needs read permission on every record that referenced that file before the write, or it answers 403 \"Permission missing: USERFILE_OWNER_READ\" and changes nothing (issue #920). Deleting a product, battery, chore or userfield definition deletes its userfield values, so it is such a write.",
 				"tags": [
 					"Generic entity interactions"
 				],
@@ -1477,7 +1477,8 @@
 					"503": {
 						"$ref": "#/components/responses/SchemaUnavailable"
 					}
-				}
+				},
+				"description": "A write that changes which records reference a userfile also needs read permission on every record that referenced that file before the write, or it answers 403 \"Permission missing: USERFILE_OWNER_READ\" and changes nothing (issue #920). Clearing, replacing or adding a file value is such a write. A file or image value naming a resized copy (\"<name>__downscaledto<h>x<w>.<ext>\") is refused with 400."
 			}
 		},
 		"/files/{group}/{fileName}": {
@@ -1634,7 +1635,7 @@
 			},
 			"put": {
 				"summary": "Uploads a single file",
-				"description": "The file will be stored at /data/storage/{group}/{file_name} (you need to remember the group and file name to get or delete it again)",
+				"description": "The file will be stored at /data/storage/{group}/{file_name} (you need to remember the group and file name to get or delete it again). A name in the form of a resized picture (\"<name>__downscaledto<h>x<w>.<ext>\") is refused with 400 in every group. In the userfiles group, a name some record references needs read permission on every such record, or the upload answers 403 \"Permission missing: USERFILE_OWNER_READ\" whether or not the name exists (issue #920).",
 				"tags": [
 					"Files"
 				],
@@ -1782,7 +1783,8 @@
 					"503": {
 						"$ref": "#/components/responses/SchemaUnavailable"
 					}
-				}
+				},
+				"description": "In the userfiles group, a file some record references needs read permission on every such record, or the delete answers 403 \"Permission missing: USERFILE_OWNER_READ\" and the file stays (issue #920). An unreferenced file keeps the group's write permission."
 			}
 		},
 		"/users": {
@@ -4121,7 +4123,8 @@
 					"503": {
 						"$ref": "#/components/responses/SchemaUnavailable"
 					}
-				}
+				},
+				"description": "A write that changes which records reference a userfile also needs read permission on every record that referenced that file before the write, or it answers 403 \"Permission missing: USERFILE_OWNER_READ\" and changes nothing (issue #920). The removed product's userfield values are deleted with it."
 			}
 		},
 		"/stock/products/by-barcode/{barcode}": {
@@ -6644,7 +6647,8 @@
 					"503": {
 						"$ref": "#/components/responses/SchemaUnavailable"
 					}
-				}
+				},
+				"description": "A write that changes which records reference a userfile also needs read permission on every record that referenced that file before the write, or it answers 403 \"Permission missing: USERFILE_OWNER_READ\" and changes nothing (issue #920). The removed chore's userfield values are deleted with it."
 			}
 		},
 		"/batteries": {
