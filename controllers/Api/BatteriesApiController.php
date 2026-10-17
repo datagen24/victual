@@ -40,7 +40,7 @@ class BatteriesApiController extends BaseApiController
 
 	/**
 	 * POST /api/batteries/{batteryId}/charge - tracks a charge cycle for the given battery.
-	 * Requires the BATTERIES_TRACK_CHARGE_CYCLE permission (403 otherwise).
+	 * Requires BATTERIES_TRACK_CHARGE_CYCLE and BATTERIES_VIEW (403 otherwise).
 	 * Body field tracked_time is optional: omit it to use the current time, or send a date
 	 * or date/time in any rendering ParseApiDateTime() accepts. A value it cannot read is
 	 * refused with 400 - see BaseApiController::RequestedTimestamp().
@@ -49,6 +49,7 @@ class BatteriesApiController extends BaseApiController
 	public function TrackChargeCycle(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_BATTERIES_TRACK_CHARGE_CYCLE);
+		User::CheckPermission($request, User::PERMISSION_BATTERIES_VIEW);
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
@@ -69,12 +70,14 @@ class BatteriesApiController extends BaseApiController
 
 	/**
 	 * POST /api/batteries/charge-cycles/{chargeCycleId}/undo - undoes a tracked charge cycle.
-	 * Requires the BATTERIES_UNDO_CHARGE_CYCLE permission (403 otherwise).
+	 * Requires BATTERIES_UNDO_CHARGE_CYCLE, BATTERIES_TRACK_CHARGE_CYCLE and BATTERIES_VIEW (403 otherwise).
 	 * Returns 204 on success or a 400 error response.
 	 */
 	public function UndoChargeCycle(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_BATTERIES_UNDO_CHARGE_CYCLE);
+		User::CheckPermission($request, User::PERMISSION_BATTERIES_TRACK_CHARGE_CYCLE);
+		User::CheckPermission($request, User::PERMISSION_BATTERIES_VIEW);
 
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{

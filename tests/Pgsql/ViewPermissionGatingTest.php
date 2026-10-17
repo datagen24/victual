@@ -137,6 +137,37 @@ class ViewPermissionGatingTest extends PgsqlSchemaTestCase
 		$this->expectStatus(fn () => self::$batteriesApi->BatteryDetails(self::request(), new Response(), ['batteryId' => 501]), 200, 'BatteryDetails allowed with BATTERIES_VIEW');
 	}
 
+	public function testBatteryChargeRequiresViewAndTrackingBeforeMutation(): void
+	{
+		$request = self::request('POST')->withHeader('Content-Type', 'application/json')->withParsedBody([]);
+		$before = (int)self::$db->query('SELECT count(*) FROM battery_charge_cycles')->fetchColumn();
+		foreach ([[], ['BATTERIES_VIEW'], ['BATTERIES_TRACK_CHARGE_CYCLE']] as $grants)
+		{
+			self::grant($grants);
+			$this->expectStatus(fn () => self::$batteriesApi->TrackChargeCycle($request, new Response(), ['batteryId' => 501]), 403, 'Charge requires both grants');
+			self::assertSame($before, (int)self::$db->query('SELECT count(*) FROM battery_charge_cycles')->fetchColumn());
+		}
+		self::grant(['BATTERIES_VIEW', 'BATTERIES_TRACK_CHARGE_CYCLE']);
+		$response = $this->expectStatus(fn () => self::$batteriesApi->TrackChargeCycle($request, new Response(), ['batteryId' => 501]), 200, 'Charge with view and tracking');
+		$row = json_decode((string)$response->getBody(), true, flags: JSON_THROW_ON_ERROR);
+		self::assertSame(501, $row['battery_id']);
+		self::assertSame($before + 1, (int)self::$db->query('SELECT count(*) FROM battery_charge_cycles')->fetchColumn());
+	}
+
+	public function testBatteryUndoRequiresExistingUndoRightViewAndTrackingBeforeMutation(): void
+	{
+		$id = (int)self::$db->query("INSERT INTO battery_charge_cycles (battery_id, tracked_time) VALUES (501, now()) RETURNING id")->fetchColumn();
+		foreach ([[], ['BATTERIES_VIEW', 'BATTERIES_TRACK_CHARGE_CYCLE'], ['BATTERIES_UNDO_CHARGE_CYCLE', 'BATTERIES_VIEW'], ['BATTERIES_UNDO_CHARGE_CYCLE', 'BATTERIES_TRACK_CHARGE_CYCLE']] as $grants)
+		{
+			self::grant($grants);
+			$this->expectStatus(fn () => self::$batteriesApi->UndoChargeCycle(self::request('POST'), new Response(), ['chargeCycleId' => $id]), 403, 'Undo requires every grant');
+			self::assertSame(0, (int)self::$db->query('SELECT undone FROM battery_charge_cycles WHERE id = ' . $id)->fetchColumn());
+		}
+		self::grant(['BATTERIES_UNDO_CHARGE_CYCLE', 'BATTERIES_VIEW', 'BATTERIES_TRACK_CHARGE_CYCLE']);
+		$this->expectStatus(fn () => self::$batteriesApi->UndoChargeCycle(self::request('POST'), new Response(), ['chargeCycleId' => $id]), 204, 'Undo with all grants');
+		self::assertSame(1, (int)self::$db->query('SELECT undone FROM battery_charge_cycles WHERE id = ' . $id)->fetchColumn());
+	}
+
 	public function testEquipmentPageRoutesRefuseWithoutGrantAndSucceedWithEquipmentView(): void
 	{
 		self::grant([]);
