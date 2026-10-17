@@ -112,20 +112,23 @@ denied the request.
 
 Source, F2: "Authorize the original file before reading or creating a picture derivative."
 
-### 7. Writes are out of scope, and the read rule alone does not close the disclosure
+### 7. Items 1 to 6 are a read rule, and alone they do not close the disclosure
 
-This record does not change who can write userfield values or upload files. Writes stay at
-the group-level `MASTER_DATA_EDIT` check. Owner-based write authorization is tracked
-separately in [issue 920](https://github.com/datagen24/victual/issues/920).
+Items 1 to 6 decide who may read a userfile. On their own they do not change who can
+write userfield values or upload files: those writes stayed at the group-level
+`MASTER_DATA_EDIT` check. Item 9 adds owner-based write authorization
+([issue 920](https://github.com/datagen24/victual/issues/920)).
 
-That leaves a demonstrated bypass. A `MASTER_DATA_EDIT` holder can clear the value that
-references a protected file, or delete the owning record. The file then follows only its
-remaining owners, so the read widens to whoever those owners admit. The read rule alone
+That left a demonstrated bypass. A `MASTER_DATA_EDIT` holder could clear the value that
+references a protected file, or delete the owning record. The file then followed only its
+remaining owners, so the read widened to whoever those owners admit. The read rule alone
 therefore does not close the issue 905 disclosure.
 
 Source, F5: "Keep the read fix bounded and file owner-based write authorization separately.
 Check whether the existing write paths can bypass the new read rule." The maintainer
 recorded on 2026-10-13 that the deferral of F5 is not acceptance of this bypass.
+
+Item 9 closes this bypass for writes.
 
 ### 8. A view row is resolved by the view's key and admits what the view admits
 
@@ -147,10 +150,44 @@ The answer is recorded in
 uses (`id`; `stock_id` for `stock`) and apply the view's `EntityReadPolicy` permission. A
 view row that no longer exists makes the reference unresolved, so ADMIN only."
 
+### 9. A write that changes a file's owners needs read permission on every owner it had
+
+A write that removes, replaces or adds a reference to a userfile is refused with the same
+`USERFILE_OWNER_READ` refusal as a read, unless the caller may read every record that
+referenced the file before the write. The caller must also hold the write's existing
+permission. Those writes are:
+
+- clearing or changing a userfield value;
+- deleting a product, battery, chore or userfield definition, whose values cascade;
+- merging away a product or chore;
+- changing a userfield definition.
+
+The check compares the file's owners before and after the write, in the write's own
+transaction, so a cascade counts whichever path caused it. A refusal rolls the write back.
+
+The same rule covers the bytes. Deleting a referenced userfile, or uploading under a name
+that some record references, needs read permission on every owner. The check runs before
+the name is looked up, so the refusal does not say whether the file exists. A file that
+nothing references keeps the group-level `MASTER_DATA_EDIT` right. The browser deletes a
+replaced file after saving the value that no longer names it, and uploads a new one after
+saving the value that does.
+
+A name in the form of a picture derivative is refused at upload in every group, and as a
+file or image userfield value. Only `FilesService` makes such names.
+
+Source, D3 (2026-10-15): "Require existing operation rights and read authorization for every
+current owner, checked atomically with the mutation."
+
+**Not covered.** A caller who may make the write can attach a file that nothing references.
+That is how an upload is attached, and nothing records whether an unreferenced file was
+uploaded a moment ago or left behind by an earlier owner. An upload under an existing
+unreferenced name still answers 400, so it tells the caller that the name exists.
+
 ## Consequences
 
 **Compatibility.** A caller who could read a userfile before can now receive a 403. Items 1
-to 6 and 8 authorize this wire change, and it needs a line in the unreleased changelog. Upstream
+to 6 and 8 authorize this wire change for reads. Item 9 adds 403s to the write paths it
+covers. Both need a line in the unreleased changelog. Upstream
 Grocy serves userfiles openly, so the fork diverges from it here and the parity suite is
 expected to report the difference.
 
@@ -179,20 +216,19 @@ because deleting them is a lesser right was rejected in F1.
 
 ## Open questions
 
-1. **Write authorization (issue 920).** The write rule that closes the bypass in decision
-   item 7 is undecided. Until it lands, the disclosure issue 905 describes is only partly
-   fixed.
-2. **Entities with a read policy but no owner lookup.** With item 8 in place, only the
+1. **Entities with a read policy but no owner lookup.** With item 8 in place, only the
    `label_*` and `print_*` entities other than `label_printer_status` are in this group.
    PR 919 treats such an owner as unresolved, so its files are ADMIN only, which equals
    their own `EntityReadPolicy` permission. This is an implementation fact, not a maintainer decision. Denying everyone
    is the alternative.
-3. **An index on the owner lookup.** The measurements under Consequences give no threshold.
+2. **An index on the owner lookup.** The measurements under Consequences give no threshold.
    Decide on an index only if a larger install shows the per-request scan matters.
 
 ## Implementation
 
 [PR 919](https://github.com/datagen24/victual/pull/919) implements items 1 to 6 and 8.
+The pull request for [issue 920](https://github.com/datagen24/victual/issues/920)
+implements item 9.
 Implementing this record does not accept it. Acceptance is a separate pull request that
 changes only the status line, the index row, a forward pointer on ADR-0035 and this
 record's reference to it.

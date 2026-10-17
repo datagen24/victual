@@ -3,6 +3,7 @@
 namespace Victual\Controllers\Api;
 
 use Victual\Controllers\Users\User;
+use Victual\Controllers\Users\UserfileOwnerPolicy;
 use Victual\Services\ChoresService;
 use Victual\Services\WireBooleans;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -183,14 +184,15 @@ class ChoresApiController extends BaseApiController
 	{
 		User::CheckPermission($request, User::PERMISSION_MASTER_DATA_EDIT);
 
-		return $this->HandleApiCall($response, function () use ($args, $response)
+		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
 			if (filter_var($args['choreIdToKeep'], FILTER_VALIDATE_INT) === false || filter_var($args['choreIdToRemove'], FILTER_VALIDATE_INT) === false)
 			{
 				throw new \Exception('Provided {choreIdToKeep} or {choreIdToRemove} is not a valid integer');
 			}
 
-			$this->ApiResponse($response, ChoresService::GetInstance()->MergeChores($args['choreIdToKeep'], $args['choreIdToRemove']));
+			// The removed chore is deleted, and its userfield values with it (#920)
+			$this->ApiResponse($response, UserfileOwnerPolicy::GuardOwnershipChange($request, fn () => ChoresService::GetInstance()->MergeChores($args['choreIdToKeep'], $args['choreIdToRemove'])));
 			return $this->EmptyApiResponse($response);
 		});
 	}
