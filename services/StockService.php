@@ -33,6 +33,12 @@ use Victual\Services\Storage\FileStorage;
  */
 class StockService extends BaseService
 {
+	/** Opaque booking identity, shared unchanged by nested service calls. */
+	public static function NewTransactionId(): string
+	{
+		return bin2hex(random_bytes(16));
+	}
+
 	/** Stock removal by consuming (eating/using/spoiling) - negative amount booking */
 	const TRANSACTION_TYPE_CONSUME = 'consume';
 
@@ -392,7 +398,7 @@ class StockService extends BaseService
 		{
 			if ($transactionId === null)
 			{
-				$transactionId = uniqid();
+				$transactionId = StockService::NewTransactionId();
 			}
 
 			// The booking, the stock entry it describes, the label it may print and the
@@ -745,7 +751,7 @@ class StockService extends BaseService
 		{
 			if ($transactionId === null)
 			{
-				$transactionId = uniqid();
+				$transactionId = StockService::NewTransactionId();
 			}
 
 			// One booking per touched stock entry, each paired with a delete or an amount
@@ -1083,7 +1089,7 @@ class StockService extends BaseService
 
 		$productId = $stockRow->product_id;
 		$correlationId = uniqid();
-		$transactionId = uniqid();
+		$transactionId = StockService::NewTransactionId();
 
 		// An eighth transactional entrypoint, added by plan 18's review rather than by
 		// plan 13, which wrapped the seven stock *booking* paths and left this one out.
@@ -1253,7 +1259,7 @@ class StockService extends BaseService
 
 		$productId = $stockRow->product_id;
 		$correlationId = uniqid();
-		$transactionId = uniqid();
+		$transactionId = StockService::NewTransactionId();
 
 		DatabaseService::GetInstance()->InTransaction(function () use (
 			$stockRowId, $productId, $correlationId, $transactionId, $measurement
@@ -2438,7 +2444,7 @@ class StockService extends BaseService
 
 		if ($transactionId === null)
 		{
-			$transactionId = uniqid();
+			$transactionId = StockService::NewTransactionId();
 		}
 
 		// The booking and the stock entry it describes (and the split-off rest entry) have to
@@ -2943,7 +2949,7 @@ class StockService extends BaseService
 		// entry after the transfer has already moved the (untared) amount.
 		if ($transactionId === null)
 		{
-			$transactionId = uniqid();
+			$transactionId = StockService::NewTransactionId();
 		}
 
 		// Both bookings of an entry plus the stock row itself have to land together, or the

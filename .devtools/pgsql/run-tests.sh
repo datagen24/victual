@@ -776,6 +776,34 @@ run_labeltracking_tests() {
 # format: date-time but the one field that really is RFC 3339, the GET /objects/{entity}
 # union members are mutually exclusive, and GET /user is documented as the array it
 # returns. Same shape as run_mcpauth_tests().
+run_bookingidempotency_tests() {
+	local dbname="victual_bookingidempotency"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/bookingidempotency-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-PHPCONFIG
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite bookingidempotency; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
 run_wirecontract_tests() {
 	local dbname="victual_wirecontract"
 	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
@@ -2671,6 +2699,7 @@ case "$WHICH" in
 	labeltracking) run_labeltracking_tests ;;
 	serverversion) run_serverversion_tests ;;
 	openapisecurity) run_openapisecurity_tests ;;
+	bookingidempotency) run_bookingidempotency_tests ;;
 	wirecontract) run_wirecontract_tests ;;
 	stockpages) run_stockpages_tests ;;
 	householdpages) run_householdpages_tests ;;
@@ -2692,7 +2721,7 @@ case "$WHICH" in
 	genericquery) run_genericquery_tests ;;
 	recipeoperations) run_recipeoperations_tests ;;
 	openapidocument) run_openapidocument_tests ;;
-	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests; run_pgtap_tests; run_contract_tests; run_shopliststores_tests; run_credentialsplit_tests; run_mealplan_tests; run_rootentry_tests; run_mcpauth_tests; run_bootstrapadmin_tests; run_uploadclamp_tests; run_labeltracking_tests; run_serverversion_tests; run_openapisecurity_tests; run_wirecontract_tests; run_stockpages_tests; run_householdpages_tests; run_labelapi_tests; run_labelservices_tests; run_authstack_tests; run_helperunits_tests; run_barcodelookup_tests; run_storagefiles_tests; run_stockcoverage_tests; run_stockconcurrency_tests; run_stocklocations_tests; run_stockmaintenance_tests; run_consumption_tests; run_demodata_tests; run_dialectpolicy_tests; run_httpboot_tests; run_mqttcoverage_tests; run_genericquery_tests; run_recipeoperations_tests; run_openapidocument_tests ;;
+	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests; run_pgtap_tests; run_contract_tests; run_shopliststores_tests; run_credentialsplit_tests; run_mealplan_tests; run_rootentry_tests; run_mcpauth_tests; run_bootstrapadmin_tests; run_uploadclamp_tests; run_labeltracking_tests; run_serverversion_tests; run_openapisecurity_tests; run_wirecontract_tests; run_bookingidempotency_tests; run_stockpages_tests; run_householdpages_tests; run_labelapi_tests; run_labelservices_tests; run_authstack_tests; run_helperunits_tests; run_barcodelookup_tests; run_storagefiles_tests; run_stockcoverage_tests; run_stockconcurrency_tests; run_stocklocations_tests; run_stockmaintenance_tests; run_consumption_tests; run_demodata_tests; run_dialectpolicy_tests; run_httpboot_tests; run_mqttcoverage_tests; run_genericquery_tests; run_recipeoperations_tests; run_openapidocument_tests ;;
 	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys, pgtap, contract, shopliststores, credentialsplit, mealplan, rootentry, mcpauth, bootstrapadmin, uploadclamp, labeltracking, serverversion, openapisecurity, wirecontract, stockpages, householdpages, labelapi, labelservices, authstack, helperunits, barcodelookup, storagefiles, stockcoverage, stockconcurrency, demodata, dialectpolicy, httpboot, mqttcoverage, genericquery, recipeoperations, openapidocument, stocklocations, stockmaintenance, consumption or all)" ;;
 esac
 

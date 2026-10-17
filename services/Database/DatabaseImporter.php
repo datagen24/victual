@@ -229,7 +229,8 @@ class DatabaseImporter
 	 *   recipes above and the users, which this import replaces, so they are cleared with them for
 	 *   the same reason.
 	 */
-	const DERIVED_STATE_TABLES = ['mqtt_product_entities', 'login_attempts', 'stock_entry_origins', 'stock_row_lots', 'stock_booking_lots', 'consumption_recipes', 'consumption_recipe_lines', 'consumption_recipe_shares', 'consumption_events', 'consumption_event_lines', 'consumption_mappings', 'consumption_refill_settings', 'consumption_refill_fills', 'consumption_refill_dates', 'consumption_refill_orders', 'consumption_refill_acks'];
+	const DERIVED_STATE_TABLES = ['mqtt_product_entities', 'login_attempts', 'stock_entry_origins', 'stock_row_lots', 'stock_booking_lots', 'consumption_recipes', 'consumption_recipe_lines', 'consumption_recipe_shares', 'consumption_events',
+		'stock_booking_idempotency_keys', 'consumption_event_lines', 'consumption_mappings', 'consumption_refill_settings', 'consumption_refill_fills', 'consumption_refill_dates', 'consumption_refill_orders', 'consumption_refill_acks'];
 
 	/**
 	 * The SQLite-dialect migration numbers above DatabaseMigrationService::BASELINE_MIGRATION_ID

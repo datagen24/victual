@@ -90,6 +90,7 @@ class ApplicationService extends BaseService
 	public function GetSystemInfo(?Request $request = null)
 	{
 		return [
+			'stock_booking_idempotency' => StockBookingIdempotencyService::Capability(),
 			'victual_version' => $this->GetInstalledVersion(),
 			'php_version' => phpversion(),
 			'sqlite_version' => self::GetSqliteVersion(),

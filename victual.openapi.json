@@ -552,6 +552,37 @@
 										"client": {
 											"type": "string",
 											"description": "The User-Agent header of this request, or \"unknown\" when it carried none."
+										},
+										"stock_booking_idempotency": {
+											"type": "object",
+											"required": [
+												"header",
+												"retention_seconds",
+												"operations"
+											],
+											"properties": {
+												"header": {
+													"type": "string",
+													"const": "Idempotency-Key"
+												},
+												"retention_seconds": {
+													"type": "integer",
+													"const": 604800
+												},
+												"operations": {
+													"type": "array",
+													"items": {
+														"type": "string",
+														"enum": [
+															"purchase",
+															"consume",
+															"transfer",
+															"open",
+															"inventory"
+														]
+													}
+												}
+											}
 										}
 									}
 								}
@@ -3395,6 +3426,18 @@
 						"schema": {
 							"type": "integer"
 						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
+						}
 					}
 				],
 				"requestBody": {
@@ -3484,6 +3527,18 @@
 									}
 								}
 							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
+								}
+							}
 						}
 					},
 					"400": {
@@ -3521,6 +3576,32 @@
 					},
 					"503": {
 						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
+								}
+							}
+						}
 					}
 				}
 			}
@@ -3539,6 +3620,18 @@
 						"description": "A valid product id",
 						"schema": {
 							"type": "integer"
+						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
 						}
 					}
 				],
@@ -3613,6 +3706,18 @@
 									}
 								}
 							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
+								}
+							}
 						}
 					},
 					"400": {
@@ -3650,6 +3755,32 @@
 					},
 					"503": {
 						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
+								}
+							}
+						}
 					}
 				}
 			}
@@ -3668,6 +3799,18 @@
 						"description": "A valid product id",
 						"schema": {
 							"type": "integer"
+						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
 						}
 					}
 				],
@@ -3729,6 +3872,18 @@
 									}
 								}
 							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
+								}
+							}
 						}
 					},
 					"400": {
@@ -3766,6 +3921,32 @@
 					},
 					"503": {
 						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
+								}
+							}
+						}
 					}
 				}
 			}
@@ -3784,6 +3965,18 @@
 						"description": "A valid product id",
 						"schema": {
 							"type": "integer"
+						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
 						}
 					}
 				],
@@ -3865,6 +4058,18 @@
 									}
 								}
 							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
+								}
+							}
 						}
 					},
 					"400": {
@@ -3902,6 +4107,32 @@
 					},
 					"503": {
 						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
+								}
+							}
+						}
 					}
 				}
 			}
@@ -3920,6 +4151,18 @@
 						"description": "A valid product id",
 						"schema": {
 							"type": "integer"
+						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
 						}
 					}
 				],
@@ -4014,6 +4257,18 @@
 									}
 								}
 							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
+								}
+							}
 						}
 					},
 					"400": {
@@ -4051,6 +4306,32 @@
 					},
 					"503": {
 						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
+								}
+							}
+						}
 					}
 				}
 			}
@@ -4200,6 +4481,18 @@
 						"schema": {
 							"type": "string"
 						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
+						}
 					}
 				],
 				"requestBody": {
@@ -4277,6 +4570,18 @@
 									}
 								}
 							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
+								}
+							}
 						}
 					},
 					"400": {
@@ -4307,6 +4612,32 @@
 					},
 					"403": {
 						"$ref": "#/components/responses/Forbidden"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
+								}
+							}
+						}
 					}
 				}
 			}
@@ -4325,6 +4656,18 @@
 						"description": "Barcode",
 						"schema": {
 							"type": "string"
+						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
 						}
 					}
 				],
@@ -4399,6 +4742,18 @@
 									}
 								}
 							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
+								}
+							}
 						}
 					},
 					"400": {
@@ -4429,6 +4784,32 @@
 					},
 					"403": {
 						"$ref": "#/components/responses/Forbidden"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
+								}
+							}
+						}
 					}
 				}
 			}
@@ -4447,6 +4828,18 @@
 						"description": "Barcode",
 						"schema": {
 							"type": "string"
+						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
 						}
 					}
 				],
@@ -4508,6 +4901,18 @@
 									}
 								}
 							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
+								}
+							}
 						}
 					},
 					"400": {
@@ -4538,6 +4943,32 @@
 					},
 					"403": {
 						"$ref": "#/components/responses/Forbidden"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
+								}
+							}
+						}
 					}
 				}
 			}
@@ -4556,6 +4987,18 @@
 						"description": "Barcode",
 						"schema": {
 							"type": "string"
+						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
 						}
 					}
 				],
@@ -4625,6 +5068,18 @@
 									}
 								}
 							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
+								}
+							}
 						}
 					},
 					"400": {
@@ -4655,6 +5110,32 @@
 					},
 					"403": {
 						"$ref": "#/components/responses/Forbidden"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
+								}
+							}
+						}
 					}
 				}
 			}
@@ -4673,6 +5154,18 @@
 						"description": "Barcode",
 						"schema": {
 							"type": "string"
+						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
 						}
 					}
 				],
@@ -4767,6 +5260,18 @@
 									}
 								}
 							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
+								}
+							}
 						}
 					},
 					"400": {
@@ -4797,6 +5302,32 @@
 					},
 					"403": {
 						"$ref": "#/components/responses/Forbidden"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
+								}
+							}
+						}
 					}
 				}
 			}
@@ -6374,7 +6905,7 @@
 									"tracked_time": {
 										"type": "string",
 										"pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])( ([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d|T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d+)?([Zz]|[+-]([01]\\d|2[0-3]):[0-5]\\d)?)?$",
-										"description": "The time the chore was executed. Omit the field to record the current time. When it is sent it must be one of: the RFC 3339-shaped `T` form with a `Z` or `\u00b1HH:MM` offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`), which names that instant; or a wall clock in the server's configured time zone - `YYYY-MM-DD HH:MM:SS`, `YYYY-MM-DDTHH:MM:SS`, or `YYYY-MM-DD` meaning midnight of that date. A wall clock the zone repeats when daylight saving ends names the **earlier** of its two instants (`2026-11-01 01:30:00` on America/New_York is `2026-11-01T05:30:00Z`); send the offset to mean the later one. A wall clock the zone skips when daylight saving begins is refused. A fractional part of any length is accepted and kept to the microsecond; later digits are dropped, not rounded. It is deliberately **not** exactly RFC 3339, in both directions: that grammar requires an offset, and it permits a leap second `:60`, which this refuses. **Any other value is refused with 400 naming the field**, and so are `null` and the empty string. The value is stored as an instant and sent back in the API's instant rendering (ADR-0027 decision 2, ADR-0028)."
+										"description": "The time the chore was executed. Omit the field to record the current time. When it is sent it must be one of: the RFC 3339-shaped `T` form with a `Z` or `±HH:MM` offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`), which names that instant; or a wall clock in the server's configured time zone - `YYYY-MM-DD HH:MM:SS`, `YYYY-MM-DDTHH:MM:SS`, or `YYYY-MM-DD` meaning midnight of that date. A wall clock the zone repeats when daylight saving ends names the **earlier** of its two instants (`2026-11-01 01:30:00` on America/New_York is `2026-11-01T05:30:00Z`); send the offset to mean the later one. A wall clock the zone skips when daylight saving begins is refused. A fractional part of any length is accepted and kept to the microsecond; later digits are dropped, not rounded. It is deliberately **not** exactly RFC 3339, in both directions: that grammar requires an offset, and it permits a leap second `:60`, which this refuses. **Any other value is refused with 400 naming the field**, and so are `null` and the empty string. The value is stored as an instant and sent back in the API's instant rendering (ADR-0027 decision 2, ADR-0028)."
 									},
 									"done_by": {
 										"type": "integer",
@@ -6790,7 +7321,7 @@
 									"tracked_time": {
 										"type": "string",
 										"pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])( ([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d|T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d+)?([Zz]|[+-]([01]\\d|2[0-3]):[0-5]\\d)?)?$",
-										"description": "The time the battery was charged. Omit the field to record the current time. When it is sent it must be one of: the RFC 3339-shaped `T` form with a `Z` or `\u00b1HH:MM` offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`), which names that instant; or a wall clock in the server's configured time zone - `YYYY-MM-DD HH:MM:SS`, `YYYY-MM-DDTHH:MM:SS`, or `YYYY-MM-DD` meaning midnight of that date. A wall clock the zone repeats when daylight saving ends names the **earlier** of its two instants (`2026-11-01 01:30:00` on America/New_York is `2026-11-01T05:30:00Z`); send the offset to mean the later one. A wall clock the zone skips when daylight saving begins is refused. A fractional part of any length is accepted and kept to the microsecond; later digits are dropped, not rounded. It is deliberately **not** exactly RFC 3339, in both directions: that grammar requires an offset, and it permits a leap second `:60`, which this refuses. **Any other value is refused with 400 naming the field**, and so are `null` and the empty string. The value is stored as an instant and sent back in the API's instant rendering (ADR-0027 decision 2, ADR-0028)."
+										"description": "The time the battery was charged. Omit the field to record the current time. When it is sent it must be one of: the RFC 3339-shaped `T` form with a `Z` or `±HH:MM` offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`), which names that instant; or a wall clock in the server's configured time zone - `YYYY-MM-DD HH:MM:SS`, `YYYY-MM-DDTHH:MM:SS`, or `YYYY-MM-DD` meaning midnight of that date. A wall clock the zone repeats when daylight saving ends names the **earlier** of its two instants (`2026-11-01 01:30:00` on America/New_York is `2026-11-01T05:30:00Z`); send the offset to mean the later one. A wall clock the zone skips when daylight saving begins is refused. A fractional part of any length is accepted and kept to the microsecond; later digits are dropped, not rounded. It is deliberately **not** exactly RFC 3339, in both directions: that grammar requires an offset, and it permits a leap second `:60`, which this refuses. **Any other value is refused with 400 naming the field**, and so are `null` and the empty string. The value is stored as an instant and sent back in the API's instant rendering (ADR-0027 decision 2, ADR-0028)."
 									}
 								}
 							}
@@ -6991,7 +7522,7 @@
 									"done_time": {
 										"type": "string",
 										"pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])( ([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d|T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d+)?([Zz]|[+-]([01]\\d|2[0-3]):[0-5]\\d)?)?$",
-										"description": "The time the task was completed. Omit the field to record the current time. When it is sent it must be one of: the RFC 3339-shaped `T` form with a `Z` or `\u00b1HH:MM` offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`), which names that instant; or a wall clock in the server's configured time zone - `YYYY-MM-DD HH:MM:SS`, `YYYY-MM-DDTHH:MM:SS`, or `YYYY-MM-DD` meaning midnight of that date. A wall clock the zone repeats when daylight saving ends names the **earlier** of its two instants (`2026-11-01 01:30:00` on America/New_York is `2026-11-01T05:30:00Z`); send the offset to mean the later one. A wall clock the zone skips when daylight saving begins is refused. A fractional part of any length is accepted and kept to the microsecond; later digits are dropped, not rounded. It is deliberately **not** exactly RFC 3339, in both directions: that grammar requires an offset, and it permits a leap second `:60`, which this refuses. **Any other value is refused with 400 naming the field**, and so are `null` and the empty string. The value is stored as an instant and sent back in the API's instant rendering (ADR-0027 decision 2, ADR-0028)."
+										"description": "The time the task was completed. Omit the field to record the current time. When it is sent it must be one of: the RFC 3339-shaped `T` form with a `Z` or `±HH:MM` offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`), which names that instant; or a wall clock in the server's configured time zone - `YYYY-MM-DD HH:MM:SS`, `YYYY-MM-DDTHH:MM:SS`, or `YYYY-MM-DD` meaning midnight of that date. A wall clock the zone repeats when daylight saving ends names the **earlier** of its two instants (`2026-11-01 01:30:00` on America/New_York is `2026-11-01T05:30:00Z`); send the offset to mean the later one. A wall clock the zone skips when daylight saving begins is refused. A fractional part of any length is accepted and kept to the microsecond; later digits are dropped, not rounded. It is deliberately **not** exactly RFC 3339, in both directions: that grammar requires an offset, and it permits a leap second `:60`, which this refuses. **Any other value is refused with 400 naming the field**, and so are `null` and the empty string. The value is stored as an instant and sent back in the API's instant rendering (ADR-0027 decision 2, ADR-0028)."
 									}
 								}
 							}
@@ -7159,7 +7690,7 @@
 						"$ref": "#/components/responses/Forbidden"
 					}
 				},
-				"description": "If an internal calendar event lacks the type or entity ID needed for a stable UID, the current 500 error_message names the missing fields and may include that event\u2019s title. Access to this endpoint follows its documented credentials; the title disclosure is tracked separately."
+				"description": "If an internal calendar event lacks the type or entity ID needed for a stable UID, the current 500 error_message names the missing fields and may include that event’s title. Access to this endpoint follows its documented credentials; the title disclosure is tracked separately."
 			}
 		},
 		"/calendar/ical/sharing-link": {
@@ -17935,7 +18466,7 @@
 						"type": "number",
 						"exclusiveMinimum": 0,
 						"default": 1,
-						"description": "Product target only; a recipe target ignores it. A multiplier on the event quantity, which is expressed in qu_id (the stock unit when qu_id is null or absent). Absent or null means 1. The booked stock amount is quantity \u00d7 quantity_factor \u00d7 conversion, where the conversion is the entered factor from qu_id to the stock unit (1 for the stock unit). A finite number greater than 0. Use 1 unless one event should book a fixed multiple of its reported quantity."
+						"description": "Product target only; a recipe target ignores it. A multiplier on the event quantity, which is expressed in qu_id (the stock unit when qu_id is null or absent). Absent or null means 1. The booked stock amount is quantity × quantity_factor × conversion, where the conversion is the entered factor from qu_id to the stock unit (1 for the stock unit). A finite number greater than 0. Use 1 unless one event should book a fixed multiple of its reported quantity."
 					},
 					"location": {
 						"type": "object",
@@ -19155,7 +19686,7 @@
 				"in": "query",
 				"name": "query[]",
 				"required": false,
-				"description": "An array of filter conditions, each of them is a string in the form of `<field><condition><value>` where<br>`<field>` is a valid field name<br>`<condition>` is a comparison operator, one of<br>&nbsp;&nbsp;`=` equal<br>&nbsp;&nbsp;`!=` not equal<br>&nbsp;&nbsp;`~` contains, case insensitive for ASCII<br>&nbsp;&nbsp;`!~` does not contain, case insensitive for ASCII<br>&nbsp;&nbsp;`<` less<br>&nbsp;&nbsp;`>` greater<br>&nbsp;&nbsp;`<=` less or equal<br>&nbsp;&nbsp;`>=` greater or equal<br>&nbsp;&nbsp;`\u00a7` regular expression, case sensitive<br>`<value>` is the value to search for<br><br>`~`, `!~` and `\u00a7` need a text field and are answered `400` on any other type, including timestamps - substring matching a timestamp would mean rendering it to a string, and the two storage engines do not render one the same way.<br><br>Case folding for `~`/`!~` is guaranteed for ASCII only. Beyond ASCII it depends on the storage engine: SQLite folds nothing outside A-Z, while PostgreSQL folds according to the database collation, so a pattern such as `\u00e6` may additionally match `\u00c6` there.<br><br>A field named in `query` or `order` that the entity does not have is answered `400`.",
+				"description": "An array of filter conditions, each of them is a string in the form of `<field><condition><value>` where<br>`<field>` is a valid field name<br>`<condition>` is a comparison operator, one of<br>&nbsp;&nbsp;`=` equal<br>&nbsp;&nbsp;`!=` not equal<br>&nbsp;&nbsp;`~` contains, case insensitive for ASCII<br>&nbsp;&nbsp;`!~` does not contain, case insensitive for ASCII<br>&nbsp;&nbsp;`<` less<br>&nbsp;&nbsp;`>` greater<br>&nbsp;&nbsp;`<=` less or equal<br>&nbsp;&nbsp;`>=` greater or equal<br>&nbsp;&nbsp;`§` regular expression, case sensitive<br>`<value>` is the value to search for<br><br>`~`, `!~` and `§` need a text field and are answered `400` on any other type, including timestamps - substring matching a timestamp would mean rendering it to a string, and the two storage engines do not render one the same way.<br><br>Case folding for `~`/`!~` is guaranteed for ASCII only. Beyond ASCII it depends on the storage engine: SQLite folds nothing outside A-Z, while PostgreSQL folds according to the database collation, so a pattern such as `æ` may additionally match `Æ` there.<br><br>A field named in `query` or `order` that the entity does not have is answered `400`.",
 				"schema": {
 					"type": "array",
 					"items": {

@@ -10,6 +10,8 @@ use Victual\Services\WireBooleans;
 use Victual\Services\Labels\LabelIdentityService;
 use Victual\Services\LocalizationService;
 use Victual\Services\StockService;
+use Victual\Services\StockBookingIdempotencyService;
+use Victual\Services\StockBookingIdempotencyException;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -22,6 +24,52 @@ use Psr\Http\Message\ServerRequestInterface as Request;
  */
 class StockApiController extends BaseApiController
 {
+	/** Permissions are checked by each base handler before this helper sees a key. */
+	private function HandleBookingCall(Request $request, Response $response, array $args, string $operation, callable $book): Response
+	{
+		return $this->HandleApiCall($response, function () use ($request, $response, $args, $operation, $book)
+		{
+			if (!$request->hasHeader('Idempotency-Key'))
+			{
+				$args['transactionId'] = $book();
+				return $this->StockTransactions($request, $response, $args);
+			}
+
+			try
+			{
+				$service = new StockBookingIdempotencyService(DatabaseService::GetInstance()->GetDbConnectionRaw());
+				$userId = (int)VICTUAL_USER_ID;
+				$key = $request->getHeaderLine('Idempotency-Key');
+				$payload = ['operation' => $operation, 'product_id' => (int)$args['productId'],
+					'body' => $this->GetParsedAndFilteredRequestBody($request)];
+				$result = DatabaseService::GetInstance()->InTransaction(function () use ($service, $userId, $operation, $key, $payload, $book)
+				{
+					$result = $service->Begin($userId, $operation, $key, $payload);
+					if (!$result['replay'])
+					{
+						$result['transaction_id'] = $book();
+						$service->Record($userId, $operation, $key, $result['transaction_id']);
+					}
+					return $result;
+				});
+			}
+			catch (StockBookingIdempotencyException $error)
+			{
+				return $this->ApiResponse($response->withStatus($error->Status), ['error_message' => $error->getMessage(), 'code' => $error->ErrorCode]);
+			}
+
+			$args['transactionId'] = $result['transaction_id'];
+			if ($result['replay'])
+			{
+				$args['replayUserId'] = $userId;
+			}
+			$resultResponse = $this->StockTransactions($request, $response, $args);
+			return $resultResponse->getStatusCode() < 300
+				? $resultResponse->withHeader('Idempotent-Replayed', $result['replay'] ? 'true' : 'false')
+				: $resultResponse;
+		});
+	}
+
 	/**
 	 * Refuses a non-numeric body field before it reaches a service method's float/int
 	 * parameter: passing it through unchecked would raise a TypeError there, and
@@ -280,7 +328,7 @@ class StockApiController extends BaseApiController
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-		return $this->HandleApiCall($response, function () use ($args, $request, $requestBody, $response)
+		return $this->HandleBookingCall($request, $response, $args, 'purchase', function () use ($args, $request, $requestBody, $response)
 		{
 			if ($requestBody === null)
 			{
@@ -385,8 +433,7 @@ class StockApiController extends BaseApiController
 
 			$transactionId = StockService::GetInstance()->AddProduct($args['productId'], $requestBody['amount'], $bestBeforeDate, $transactionType, $purchasedDate, $price, $locationId, $shoppingLocationId, $unusedTransactionId, $stockLabelType, $note);
 
-			$args['transactionId'] = $transactionId;
-			return $this->StockTransactions($request, $response, $args);
+			return $transactionId;
 		});
 	}
 
@@ -538,7 +585,7 @@ class StockApiController extends BaseApiController
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-		return $this->HandleApiCall($response, function () use ($args, $request, $requestBody, $response)
+		return $this->HandleBookingCall($request, $response, $args, 'consume', function () use ($args, $request, $requestBody, $response)
 		{
 			if ($requestBody === null)
 			{
@@ -613,8 +660,7 @@ class StockApiController extends BaseApiController
 
 			$transactionId = null;
 			$transactionId = StockService::GetInstance()->ConsumeProduct($args['productId'], $requestBody['amount'], $spoiled, $transactionType, $specificStockEntryId, $recipeId, $locationId, $transactionId, $allowSubproductSubstitution, $consumeExact);
-			$args['transactionId'] = $transactionId;
-			return $this->StockTransactions($request, $response, $args);
+			return $transactionId;
 		});
 	}
 
@@ -936,7 +982,7 @@ class StockApiController extends BaseApiController
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-		return $this->HandleApiCall($response, function () use ($args, $request, $requestBody, $response)
+		return $this->HandleBookingCall($request, $response, $args, 'inventory', function () use ($args, $request, $requestBody, $response)
 		{
 			if ($requestBody === null)
 			{
@@ -1014,8 +1060,7 @@ class StockApiController extends BaseApiController
 			}
 
 			$transactionId = StockService::GetInstance()->InventoryProduct($args['productId'], $requestBody['new_amount'], $bestBeforeDate, $locationId, $price, $shoppingLocationId, $purchasedDate, $stockLabelType, $note);
-			$args['transactionId'] = $transactionId;
-			return $this->StockTransactions($request, $response, $args);
+			return $transactionId;
 		});
 	}
 
@@ -1060,7 +1105,7 @@ class StockApiController extends BaseApiController
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-		return $this->HandleApiCall($response, function () use ($args, $request, $requestBody, $response)
+		return $this->HandleBookingCall($request, $response, $args, 'open', function () use ($args, $request, $requestBody, $response)
 		{
 			if ($requestBody === null)
 			{
@@ -1111,8 +1156,7 @@ class StockApiController extends BaseApiController
 
 			$transactionId = null;
 			$transactionId = StockService::GetInstance()->OpenProduct($args['productId'], $requestBody['amount'], $specificStockEntryId, $transactionId, $allowSubproductSubstitution, $measurement);
-			$args['transactionId'] = $transactionId;
-			return $this->StockTransactions($request, $response, $args);
+			return $transactionId;
 		});
 	}
 
@@ -1374,7 +1418,12 @@ class StockApiController extends BaseApiController
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
-			$transactionRows = $this->DB->stock_log()->where('transaction_id = :1', $args['transactionId'])->fetchAll();
+			$query = $this->DB->stock_log()->where('transaction_id = :1', $args['transactionId']);
+			if (isset($args['replayUserId']))
+			{
+				$query = $query->where('user_id = :1', $args['replayUserId']);
+			}
+			$transactionRows = $query->fetchAll();
 			if (count($transactionRows) === 0)
 			{
 				throw new \Exception('No transaction was found by the given transaction id');
@@ -1403,7 +1452,7 @@ class StockApiController extends BaseApiController
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-		return $this->HandleApiCall($response, function () use ($args, $request, $requestBody, $response)
+		return $this->HandleBookingCall($request, $response, $args, 'transfer', function () use ($args, $request, $requestBody, $response)
 		{
 			if ($requestBody === null)
 			{
@@ -1439,8 +1488,7 @@ class StockApiController extends BaseApiController
 			}
 
 			$transactionId = StockService::GetInstance()->TransferProduct($args['productId'], $requestBody['amount'], $locationIdFrom, $locationIdTo, $specificStockEntryId);
-			$args['transactionId'] = $transactionId;
-			return $this->StockTransactions($request, $response, $args);
+			return $transactionId;
 		});
 	}
 

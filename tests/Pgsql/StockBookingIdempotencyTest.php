@@ -1,0 +1,281 @@
+<?php
+
+namespace Victual\Tests\Pgsql;
+
+use PDO;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Victual\Helpers\CanonicalJson;
+use Victual\Services\ApiKeyService;
+use Victual\Services\StockBookingIdempotencyService;
+use Victual\Services\StockService;
+use Victual\Tests\Support\PgsqlSchemaTestCase;
+
+/** #775: each request has its own authenticated process and shares only PostgreSQL state. */
+class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
+{
+	private static PDO $db;
+	private static array $keys = [];
+	private static int $pantry;
+	private static int $cellar;
+
+	public static function setUpBeforeClass(): void
+	{
+		parent::setUpBeforeClass();
+		self::$db = self::Pdo();
+		self::$pantry = self::insert('locations', ['name' => 'Key pantry']);
+		self::$cellar = self::insert('locations', ['name' => 'Key cellar']);
+		foreach ([9801, 9802] as $user)
+		{
+			self::$db->exec("INSERT INTO users(id,username,password) VALUES ($user,'key-user-$user','fixture')");
+			self::$db->exec("INSERT INTO user_permissions(user_id,permission_id) SELECT $user,id FROM permission_hierarchy WHERE name IN ('STOCK_VIEW','STOCK_PRICES_VIEW','STOCK_PURCHASE','STOCK_CONSUME','STOCK_TRANSFER','STOCK_OPEN','STOCK_INVENTORY','STOCK_UNDO')");
+			$key = bin2hex(random_bytes(25));
+			self::$keys[$user] = $key;
+			$stmt = self::$db->prepare("INSERT INTO api_keys(api_key,key_hint,user_id,expires,key_type,read_only) VALUES (?,?,?,now()+interval '30 days',?,0)");
+			$stmt->execute([ApiKeyService::HashKey($key), substr($key,-4), $user, ApiKeyService::API_KEY_TYPE_DEFAULT]);
+		}
+	}
+
+	private static function insert(string $table, array $values): int
+	{
+		$stmt = self::$db->prepare('INSERT INTO ' . $table . '(' . implode(',',array_keys($values)) . ') VALUES (' . implode(',',array_fill(0,count($values),'?')) . ') RETURNING id');
+		$stmt->execute(array_values($values));
+		return (int)$stmt->fetchColumn();
+	}
+
+	private static function product(int $amount = 10): int
+	{
+		$product = self::insert('products', ['name' => 'Key product '.bin2hex(random_bytes(4)), 'location_id' => self::$pantry, 'qu_id_purchase' => 2, 'qu_id_stock' => 2, 'qu_id_consume' => 2, 'qu_id_price' => 2]);
+		if ($amount > 0)
+		{
+			StockService::GetInstance()->AddProduct($product,$amount,'2035-06-30',StockService::TRANSACTION_TYPE_PURCHASE,'2026-04-01',3,self::$pantry);
+		}
+		return $product;
+	}
+
+	private static function start(string $path, array $body, ?string $key, int $user = 9801, string $method = 'POST', array $headers = []): array
+	{
+		$headers['VICTUAL-API-KEY'] = self::$keys[$user];
+		if ($key !== null) { $headers['Idempotency-Key'] = $key; }
+		$spec = ['method'=>$method,'path'=>$path,'headers'=>$headers,'body'=>$body];
+		$env = array_merge(array_filter(array_merge($_SERVER,$_ENV),'is_scalar'), ['RBAC_TEST_SCHEMA'=>self::Schema(),'VICTUAL_ROOT'=>VICTUAL_ROOT_PATH]);
+		$process = proc_open([PHP_BINARY,__DIR__.'/request-subprocess-helper.php',base64_encode(json_encode($spec))],[1=>['pipe','w'],2=>['pipe','w']],$pipes,null,$env);
+		return [$process,$pipes];
+	}
+
+	private static function finish(array $started): array
+	{
+		[$process,$pipes] = $started;
+		$out = stream_get_contents($pipes[1]); $err = stream_get_contents($pipes[2]);
+		fclose($pipes[1]); fclose($pipes[2]);
+		self::assertSame(0,proc_close($process),$out.$err);
+		$result = json_decode($out,true);
+		self::assertIsArray($result,$out.$err);
+		$result['body'] = json_decode($result['body'],true);
+		$result['headers'] = array_change_key_case($result['headers']);
+		return $result;
+	}
+
+	private static function send(string $path, array $body, ?string $key, int $user = 9801, string $method = 'POST', array $headers = []): array
+	{
+		return self::finish(self::start($path,$body,$key,$user,$method,$headers));
+	}
+
+	private static function path(int $product, string $operation): string { return "/api/stock/products/$product/$operation"; }
+	private static function body(string $operation): array
+	{
+		return match ($operation) {
+			'add' => ['amount'=>2,'best_before_date'=>'2035-06-30'],
+			'inventory' => ['new_amount'=>12,'best_before_date'=>'2035-06-30'],
+			'transfer' => ['amount'=>2,'location_id_from'=>self::$pantry,'location_id_to'=>self::$cellar],
+			default => ['amount'=>2],
+		};
+	}
+	private static function digest(int $product): array
+	{
+		return [self::$db->query("SELECT row_to_json(s) FROM stock s WHERE product_id=$product ORDER BY id")->fetchAll(PDO::FETCH_COLUMN), self::$db->query("SELECT row_to_json(s) FROM stock_log s WHERE product_id=$product ORDER BY id")->fetchAll(PDO::FETCH_COLUMN)];
+	}
+	private static function header(array $response, ?string $value): void
+	{
+		self::assertSame($value === null ? null : [$value],$response['headers']['idempotent-replayed'] ?? null);
+	}
+	private static function ok(array $response): void { self::assertSame(200,$response['status'],json_encode($response)); }
+
+	public static function operations(): array { return array_map(fn($op)=>[$op],['add','consume','transfer','open','inventory']); }
+
+	#[DataProvider('operations')]
+	public function testEachOperationBooksOnceAndReplays(string $operation): void
+	{
+		$product=self::product(); $body=self::body($operation); $key=bin2hex(random_bytes(16));
+		$first=self::send(self::path($product,$operation),$body,$key); self::ok($first); self::header($first,'false');
+		$digest=self::digest($product);
+		$expires=self::$db->query("SELECT expires_at FROM stock_booking_idempotency_keys WHERE idempotency_key='$key'")->fetchColumn();
+		$changed=self::$db->query('SELECT * FROM user_settings WHERE 1=0')->fetchAll(); // replay writes are checked through ledger and expiry below.
+		$retry=self::send(self::path($product,$operation),$body,$key); self::ok($retry); self::header($retry,'true');
+		self::assertSame($first['body'],$retry['body']); self::assertSame($digest,self::digest($product));
+		self::assertSame($expires,self::$db->query("SELECT expires_at FROM stock_booking_idempotency_keys WHERE idempotency_key='$key'")->fetchColumn());
+		self::assertMatchesRegularExpression('/^[0-9a-f]{32}$/',$first['body'][0]['transaction_id']);
+	}
+
+	public function testConflictsBindBodyProductAndEntry(): void
+	{
+		$product=self::product(); $key=bin2hex(random_bytes(16)); $body=['amount'=>1];
+		self::ok(self::send(self::path($product,'consume'),$body,$key));
+		$other=self::product();
+		foreach ([[$product,['amount'=>2]],[$other,$body],[$product,['amount'=>1,'stock_entry_id'=>'different']]] as [$id,$payload])
+		{
+			$before=self::digest($id); $response=self::send(self::path($id,'consume'),$payload,$key);
+			self::assertSame(409,$response['status']); self::assertSame('idempotency_conflict',$response['body']['code']); self::header($response,null); self::assertSame($before,self::digest($id));
+		}
+	}
+
+	public static function malformedKeys(): array { return [[''],['short'],[str_repeat('x',129)],['bad key!'],["valid-key\n"]]; }
+	#[DataProvider('malformedKeys')]
+	public function testMalformedKeysNeverBook(string $key): void
+	{
+		$product=self::product(); $before=self::digest($product);
+		$result=self::send(self::path($product,'add'),self::body('add'),$key);
+		self::assertSame(400,$result['status']); self::header($result,null); self::assertSame($before,self::digest($product));
+	}
+
+	public function testUnkeyedRequestsBookNormally(): void
+	{
+		$product=self::product(); $before=(int)self::$db->query('SELECT count(*) FROM stock_booking_idempotency_keys')->fetchColumn();
+		foreach ([1,2] as $_) { $response=self::send(self::path($product,'add'),self::body('add'),null); self::ok($response); self::header($response,null); }
+		self::assertSame($before,(int)self::$db->query('SELECT count(*) FROM stock_booking_idempotency_keys')->fetchColumn());
+	}
+
+	public function testRetentionBoundaryAndInProgress(): void
+	{
+		$product=self::product(); $body=self::body('add'); $key=bin2hex(random_bytes(16)); $path=self::path($product,'add');
+		$first=self::send($path,$body,$key); self::ok($first);
+		self::$db->exec("UPDATE stock_booking_idempotency_keys SET expires_at=now()+interval '1 minute' WHERE idempotency_key='$key'");
+		self::header(self::send($path,$body,$key),'true');
+		self::$db->exec("UPDATE stock_booking_idempotency_keys SET expires_at=now()-interval '1 microsecond' WHERE idempotency_key='$key'");
+		$new=self::send($path,$body,$key); self::ok($new); self::header($new,'false'); self::assertNotSame($first['body'][0]['transaction_id'],$new['body'][0]['transaction_id']);
+		self::$db->exec("UPDATE stock_booking_idempotency_keys SET transaction_id=NULL WHERE idempotency_key='$key'");
+		$before=self::digest($product); $response=self::send($path,$body,$key);
+		self::assertSame(409,$response['status']); self::assertSame('idempotency_in_progress',$response['body']['code']); self::header($response,null); self::assertSame($before,self::digest($product));
+	}
+
+	public function testFailedBookingRollsBackKeyAndRetryCanSucceed(): void
+	{
+		$product=self::product(0); $key=bin2hex(random_bytes(16)); $path=self::path($product,'consume');
+		self::assertSame(400,self::send($path,['amount'=>2],$key)['status']);
+		self::assertSame(0,(int)self::$db->query("SELECT count(*) FROM stock_booking_idempotency_keys WHERE idempotency_key='$key'")->fetchColumn());
+		self::ok(self::send(self::path($product,'add'),self::body('add'),null));
+		$result=self::send($path,['amount'=>2],$key); self::ok($result); self::header($result,'false');
+	}
+
+	public function testScopeAndLegacyCollisionFiltering(): void
+	{
+		$product=self::product(); $key=bin2hex(random_bytes(16)); $body=self::body('add'); $path=self::path($product,'add');
+		$a=self::send($path,$body,$key,9801); $b=self::send($path,$body,$key,9802); self::ok($a); self::ok($b);
+		self::assertNotSame($a['body'][0]['transaction_id'],$b['body'][0]['transaction_id']);
+		$legacy='123456789abcd';
+		$stmt=self::$db->prepare('UPDATE stock_log SET transaction_id=? WHERE transaction_id IN (?,?)'); $stmt->execute([$legacy,$a['body'][0]['transaction_id'],$b['body'][0]['transaction_id']]);
+		$stmt=self::$db->prepare('UPDATE stock_booking_idempotency_keys SET transaction_id=? WHERE idempotency_key=?'); $stmt->execute([$legacy,$key]);
+		foreach ([9801,9802] as $user) { $result=self::send($path,$body,$key,$user); self::ok($result); self::assertCount(1,$result['body']); self::assertSame($user,(int)$result['body'][0]['user_id']); }
+		$read=self::send('/api/stock/transactions/'.$legacy,[],null,9801,'GET'); self::ok($read); self::assertCount(2,$read['body']);
+	}
+
+	public function testReplayShowsCurrentUndoAndRedactionAndDeletedRowsNeverRebook(): void
+	{
+		$product=self::product(); $key=bin2hex(random_bytes(16)); $body=self::body('add')+['price'=>7]; $path=self::path($product,'add');
+		$first=self::send($path,$body,$key); self::ok($first); $transaction=$first['body'][0]['transaction_id'];
+		$undo=self::send('/api/stock/transactions/'.$transaction.'/undo',[],null); self::assertContains($undo['status'],[200,204],json_encode($undo));
+		self::$db->exec("DELETE FROM user_permissions WHERE user_id=9801 AND permission_id=(SELECT id FROM permission_hierarchy WHERE name='STOCK_PRICES_VIEW')");
+		try { $before=self::digest($product); $replay=self::send($path,$body,$key); self::ok($replay); self::assertTrue($replay['body'][0]['undone']); self::assertArrayNotHasKey('price',$replay['body'][0]); self::assertSame($before,self::digest($product)); }
+		finally { self::$db->exec("INSERT INTO user_permissions(user_id,permission_id) SELECT 9801,id FROM permission_hierarchy WHERE name='STOCK_PRICES_VIEW'"); }
+		self::$db->prepare('DELETE FROM stock_log WHERE transaction_id=?')->execute([$transaction]);
+		$before=self::digest($product); $gone=self::send($path,$body,$key); self::assertSame(400,$gone['status']); self::header($gone,null); self::assertSame($before,self::digest($product));
+	}
+
+	#[DataProvider('operations')]
+	public function testPermissionsAreRecheckedBeforeKeyLookupAndWrappers(string $operation): void
+	{
+		$product=self::product(); $key=bin2hex(random_bytes(16)); $body=self::body($operation); $path=self::path($product,$operation);
+		self::ok(self::send($path,$body,$key));
+		$permission=match($operation) { 'add'=>'STOCK_PURCHASE', default=>'STOCK_'.strtoupper($operation) };
+		foreach ([$permission,'STOCK_VIEW'] as $right)
+		{
+			self::$db->exec("DELETE FROM user_permissions WHERE user_id=9801 AND permission_id=(SELECT id FROM permission_hierarchy WHERE name='$right')");
+			try
+			{
+				$before=self::digest($product); $keys=self::$db->query('SELECT row_to_json(k) FROM stock_booking_idempotency_keys k ORDER BY user_id,operation,idempotency_key')->fetchAll();
+				foreach ([$path,"/api/stock/products/by-barcode/unknown/$operation"] as $route)
+				{
+					foreach ([$key,bin2hex(random_bytes(16))] as $requestKey) { $response=self::send($route,$body,$requestKey); self::assertSame(403,$response['status'],json_encode($response)); self::header($response,null); }
+				}
+				self::assertSame($before,self::digest($product)); self::assertSame($keys,self::$db->query('SELECT row_to_json(k) FROM stock_booking_idempotency_keys k ORDER BY user_id,operation,idempotency_key')->fetchAll());
+			}
+			finally { self::$db->exec("INSERT INTO user_permissions(user_id,permission_id) SELECT 9801,id FROM permission_hierarchy WHERE name='$right'"); }
+		}
+	}
+
+	public static function entryOperations(): array { return [['consume'],['open'],['transfer']]; }
+	#[DataProvider('entryOperations')]
+	public function testGrocycodeWrappersFingerprintResolvedEntry(string $operation): void
+	{
+		$product=self::product(); $stockId=self::$db->query("SELECT stock_id FROM stock WHERE product_id=$product ORDER BY id LIMIT 1")->fetchColumn();
+		$key=bin2hex(random_bytes(16)); $body=self::body($operation);
+		$barcode="grcy:p:$product:$stockId";
+		$first=self::send('/api/stock/products/by-barcode/'.rawurlencode($barcode).'/'.$operation,$body,$key); self::ok($first);
+		$directBody=$body+['stock_entry_id'=>$stockId];
+		$second=self::send(self::path($product,$operation),$directBody,$key); self::ok($second); self::header($second,'true'); self::assertSame($first['body'],$second['body']);
+		$directBody['stock_entry_id']='another-entry'; self::assertSame(409,self::send(self::path($product,$operation),$directBody,$key)['status']);
+	}
+
+	public function testCapabilityAndOpenApiAndCors(): void
+	{
+		$response=self::send('/api/system/info',[],null,9801,'GET'); self::ok($response);
+		self::assertSame(StockBookingIdempotencyService::Capability(),$response['body']['stock_booking_idempotency']);
+		self::assertSame(604800,$response['body']['stock_booking_idempotency']['retention_seconds']);
+		$spec=json_decode(file_get_contents(VICTUAL_ROOT_PATH.'/victual.openapi.json'),true);
+		foreach (self::operations() as [$operation])
+		{
+			foreach (["/stock/products/{productId}/$operation","/stock/products/by-barcode/{barcode}/$operation"] as $path)
+			{
+				$op=$spec['paths'][$path]['post']; self::assertContains('Idempotency-Key',array_column($op['parameters'],'name')); self::assertArrayHasKey('409',$op['responses']); self::assertArrayHasKey('Idempotent-Replayed',$op['responses']['200']['headers']);
+			}
+		}
+	}
+
+	public function testReservationRequiresCallerTransaction(): void
+	{
+		$this->expectException(\LogicException::class);
+		(new StockBookingIdempotencyService(self::$db))->Begin(9801,'purchase','example-key',[]);
+	}
+
+	public function testDeterministicConcurrentDuplicateBooksOnce(): void
+	{
+		$product=self::product(); $key=bin2hex(random_bytes(16)); $body=self::body('add'); $path=self::path($product,'add');
+		// Hold the same per-product lock StockService takes. The first request reserves
+		// its key, then waits here; the second demonstrably waits on that reservation.
+		$lock=new PDO('pgsql:host='.getenv('PGHOST').';port='.getenv('PGPORT').';dbname='.getenv('PHPUNIT_DB_NAME'),getenv('PGUSER'),getenv('PGPASSWORD'),[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+		$lock->beginTransaction();
+		$lock->query('SELECT pg_advisory_xact_lock(74219,'.$product.')');
+		$first=self::start($path,$body,$key);
+		try
+		{
+			self::waitForBlocked(1);
+			$second=self::start($path,$body,$key);
+			self::waitForBlocked(2);
+		}
+		finally { $lock->rollBack(); }
+		$a=self::finish($first); $b=self::finish($second); self::ok($a); self::ok($b);
+		self::assertSame($a['body'][0]['transaction_id'],$b['body'][0]['transaction_id']); self::header($a,'false'); self::header($b,'true');
+		self::assertSame(12.0,(float)self::$db->query("SELECT sum(amount) FROM stock WHERE product_id=$product")->fetchColumn());
+	}
+
+	private static function waitForBlocked(int $count): void
+	{
+		$until=microtime(true)+10;
+		do
+		{
+			$blocked=(int)self::$db->query("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND wait_event_type='Lock'")->fetchColumn();
+			if ($blocked >= $count) { return; }
+			usleep(20000);
+		} while (microtime(true)<$until);
+		self::fail("Expected $count blocked booking connection(s), observed $blocked");
+	}
+}
