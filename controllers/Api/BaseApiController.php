@@ -235,9 +235,10 @@ class BaseApiController extends BaseController
 		}
 		catch (\PDOException $ex)
 		{
+			$finiteColumn = \Victual\Services\Database\FiniteNumberConstraint::ViolatedColumn($ex);
 			$message = \Victual\Services\Database\StockLocationConstraint::IsViolation($ex)
 				? 'Location does not exist'
-				: $ex->getMessage();
+				: ($finiteColumn !== null ? \Victual\Services\Database\FiniteNumberConstraint::Message($finiteColumn) : $ex->getMessage());
 			return $this->GenericErrorResponse($response, $message);
 		}
 		catch (\Exception $ex)

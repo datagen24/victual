@@ -94,10 +94,21 @@ SELECT bag_eq($$ SELECT 'r' AS t, stock_row_id AS a, lot_id AS b, amount, basis 
 		UNION ALL SELECT 'b', booking_id, lot_id, amount, basis FROM stock_booking_lots $$,
 	$$ SELECT * FROM lineage30_before $$, '...and writes nothing');
 
+-- Migration 0313's stock_log_amount_finite refuses this booking today, and the price caches its
+-- trigger refreshes would hold NaN; the backfill still has to refuse one on a database from
+-- before 0313, so those constraints are lifted for this case only
+ALTER TABLE stock_log DROP CONSTRAINT stock_log_amount_finite;
+ALTER TABLE cache__products_average_price DROP CONSTRAINT cache__products_average_price_price_finite;
+ALTER TABLE cache__products_last_purchased DROP CONSTRAINT cache__products_last_purchased_amount_finite,
+	DROP CONSTRAINT cache__products_last_purchased_price_finite;
 SELECT pg_temp.book('corrupt', 'purchase', 'Infinity', 'l30c');
 SELECT throws_like($$ SELECT * FROM stock_lineage_backfill(pg_temp.p('corrupt')) $$,
 	'%booking % has a non-finite amount and cannot be attributed%', 'a non-finite amount is refused, never attributed');
 DELETE FROM stock_log WHERE stock_id = 'l30c';
+ALTER TABLE stock_log ADD CONSTRAINT stock_log_amount_finite CHECK (amount > '-Infinity' AND amount < 'Infinity');
+ALTER TABLE cache__products_average_price ADD CONSTRAINT cache__products_average_price_price_finite CHECK (price > '-Infinity' AND price < 'Infinity');
+ALTER TABLE cache__products_last_purchased ADD CONSTRAINT cache__products_last_purchased_amount_finite CHECK (amount > '-Infinity' AND amount < 'Infinity'),
+	ADD CONSTRAINT cache__products_last_purchased_price_finite CHECK (price > '-Infinity' AND price < 'Infinity');
 
 -- ------------------------------------------------------------------------------------
 -- Invariant checks
