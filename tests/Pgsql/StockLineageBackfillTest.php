@@ -242,6 +242,7 @@ class StockLineageBackfillTest extends PgsqlSchemaTestCase
 		self::assertSame([['pool' => [4.0, 'unknown']]], self::contributions('U_merged_consumed'));
 	}
 
+	/** Migration 0304 refuses a non-finite stock amount and rolls back its tables; it succeeds once the row is repaired. */
 	public function testACorruptFamilyFailsTheMigrationAndRollsItBack(): void
 	{
 		self::unmigrate();

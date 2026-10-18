@@ -838,6 +838,7 @@ class DatabaseImporter
 			. ' - dependent fields a trigger recomputes from this relationship (e.g. cumulated min_stock_amount) may have changed too');
 	}
 
+	/** Validates the source with every Assert*() check, then copies it into the target in one transaction. */
 	private function ImportSnapshot(bool $force, bool $applyRowMigrations): array
 	{
 		$tables = $this->GetCommonTables();

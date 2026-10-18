@@ -38,6 +38,7 @@ class ImportFiniteNumbersTest extends PgsqlSchemaTestCase
 		return $source;
 	}
 
+	/** Removes the SQLite source files the test created. */
 	protected function tearDown(): void
 	{
 		foreach ($this->files as $file)
@@ -49,11 +50,13 @@ class ImportFiniteNumbersTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** An importer from $source into this test schema, with progress output discarded. */
 	private function importer(PDO $source): DatabaseImporter
 	{
 		return new DatabaseImporter($source, self::Pdo(), DatabaseService::GetInstance()->GetDialect(), static function ($message) {});
 	}
 
+	/** The target's products, which a refused import must leave as they were. */
 	private static function targetState(): array
 	{
 		return self::Pdo()->query('SELECT id, name FROM products ORDER BY 1')->fetchAll(PDO::FETCH_ASSOC);
@@ -65,8 +68,10 @@ class ImportFiniteNumbersTest extends PgsqlSchemaTestCase
 		self::Pdo()->exec("INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock) SELECT 'target survivor " . uniqid() . "', (SELECT MIN(id) FROM locations), MIN(id), MIN(id) FROM quantity_units");
 	}
 
+	/** The two ends of the supported SQLite source span. */
 	public static function versions(): array { return [[255], [265]]; }
 
+	/** Infinite REALs and NaN/Infinity text are refused before anything is truncated, in one report naming both columns. */
 	#[DataProvider('versions')]
 	public function testNonFiniteValuesAreRefusedBeforeTruncateWithOneReport(int $version): void
 	{
@@ -102,6 +107,7 @@ class ImportFiniteNumbersTest extends PgsqlSchemaTestCase
 		self::assertFalse(self::Pdo()->inTransaction());
 	}
 
+	/** A source holding only finite numbers imports as before. */
 	public function testFiniteValuesStillImport(): void
 	{
 		$source = $this->source(265, [9001 => ['1', 'NULL'], 9002 => ['2.5', '120']]);

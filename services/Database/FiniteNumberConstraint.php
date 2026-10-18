@@ -29,6 +29,7 @@ final class FiniteNumberConstraint
 		return substr($match[2], strlen($match[1]) + 1);
 	}
 
+	/** The refusal a client is shown for a non-finite value in $column. */
 	public static function Message(string $column): string
 	{
 		return 'The ' . str_replace('_', ' ', $column) . ' must be a finite number';

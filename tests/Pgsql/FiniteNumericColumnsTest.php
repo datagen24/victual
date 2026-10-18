@@ -28,6 +28,7 @@ class FiniteNumericColumnsTest extends PgsqlSchemaTestCase
 	private static int $locationId;
 	private static int $quId;
 
+	/** An ADMIN caller with an API key, and the location and quantity unit every product fixture uses. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -43,12 +44,13 @@ class FiniteNumericColumnsTest extends PgsqlSchemaTestCase
 		self::$quId = (int)self::$db->query("INSERT INTO quantity_units (name, name_plural) VALUES ('finite-piece', 'finite-pieces') RETURNING id")->fetchColumn();
 	}
 
+	/** Every test starts from, and the preflight tests end in, a fully migrated schema. */
 	protected function setUp(): void
 	{
-		// Every test starts from, and the preflight tests end in, a fully migrated schema.
 		DatabaseMigrationService::GetInstance()->MigrateDatabase();
 	}
 
+	/** Inserts a product whose min_stock_amount is the given literal and returns its id. */
 	private static function product(string $name, string $minStock = '0'): int
 	{
 		$statement = self::$db->prepare("INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, min_stock_amount) VALUES (?, ?, ?, ?, ?::double precision) RETURNING id");
@@ -56,6 +58,7 @@ class FiniteNumericColumnsTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/** Runs $sql and returns the SQLSTATE it fails with, or 'accepted'. */
 	private static function sqlState(string $sql): string
 	{
 		try { self::$db->exec($sql); }
@@ -69,6 +72,7 @@ class FiniteNumericColumnsTest extends PgsqlSchemaTestCase
 		return self::$db->query("SELECT conname FROM pg_constraint WHERE connamespace = current_schema()::regnamespace AND contype = 'c' AND conname LIKE '%\\_finite' ORDER BY conname")->fetchAll(PDO::FETCH_COLUMN);
 	}
 
+	/** Puts the schema back to before migration 0313: every one of its constraints dropped and its migrations row deleted. */
 	private static function dropFiniteConstraints(): void
 	{
 		foreach (DatabaseImporter::FINITE_NUMBER_COLUMNS as $table => $columns)
@@ -81,6 +85,7 @@ class FiniteNumericColumnsTest extends PgsqlSchemaTestCase
 		self::$db->exec('DELETE FROM migrations WHERE migration=313');
 	}
 
+	/** The constraint names migration 0313 adds, derived from DatabaseImporter::FINITE_NUMBER_COLUMNS and sorted. */
 	private static function expectedConstraintNames(): array
 	{
 		$names = [];
@@ -136,6 +141,7 @@ class FiniteNumericColumnsTest extends PgsqlSchemaTestCase
 		self::assertSame([], $unprotected, 'every one of these columns needs a CHECK refusing NaN and both infinities (see migration 0313)');
 	}
 
+	/** The migration's constraints and the importer's list name the same 35 columns, and every constraint is validated. */
 	public function testTheMigrationAndTheImporterNameTheSameColumns(): void
 	{
 		self::assertSame(self::expectedConstraintNames(), self::finiteConstraints());
@@ -143,6 +149,7 @@ class FiniteNumericColumnsTest extends PgsqlSchemaTestCase
 		self::assertSame(0, (int)self::$db->query("SELECT count(*) FROM pg_constraint WHERE connamespace = current_schema()::regnamespace AND conname LIKE '%\\_finite' AND NOT convalidated")->fetchColumn(), 'every one is validated, never NOT VALID');
 	}
 
+	/** Each special value is refused on a double precision and on a numeric column; the largest finite double and NULL are kept. */
 	public function testNonFiniteValuesAreRefusedAndFiniteOnesAndNullAreKept(): void
 	{
 		$id = self::product('finite kept', '2.5');
@@ -215,6 +222,7 @@ class FiniteNumericColumnsTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/** The issue's first reproduction, on POST and PUT: a 400 naming the field, no row written, and the record still readable. */
 	#[\PHPUnit\Framework\Attributes\DataProvider('nonFiniteBodies')]
 	public function testTheGenericApiRefusesNonFiniteValuesWith400AndWritesNothing(string $literal): void
 	{
@@ -236,6 +244,7 @@ class FiniteNumericColumnsTest extends PgsqlSchemaTestCase
 		self::assertSame(200, $read['status'], 'and the record can still be read');
 	}
 
+	/** A numeric-typed column (storage_classes.max_temp_c) gets the same 400 as a double precision one. */
 	public function testANumericColumnIsRefusedTheSameWay(): void
 	{
 		$name = 'finite class ' . uniqid();
@@ -245,6 +254,7 @@ class FiniteNumericColumnsTest extends PgsqlSchemaTestCase
 		self::assertSame(0, (int)self::$db->query("SELECT count(*) FROM storage_classes WHERE name = " . self::$db->quote($name))->fetchColumn());
 	}
 
+	/** Finite numbers, as a numeric string and as a JSON number, are written as before. */
 	public function testFiniteValuesStillWrite(): void
 	{
 		$id = self::product('finite api fine', '1');
@@ -257,6 +267,7 @@ class FiniteNumericColumnsTest extends PgsqlSchemaTestCase
 	// The upgrade
 	// -------------------------------------------------------------------------------
 
+	/** An upgrade over NaN and infinite values is refused with one report covering every column, changes nothing, and succeeds once the rows are repaired. */
 	public function testExistingNonFiniteRowsRefuseTheUpgradeWithOneReportAndAreNotRewritten(): void
 	{
 		$db = self::$db;
@@ -305,6 +316,7 @@ class FiniteNumericColumnsTest extends PgsqlSchemaTestCase
 		self::assertSame(1, (int)$db->query('SELECT count(*) FROM migrations WHERE migration=313')->fetchColumn());
 	}
 
+	/** The report counts every offending row but samples at most ten per column. */
 	public function testTheSampleIsLimitedToTenRowsButTheCountIsComplete(): void
 	{
 		self::dropFiniteConstraints();
