@@ -19,6 +19,7 @@ INSERT INTO users (id, username, password) VALUES (93900, 'p39 user', 'fixture')
 INSERT INTO products (id, name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price)
 SELECT g, 'P39 product ' || g, 93900, 93900, 93900, 93900, 93900 FROM generate_series(93901, 93904) g;
 
+-- Books one stock entry and its purchase for product p; marked = 1 makes a 0 price a legacy zero
 CREATE FUNCTION pg_temp.book(p INTEGER, sid TEXT, price DOUBLE PRECISION, day DATE, marked SMALLINT DEFAULT 0) RETURNS VOID AS $$
 BEGIN
 	INSERT INTO stock (product_id, amount, best_before_date, purchased_date, stock_id, price, open, location_id, legacy_zero_price)

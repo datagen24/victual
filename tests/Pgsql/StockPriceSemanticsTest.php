@@ -53,6 +53,7 @@ class StockPriceSemanticsTest extends PgsqlSchemaTestCase
 		self::$unit = (int)self::$db->query("INSERT INTO quantity_units (name, name_plural) VALUES ('pricesemantics-unit', 'pricesemantics-units') RETURNING id")->fetchColumn();
 	}
 
+	/** A new product using the fixture unit and location, optionally under $parent; returns its id. */
 	private static function product(?int $parent = null): int
 	{
 		$statement = self::$db->prepare('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price, parent_product_id) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id');
@@ -146,6 +147,7 @@ class StockPriceSemanticsTest extends PgsqlSchemaTestCase
 		return array_intersect_key($response['body'], array_flip(['stock_value', 'stock_value_incomplete', 'last_price', 'avg_price', 'current_price', 'oldest_price']));
 	}
 
+	/** Asserts each expected price field of $actual, comparing floats with a tolerance and naming $case on failure. */
 	private static function assertPrices(array $expected, array $actual, string $case): void
 	{
 		foreach ($expected as $field => $value)
@@ -178,6 +180,7 @@ class StockPriceSemanticsTest extends PgsqlSchemaTestCase
 		self::assertPrices(['stock_value' => 0.0, 'stock_value_incomplete' => true, 'last_price' => null, 'avg_price' => null, 'current_price' => null, 'oldest_price' => null], self::details($product), '(a)');
 	}
 
+	/** (b) A priced and an unpriced entry: the value is the priced part and is flagged incomplete. */
 	public function testCaseBPricedAndUnpricedEntries(): void
 	{
 		$product = self::product();
@@ -190,6 +193,7 @@ class StockPriceSemanticsTest extends PgsqlSchemaTestCase
 		self::assertPrices(['stock_value' => 4.0, 'stock_value_incomplete' => true, 'last_price' => 2.0, 'avg_price' => 2.0, 'current_price' => 2.0], self::details($product), '(b)');
 	}
 
+	/** (c) A product never stocked, and one stocked out: value 0, not incomplete, and no prices. */
 	public function testCaseCNeverStockedAndStockedOut(): void
 	{
 		$never = self::product();
@@ -203,6 +207,7 @@ class StockPriceSemanticsTest extends PgsqlSchemaTestCase
 		self::assertPrices(['stock_value' => 0.0, 'stock_value_incomplete' => false, 'last_price' => 3.0, 'avg_price' => 3.0, 'current_price' => 3.0], self::details($out), '(c2)');
 	}
 
+	/** (d) Every entry priced: the full value, not flagged. */
 	public function testCaseDEveryEntryPriced(): void
 	{
 		$product = self::product();
@@ -215,6 +220,7 @@ class StockPriceSemanticsTest extends PgsqlSchemaTestCase
 		self::assertPrices(['stock_value' => 6.0, 'stock_value_incomplete' => false, 'last_price' => 3.0, 'current_price' => 1.5], self::details($product), '(d)');
 	}
 
+	/** (e) A known 0 is a known value; a legacy-zero entry counts as unknown. */
 	public function testCaseEAKnownZeroAndALegacyZero(): void
 	{
 		$free = self::product();
@@ -230,6 +236,7 @@ class StockPriceSemanticsTest extends PgsqlSchemaTestCase
 		self::assertPrices(['stock_value' => 0.0, 'stock_value_incomplete' => true, 'last_price' => null, 'avg_price' => null, 'current_price' => null], self::details($legacy), 'legacy zero');
 	}
 
+	/** (f) A caller without STOCK_PRICES_VIEW gets neither the value nor its flag. */
 	public function testCaseFACallerWithoutStockPricesViewGetsNoPriceFieldAndNoFlag(): void
 	{
 		$product = self::product();
@@ -247,6 +254,7 @@ class StockPriceSemanticsTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** The due, overdue and missing lists of /stock/volatile carry value_incomplete. */
 	public function testTheVolatileListsCarryTheFlag(): void
 	{
 		$product = self::product();
@@ -258,6 +266,7 @@ class StockPriceSemanticsTest extends PgsqlSchemaTestCase
 		self::assertTrue($rows[0]['value_incomplete']);
 	}
 
+	/** A parent whose stock is all in sub-products reports only its own (empty) value. */
 	public function testAParentWithStockOnlyInItsSubProductsReportsItsOwnValue(): void
 	{
 		$parent = self::product();
@@ -312,6 +321,7 @@ class StockPriceSemanticsTest extends PgsqlSchemaTestCase
 		self::assertSame(0, (int)self::$db->query("SELECT count(*) FROM stock_log WHERE product_id = $product AND price IS NOT NULL")->fetchColumn());
 	}
 
+	/** An inventory correction with no known price books NULL, not 0. */
 	public function testAnInventoryCorrectionForAProductWithNoKnownPriceBooksNull(): void
 	{
 		$product = self::product();
@@ -323,6 +333,7 @@ class StockPriceSemanticsTest extends PgsqlSchemaTestCase
 		self::assertNull($price, 'the correction has no known price to book, so not 0');
 	}
 
+	/** A self-production from a recipe with incomplete prices books NULL. */
 	public function testASelfProductionFromARecipeWithIncompletePricesBooksNull(): void
 	{
 		$ingredient = self::product();
@@ -357,6 +368,7 @@ class StockPriceSemanticsTest extends PgsqlSchemaTestCase
 		self::assertEqualsWithDelta(2.0, self::details($product)['avg_price'], 0.0001, 'the average of 0 and 4');
 	}
 
+	/** D2: no known purchase price reads NULL, and an unknown next entry falls back to the last known price. */
 	public function testD2NoKnownPurchasePriceIsNullAndAnUnknownNextEntryFallsBackToTheLastKnownPrice(): void
 	{
 		$none = self::product();
@@ -369,6 +381,7 @@ class StockPriceSemanticsTest extends PgsqlSchemaTestCase
 		self::assertPrices(['current_price' => 5.0, 'last_price' => 5.0], self::details($fallback), 'the next entry is unpriced, so the last known price (open question 2)');
 	}
 
+	/** D3/D4: recipe costs keep a known 0 and mark an unknown price as incomplete. */
 	public function testD3AndD4RecipeCostsKeepAKnownZeroAndMarkAnUnknownPrice(): void
 	{
 		$free = self::product();

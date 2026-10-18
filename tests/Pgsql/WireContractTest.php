@@ -358,6 +358,7 @@ class WireContractTest extends PgsqlSchemaTestCase
 		self::assertBool($details['has_childs'], 'product_details.has_childs, which was already a boolean');
 	}
 
+	/** Every chore flag is sent as a JSON boolean. */
 	public function testChoreFlagsAreBooleans(): void
 	{
 		foreach (self::get('/api/objects/chores') as $row)
@@ -382,6 +383,7 @@ class WireContractTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Every userfield flag is sent as a JSON boolean. */
 	public function testUserfieldFlagsAreBooleans(): void
 	{
 		$rows = self::get('/api/objects/userfields');

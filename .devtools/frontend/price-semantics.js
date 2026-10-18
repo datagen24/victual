@@ -24,6 +24,7 @@ const assert = require('node:assert/strict');
 
 		page.on('pageerror', error => { throw new Error('page error: ' + error.message); });
 
+		/** Calls the API as the logged-in demo session; returns the parsed body, or null for 204. */
 		async function api(path, method = 'GET', body)
 		{
 			return page.evaluate(async ({ path, method, body }) =>
@@ -38,6 +39,7 @@ const assert = require('node:assert/strict');
 
 		const location = (await api('objects/locations'))[0].id;
 		const unit = (await api('objects/quantity_units'))[0].id;
+		/** Creates a product named name plus this run's token; returns its id. */
 		const product = async (name) => (await api('objects/products', 'POST', { name: name + ' ' + token, location_id: location, qu_id_purchase: unit, qu_id_stock: unit, qu_id_consume: unit, qu_id_price: unit })).created_object_id;
 
 		const unpriced = await product('Price semantics unpriced');
@@ -62,6 +64,7 @@ const assert = require('node:assert/strict');
 			}
 			return null;
 		}, selector);
+		/** Whether the overview shows product id's incomplete-value icon; null when it is not rendered. */
 		const marked = async (id) => { const icon = await inCells('#product-' + id + '-value-incomplete'); return icon === null ? null : !icon.hidden; };
 		assert.equal(await marked(unpriced), true, 'the overview marks the unpriced value as incomplete');
 		assert.equal(await marked(free), false, 'and not the free one');

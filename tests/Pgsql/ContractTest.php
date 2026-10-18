@@ -468,6 +468,7 @@ class ContractTest extends PgsqlSchemaTestCase
 		self::assertGreaterThan(0, self::$ids['product'], 'Fixture product created');
 	}
 
+	/** The stock endpoints answer the recorded contract, for unpriced and mixed products as well as priced ones. */
 	#[Depends('testCreatesMasterData')]
 	public function testStockOperations(): void
 	{
