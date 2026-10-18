@@ -19,6 +19,25 @@
 
 // Tracks whether the visible modal edits an existing entry (true) or creates a new one;
 // on edit, Victual.MealPlanEntryEditObject holds the entry being edited
+// The marker shown in place of, or after, a cost that leaves out an unknown price (ADR-0045
+// option B, issue #990)
+function IncompletePriceIcon(title)
+{
+	return ' <i class="small fa-solid fa-exclamation text-danger" data-toggle="tooltip" data-trigger="hover click" title="' + title.escapeHTML() + '"></i>';
+}
+
+// The marker for a resolved recipe whose costs are the sum of only its known prices, or ''.
+// A recipe with no position at all also reads prices_incomplete = 1 (recipes_resolved's
+// LEFT JOIN), and a day holding only notes is one, so a recipe naming no product gets none.
+function RecipeIncompletePriceIcon(resolvedRecipe)
+{
+	if (resolvedRecipe.prices_incomplete != 1 || !resolvedRecipe.product_names_comma_separated)
+	{
+		return '';
+	}
+	return IncompletePriceIcon(__t("No price information is available for at least one ingredient"));
+}
+
 var firstRender = true;
 Victual.IsMealPlanEntryEditAction = false;
 
@@ -177,7 +196,7 @@ $(".calendar").each(function()
 				if (Victual.PricesVisible)
 				{
 					weekCosts = weekRecipeResolved.costs;
-					weekCostsHtml = __t("Week costs") + ': <span class="locale-number locale-number-currency">' + weekCosts.toString() + "</span> ";
+					weekCostsHtml = __t("Week costs") + ': <span class="locale-number locale-number-currency">' + weekCosts.toString() + "</span>" + RecipeIncompletePriceIcon(weekRecipeResolved) + " ";
 				}
 
 				var weekRecipeOrderMissingButtonDisabledClasses = "";
@@ -258,7 +277,7 @@ $(".calendar").each(function()
 				var costsAndCaloriesPerServing = ""
 				if (Victual.PricesVisible)
 				{
-					costsAndCaloriesPerServing = '<h5 class="small text-truncate mb-1"><span class="locale-number locale-number-currency">' + resolvedRecipe.costs + '</span> / <span class="locale-number locale-number-generic">' + resolvedRecipe.calories / mealPlanEntry.recipe_servings + '</span> ' + Victual.EnergyUnit + ' ' + __t('per serving') + '</h5>';
+					costsAndCaloriesPerServing = '<h5 class="small text-truncate mb-1"><span class="locale-number locale-number-currency">' + resolvedRecipe.costs + '</span>' + RecipeIncompletePriceIcon(resolvedRecipe) + ' / <span class="locale-number locale-number-generic">' + resolvedRecipe.calories / mealPlanEntry.recipe_servings + '</span> ' + Victual.EnergyUnit + ' ' + __t('per serving') + '</h5>';
 				}
 				else
 				{
@@ -354,6 +373,10 @@ $(".calendar").each(function()
 				// first case stays distinguishable from the second on the wire). The
 				// rendering is behind Victual.PricesVisible either way; this keeps the
 				// arithmetic defined. Issue #176 item 5.
+				// A null last price is also what a product whose only purchases are unknown
+				// prices answers (ADR-0045 D2), so it is remembered before the arithmetic
+				// default, and the entry shows no cost for it rather than a cost of 0 (#990)
+				var lastPriceUnknown = productDetails.last_price === null;
 				if (productDetails.last_price === null || productDetails.last_price === undefined)
 				{
 					productDetails.last_price = 0;
@@ -444,7 +467,7 @@ $(".calendar").each(function()
 				var costsAndCaloriesPerServing = ""
 				if (Victual.PricesVisible)
 				{
-					costsAndCaloriesPerServing = '<h5 class="small text-truncate mb-1"><span class="locale-number locale-number-currency">' + productDetails.last_price * mealPlanEntry.product_amount + '</span> / <span class="locale-number locale-number-generic">' + productDetails.product.calories + '</span> ' + Victual.EnergyUnit + ' </h5>';
+					costsAndCaloriesPerServing = '<h5 class="small text-truncate mb-1">' + (lastPriceUnknown ? IncompletePriceIcon(__t("No price information is available for this product")).trim() : '<span class="locale-number locale-number-currency">' + productDetails.last_price * mealPlanEntry.product_amount + '</span>') + ' / <span class="locale-number locale-number-generic">' + productDetails.product.calories + '</span> ' + Victual.EnergyUnit + ' </h5>';
 				}
 				else
 				{
@@ -504,7 +527,7 @@ $(".calendar").each(function()
 					var costsAndCaloriesPerDay = ""
 					if (Victual.PricesVisible)
 					{
-						costsAndCaloriesPerDay = '<h5 class="small text-truncate"><span class="locale-number locale-number-currency">' + dayRecipeResolved.costs + '</span> / <span class="locale-number locale-number-generic">' + dayRecipeResolved.calories + '</span> ' + Victual.EnergyUnit + ' ' + __t('per day') + '</h5>';
+						costsAndCaloriesPerDay = '<h5 class="small text-truncate"><span class="locale-number locale-number-currency">' + dayRecipeResolved.costs + '</span>' + RecipeIncompletePriceIcon(dayRecipeResolved) + ' / <span class="locale-number locale-number-generic">' + dayRecipeResolved.calories + '</span> ' + Victual.EnergyUnit + ' ' + __t('per day') + '</h5>';
 					}
 					else
 					{

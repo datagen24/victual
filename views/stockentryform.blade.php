@@ -103,8 +103,11 @@
 			// that 0 as a blank field, and saving the untouched form then sent price="" -
 			// the documented "clear the price" idiom PUT /api/stock/entry/{id} now accepts
 			// (PR #530) - turning a stored 0 into NULL on every save (issue #545). Only an
-			// actual NULL should render blank.
-			if ($stockEntry->price === null)
+			// actual NULL should render blank - and a 0 marked as never entered
+			// (legacy_zero_price, ADR-0045), which is an unknown price too. Leaving the field
+			// blank is safe now: stockentryform.js omits a price that is unchanged from the
+			// one the form loaded with, so the stored 0 and its marker are kept (#990).
+			if ($stockEntry->price === null || (int)($stockEntry->legacy_zero_price ?? 0) === 1)
 			{
 			$price = '';
 			}

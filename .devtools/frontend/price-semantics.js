@@ -8,7 +8,8 @@
 // public/viewjs/components/productcard.js still show it, because PHP never runs public/viewjs.
 // One product is bought without a price (unknown) and one at 0 (free): the overview marks the
 // first value as incomplete and not the second, shows the free product's last price instead of
-// hiding it as an empty value, and the product card does the same.
+// hiding it as an empty value, and the product card does the same. Issue #990 adds the stock
+// entries page and the meal plan.
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 
@@ -93,7 +94,52 @@ const assert = require('node:assert/strict');
 		assert.equal(await cardMarked(unpriced, 'Price semantics unpriced ' + token), true, 'the product card marks the unpriced value');
 		assert.equal(await cardMarked(free, 'Price semantics free ' + token), false, 'and not the free one');
 
-		console.log('price semantics: the overview and the product card tell an unknown value from a known zero');
+		// Issue #990: the stock entries page shows no price for an unknown one, and the meal
+		// plan shows no cost for a product with no known price and marks the day's cost as
+		// leaving one out. Both read an unknown price as null, a marked 0 included, so the
+		// unpriced product exercises the same code a marked one does.
+		const unpricedEntry = (await api('stock/products/' + unpriced + '/entries'))[0].id;
+		const freeEntry = (await api('stock/products/' + free + '/entries'))[0].id;
+		await page.goto(base + '/stockentries');
+		/** Whether stock entry id's price cell shows a price; null when the page has no such cell. */
+		const entryPrice = async (id) => page.evaluate((id) =>
+		{
+			const nodes = $('#stockentries-table').DataTable().cells().nodes().toArray();
+			const span = nodes.map(cell => cell.querySelector('#stock-' + id + '-price')).find(found => found !== null);
+			return span === undefined ? null : span.querySelector('.locale-number-currency') !== null;
+		}, id);
+		assert.equal(await entryPrice(unpricedEntry), false, 'the stock entries page shows no price for an unpriced entry');
+		assert.equal(await entryPrice(freeEntry), true, 'and still shows a price of 0');
+
+		const day = '2031-03-03';
+		/** Adds a meal plan entry of one product on day; returns its id. */
+		const mealEntry = async (product) => (await api('objects/meal_plan', 'POST', { day, type: 'product', product_id: product, product_amount: 1 })).created_object_id;
+		const unpricedMeal = await mealEntry(unpriced);
+		const freeMeal = await mealEntry(free);
+		await page.goto(base + '/mealplan?start=' + day + '&days=0');
+		await page.waitForFunction((ids) => ids.every(id => document.querySelector('[data-mealplan-entry-id="' + id + '"]') !== null), [unpricedMeal, freeMeal]);
+		/** Whether meal plan entry id shows a cost and whether it shows the missing-price marker. */
+		const mealCost = async (id) => page.evaluate((id) =>
+		{
+			// eventRender removes the event's fc-event class and keeps the entry as data-meal-plan-entry
+			const event = document.querySelector('[data-mealplan-entry-id="' + id + '"]').closest('[data-meal-plan-entry]');
+			return { currency: event.querySelector('.locale-number-currency') !== null, marked: event.querySelector('i.fa-exclamation.text-danger') !== null };
+		}, id);
+		assert.deepEqual(await mealCost(unpricedMeal), { currency: false, marked: true }, 'a meal plan product with no known price shows the marker, not a cost of 0');
+		assert.deepEqual(await mealCost(freeMeal), { currency: true, marked: false }, 'a free one shows its cost');
+		const daySummary = await page.evaluate((day) =>
+		{
+			const recipe = Victual.InternalRecipes.find(found => found.name === day && found.type === 'mealplan-day');
+			return {
+				marked: document.querySelector('#day-summary-' + day + ' i.fa-exclamation.text-danger') !== null,
+				html: document.querySelector('#day-summary-' + day)?.outerHTML ?? null,
+				recipe: recipe ?? null,
+				resolved: recipe === undefined ? null : Victual.RecipesResolved.find(found => found.recipe_id == recipe.id) ?? null
+			};
+		}, day);
+		assert.equal(daySummary.marked, true, "and the day's cost is marked as leaving a price out: " + JSON.stringify(daySummary));
+
+		console.log('price semantics: the overview and the product card the stock entries page and the meal plan tell an unknown value from a known zero');
 	}
 	finally
 	{

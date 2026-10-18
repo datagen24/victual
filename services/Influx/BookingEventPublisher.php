@@ -178,7 +178,7 @@ class BookingEventPublisher
 		$productIds = [];
 
 		foreach (DatabaseService::GetInstance()->ExecuteDbQuery(
-			'SELECT id, product_id, amount, price, transaction_type, undone, row_created_timestamp'
+			'SELECT id, product_id, amount, price, legacy_zero_price, transaction_type, undone, row_created_timestamp'
 				. ' FROM stock_log WHERE transaction_id = ? ORDER BY id',
 			[$transactionId]
 		)->fetchAll(\PDO::FETCH_ASSOC) as $row)
@@ -192,8 +192,9 @@ class BookingEventPublisher
 				'amount' => (float)$row['amount'],
 				// Kept null rather than coerced to 0.0: a booking with no price is not a
 				// booking at a price of nothing, and the difference decides whether a
-				// price_paid point exists at all
-				'price' => $row['price'] === null ? null : (float)$row['price'],
+				// price_paid point exists at all. A 0 marked as never entered
+				// (legacy_zero_price, ADR-0045) is unknown too, so it writes no point (#990)
+				'price' => $row['price'] === null || (int)$row['legacy_zero_price'] === 1 ? null : (float)$row['price'],
 				'transaction_type' => (string)$row['transaction_type'],
 				'undone' => (int)$row['undone'],
 				'row_created_timestamp' => (string)$row['row_created_timestamp']
