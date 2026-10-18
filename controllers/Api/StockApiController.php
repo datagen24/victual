@@ -45,6 +45,9 @@ class StockApiController extends BaseApiController
 				$key = $request->getHeaderLine('Idempotency-Key');
 				$payload = ['operation' => $operation, 'product_id' => (int)$args['productId'],
 					'body' => $this->GetParsedAndFilteredRequestBody($request)];
+				// Keys nobody retries expire without ever being looked up again; a bounded
+				// purge here keeps the table at the retention window (#980 review)
+				$service->PurgeExpired();
 				$result = DatabaseService::GetInstance()->InTransaction(function () use ($service, $userId, $operation, $key, $payload, $book)
 				{
 					$result = $service->Begin($userId, $operation, $key, $payload);

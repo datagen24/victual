@@ -66,6 +66,7 @@ class CorsMiddleware extends BaseMiddleware
 		}));
 	}
 
+	/** Adds the CORS headers for an allowed origin: the methods, the request headers a browser may send (the API key and Idempotency-Key), and the response headers it may read (label revival, Idempotent-Replayed). */
 	private function WithCorsHeaders(Request $request, Response $response): Response
 	{
 		$allowedOrigins = self::AllowedOrigins();

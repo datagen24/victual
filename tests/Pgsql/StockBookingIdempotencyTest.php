@@ -19,6 +19,7 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 	private static int $pantry;
 	private static int $cellar;
 
+	/** Two locations and two users who hold every booking permission, each with an API key. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -36,6 +37,7 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Inserts one row and returns its id. */
 	private static function insert(string $table, array $values): int
 	{
 		$stmt = self::$db->prepare('INSERT INTO ' . $table . '(' . implode(',',array_keys($values)) . ') VALUES (' . implode(',',array_fill(0,count($values),'?')) . ') RETURNING id');
@@ -43,6 +45,7 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 		return (int)$stmt->fetchColumn();
 	}
 
+	/** A product, with $amount purchased into the pantry unless it is 0. */
 	private static function product(int $amount = 10): int
 	{
 		$product = self::insert('products', ['name' => 'Key product '.bin2hex(random_bytes(4)), 'location_id' => self::$pantry, 'qu_id_purchase' => 2, 'qu_id_stock' => 2, 'qu_id_consume' => 2, 'qu_id_price' => 2]);
@@ -53,6 +56,7 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 		return $product;
 	}
 
+	/** Starts one HTTP request in a subprocess, with the key as Idempotency-Key unless it is null, and returns the process handle for finish(). */
 	private static function start(string $path, array $body, ?string $key, int $user = 9801, string $method = 'POST', array $headers = []): array
 	{
 		$headers['VICTUAL-API-KEY'] = self::$keys[$user];
@@ -63,6 +67,7 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 		return [$process,$pipes];
 	}
 
+	/** Waits for a request start() began and returns its status, decoded body and lower-cased headers. */
 	private static function finish(array $started): array
 	{
 		[$process,$pipes] = $started;
@@ -76,12 +81,15 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 		return $result;
 	}
 
+	/** Sends one request and waits for its answer. */
 	private static function send(string $path, array $body, ?string $key, int $user = 9801, string $method = 'POST', array $headers = []): array
 	{
 		return self::finish(self::start($path,$body,$key,$user,$method,$headers));
 	}
 
+	/** The direct booking route for a product. */
 	private static function path(int $product, string $operation): string { return "/api/stock/products/$product/$operation"; }
+	/** A valid body for each booking operation. */
 	private static function body(string $operation): array
 	{
 		return match ($operation) {
@@ -91,18 +99,23 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 			default => ['amount'=>2],
 		};
 	}
+	/** The product's stock rows and ledger rows, to show a request booked nothing. */
 	private static function digest(int $product): array
 	{
 		return [self::$db->query("SELECT row_to_json(s) FROM stock s WHERE product_id=$product ORDER BY id")->fetchAll(PDO::FETCH_COLUMN), self::$db->query("SELECT row_to_json(s) FROM stock_log s WHERE product_id=$product ORDER BY id")->fetchAll(PDO::FETCH_COLUMN)];
 	}
+	/** Asserts the Idempotent-Replayed header, or its absence when $value is null. */
 	private static function header(array $response, ?string $value): void
 	{
 		self::assertSame($value === null ? null : [$value],$response['headers']['idempotent-replayed'] ?? null);
 	}
+	/** Asserts a 200 answer. */
 	private static function ok(array $response): void { self::assertSame(200,$response['status'],json_encode($response)); }
 
+	/** The five bookings, by route name. */
 	public static function operations(): array { return array_map(fn($op)=>[$op],['add','consume','transfer','open','inventory']); }
 
+	/** Each booking books once, and the same key and body replays the same rows with Idempotent-Replayed: true, without extending the key or moving the changed time. */
 	#[DataProvider('operations')]
 	public function testEachOperationBooksOnceAndReplays(string $operation): void
 	{
@@ -120,6 +133,7 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 		self::assertMatchesRegularExpression('/^[0-9a-f]{32}$/',$first['body'][0]['transaction_id']);
 	}
 
+	/** The same key with another body, another product or another stock entry answers 409 idempotency_conflict and books nothing. */
 	public function testConflictsBindBodyProductAndEntry(): void
 	{
 		$product=self::product(); $key=bin2hex(random_bytes(16)); $body=['amount'=>1];
@@ -132,7 +146,9 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Keys outside the 8-128 character [A-Za-z0-9._:-] grammar. */
 	public static function malformedKeys(): array { return [[''],['short'],[str_repeat('x',129)],['bad key!'],['valid-key/slash']]; }
+	/** A malformed key is refused with 400 before anything is booked. */
 	#[DataProvider('malformedKeys')]
 	public function testMalformedKeysNeverBook(string $key): void
 	{
@@ -141,6 +157,7 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 		self::assertSame(400,$result['status']); self::header($result,null); self::assertSame($before,self::digest($product));
 	}
 
+	/** Without the header every request books, carries no Idempotent-Replayed header and writes no key row. */
 	public function testUnkeyedRequestsBookNormally(): void
 	{
 		$product=self::product(); $before=(int)self::$db->query('SELECT count(*) FROM stock_booking_idempotency_keys')->fetchColumn();
@@ -148,6 +165,7 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 		self::assertSame($before,(int)self::$db->query('SELECT count(*) FROM stock_booking_idempotency_keys')->fetchColumn());
 	}
 
+	/** Just inside the window the key replays; once expired it books again. A committed key row without a transaction id answers 409 idempotency_in_progress and books nothing. */
 	public function testRetentionBoundaryAndInProgress(): void
 	{
 		$product=self::product(); $body=self::body('add'); $key=bin2hex(random_bytes(16)); $path=self::path($product,'add');
@@ -161,6 +179,7 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 		self::assertSame(409,$response['status']); self::assertSame('idempotency_in_progress',$response['body']['code']); self::header($response,null); self::assertSame($before,self::digest($product));
 	}
 
+	/** A refused booking leaves no key row, so the same key books once the cause is gone. */
 	public function testFailedBookingRollsBackKeyAndRetryCanSucceed(): void
 	{
 		$product=self::product(0); $key=bin2hex(random_bytes(16)); $path=self::path($product,'consume');
@@ -170,6 +189,7 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 		$result=self::send($path,['amount'=>2],$key); self::ok($result); self::header($result,'false');
 	}
 
+	/** Two users' identical keys are separate, and a replay of a transaction id shared with another user (a legacy uniqid() collision) returns only the acting user's rows. */
 	public function testScopeAndLegacyCollisionFiltering(): void
 	{
 		$product=self::product(); $key=bin2hex(random_bytes(16)); $body=self::body('add'); $path=self::path($product,'add');
@@ -202,6 +222,7 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 		$before=self::digest($product); $gone=self::send($path,$body,$key); self::assertSame(400,$gone['status']); self::header($gone,null); self::assertSame($before,self::digest($product));
 	}
 
+	/** Without the booking permission or STOCK_VIEW, a keyed request, replay or new key, direct or by barcode, answers 403 and changes neither stock nor the key table. */
 	#[DataProvider('operations')]
 	public function testPermissionsAreRecheckedBeforeKeyLookupAndWrappers(string $operation): void
 	{
@@ -224,7 +245,9 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** The bookings a Grocycode can name a stock entry for. */
 	public static function entryOperations(): array { return [['consume'],['open'],['transfer']]; }
+	/** A Grocycode booking replays through the direct route naming the same entry, and answers 409 for another entry. */
 	#[DataProvider('entryOperations')]
 	public function testGrocycodeWrappersFingerprintResolvedEntry(string $operation): void
 	{
@@ -256,6 +279,31 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 		self::assertSame(2.0,(float)self::$db->query("SELECT sum(amount) FROM stock WHERE product_id=$product")->fetchColumn(),'the legacy booking was undone');
 	}
 
+	/**
+	 * A keyed booking also deletes a bounded batch of other users' expired keys, so keys nobody
+	 * retries do not outlive the retention window; unexpired keys are left alone.
+	 */
+	public function testExpiredKeysOfAnyUserArePurgedInBoundedBatches(): void
+	{
+		$insert=self::$db->prepare("INSERT INTO stock_booking_idempotency_keys(user_id,operation,idempotency_key,request_fingerprint,transaction_id,expires_at) VALUES (9802,'consume',?,?,'old',CURRENT_TIMESTAMP + make_interval(secs=>?))");
+		foreach (['expired-a-'.bin2hex(random_bytes(4)) => -60, 'expired-b-'.bin2hex(random_bytes(4)) => -60, 'expired-c-'.bin2hex(random_bytes(4)) => -60, 'live-key-'.bin2hex(random_bytes(4)) => 3600] as $key=>$offset)
+		{
+			$insert->execute([$key,str_repeat('a',64),$offset]);
+		}
+		$expired=fn()=>(int)self::$db->query("SELECT count(*) FROM stock_booking_idempotency_keys WHERE expires_at <= CURRENT_TIMESTAMP")->fetchColumn();
+
+		self::$db->beginTransaction();
+		try { self::assertSame(2,(new StockBookingIdempotencyService(self::$db))->PurgeExpired(2),'at most the batch is deleted'); }
+		finally { self::$db->commit(); }
+		self::assertSame(1,$expired());
+
+		$product=self::product();
+		self::ok(self::send(self::path($product,'add'),self::body('add'),bin2hex(random_bytes(16))));
+		self::assertSame(0,$expired(),'a keyed booking purged the remaining expired key');
+		self::assertSame(1,(int)self::$db->query("SELECT count(*) FROM stock_booking_idempotency_keys WHERE idempotency_key LIKE 'live-key-%'")->fetchColumn(),'an unexpired key is kept');
+	}
+
+	/** GET /api/system/info publishes the capability from the retention constant, and the document describes the header, 409 and replay header on all ten routes. */
 	public function testCapabilityAndOpenApiAndCors(): void
 	{
 		$response=self::send('/api/system/info',[],null,9801,'GET'); self::ok($response);
@@ -271,12 +319,14 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Begin() refuses to reserve a key outside the transaction that will book. */
 	public function testReservationRequiresCallerTransaction(): void
 	{
 		$this->expectException(\LogicException::class);
 		(new StockBookingIdempotencyService(self::$db))->Begin(9801,'purchase','example-key',[]);
 	}
 
+	/** Two requests with the same key at once: the second waits on the first reservation, then replays it, so stock changes once. */
 	public function testDeterministicConcurrentDuplicateBooksOnce(): void
 	{
 		$product=self::product(); $key=bin2hex(random_bytes(16)); $body=self::body('add'); $path=self::path($product,'add');
@@ -298,6 +348,7 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 		self::assertSame(12.0,(float)self::$db->query("SELECT sum(amount) FROM stock WHERE product_id=$product")->fetchColumn());
 	}
 
+	/** Waits until $count other connections are blocked on a lock, or fails after ten seconds. */
 	private static function waitForBlocked(int $count): void
 	{
 		$until=microtime(true)+10;

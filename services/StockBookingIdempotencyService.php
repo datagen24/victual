@@ -10,15 +10,18 @@ class StockBookingIdempotencyService
 	public const RETENTION_SECONDS = 604800;
 	public const OPERATIONS = ['purchase', 'consume', 'transfer', 'open', 'inventory'];
 
+	/** @param \PDO $db The raw connection whose transaction the booking runs in */
 	public function __construct(private \PDO $db)
 	{
 	}
 
+	/** The stock_booking_idempotency object GET /api/system/info publishes (ADR-0046 decision 11), from the same constants that set each key row. */
 	public static function Capability(): array
 	{
 		return ['header' => 'Idempotency-Key', 'retention_seconds' => self::RETENTION_SECONDS, 'operations' => self::OPERATIONS];
 	}
 
+	/** Prepares and runs one statement on the booking's connection. */
 	private function Query(string $sql, array $parameters): \PDOStatement
 	{
 		$statement = $this->db->prepare($sql);
@@ -79,6 +82,23 @@ class StockBookingIdempotencyService
 		return ['replay' => true, 'transaction_id' => $row['transaction_id']];
 	}
 
+	/** How many expired keys one keyed request deletes at most, by PurgeExpired(). */
+	public const PURGE_BATCH = 100;
+
+	/**
+	 * Deletes up to $limit keys of any user whose retention has passed. Begin() only deletes
+	 * the key it is asked about, so a key that is never retried would otherwise stay forever.
+	 * Run before the booking's transaction, as its own short statement: SKIP LOCKED means it
+	 * never waits behind another request's key, which is the wait ADR-0046 decision 9 warns of.
+	 *
+	 * @return int The number of keys deleted
+	 */
+	public function PurgeExpired(int $limit = self::PURGE_BATCH): int
+	{
+		return $this->Query('DELETE FROM stock_booking_idempotency_keys WHERE ctid IN (SELECT ctid FROM stock_booking_idempotency_keys WHERE expires_at <= CURRENT_TIMESTAMP LIMIT ? FOR UPDATE SKIP LOCKED)', [$limit])->rowCount();
+	}
+
+	/** Writes the booking's transaction id into the key row reserved by Begin(), in the same transaction. */
 	public function Record(int $userId, string $operation, string $key, string $transactionId): void
 	{
 		$this->Query('UPDATE stock_booking_idempotency_keys SET transaction_id=? WHERE user_id=? AND operation=? AND idempotency_key=?', [$transactionId, $userId, $operation, $key]);
