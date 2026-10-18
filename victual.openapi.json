@@ -5681,7 +5681,7 @@
 						}
 					},
 					"403": {
-						"description": "The authenticated user lacks a permission this operation requires",
+						"description": "The authenticated user lacks SHOPPINGLIST_ITEMS_ADD or STOCK_VIEW",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -5696,7 +5696,8 @@
 					"503": {
 						"$ref": "#/components/responses/SchemaUnavailable"
 					}
-				}
+				},
+				"description": "Requires SHOPPINGLIST_ITEMS_ADD and STOCK_VIEW. The items this adds are exactly the products below their minimum stock amount, which is stock information a caller without STOCK_VIEW may not read (issue #933, ADR-0050)."
 			}
 		},
 		"/stock/shoppinglist/add-overdue-products": {

@@ -85,6 +85,7 @@
 			<file>tests/Pgsql/MealPlanProductDetailsRedactionTest.php</file>
 			<file>tests/Pgsql/MealPlanStockStateTest.php</file>
 			<file>tests/Pgsql/ShoppingListUserfieldVisibilityTest.php</file>
+			<file>tests/Pgsql/ShoppingListShortfallVisibilityTest.php</file>
 		</testsuite>
 		<testsuite name="householdpages">
 			<file>tests/Pgsql/HouseholdPagesTest.php</file>
