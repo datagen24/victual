@@ -455,6 +455,54 @@ class OutboxRequeueTest extends PgsqlSchemaTestCase
 		self::assertSame($before, self::snapshot());
 	}
 
+	/**
+	 * Issue #928: a claimed batch made only of unreadable rows used to end `--drain` with exit 1
+	 * after dead-lettering them, so the deliverable rows queued behind a full batch of them were
+	 * not sent in that run. Setting a row aside is progress, so the drain goes on and delivers
+	 * them, and the exit code reflects delivery alone.
+	 */
+	public function testADrainGoesPastABatchOfOnlyUnreadableRowsAndDeliversTheRowsBehindIt(): void
+	{
+		$insert = self::Pdo()->prepare('INSERT INTO outbox (event_type, payload, attempts) VALUES (?, ?, 0) RETURNING id');
+		$unreadable = [];
+		for ($i = 0; $i < OutboxService::DRAIN_BATCH_SIZE + 1; $i++)
+		{
+			// The version 1 shape, which BookingEventPublisher::DescribeUnreadable() sets aside
+			$insert->execute([self::INFLUX, json_encode(['transaction_id' => 'unreadable-' . $i])]);
+			$unreadable[] = (int)$insert->fetchColumn();
+		}
+		$deliverable = [];
+		foreach (['behind-1', 'behind-2', 'behind-3'] as $transactionId)
+		{
+			$deliverable[$transactionId] = $this->row($transactionId, ['dead' => false, 'attempts' => 0, 'error' => null]);
+		}
+
+		[$exit, $stdout, $stderr] = self::cli('--drain');
+
+		self::assertSame(0, $exit, "the drain delivers what it can and exits 0: $stdout $stderr");
+		foreach ($deliverable as $transactionId => $id)
+		{
+			self::assertNotNull(self::one($id)['delivered_at'], "$transactionId was delivered in the same run");
+			self::assertStringContainsString($transactionId, (string)file_get_contents(self::$standinLog), "and reached the endpoint");
+		}
+		self::assertSame(count($unreadable), (int)self::Pdo()->query('SELECT count(*) FROM outbox WHERE dead_lettered_at IS NOT NULL AND id IN (' . implode(',', $unreadable) . ')')->fetchColumn(), 'every unreadable row was set aside');
+		self::assertStringContainsString((string)count($unreadable) . ' event(s) are set aside as undeliverable', $stdout, 'and the report still says so');
+	}
+
+	/** A refused write still stops the drain with exit 1: only a delivery failure does. */
+	public function testADrainStillFailsWhenTheEndpointRefusesTheWrite(): void
+	{
+		$id = $this->row('refused-1', ['dead' => false, 'attempts' => 0, 'error' => null]);
+		file_put_contents(self::$standinControl, 'status:503');
+
+		[$exit, , $stderr] = self::cli('--drain');
+
+		self::assertSame(1, $exit, 'a write that delivered nothing is a failure');
+		self::assertStringContainsString('the rest is still queued', $stderr);
+		self::assertNull(self::one($id)['delivered_at']);
+		self::assertNull(self::one($id)['dead_lettered_at'], 'and a retryable failure sets nothing aside');
+	}
+
 	public function testHelpDocumentsTheModeTheLabelExclusionAndWhatIsPreserved(): void
 	{
 		[$exit, $stdout] = self::cli('--help');

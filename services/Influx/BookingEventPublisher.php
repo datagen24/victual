@@ -391,8 +391,14 @@ class BookingEventPublisher
 	 * Lines are built per row, so a row that cannot be built is dead-lettered on its own
 	 * instead of failing the whole batch.
 	 *
-	 * @return bool True when the call made progress: an event was delivered, or set aside
-	 *              because another was (always false when nothing could be written)
+	 * **Setting an unreadable or unbuildable row aside is progress** (issue #928). It leaves
+	 * the undelivered count smaller, so a batch made only of such rows returns true and a
+	 * caller draining the whole backlog goes on to the rows behind it instead of stopping
+	 * with a failure. False is kept for a write that delivered nothing.
+	 *
+	 * @return bool True when the call made progress: an event was delivered, an unreadable
+	 *              or unbuildable one was set aside, or a refused one was set aside because
+	 *              another was delivered (always false when nothing could be written)
 	 */
 	public static function Drain(): bool
 	{
@@ -444,9 +450,9 @@ class BookingEventPublisher
 
 				if (count($deliverable) === 0)
 				{
-					// Nothing readable in this batch. Reported as no delivery, but the
-					// dead-lettered rows are out of the way so the next drain sees past them.
-					return false;
+					// Nothing readable in this batch. The dead-lettered rows are out of the way,
+					// which is progress: the next drain sees past them (#928).
+					return true;
 				}
 
 				// Lines are built per row, not per batch, so that a row which cannot be built
@@ -494,7 +500,8 @@ class BookingEventPublisher
 
 				if (count($withLines) === 0)
 				{
-					return count($empty) > 0;
+					// Delivered empty events, or rows set aside because they could not be built
+					return count($empty) > 0 || count($rows) < count($deliverable);
 				}
 
 				$writer = new InfluxEventWriter();
