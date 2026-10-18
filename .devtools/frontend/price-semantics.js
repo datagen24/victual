@@ -131,15 +131,18 @@ const assert = require('node:assert/strict');
 		{
 			const recipe = Victual.InternalRecipes.find(found => found.name === day && found.type === 'mealplan-day');
 			return {
-				marked: document.querySelector('#day-summary-' + day + ' i.fa-exclamation.text-danger') !== null,
-				html: document.querySelector('#day-summary-' + day)?.outerHTML ?? null,
+				// The summary is read from the whole day header: mealplan.js appends an <h5> that
+				// holds another <h5>, and the parser closes the outer one at the inner one's start
+				// tag, so #day-summary-<day> is left empty and its text, marker included, follows it
+				marked: document.querySelector(".calendar[data-primary-section='true'] .fc-day-header[data-date='" + day + "'] i.fa-exclamation.text-danger") !== null,
+				html: document.querySelector(".calendar[data-primary-section='true'] .fc-day-header[data-date='" + day + "']")?.outerHTML ?? null,
 				recipe: recipe ?? null,
 				resolved: recipe === undefined ? null : Victual.RecipesResolved.find(found => found.recipe_id == recipe.id) ?? null
 			};
 		}, day);
 		assert.equal(daySummary.marked, true, "and the day's cost is marked as leaving a price out: " + JSON.stringify(daySummary));
 
-		console.log('price semantics: the overview and the product card the stock entries page and the meal plan tell an unknown value from a known zero');
+		console.log('price semantics: the overview, the product card, the stock entries page and the meal plan tell an unknown value from a known zero');
 	}
 	finally
 	{
