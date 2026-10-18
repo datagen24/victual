@@ -45,6 +45,11 @@ class BatteriesApiController extends BaseApiController
 	 * or date/time in any rendering ParseApiDateTime() accepts. A value it cannot read is
 	 * refused with 400 - see BaseApiController::RequestedTimestamp().
 	 * Returns the created battery_charge_cycles row (200) or a 400 error response.
+	 *
+	 * Issue #908 (maintainer decision 2026-10-18): a write-only client, such as a smart charger
+	 * reporting through an integration, may track a charge without BATTERIES_VIEW. It gets
+	 * only `{"id": <charge cycle id>}`, enough to undo the cycle, because reading the row is
+	 * BATTERIES_VIEW's (ADR-0035). A caller with BATTERIES_VIEW gets the full row as before.
 	 */
 	public function TrackChargeCycle(Request $request, Response $response, array $args)
 	{
@@ -63,6 +68,11 @@ class BatteriesApiController extends BaseApiController
 			$trackedTime = $this->RequestedTimestamp($request, $requestBody, 'tracked_time');
 
 			$chargeCycleId = BatteriesService::GetInstance()->TrackChargeCycle($args['batteryId'], $trackedTime);
+			if (!User::HasPermissions(User::PERMISSION_BATTERIES_VIEW))
+			{
+				return $this->ApiResponse($response, ['id' => (int)$chargeCycleId]);
+			}
+
 			return $this->ApiResponse($response, $this->DB->battery_charge_cycles($chargeCycleId));
 		});
 	}

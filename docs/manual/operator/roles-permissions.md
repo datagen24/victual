@@ -232,7 +232,7 @@ design decision.
 | Tasks | `TASKS_VIEW`, `TASKS`, `TASKS_MARK_COMPLETED`, `TASKS_UNDO_EXECUTION` |
 | Recipes | `RECIPES_VIEW`, `RECIPES` |
 | Meal plan | `MEALPLAN_VIEW`, `RECIPES_MEALPLAN` |
-| Batteries | `BATTERIES_VIEW` (pages, current state, details and generic reads), `BATTERIES`, `BATTERIES_TRACK_CHARGE_CYCLE`, `BATTERIES_UNDO_CHARGE_CYCLE` |
+| Batteries | `BATTERIES_VIEW` (pages, current state, details and generic reads), `BATTERIES`, `BATTERIES_TRACK_CHARGE_CYCLE` (works without `BATTERIES_VIEW`, such as for a charger integration; without it the response carries only the new charge cycle's id), `BATTERIES_UNDO_CHARGE_CYCLE` (works without `BATTERIES_VIEW`) |
 | Equipment | `EQUIPMENT_VIEW` (pages, generic reads and manual downloads), `EQUIPMENT` |
 | Calendar | `CALENDAR_VIEW` (page, session iCal and sharing-link access), `CALENDAR` |
 | Master data | `MASTER_DATA_ADD` (create products, locations, quantity units, barcodes, stores and product groups; a child of `MASTER_DATA_EDIT`), `MASTER_DATA_EDIT` (edit and delete of products, locations, quantity units, barcodes, stores and product groups, quantity unit conversions, batteries, task categories and userfield values, delete and merge of chores, delete of tasks, and — with the label subsystem — printing itself; see [Adding a product, unit or location](#adding-a-product-unit-or-location)) |
