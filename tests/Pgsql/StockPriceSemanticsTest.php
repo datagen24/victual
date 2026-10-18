@@ -4,6 +4,7 @@ namespace Victual\Tests\Pgsql;
 
 use PDO;
 use Victual\Services\ApiKeyService;
+use Victual\Services\Influx\BookingEventPublisher;
 use Victual\Services\RecipesService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
@@ -401,5 +402,58 @@ class StockPriceSemanticsTest extends PgsqlSchemaTestCase
 
 		$empty = (int)self::$db->query("INSERT INTO recipes (name, base_servings, desired_servings) VALUES ('pricesemantics empty " . uniqid() . "', 1, 1) RETURNING id")->fetchColumn();
 		self::assertSame(1, (int)self::$db->query("SELECT prices_incomplete FROM recipes_resolved WHERE recipe_id = $empty")->fetchColumn(), 'a recipe with no position stays incomplete, as before');
+	}
+
+	/**
+	 * Issue #990: weighing a vessel books its positive correction at the product's last price,
+	 * as an inventory correction does, so a product with no known price, or whose only price
+	 * is a marked 0, books NULL rather than 0.
+	 */
+	public function testWeighingAProductWithNoKnownPriceBooksNull(): void
+	{
+		$vessel = (int)self::$db->query("INSERT INTO locations (name, tare_weight, tare_qu_id) VALUES ('pricesemantics vessel " . uniqid() . "', 1, " . self::$unit . ') RETURNING id')->fetchColumn();
+		foreach (['unpriced' => null, 'marked zero' => 0.0] as $case => $price)
+		{
+			$product = self::product();
+			$transactionId = null;
+			StockService::GetInstance()->AddProduct($product, 1, '2999-12-31', StockService::TRANSACTION_TYPE_PURCHASE, '2026-09-01', $price, $vessel, null, $transactionId);
+			if ($price !== null)
+			{
+				self::markLegacyZero($transactionId);
+			}
+
+			StockService::GetInstance()->WeighLocation($vessel, 4.0, null, '2999-12-31');
+
+			$booked = self::$db->query("SELECT amount, price FROM stock_log WHERE product_id = $product AND transaction_type = 'inventory-correction'")->fetch(PDO::FETCH_ASSOC);
+			self::assertIsArray($booked, "($case) the weighing booked a correction");
+			self::assertEqualsWithDelta(2.0, (float)$booked['amount'], 0.0001, "($case) 4 gross less a tare of 1, over the 1 in stock");
+			self::assertNull($booked['price'], "($case) the correction has no known price to book, so not 0");
+
+			StockService::GetInstance()->ConsumeProduct($product, 3, false, StockService::TRANSACTION_TYPE_CONSUME, 'default', null, $vessel);
+		}
+	}
+
+	/**
+	 * Issue #990: a purchase whose 0 is marked as never entered writes no price_paid point to
+	 * InfluxDB, the same as an unpriced purchase; a known 0 still writes one.
+	 */
+	public function testInfluxWritesNoPricePaidPointForAMarkedZero(): void
+	{
+		$pricePaid = function (string $transactionId): array
+		{
+			// Through JSON, as the outbox stores and the drain reads it
+			$payload = json_decode(json_encode((new BookingEventPublisher())->CaptureEvent($transactionId)), true);
+
+			return array_values(array_filter(BookingEventPublisher::BuildLines([$payload]), fn ($line) => str_starts_with($line, 'price_paid')));
+		};
+
+		$known = self::purchase(self::product(), 1, 0.0);
+		self::assertCount(1, $pricePaid($known), 'a known 0 is a price paid');
+
+		$marked = self::purchase(self::product(), 1, 0.0);
+		self::markLegacyZero($marked);
+		self::assertSame([], $pricePaid($marked), 'a marked 0 is not');
+
+		self::assertSame([], $pricePaid(self::purchase(self::product(), 1, null)), 'nor is an unpriced purchase');
 	}
 }

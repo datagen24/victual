@@ -999,4 +999,16 @@ this record:
    - The tests are `StockPriceSemanticsTest`, pgTAP `039-price-readers.sql` and the
      `price-semantics.js` browser probe.
 
-Implementing this record does not accept it. Acceptance is a separate pull request.
+A third pull request, for [issue 990](https://github.com/datagen24/victual/issues/990), covers
+the surfaces the first two left out:
+- Migration `0317.pgsql.sql` makes `uihelper_stock_entries` read a marked `0` as `NULL`. The
+  stock entries page then shows no price for an unknown price, both on load and after an edit.
+- The stock entry edit form renders a marked `0` blank. Saving keeps the marker, because the
+  form omits a price that is unchanged from the one it loaded.
+- The meal plan shows no cost for a product with no known price. It marks a recipe, day or
+  week cost that leaves an unknown price out.
+- The InfluxDB publisher writes no `price_paid` point for a marked `0`.
+- Weighing has its own test.
+
+[Pull request 992](https://github.com/datagen24/victual/pull/992) accepted this record on
+2026-10-18, separately from the implementation.

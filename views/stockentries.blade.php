@@ -302,14 +302,22 @@
 						@endif
 					</td>
 					<td class="@if(!$pricesVisible) d-none @endif">
+						{{-- An unknown price, a marked 0 included (migration 0317), is shown as no price rather than
+						as 0. The span is kept empty, not left out, so stockentries.js can fill it after an edit --}}
 						@if($pricesVisible)
+						@php $priceQuStock = FindObjectInArrayByPropertyValue($quantityunits, 'id', FindObjectInArrayByPropertyValue($products, 'id', $stockEntry->product_id)->qu_id_stock)->name; @endphp
+						@php $priceQuPrice = FindObjectInArrayByPropertyValue($quantityunits, 'id', FindObjectInArrayByPropertyValue($products, 'id', $stockEntry->product_id)->qu_id_price)->name; @endphp
 						<span class="custom-sort d-none">{{$stockEntry->price}}</span>
 						<span id="stock-{{ $stockEntry->id }}-price"
 							data-toggle="tooltip"
 							data-trigger="hover click"
 							data-html="true"
-							title="{!! $__t('%1$s per %2$s', '<span class=\'locale-number locale-number-currency\'>' . $stockEntry->price . '</span>', FindObjectInArrayByPropertyValue($quantityunits, 'id', FindObjectInArrayByPropertyValue($products, 'id', $stockEntry->product_id)->qu_id_stock)->name) !!}">
-							{!! $__t('%1$s per %2$s', '<span class="locale-number locale-number-currency">' . $stockEntry->price * $stockEntry->qu_factor_price_to_stock . '</span>', FindObjectInArrayByPropertyValue($quantityunits, 'id', FindObjectInArrayByPropertyValue($products, 'id', $stockEntry->product_id)->qu_id_price)->name) !!}
+							@if($stockEntry->price !== null)
+							title="{!! $__t('%1$s per %2$s', '<span class=\'locale-number locale-number-currency\'>' . $stockEntry->price . '</span>', $priceQuStock) !!}">
+							{!! $__t('%1$s per %2$s', '<span class="locale-number locale-number-currency">' . $stockEntry->price * $stockEntry->qu_factor_price_to_stock . '</span>', $priceQuPrice) !!}
+							@else
+							title="">
+							@endif
 						</span>
 						@endif
 					</td>
