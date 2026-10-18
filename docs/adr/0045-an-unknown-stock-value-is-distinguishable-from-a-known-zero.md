@@ -1,9 +1,6 @@
 # ADR-0045: An unknown stock value or price is distinguishable from a known zero
 
-- **Status:** **Proposed.** Nothing here constrains work until the maintainer accepts it in a
-  separate pull request. The record presents options and a recommendation. The maintainer
-  confirmed zero, null and omission semantics on 2026-10-11. Option B, parent-only values, last-known-price fallback and client coordination
-  are confirmed. Open questions 8 to 13 were answered on 2026-10-12.
+- **Status:** Accepted, 2026-10-18
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-11, against `master` at `d4960138`. Design work only: it changes no
