@@ -1,8 +1,6 @@
 # ADR-0046: Stock bookings accept an optional idempotency key
 
-- **Status:** **Proposed.** Nothing here constrains work until the maintainer accepts it in a
-  separate pull request. The maintainer confirmed retention, discovery and collision handling on
-  2026-10-11. Release scheduling remains open.
+- **Status:** Accepted, 2026-10-18
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-11, against `master` at `d4960138` and re-read at `3122b937`, which

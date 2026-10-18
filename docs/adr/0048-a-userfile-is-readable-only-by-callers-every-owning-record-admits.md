@@ -1,6 +1,6 @@
 # ADR-0048: A userfile is readable only by callers every owning record admits
 
-- **Status:** Proposed
+- **Status:** Accepted, 2026-10-18
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-13, against `master` at `33fbec60`. Design record only: it changes
@@ -10,7 +10,7 @@
 - **Referenced by:** [issue 905](https://github.com/datagen24/victual/issues/905),
   [issue 920](https://github.com/datagen24/victual/issues/920), and the implementation
   in [PR 919](https://github.com/datagen24/victual/pull/919).
-- **Relationship:** would partly supersede accepted
+- **Relationship:** partly supersedes accepted
   [ADR-0035](0035-batteries-equipment-calendar-and-custom-entities-require-view-permissions.md):
   only the sentence in its 2026-10-13 amendment that leaves the `userfiles` file group
   "deliberately left open for now" and defers to issue 905. Every other part of ADR-0035 is
