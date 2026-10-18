@@ -121,7 +121,8 @@ const assert = require('node:assert/strict');
 		/** Whether meal plan entry id shows a cost and whether it shows the missing-price marker. */
 		const mealCost = async (id) => page.evaluate((id) =>
 		{
-			const event = document.querySelector('[data-mealplan-entry-id="' + id + '"]').closest('.fc-event');
+			// eventRender removes the event's fc-event class and keeps the entry as data-meal-plan-entry
+			const event = document.querySelector('[data-mealplan-entry-id="' + id + '"]').closest('[data-meal-plan-entry]');
 			return { currency: event.querySelector('.locale-number-currency') !== null, marked: event.querySelector('i.fa-exclamation.text-danger') !== null };
 		}, id);
 		assert.deepEqual(await mealCost(unpricedMeal), { currency: false, marked: true }, 'a meal plan product with no known price shows the marker, not a cost of 0');
