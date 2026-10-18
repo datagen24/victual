@@ -32,13 +32,13 @@ export const purchaseProduct: ToolDefinition<typeof inputSchema, typeof outputSc
   inputSchema,
   outputSchema,
   handler: async (input, ctx) => {
-    const rows = await ctx.client.post<StockLogRow[]>(`/api/stock/products/${input.product_id}/add`, ctx.credential, {
+    const { status, body: rows } = await ctx.client.postWithStatus<StockLogRow[]>(`/api/stock/products/${input.product_id}/add`, ctx.credential, {
       amount: input.amount,
       ...(input.price !== undefined ? { price: input.price } : {}),
       ...(input.due_date !== undefined ? { best_before_date: input.due_date } : {}),
       ...(input.shopping_location_id !== undefined ? { shopping_location_id: input.shopping_location_id } : {}),
     });
-    const id = transactionId(rows);
+    const id = transactionId(rows, status);
     return {
       data: { transaction_id: id, product_id: input.product_id, amount: input.amount },
       text: `Purchased ${input.amount} of product ${input.product_id} (transaction ${id}). ${UNDO_NOTE}`,
