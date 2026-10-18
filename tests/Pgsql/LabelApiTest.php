@@ -745,6 +745,36 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::AssertRefusal(self::Send('POST', '/api/labels/register', [], self::$workerKey), 422, 'drivers', 'value_out_of_range');
 	}
 
+	/**
+	 * Issue #944: a NUL byte anywhere in a registration is a 422 LabelRefusal naming the path,
+	 * before anything is written. It used to be a generic 400 from PostgreSQL inside
+	 * capability_document, and a 200 inside driver_id with the stored value unchecked.
+	 */
+	#[Depends('testWorkerRegistersItsDriverVersions')]
+	public function testRegistrationRefusesANulByteAnywhereAndStoresNothing(): void
+	{
+		$drivers = (int)self::$db->query('SELECT count(*) FROM label_drivers')->fetchColumn();
+		$capabilities = self::$db->query('SELECT driver_id, schema_version FROM label_worker_capabilities ORDER BY 1, 2')->fetchAll(PDO::FETCH_ASSOC);
+
+		$inId = self::Driver();
+		$inId['driver_id'] = "brother.ql\0shadow";
+		self::AssertRefusal(self::Send('POST', '/api/labels/register', ['drivers' => [$inId]], self::$workerKey), 422, 'drivers.0.driver_id', 'invalid_value');
+
+		$inCapability = self::Driver();
+		$inCapability['schema_version'] = '9.9';
+		$inCapability['capability_document']['models'][0] = "QL-820\0NWBc";
+		self::AssertRefusal(self::Send('POST', '/api/labels/register', ['drivers' => [self::Driver(), $inCapability]], self::$workerKey), 422, 'drivers.1.capability_document.models.0', 'invalid_value');
+
+		$inKey = self::Driver();
+		$inKey['schema_version'] = '9.8';
+		$inKey['capability_document']["extra\0key"] = true;
+		self::AssertRefusal(self::Send('POST', '/api/labels/register', ['drivers' => [$inKey]], self::$workerKey), 422, 'drivers.0.capability_document', 'invalid_value');
+
+		self::assertSame($drivers, (int)self::$db->query('SELECT count(*) FROM label_drivers')->fetchColumn(), 'no driver version was stored');
+		self::assertSame(0, (int)self::$db->query("SELECT count(*) FROM label_drivers WHERE driver_id LIKE 'brother.ql%' AND driver_id <> 'brother.ql'")->fetchColumn(), 'nor a truncated or altered driver_id');
+		self::assertSame($capabilities, self::$db->query('SELECT driver_id, schema_version FROM label_worker_capabilities ORDER BY 1, 2')->fetchAll(PDO::FETCH_ASSOC), "and the worker's capabilities are unchanged");
+	}
+
 	#[Depends('testWorkerRegistersItsDriverVersions')]
 	public function testTheDriverSchemaIsReadableByAnAdministrator(): void
 	{
