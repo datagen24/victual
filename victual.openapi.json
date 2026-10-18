@@ -950,7 +950,7 @@
 			},
 			"post": {
 				"summary": "Adds a single object of the given entity",
-				"description": "Creating products, product_barcodes, locations, quantity_units, product_groups or shopping_locations requires MASTER_DATA_ADD, which MASTER_DATA_EDIT and ADMIN also satisfy. Chores require CHORES and tasks require TASKS. Shopping lists, recipes, the meal plan and equipment require their own permissions. Every other entity, including quantity_unit_conversions, requires MASTER_DATA_EDIT, and userfields and userentities additionally require ADMIN. A 403 names the missing permission. Creating a product may also add below-minimum-stock products to the shopping list, but only when the caller holds SHOPPINGLIST_ITEMS_ADD; the product is created either way.",
+				"description": "Creating products, product_barcodes, locations, quantity_units, product_groups or shopping_locations requires MASTER_DATA_ADD, which MASTER_DATA_EDIT and ADMIN also satisfy. Chores require CHORES and tasks require TASKS. Shopping lists, recipes, the meal plan and equipment require their own permissions. Every other entity, including quantity_unit_conversions, requires MASTER_DATA_EDIT, and userfields and userentities additionally require ADMIN. A 403 names the missing permission. Creating a product may also add below-minimum-stock products to the shopping list, but only when the caller holds SHOPPINGLIST_ITEMS_ADD; the product is created either way. A number field given NaN or an infinity (the strings \"NaN\", \"Infinity\", \"-Infinity\" or \"inf\", or a JSON number outside the range of a double) is refused with 400 \"The <field> must be a finite number\" and nothing is written (issue #916).",
 				"tags": [
 					"Generic entity interactions"
 				],
@@ -1165,7 +1165,7 @@
 			},
 			"put": {
 				"summary": "Edits the given object of the given entity",
-				"description": "Editing chores requires CHORES and editing tasks requires TASKS, whoever created the object. Editing any other entity, including the six that MASTER_DATA_ADD can create (products, product_barcodes, locations, quantity_units, product_groups, shopping_locations), requires MASTER_DATA_EDIT, except for entities with their own permission such as shopping lists, recipes, the meal plan and equipment. Editing userfields and userentities also requires ADMIN. MASTER_DATA_ADD alone does not allow editing.",
+				"description": "Editing chores requires CHORES and editing tasks requires TASKS, whoever created the object. Editing any other entity, including the six that MASTER_DATA_ADD can create (products, product_barcodes, locations, quantity_units, product_groups, shopping_locations), requires MASTER_DATA_EDIT, except for entities with their own permission such as shopping lists, recipes, the meal plan and equipment. Editing userfields and userentities also requires ADMIN. MASTER_DATA_ADD alone does not allow editing. A number field given NaN or an infinity (the strings \"NaN\", \"Infinity\", \"-Infinity\" or \"inf\", or a JSON number outside the range of a double) is refused with 400 \"The <field> must be a finite number\" and nothing is written (issue #916).",
 				"tags": [
 					"Generic entity interactions"
 				],

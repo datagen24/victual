@@ -492,6 +492,91 @@ class DatabaseImporter
 	}
 
 	/**
+	 * The columns migration 0313 gives a `<table>_<column>_finite` CHECK (issue #916): every
+	 * double precision and numeric column of a base table that had no finite-number check
+	 * before. tests/Pgsql/FiniteNumericColumnsTest.php holds this list to the migration's.
+	 */
+	public const FINITE_NUMBER_COLUMNS = [
+		'cache__products_average_price' => ['price'],
+		'cache__products_last_purchased' => ['amount', 'price'],
+		'chores' => ['product_amount'],
+		'locations' => ['tare_weight'],
+		'meal_plan' => ['product_amount', 'recipe_servings'],
+		'print_evidence' => ['confidence'],
+		'product_barcodes' => ['amount', 'last_price'],
+		'product_groups' => ['min_stock_amount'],
+		'product_location_min_stock' => ['min_stock_amount'],
+		'products' => ['calories', 'min_stock_amount', 'quick_consume_amount', 'quick_open_amount', 'quick_refill_amount', 'tare_weight'],
+		'recipes' => ['base_servings', 'desired_servings'],
+		'recipes_nestings' => ['servings'],
+		'recipes_pos' => ['amount', 'price_factor'],
+		'shopping_list' => ['amount'],
+		'stock' => ['amount', 'opened_amount', 'opened_tare', 'price'],
+		'stock_label_retirements' => ['amount'],
+		'stock_log' => ['amount', 'opened_amount', 'opened_tare', 'price'],
+		'storage_classes' => ['max_temp_c', 'min_temp_c'],
+	];
+
+	/**
+	 * Migration 0313's finite-number CHECKs (issue #916) refuse NaN and ±Infinity in every
+	 * FINITE_NUMBER_COLUMNS column. Without this check a source holding one fails the COPY of
+	 * whichever batch contains it with a bare SQLSTATE 23514, naming neither the row nor the
+	 * cause. Same rule as AssertConversionFactors(): refuse before truncation and never repair,
+	 * so no value the source did not hold is invented. Every column is checked before refusing,
+	 * so one report names them all (as AssertProductReferences() does).
+	 *
+	 * The predicate is written for what SQLite holds. ±Infinity is a REAL beyond the largest
+	 * double; NaN is stored as NULL, and `<> itself` stays as the arm for an engine that keeps
+	 * it. A REAL column keeps text that does not look numeric as text, and PostgreSQL reads the
+	 * texts below as the special values, so those are refused too. Other text is left to the
+	 * COPY, as it was before. Values are cast to text in the sample so json_encode() cannot fail.
+	 *
+	 * Gated per table and column on both sides having them, as AssertConversionFactors() is.
+	 *
+	 * @param string[] $tables GetCommonTables()'s own list.
+	 */
+	private function AssertFiniteNumbers(array $tables): void
+	{
+		$total = 0;
+		$report = [];
+		foreach (self::FINITE_NUMBER_COLUMNS as $table => $columns)
+		{
+			if (!in_array($table, $tables, true))
+			{
+				continue;
+			}
+			$common = $this->GetCommonColumns($table);
+			$key = str_starts_with($table, 'cache__') ? 'product_id' : 'id';
+			foreach ($columns as $column)
+			{
+				if (!in_array($column, $common, true) || !in_array($key, $common, true))
+				{
+					continue;
+				}
+
+				$where = "(typeof($column) = 'real' AND ($column > 1.7976931348623157e308 OR $column < -1.7976931348623157e308 OR $column <> $column))"
+					. " OR (typeof($column) = 'text' AND lower(trim($column)) IN ('nan', '+nan', '-nan', 'inf', '+inf', '-inf', 'infinity', '+infinity', '-infinity'))";
+				$count = (int)$this->Source->query("SELECT COUNT(*) FROM $table WHERE $where")->fetchColumn();
+				if ($count > 0)
+				{
+					$listing = "SELECT $key, CAST($column AS TEXT) AS $column FROM $table WHERE $where ORDER BY $key";
+					$sample = $this->Source->query($listing . ' LIMIT 10')->fetchAll(\PDO::FETCH_ASSOC);
+					$total += $count;
+					$report[] = "$table.$column: $count row(s), sample " . json_encode($sample, JSON_INVALID_UTF8_SUBSTITUTE) . ', list all: ' . $listing . ';';
+				}
+			}
+		}
+
+		if ($total > 0)
+		{
+			throw new \RuntimeException('Import refused: ' . $total . ' source value(s) are NaN or infinite, which the target refuses outright '
+				. '(migration 0313, the <table>_<column>_finite constraints; issue #916). ' . implode(' ', $report) . ' '
+				. 'These rows are refused rather than clamped or dropped, so no value the source did not actually hold is invented. '
+				. 'Choose an explicit source repair and retry; --force does not bypass this check.');
+		}
+	}
+
+	/**
 	 * Migration 0312's chores_consume_product_on_execution_check (CHECK consume_product_on_execution
 	 * IN (0, 1), issue #923) refuses any other value, and the column is NOT NULL. Upstream grocy's
 	 * column carries no CHECK, so a legacy source can hold a 2, a negative number, text or a blob;
@@ -753,6 +838,7 @@ class DatabaseImporter
 			. ' - dependent fields a trigger recomputes from this relationship (e.g. cumulated min_stock_amount) may have changed too');
 	}
 
+	/** Validates the source with every Assert*() check, then copies it into the target in one transaction. */
 	private function ImportSnapshot(bool $force, bool $applyRowMigrations): array
 	{
 		$tables = $this->GetCommonTables();
@@ -763,6 +849,7 @@ class DatabaseImporter
 		$this->AssertStockAmounts($tables);
 		$this->AssertConversionFactors($tables);
 		$this->AssertChoreConsumeFlags($tables);
+		$this->AssertFiniteNumbers($tables);
 		$this->AssertSourceTimestamps($tables);
 
 		$report = [];

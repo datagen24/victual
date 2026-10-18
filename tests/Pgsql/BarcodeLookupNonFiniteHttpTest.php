@@ -146,6 +146,9 @@ PLUGIN);
 			'NAN nested one level' => ["'extra' => ['calories' => NAN]", 'Plugin output contains a non-finite number at extra.calories', '4000417844004'],
 			'NAN in a nested object, add=true' => ["'extra' => (object)['calories' => NAN]", 'Plugin output contains a non-finite number at extra.calories', '4000417844007'],
 			'object that contains itself, add=true' => ["'extra' => (function () { \$o = new stdClass(); \$o->self = \$o; return \$o; })()", 'Plugin output contains a circular reference at extra.self', '4000417844008'],
+			// Issue #916: a string the float-only walk passes, which PostgreSQL reads as the special value
+			"'Infinity' string, add=true" => ["'calories' => 'Infinity'", 'The calories must be a finite number', '4000417844009'],
+			"'NaN' string, add=true" => ["'min_stock_amount' => 'NaN'", 'The min stock amount must be a finite number', '4000417844010'],
 			'int name' => ["'name' => 123", 'Provided name must be a string', '4000417844005'],
 			'array name' => ["'name' => ['Beans']", 'Provided name must be a string', '4000417844006'],
 		];

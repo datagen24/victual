@@ -219,6 +219,8 @@
 			<file>tests/Pgsql/ImportConversionFactorTest.php</file>
 			<file>tests/Pgsql/ChoreConsumeFlagCheckTest.php</file>
 			<file>tests/Pgsql/ImportChoreConsumeFlagTest.php</file>
+			<file>tests/Pgsql/FiniteNumericColumnsTest.php</file>
+			<file>tests/Pgsql/ImportFiniteNumbersTest.php</file>
 		</testsuite>
 		<testsuite name="chores">
 			<file>tests/Pgsql/ChoreExecutionStockUndoTest.php</file>
