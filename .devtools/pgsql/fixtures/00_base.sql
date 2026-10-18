@@ -67,6 +67,11 @@ ALTER TABLE stock_log ADD COLUMN opened_qu_id INTEGER;
 ALTER TABLE stock_log ADD COLUMN opened_tare DOUBLE PRECISION;
 ALTER TABLE stock_log ADD COLUMN opened_measured_at DATETIME;
 
+-- And for migrations/0315.pgsql.sql's legacy_zero_price (ADR-0045 gate 1), which StockService
+-- copies onto every row it builds from another. No CHECK here, for the reason above.
+ALTER TABLE stock ADD COLUMN legacy_zero_price SMALLINT NOT NULL DEFAULT 0;
+ALTER TABLE stock_log ADD COLUMN legacy_zero_price SMALLINT NOT NULL DEFAULT 0;
+
 -- Locations. id 1 is the one the trigger tests assume; id 3 is a freezer, so that
 -- anything keyed on is_freezer has both cases to look at.
 INSERT INTO locations (id, name, description, is_freezer) VALUES (1, 'Pantry', 'Base fixture location', 0);

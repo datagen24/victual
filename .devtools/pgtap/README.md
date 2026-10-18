@@ -66,6 +66,11 @@ count `rebuild_stock_log_cache_for_product` calls (one per product per statement
 caches with the views after a bulk update, a product move and a delete. The last block runs 0304's
 `stock_lineage_backfill` text, kept as a temporary function, and the new one on the same fixture.
 
+The [legacy zero price tests](038-legacy-zero-price.sql) cover migration 0315 (issue #774,
+ADR-0045 gate 1): the marker's constraints, `mark_legacy_zero_prices()` under both policies,
+`stock_next_use` and its triggers carrying the marker, and `stock_splits` keeping a marked 0 apart
+from a known 0. The write paths that copy it are PHP, in `tests/Pgsql/LegacyZeroPricePropagationTest.php`.
+
 The [stock booking key tests](037-stock-booking-idempotency-keys.sql) cover migration 0314 (issue #775,
 ADR-0046): one key per user, operation and key value, the five operations, the key and fingerprint
 grammars, the nullable transaction id, the expiry and `stock_log.transaction_id` indexes, and the
@@ -191,6 +196,8 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `trg_consumption_event_transaction_roles` (trigger `consumption_event_transaction_roles`) | function + trigger | 0310 | `035-consumption-event-transaction-roles.sql` |
 | `chores_consume_product_on_execution_check` | check constraint | 0312 | `036-chores-consume-flag.sql` |
 | `stock_booking_idempotency_keys` primary key and checks, `stock_log_transaction_id_idx` | table, constraints, indexes | 0314 | `037-stock-booking-idempotency-keys.sql` |
+| `mark_legacy_zero_prices` | function | 0315 | `038-legacy-zero-price.sql` |
+| `trg_stock_next_use_INS`, `trg_stock_next_use_UPD` (carry `legacy_zero_price`) | function | redefined 0315 | `038-legacy-zero-price.sql` |
 
 ## Completeness
 

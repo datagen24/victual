@@ -800,6 +800,13 @@ jobs:
         working-directory: .devtools/frontend
         run: node userform-password.js http://127.0.0.1:8085
 
+      # Issue #774. Whether the stock entry edit form sends back a price the user left alone
+      # is a browser-side question: the server keeps a legacy-zero marker only when the
+      # price is omitted, and PHPUnit never runs public/viewjs.
+      - name: Run stock entry price omission checks
+        working-directory: .devtools/frontend
+        run: node stockentry-price.js http://127.0.0.1:8085
+
       # Plan 03. The form field and the short-group list are both things the PHP phase
       # structurally cannot see: it asserts the column and the controller's row set, and this
       # asserts that a person can set the value and act on the result. A probe nothing runs is

@@ -195,6 +195,16 @@ disappears from `stock` while its bookings stay in the ledger the views read.
 [plan 05](plans/05-store-shopping-lists.md)) tie a list to a store and name the list a
 product or recipe adds to by default; like the other references they are by convention.
 
+`stock.legacy_zero_price` and `stock_log.legacy_zero_price` (migration 0315,
+[issue 774](https://github.com/datagen24/victual/issues/774),
+[ADR-0045](adr/0045-an-unknown-stock-value-is-distinguishable-from-a-known-zero.md)) mark a
+stored price of `0` that is read as unknown rather than free. Earlier releases stored `0` for a
+blank price, so the upgrade marks every zero it finds, and an import marks the source's zeros
+unless the operator passes `--legacy-zero-prices=known`. The marker never changes the stored
+price, is `1` only on a row priced exactly `0`, is copied by every booking built from another
+row, and never reaches the API. `price_interpretation_reports` records each upgrade or import
+that applied the reading: the policy, the rule and the number of rows per table.
+
 `stock_booking_idempotency_keys` (migration 0314, [issue 775](https://github.com/datagen24/victual/issues/775),
 [ADR-0046](adr/0046-stock-bookings-accept-an-optional-idempotency-key.md)) remembers the
 `Idempotency-Key` of a purchase, consume, transfer, open or inventory request for seven days:
@@ -261,9 +271,9 @@ with grants inherited through roles, which is the view every authorisation check
 `battery_charge_cycles`, `equipment`. `equipment` references nothing and is referenced by
 nothing, so it does not appear in the household diagram.
 
-**Caches & infrastructure (7)** — `cache__products_average_price`,
+**Caches & infrastructure (8)** — `cache__products_average_price`,
 `cache__products_last_purchased`, `cache__quantity_unit_conversions_resolved`, `files`,
-`outbox`, `mqtt_product_entities`, `mqtt_published_entities`.
+`outbox`, `mqtt_product_entities`, `mqtt_published_entities`, `price_interpretation_reports`.
 
 The three `cache__*` tables are maintained entirely by triggers, and are read by the views as if they were views themselves. `files` is database
 file storage ([plan 01](plans/landed/01-file-storage.md)); `outbox` carries MQTT and InfluxDB

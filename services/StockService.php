@@ -930,6 +930,7 @@ class StockService extends BaseService
 							'stock_row_id' => $stockEntry->id,
 							'transaction_type' => $transactionType,
 							'price' => $stockEntry->price,
+							'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 							'opened_date' => $stockEntry->opened_date,
 							'recipe_id' => $recipeId,
 							'transaction_id' => $transactionId,
@@ -989,6 +990,7 @@ class StockService extends BaseService
 							'stock_row_id' => $stockEntry->id,
 							'transaction_type' => $transactionType,
 							'price' => $stockEntry->price,
+							'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 							'opened_date' => $stockEntry->opened_date,
 							'recipe_id' => $recipeId,
 							'transaction_id' => $transactionId,
@@ -1127,6 +1129,9 @@ class StockService extends BaseService
 			$bestBeforeDate = $bestBeforeDate === $keepStoredValue ? $stockRow->best_before_date : $bestBeforeDate;
 			$locationId = $locationId === $keepStoredValue ? $stockRow->location_id : $locationId;
 			$shoppingLocationId = $shoppingLocationId === $keepStoredValue ? $stockRow->shopping_location_id : $shoppingLocationId;
+			// A kept price keeps how it is read; a supplied one, 0 included, is a known price
+			// (ADR-0045 gate 1: legacy_zero_price follows the price it describes)
+			$legacyZeroPrice = $price === $keepStoredValue ? (int)($stockRow->legacy_zero_price ?? 0) : 0;
 			$price = $price === $keepStoredValue ? $stockRow->price : $price;
 			$open = $open === $keepStoredValue ? $stockRow->open : $open;
 			$purchasedDate = $purchasedDate === $keepStoredValue ? $stockRow->purchased_date : $purchasedDate;
@@ -1157,6 +1162,7 @@ class StockService extends BaseService
 				'stock_id' => $stockRow->stock_id,
 				'transaction_type' => self::TRANSACTION_TYPE_STOCK_EDIT_OLD,
 				'price' => $stockRow->price,
+				'legacy_zero_price' => (int)($stockRow->legacy_zero_price ?? 0),
 				'opened_date' => $stockRow->opened_date,
 				'location_id' => $stockRow->location_id,
 				'shopping_location_id' => $stockRow->shopping_location_id,
@@ -1182,6 +1188,7 @@ class StockService extends BaseService
 			$stockRow->update(array_merge([
 				'amount' => $amount,
 				'price' => $price,
+				'legacy_zero_price' => $legacyZeroPrice,
 				'best_before_date' => $bestBeforeDate,
 				'location_id' => $locationId,
 				'shopping_location_id' => $shoppingLocationId,
@@ -1199,6 +1206,7 @@ class StockService extends BaseService
 				'stock_id' => $stockRow->stock_id,
 				'transaction_type' => self::TRANSACTION_TYPE_STOCK_EDIT_NEW,
 				'price' => $price,
+				'legacy_zero_price' => $legacyZeroPrice,
 				'opened_date' => $stockRow->opened_date,
 				'location_id' => $locationId,
 				'shopping_location_id' => $shoppingLocationId,
@@ -1302,6 +1310,7 @@ class StockService extends BaseService
 				'stock_id' => $stockRow->stock_id,
 				'transaction_type' => self::TRANSACTION_TYPE_STOCK_MEASURED_OLD,
 				'price' => $stockRow->price,
+				'legacy_zero_price' => (int)($stockRow->legacy_zero_price ?? 0),
 				'opened_date' => $stockRow->opened_date,
 				'location_id' => $stockRow->location_id,
 				'shopping_location_id' => $stockRow->shopping_location_id,
@@ -1323,6 +1332,7 @@ class StockService extends BaseService
 				'stock_id' => $stockRow->stock_id,
 				'transaction_type' => self::TRANSACTION_TYPE_STOCK_MEASURED_NEW,
 				'price' => $stockRow->price,
+				'legacy_zero_price' => (int)($stockRow->legacy_zero_price ?? 0),
 				'opened_date' => $stockRow->opened_date,
 				'location_id' => $stockRow->location_id,
 				'shopping_location_id' => $stockRow->shopping_location_id,
@@ -2623,6 +2633,7 @@ class StockService extends BaseService
 						'shopping_location_id' => $stockEntry->shopping_location_id,
 						'transaction_type' => self::TRANSACTION_TYPE_PRODUCT_OPENED,
 						'price' => $stockEntry->price,
+						'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 						'opened_date' => date('Y-m-d'),
 						'transaction_id' => $transactionId,
 						'user_id' => VICTUAL_USER_ID,
@@ -2667,6 +2678,7 @@ class StockService extends BaseService
 						'shopping_location_id' => $stockEntry->shopping_location_id,
 						'stock_id' => $restStockId,
 						'price' => $stockEntry->price,
+						'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 						'note' => $stockEntry->note
 					]);
 					$newStockRow->save();
@@ -2693,6 +2705,7 @@ class StockService extends BaseService
 						'shopping_location_id' => $stockEntry->shopping_location_id,
 						'transaction_type' => self::TRANSACTION_TYPE_PRODUCT_OPENED,
 						'price' => $stockEntry->price,
+						'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 						'opened_date' => date('Y-m-d'),
 						'transaction_id' => $transactionId,
 						'user_id' => VICTUAL_USER_ID,
@@ -3068,6 +3081,7 @@ class StockService extends BaseService
 						'stock_row_id' => $stockEntry->id,
 						'transaction_type' => self::TRANSACTION_TYPE_TRANSFER_FROM,
 						'price' => $stockEntry->price,
+						'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 						'opened_date' => $stockEntry->opened_date,
 						'location_id' => $stockEntry->location_id,
 						'shopping_location_id' => $stockEntry->shopping_location_id,
@@ -3095,6 +3109,7 @@ class StockService extends BaseService
 						'stock_row_id' => $stockEntry->id,
 						'transaction_type' => self::TRANSACTION_TYPE_TRANSFER_TO,
 						'price' => $stockEntry->price,
+						'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 						'opened_date' => $stockEntry->opened_date,
 						'location_id' => $locationIdTo,
 						'shopping_location_id' => $stockEntry->shopping_location_id,
@@ -3157,6 +3172,7 @@ class StockService extends BaseService
 						'stock_row_id' => $stockEntry->id,
 						'transaction_type' => self::TRANSACTION_TYPE_TRANSFER_FROM,
 						'price' => $stockEntry->price,
+						'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 						'opened_date' => $stockEntry->opened_date,
 						'location_id' => $stockEntry->location_id,
 						'shopping_location_id' => $stockEntry->shopping_location_id,
@@ -3193,6 +3209,7 @@ class StockService extends BaseService
 						'purchased_date' => $stockEntry->purchased_date,
 						'stock_id' => $stockEntry->stock_id,
 						'price' => $stockEntry->price,
+						'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 						'location_id' => $locationIdTo,
 						'shopping_location_id' => $stockEntry->shopping_location_id,
 						'open' => $stockEntry->open,
@@ -3211,6 +3228,7 @@ class StockService extends BaseService
 						'stock_row_id' => $stockEntryNew->id,
 						'transaction_type' => self::TRANSACTION_TYPE_TRANSFER_TO,
 						'price' => $stockEntry->price,
+						'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 						'opened_date' => $stockEntry->opened_date,
 						'location_id' => $locationIdTo,
 						'shopping_location_id' => $stockEntry->shopping_location_id,
@@ -3488,6 +3506,7 @@ class StockService extends BaseService
 		}
 	}
 
+	/** Undoes one booking (and its correlated ones unless skipped) under the product lock; $outermost settles label revival. */
 	private function UndoBookingInTransaction($bookingId, $skipCorrelatedBookings, bool $outermost): void
 	{
 		// The whole thing - the "does it exist", "any subsequent booking depends on it" and
@@ -3707,6 +3726,7 @@ class StockService extends BaseService
 					'purchased_date' => $logRow->purchased_date,
 					'stock_id' => $logRow->stock_id,
 					'price' => $logRow->price,
+					'legacy_zero_price' => (int)($logRow->legacy_zero_price ?? 0),
 					'opened_date' => $logRow->opened_date,
 					'open' => $logRow->opened_date !== null, // The open flag itself is not logged, so it is derived from the logged opened date
 					'location_id' => $logRow->location_id,
@@ -4112,6 +4132,7 @@ class StockService extends BaseService
 							'purchased_date' => $logRow->purchased_date,
 							'stock_id' => $logRow->stock_id,
 							'price' => $logRow->price,
+							'legacy_zero_price' => (int)($logRow->legacy_zero_price ?? 0),
 							'location_id' => $logRow->location_id,
 							'opened_date' => $logRow->opened_date,
 							'open' => $logRow->opened_date !== null,
@@ -4329,6 +4350,7 @@ class StockService extends BaseService
 					'best_before_date' => $logRow->best_before_date,
 					'purchased_date' => $logRow->purchased_date,
 					'price' => $logRow->price,
+					'legacy_zero_price' => (int)($logRow->legacy_zero_price ?? 0),
 					'location_id' => $logRow->location_id,
 					// The OLD booking records shopping_location_id the same as every other
 					// edited column (see its own creation in EditStockEntry()), but this
@@ -4550,6 +4572,7 @@ class StockService extends BaseService
 				'purchased_date' => $template->purchased_date,
 				'stock_id' => $logRow->stock_id,
 				'price' => $template->price,
+				'legacy_zero_price' => (int)($template->legacy_zero_price ?? 0),
 				'open' => 0,
 				'location_id' => $template->location_id,
 				'shopping_location_id' => $template->shopping_location_id,
@@ -4653,6 +4676,7 @@ class StockService extends BaseService
 				'best_before_date' => $old->best_before_date,
 				'purchased_date' => $old->purchased_date,
 				'price' => $old->price,
+				'legacy_zero_price' => (int)($old->legacy_zero_price ?? 0),
 				'location_id' => $old->location_id,
 				'shopping_location_id' => $old->shopping_location_id,
 				'open' => $old->opened_date !== null,
@@ -4737,6 +4761,7 @@ class StockService extends BaseService
 			'purchased_date' => $booking->purchased_date,
 			'stock_id' => $booking->stock_id,
 			'price' => $booking->price,
+			'legacy_zero_price' => (int)($booking->legacy_zero_price ?? 0),
 			'location_id' => $booking->location_id,
 			'opened_date' => $booking->opened_date,
 			'open' => $booking->opened_date !== null,
