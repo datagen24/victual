@@ -8174,23 +8174,13 @@
 					},
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
-						"description": "Refused request with field, code and error_message"
+						"description": "Refused request with field, code and error_message. A NUL byte in any string of the registration, object keys included, is refused with code invalid_value and the dotted path to it (drivers.0.capability_document.models.1) before anything is stored (issue #944)."
 					},
 					"500": {
 						"$ref": "#/components/responses/ServerError"
 					},
 					"503": {
 						"$ref": "#/components/responses/SchemaUnavailable"
-					},
-					"400": {
-						"description": "A NUL byte in a capability_document string can trigger a PostgreSQL refusal. The handler returns a generic ApiError with no driver detail and rolls back registration. A NUL byte in driver_id currently receives 200; its stored representation has not been verified. Other validation failures use 422 LabelRefusal.",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ApiError"
-								}
-							}
-						}
 					}
 				},
 				"requestBody": {

@@ -374,7 +374,8 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		]);
 	}
 
-	public function testANulInAWorkerCapabilityDocumentAnswersTheDocumented400(): void
+	/** Issue #944: a LabelRefusal naming the path, where PostgreSQL's generic 400 used to answer. */
+	public function testANulInAWorkerCapabilityDocumentIsALabelRefusal(): void
 	{
 		$driver = self::Driver();
 		$driver['driver_id'] = 'errbodies.nul-capability';
@@ -383,8 +384,9 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		$driver['capability_document']['combinations'][0]['model'] = $model;
 		$response = self::Send('POST', '/api/labels/register', ['drivers' => [$driver]], self::$ownerKey);
 
-		self::AssertBody($response, 'POST', '/labels/register', 400, [
-			'error_message' => 'The database rejected this request - check that every value it carries suits the field it is for',
+		self::assertSame(422, $response['status'], $response['body']);
+		self::AssertBody($response, 'POST', '/labels/register', 422, [
+			'field' => 'drivers.0.capability_document.models.0', 'code' => 'invalid_value', 'error_message' => 'A registration string must not contain a NUL byte',
 		]);
 		self::assertSame(0, (int)self::$db->query("SELECT COUNT(*) FROM label_drivers WHERE driver_id = 'errbodies.nul-capability'")->fetchColumn());
 	}
