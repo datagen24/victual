@@ -151,6 +151,7 @@
 			<file>tests/Pgsql/MergeProductsConsumptionTest.php</file>
 			<file>tests/Pgsql/MergeProductsChoreLockOrderTest.php</file>
 			<file>tests/Pgsql/MergeProductsConversionConflictTest.php</file>
+			<file>tests/Pgsql/MergeProductsConversionLockTest.php</file>
 			<file>tests/Pgsql/BarcodeLookupNonFiniteHttpTest.php</file>
 			<file>tests/Pgsql/BarcodeLookupFactorNormalRangeTest.php</file>
 		</testsuite>

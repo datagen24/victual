@@ -384,6 +384,25 @@ class DatabaseService
 	}
 
 	/**
+	 * Blocks writes to quantity_unit_conversions until the caller's transaction ends; see
+	 * DatabaseDialect::LockQuantityUnitConversionWrites().
+	 *
+	 * @return void
+	 * @throws \LogicException When called with no transaction open
+	 */
+	public function LockQuantityUnitConversionWrites(): void
+	{
+		$pdo = $this->GetDbConnectionRaw();
+
+		if (!$pdo->inTransaction())
+		{
+			throw new \LogicException('LockQuantityUnitConversionWrites() requires a transaction already open - a transaction scoped lock taken outside one releases immediately and protects nothing');
+		}
+
+		$this->GetDialect()->LockQuantityUnitConversionWrites($pdo);
+	}
+
+	/**
 	 * LockProductStock() for every product id in $productIds, in ascending order.
 	 *
 	 * The ascending order is load-bearing, not cosmetic: it is what a caller touching more
