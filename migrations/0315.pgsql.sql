@@ -116,6 +116,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Writes an update through stock_next_use to stock, carrying legacy_zero_price with the price it describes
 CREATE OR REPLACE FUNCTION trg_stock_next_use_UPD() RETURNS TRIGGER AS $$
 BEGIN
 	UPDATE stock

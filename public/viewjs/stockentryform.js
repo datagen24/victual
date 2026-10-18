@@ -2,6 +2,14 @@
 // here this is edit-only (PUT stock/entry/{Victual.EditObjectRowId}) - there's no create
 // mode, since new stock entries are made via the purchase/consume workflows.
 
+// The price input's value as a number, or null when it is empty, so a reformatted but
+// unchanged value (2 vs 2.00) still compares equal to the one the page loaded with
+function PriceInputValue(value)
+{
+	return value === undefined || value === null || value === '' ? null : Number.parseFloat(value);
+}
+var initialPrice = PriceInputValue($('#price').val());
+
 // Validates and submits the form (PUT, always - no create mode), optionally prints a
 // label and saves userfields, then notifies the parent window to broadcast the product
 // change, show a success toast (with an inline Undo link) and close the modal
@@ -39,7 +47,10 @@ $('#save-stockentry-button').on('click', function(e)
 	// DOM's own named access on window instead of failing, so an empty price sent a
 	// jQuery-wrapped object where the server expects a number, null or "" (issue #487
 	// review of #519/#524).
-	if ($('#price').length)
+	// A price left as it was loaded is omitted too, so the server keeps the stored one and
+	// how it is read: a 0 marked as never entered (legacy_zero_price, ADR-0045) is shown
+	// here as 0, and sending that 0 back would make it a known zero on any edit
+	if ($('#price').length && PriceInputValue(jsonForm.price) !== initialPrice)
 	{
 		jsonData.price = jsonForm.price ? Number.parseFloat(jsonForm.price).toFixed(Victual.UserSettings.stock_decimal_places_prices_input) : null;
 	}

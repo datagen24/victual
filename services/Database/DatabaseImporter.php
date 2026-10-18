@@ -1371,6 +1371,7 @@ class DatabaseImporter
 	 */
 	private const TABLES_COPIED_FIRST = ['quantity_units'];
 
+	/** Returns $tables with TABLES_COPIED_FIRST moved to the front, keeping the rest in order. */
 	private function OrderTablesForCopy(array $tables): array
 	{
 		$first = array_values(array_intersect(self::TABLES_COPIED_FIRST, $tables));

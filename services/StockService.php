@@ -3506,6 +3506,7 @@ class StockService extends BaseService
 		}
 	}
 
+	/** Undoes one booking (and its correlated ones unless skipped) under the product lock; $outermost settles label revival. */
 	private function UndoBookingInTransaction($bookingId, $skipCorrelatedBookings, bool $outermost): void
 	{
 		// The whole thing - the "does it exist", "any subsequent booking depends on it" and

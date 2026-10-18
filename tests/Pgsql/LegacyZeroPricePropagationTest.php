@@ -41,6 +41,7 @@ class LegacyZeroPricePropagationTest extends PgsqlSchemaTestCase
 		self::$unit = (int)self::$db->query("INSERT INTO quantity_units (name, name_plural) VALUES ('legacyzero-unit', 'legacyzero-units') RETURNING id")->fetchColumn();
 	}
 
+	/** A new product using the fixture unit for every purpose; returns its id. */
 	private static function product(): int
 	{
 		$statement = self::$db->prepare('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price) VALUES (?, ?, ?, ?, ?, ?) RETURNING id');
@@ -79,6 +80,7 @@ class LegacyZeroPricePropagationTest extends PgsqlSchemaTestCase
 		return $markers;
 	}
 
+	/** Partial and whole consumes of a marked entry book a marked price. */
 	public function testAConsumeCopiesTheMarkerOntoItsBookings(): void
 	{
 		$product = self::product();
@@ -90,6 +92,7 @@ class LegacyZeroPricePropagationTest extends PgsqlSchemaTestCase
 		self::assertSame([1, 1], self::bookingMarkers($product)['consume'], 'a partial and a whole consume both book an unknown price');
 	}
 
+	/** A partial transfer marks the moved entry, the remainder and both bookings. */
 	public function testAPartialTransferCopiesTheMarkerOntoTheNewEntryAndBothBookings(): void
 	{
 		$product = self::product();
@@ -106,6 +109,7 @@ class LegacyZeroPricePropagationTest extends PgsqlSchemaTestCase
 		self::assertSame([1], $markers['transfer_to']);
 	}
 
+	/** A partial open marks both halves of the split and its booking. */
 	public function testAPartialOpenCopiesTheMarkerOntoTheRemainder(): void
 	{
 		$product = self::product();
@@ -121,6 +125,7 @@ class LegacyZeroPricePropagationTest extends PgsqlSchemaTestCase
 		self::assertSame([1], self::bookingMarkers($product)['product-opened']);
 	}
 
+	/** Measuring an opened marked entry marks both measurement bookings. */
 	public function testAMeasurementCopiesTheMarkerOntoBothBookings(): void
 	{
 		$product = self::product();
@@ -137,6 +142,7 @@ class LegacyZeroPricePropagationTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** An edit that keeps the price keeps the marker; one that supplies 0 clears it. */
 	public function testAnEditThatKeepsThePriceKeepsTheMarkerAndOneThatSetsZeroMakesItKnown(): void
 	{
 		$keep = StockService::KeepStoredValue();
@@ -153,6 +159,7 @@ class LegacyZeroPricePropagationTest extends PgsqlSchemaTestCase
 		self::assertSame([1, 0], self::bookingMarkers($product)['stock-edit-new']);
 	}
 
+	/** Undoing a whole consume rebuilds the entry still marked. */
 	public function testUndoingAConsumeRebuildsTheEntryWithTheMarker(): void
 	{
 		$product = self::product();
@@ -166,6 +173,7 @@ class LegacyZeroPricePropagationTest extends PgsqlSchemaTestCase
 		self::assertSame(1, (int)self::stockRows($product)[0]['legacy_zero_price']);
 	}
 
+	/** Undoing a transfer, an open or an edit restores the marked reading. */
 	public function testUndoingATransferAnOpenAndAnEditRestoresTheMarker(): void
 	{
 		$stock = StockService::GetInstance();
@@ -196,6 +204,7 @@ class LegacyZeroPricePropagationTest extends PgsqlSchemaTestCase
 		self::assertSame(1, (int)self::stockRows($edited)[0]['legacy_zero_price'], 'undoing the edit restores the unknown reading');
 	}
 
+	/** Compaction merges marked zeros with each other and known zeros with each other, never across. */
 	public function testCompactionNeverMergesAMarkedZeroWithAKnownZero(): void
 	{
 		$product = self::product();
@@ -213,6 +222,7 @@ class LegacyZeroPricePropagationTest extends PgsqlSchemaTestCase
 		self::assertSame([[1, 2.0], [0, 2.0]], array_map(fn ($row) => [(int)$row['legacy_zero_price'], (float)$row['amount']], $rows));
 	}
 
+	/** The CHECKs refuse a marker on a non-zero or NULL price, and any marker value but 0 or 1. */
 	public function testOnlyARowPricedZeroCanBeMarked(): void
 	{
 		$product = self::product();

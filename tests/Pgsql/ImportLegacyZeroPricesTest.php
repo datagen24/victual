@@ -39,6 +39,7 @@ class ImportLegacyZeroPricesTest extends PgsqlSchemaTestCase
 		return $source;
 	}
 
+	/** Removes the temporary source databases and their WAL files. */
 	protected function tearDown(): void
 	{
 		foreach ($this->files as $file)
@@ -50,6 +51,7 @@ class ImportLegacyZeroPricesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** An importer from $source into the test database that records its progress lines. */
 	private function importer(PDO $source): DatabaseImporter
 	{
 		$this->progress = [];
@@ -68,6 +70,7 @@ class ImportLegacyZeroPricesTest extends PgsqlSchemaTestCase
 		return $rows;
 	}
 
+	/** By default an imported 0 is marked unknown on stock and stock_log, other prices are untouched, and a report row and progress line say so. */
 	public function testAnImportedZeroIsReadAsUnknownAndEveryPriceIsCopiedUnchanged(): void
 	{
 		$reports = (int)self::Pdo()->query('SELECT count(*) FROM price_interpretation_reports')->fetchColumn();
@@ -87,6 +90,7 @@ class ImportLegacyZeroPricesTest extends PgsqlSchemaTestCase
 		self::assertNotEmpty(array_filter($this->progress, fn ($line) => str_contains($line, 'priced 0 read as unknown (imported legacy zero); stored prices unchanged')), 'and says so while it runs');
 	}
 
+	/** The known policy leaves every imported 0 unmarked and records that choice. */
 	public function testAnOperatorCanReadEveryImportedZeroAsKnown(): void
 	{
 		$importer = $this->importer($this->source());
@@ -102,6 +106,7 @@ class ImportLegacyZeroPricesTest extends PgsqlSchemaTestCase
 		self::assertNotEmpty(array_filter($this->progress, fn ($line) => str_contains($line, 'read as known zeros')));
 	}
 
+	/** A policy other than unknown or known is refused. */
 	public function testAnUnknownPolicyIsRefused(): void
 	{
 		$this->expectException(\InvalidArgumentException::class);
