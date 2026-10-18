@@ -20,6 +20,10 @@
   will make a file follow the read permission of the record that owns it. This narrows
   "`EntityReadPolicy.php` already maps all three entities to no read policy at all" in the
   decision below: that was true when written and is true now only of the two definitions.
+- **Partly superseded 2026-10-18** by
+  [ADR-0048](0048-a-userfile-is-readable-only-by-callers-every-owning-record-admits.md):
+  only the amendment's sentence leaving the `userfiles` file group open and deferring its
+  read policy to issue 905. Every other part of this record remains in force.
 - **Decider:** datagen24
 - **Recorded:** 2026-09-29
 - **Referenced by:** [plan 19](../plans/19-rbac.md)
