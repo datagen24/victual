@@ -66,6 +66,7 @@ class CorsMiddleware extends BaseMiddleware
 		}));
 	}
 
+	/** Adds the CORS headers for an allowed origin: the methods, the request headers a browser may send (the API key and Idempotency-Key), and the response headers it may read (label revival, Idempotent-Replayed). */
 	private function WithCorsHeaders(Request $request, Response $response): Response
 	{
 		$allowedOrigins = self::AllowedOrigins();
@@ -90,9 +91,9 @@ class CorsMiddleware extends BaseMiddleware
 		return $response
 			->withHeader('Access-Control-Allow-Origin', $origin)
 			->withHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-			->withHeader('Access-Control-Allow-Headers', 'Content-Type, ' . $this->AppContainer->get('ApiKeyHeaderName'))
+			->withHeader('Access-Control-Allow-Headers', 'Content-Type, Idempotency-Key, ' . $this->AppContainer->get('ApiKeyHeaderName'))
 			->withHeader('Access-Control-Max-Age', '600')
 			// ADR-0037 section 12a: a cross-origin client may read an undo's label revival counts.
-			->withHeader('Access-Control-Expose-Headers', \Victual\Controllers\Api\BaseApiController::LABEL_REVIVAL_HEADER);
+			->withHeader('Access-Control-Expose-Headers', \Victual\Controllers\Api\BaseApiController::LABEL_REVIVAL_HEADER . ', Idempotent-Replayed');
 	}
 }

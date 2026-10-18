@@ -386,7 +386,7 @@ class ChoresService extends BaseService
 			// UndoChoreExecution() treat it as chore-only.
 			if (!$skipped && $chore->consume_product_on_execution == 1 && !empty($chore->product_id))
 			{
-				$transactionId = uniqid();
+				$transactionId = StockService::NewTransactionId();
 				StockService::GetInstance()->ConsumeProduct($chore->product_id, $chore->product_amount, false, StockService::TRANSACTION_TYPE_CONSUME, 'default', null, null, $transactionId, true);
 
 				// Issue #506 (maintainer decision D5, round 4): the explicit link

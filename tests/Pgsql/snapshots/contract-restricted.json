@@ -1787,6 +1787,13 @@
             "os": "string",
             "php_version": "string",
             "sqlite_version": "string",
+            "stock_booking_idempotency": {
+                "header": "string",
+                "operations": [
+                    "string"
+                ],
+                "retention_seconds": "integer"
+            },
             "victual_version": {
                 "ReleaseDate": "string(date)",
                 "Version": "string"

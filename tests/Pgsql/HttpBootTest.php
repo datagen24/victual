@@ -401,8 +401,11 @@ class HttpBootTest extends PgsqlSchemaTestCase
 			"$what must say which methods are allowed");
 		// The header name comes from the ApiKeyHeaderName binding app.php:104-107 puts in
 		// the container, so this is also how that binding is observable from outside.
-		self::assertSame('Content-Type, VICTUAL-API-KEY', self::Header($response, 'Access-Control-Allow-Headers'),
-			"$what must allow the API key header");
+		// Idempotency-Key is the optional key of the five stock bookings (ADR-0046)
+		self::assertSame('Content-Type, Idempotency-Key, VICTUAL-API-KEY', self::Header($response, 'Access-Control-Allow-Headers'),
+			"$what must allow the API key and idempotency key headers");
+		self::assertSame('Victual-Label-Revival, Idempotent-Replayed', self::Header($response, 'Access-Control-Expose-Headers'),
+			"$what must expose the label revival and replay headers to a browser");
 		self::assertStringContainsString('Origin', (string)self::Header($response, 'Vary'),
 			"$what varies by origin and a cache has to be told so");
 	}

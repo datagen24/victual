@@ -69,6 +69,9 @@
 		<testsuite name="openapisecurity">
 			<file>tests/Pgsql/OpenApiSecurityContractTest.php</file>
 		</testsuite>
+		<testsuite name="bookingidempotency">
+			<file>tests/Pgsql/StockBookingIdempotencyTest.php</file>
+		</testsuite>
 		<testsuite name="wirecontract">
 			<file>tests/Pgsql/WireContractTest.php</file>
 			<file>tests/Pgsql/TimestampInstantTest.php</file>
