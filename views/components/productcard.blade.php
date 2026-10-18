@@ -75,7 +75,12 @@
 
 						@if($pricesVisible)
 						<strong>{{ $__t('Stock value') }}:</strong> <span id="productcard-product-stock-value"
-							class="locale-number locale-number-currency"></span><br>
+							class="locale-number locale-number-currency"></span>
+						<i id="productcard-product-stock-value-incomplete"
+							class="small fa-solid fa-exclamation text-danger d-none"
+							data-toggle="tooltip"
+							data-trigger="hover click"
+							title="{{ $__t('No price information is available for at least one stock entry; this is the value of the others') }}"></i><br>
 						@endif
 
 						@if(VICTUAL_FEATURE_FLAG_STOCK_LOCATION_TRACKING)<strong>{{ $__t('Default location') }}:</strong> <span id="productcard-product-location"></span><br>@endif

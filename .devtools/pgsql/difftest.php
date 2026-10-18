@@ -211,7 +211,8 @@ foreach ($views as $view)
 
 		if ($view === 'stock_current')
 		{
-			foreach ($b as &$row) unset($row['amount_measured']);
+			// value_incomplete (migration 0316, ADR-0045 gate 5) the same way: PostgreSQL only
+			foreach ($b as &$row) unset($row['amount_measured'], $row['value_incomplete']);
 			unset($row);
 		}
 
@@ -226,7 +227,7 @@ foreach ($views as $view)
 		{
 			foreach ($b as &$row)
 			{
-				unset($row['quick_refill_amount'], $row['default_refill_location_id_from'], $row['default_refill_location_id_to']);
+				unset($row['quick_refill_amount'], $row['default_refill_location_id_from'], $row['default_refill_location_id_to'], $row['value_incomplete']);
 			}
 			unset($row);
 		}

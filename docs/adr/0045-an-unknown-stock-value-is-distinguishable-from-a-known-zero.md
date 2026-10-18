@@ -985,7 +985,21 @@ this record:
    (open questions 6, 8 and 11, with `--legacy-zero-prices=known`). `stock_next_use` and its
    triggers carry the marker, and `stock_splits` groups by it. The marker is copied by every
    `StockService` path gate 1 lists, and `FieldPolicy` keeps it off the wire (open question 10).
-2. Migration `0316.pgsql.sql` implements the readers, the flags of gate 5, the accepted
-   differences of gate 7 and the P2 write paths.
+2. Migration `0316.pgsql.sql` implements the readers:
+   - `stock_current.value_incomplete`, carried by the stock overview's view.
+   - The rewritten price history, average, last, current and recipe-cost views (D1 to D4).
+   - The rebuilt price caches.
+   - The flags' `permission_fields` rows.
+
+   The application side of part 2:
+   - The flags reach `GET /api/stock`, the volatile lists and both product details routes as
+     `value_incomplete` and `stock_value_incomplete`, redacted with their values (gate 5).
+   - `FieldPolicy` sends a marked price as `null` (open question 10).
+   - The P2 write paths book `null` for a price nobody entered: a blank or untracked purchase
+     price in the web UI, an inventory correction or weighing with no known last price, and a
+     self-production from a recipe with incomplete costs.
+   - The stock overview and the product card mark an incomplete value.
+   - The tests are `StockPriceSemanticsTest`, pgTAP `039-price-readers.sql` and the
+     `price-semantics.js` browser probe.
 
 Implementing this record does not accept it. Acceptance is a separate pull request.

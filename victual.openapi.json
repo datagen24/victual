@@ -15699,7 +15699,8 @@
 							"number",
 							"null"
 						],
-						"x-visibility": "STOCK_PRICES_VIEW"
+						"x-visibility": "STOCK_PRICES_VIEW",
+						"description": "The price per stock quantity unit. A price of 0 is a known zero (the entry was free); a price nobody recorded is unknown, which is null; and the field is absent for a caller without STOCK_PRICES_VIEW (ADR-0045)."
 					},
 					"open": {
 						"type": "integer"
@@ -15893,7 +15894,7 @@
 					},
 					"stock_value": {
 						"type": "number",
-						"description": "The value of the stock currently held: price times amount, summed over stock entries and rounded to two decimal places, an entry with no price counting as 0. For a parent product it is the parent's own entries only: its sub products' stock is not included, although `stock_amount_aggregated` counts it (migrations/0298.pgsql.sql). 0 when nothing is in stock",
+						"description": "The value of the stock currently held: price times amount, summed over the stock entries whose price is known and rounded to two decimal places. When any entry's price is unknown this is the known part only, and `stock_value_incomplete` is true. For a parent product it is the parent's own entries only: its sub products' stock is not included, although `amount_aggregated` counts it, so 0 for a parent with no stock of its own says nothing about its sub products' value (migrations/0298.pgsql.sql, 0316).",
 						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"next_due_date": {
@@ -15908,7 +15909,7 @@
 							"number",
 							"null"
 						],
-						"description": "The price of the last purchase of the corresponding product",
+						"description": "The price of the last purchase with a known price (purchase, inventory correction or self-production). 0 when that purchase was free; null when no purchase has a known price; absent for a caller without STOCK_PRICES_VIEW (ADR-0045).",
 						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"avg_price": {
@@ -15916,7 +15917,7 @@
 							"number",
 							"null"
 						],
-						"description": "The amount-weighted average price per stock unit over this product's purchase, inventory-correction and self-production bookings that are not undone and carry a price above 0 and an amount above 0, so a negative inventory correction is not counted. For an edited entry its newest stock-edit-new booking stands in for the original, weighted by the entry's edited origin amount. It includes bookings whose stock has since been consumed, so it is not the average of what is in stock now (products_average_price, db/pgsql/baseline/04_views_l1a.sql). Null when there is no such booking",
+						"description": "The amount-weighted average price per stock unit over this product's purchase, inventory-correction and self-production bookings that are not undone and carry a known price (0 included) and an amount above 0, so a negative inventory correction is not counted. For an edited entry its newest stock-edit-new booking stands in for the original, weighted by the entry's edited origin amount. It includes bookings whose stock has since been consumed, so it is not the average of what is in stock now (products_average_price, db/pgsql/baseline/04_views_l1a.sql). Null when there is no such booking. A price of 0 that was stored for a price never entered, before this release or in an imported database, is unknown and not counted (ADR-0045).",
 						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"current_price": {
@@ -15924,7 +15925,7 @@
 							"number",
 							"null"
 						],
-						"description": "The current price of the corresponding product, based on the stock entry to use next (defined by the default consume rule \"Opened first, then first due first, then first in first out\") or on the last price if the product is currently not in stock",
+						"description": "The current price of the corresponding product: the price of the stock entry to use next (defined by the default consume rule \"Opened first, then first due first, then first in first out\"), or the last known price (`last_price`) when the product is not in stock or that entry's price is unknown. 0 is a known zero; null when neither is known; absent for a caller without STOCK_PRICES_VIEW (ADR-0045).",
 						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"oldest_price": {
@@ -16011,6 +16012,11 @@
 							"null"
 						],
 						"description": "The product's default store (its shopping_location_id); null when it has none"
+					},
+					"stock_value_incomplete": {
+						"type": "boolean",
+						"description": "True when at least one of the product's own stock entries has no known price, so `stock_value` is the value of the others only. False when the product has no stock. Redacted together with `stock_value` for a caller without STOCK_PRICES_VIEW (ADR-0045 option B).",
+						"x-visibility": "STOCK_PRICES_VIEW"
 					}
 				},
 				"example": {
@@ -17171,7 +17177,7 @@
 							"number",
 							"null"
 						],
-						"description": "Null for a booking that carries no price, such as a consumption - a legitimate value, distinct from this field being absent for a caller without STOCK_PRICES_VIEW",
+						"description": "The price per stock quantity unit. Null for a booking that carries no price, such as a consumption of an unpriced entry, and for a price that was never recorded. A price of 0 is a known zero (the entry was free); a price nobody recorded is unknown, which is null; and the field is absent for a caller without STOCK_PRICES_VIEW (ADR-0045).",
 						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"note": {
@@ -17392,7 +17398,7 @@
 					},
 					"value": {
 						"type": "number",
-						"description": "The value of the stock currently held: price times amount, summed over stock entries and rounded to two decimal places, an entry with no price counting as 0. For a parent product it is the parent's own entries only: its sub products' stock is not included, although `amount_aggregated` counts it (migrations/0298.pgsql.sql)",
+						"description": "The value of the stock currently held: price times amount, summed over the stock entries whose price is known and rounded to two decimal places. When any entry's price is unknown this is the known part only, and `value_incomplete` is true. For a parent product it is the parent's own entries only: its sub products' stock is not included, although `amount_aggregated` counts it, so 0 for a parent with no stock of its own says nothing about its sub products' value (migrations/0298.pgsql.sql, 0316).",
 						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"best_before_date": {
@@ -17417,6 +17423,11 @@
 					"due_type": {
 						"type": "integer",
 						"description": "The product's due type: 1 when its due date is a best-before date, 2 when it is an expiration date. `expired_products` on GET /stock/volatile lists due type 2 only"
+					},
+					"value_incomplete": {
+						"type": "boolean",
+						"description": "True when at least one of the product's own stock entries has no known price, so `value` is the value of the others only. Redacted together with `value` for a caller without STOCK_PRICES_VIEW (ADR-0045 option B).",
+						"x-visibility": "STOCK_PRICES_VIEW"
 					}
 				}
 			},

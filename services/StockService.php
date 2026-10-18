@@ -1930,6 +1930,8 @@ class StockService extends BaseService
 			$stockCurrentRow->amount_opened_aggregated = 0;
 			$stockCurrentRow->is_aggregated_amount = 0;
 			$stockCurrentRow->amount_measured = 0;
+			// No stock, so nothing whose price could be unknown (ADR-0045 case c)
+			$stockCurrentRow->value_incomplete = 0;
 		}
 
 		$detailsRow = $this->DB->uihelper_product_details()->where('id', $productId)->fetch();
@@ -1960,6 +1962,9 @@ class StockService extends BaseService
 			'last_used' => $detailsRow->last_used_date,
 			'stock_amount' => $stockCurrentRow->amount,
 			'stock_value' => $stockCurrentRow->value,
+			// Read with ?? 0, as amount_measured is: the differential suite's rollback phase runs
+			// this against SQLite, whose stock_current has no such column
+			'stock_value_incomplete' => $stockCurrentRow->value_incomplete ?? 0,
 			'stock_amount_opened' => $stockCurrentRow->amount_opened,
 			'stock_amount_aggregated' => $stockCurrentRow->amount_aggregated,
 			'stock_amount_opened_aggregated' => $stockCurrentRow->amount_opened_aggregated,

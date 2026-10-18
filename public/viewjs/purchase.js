@@ -44,9 +44,11 @@ $('#save-purchase-button').on('click', function (e)
 			jsonData.note = jsonForm.note;
 			jsonData.stock_label_type = jsonForm.stock_label_type;
 
-			if (!Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)
+			// A price nobody entered is unknown, which the API stores as null; 0 is a known,
+			// free price (ADR-0045 P2). Both a blank field and price tracking being off send null.
+			if (!Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING || String(jsonForm.price ?? '').trim() === '')
 			{
-				jsonData.price = 0;
+				jsonData.price = null;
 			}
 			else
 			{

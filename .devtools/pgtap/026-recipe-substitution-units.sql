@@ -240,12 +240,13 @@ VALUES (
 );
 
 -- The parent has never been purchased, so products_current_price has no row for it and
--- pcp.price is NULL - costs reads 0 (COALESCE(pcp.price, 0)), never the negative-factor
--- sub's price (50) at any factor.
+-- pcp.price is NULL - costs is NULL, the parent's price being unknown (migration 0316,
+-- ADR-0045 accepted difference D3; it read 0 before), and never the negative-factor sub's
+-- price (50) at any factor.
 SELECT is(
 	(SELECT costs FROM recipes_pos_resolved
 		WHERE recipe_id = (SELECT id FROM recipes WHERE name = 'M629 Negative-Factor Recipe')),
-	0.0::double precision,
+	NULL::double precision,
 	'recipes_pos_resolved.costs falls back to the (unpriced) parent product, never to the negative-factor sub 1:1 (issue #629, D4)'
 );
 -- product_id_effective = rp.product_id here, so the CASE's ELSE branch applies and

@@ -396,6 +396,12 @@
 						<span class="custom-sort d-none">{{$currentStockEntry->value}}</span>
 						<span id="product-{{ $currentStockEntry->product_id }}-value"
 							class="locale-number locale-number-currency">{{ $currentStockEntry->value }}</span>
+						{{-- ADR-0045 option B: value is the known part when some stock has no known price --}}
+						<i id="product-{{ $currentStockEntry->product_id }}-value-incomplete"
+							class="small fa-solid fa-exclamation text-danger @if(empty($currentStockEntry->value_incomplete)) d-none @endif"
+							data-toggle="tooltip"
+							data-trigger="hover click"
+							title="{{ $__t('No price information is available for at least one stock entry; this is the value of the others') }}"></i>
 						@endif
 					</td>
 					<td class="@if(!VICTUAL_FEATURE_FLAG_STOCK_BEST_BEFORE_DATE_TRACKING) d-none @endif">
@@ -455,7 +461,7 @@
 					<td class="@if(!$pricesVisible) d-none @endif">
 						@if($pricesVisible)
 						<span class="custom-sort d-none">{{$currentStockEntry->last_price}}</span>
-						@if(!empty($currentStockEntry->last_price))
+						@if($currentStockEntry->last_price !== null)
 						<span data-toggle="tooltip"
 							data-trigger="hover click"
 							data-html="true"
@@ -487,7 +493,7 @@
 					<td class="@if(!$pricesVisible) d-none @endif">
 						@if($pricesVisible)
 						<span class="custom-sort d-none">{{$currentStockEntry->average_price}}</span>
-						@if(!empty($currentStockEntry->average_price))
+						@if($currentStockEntry->average_price !== null)
 						<span data-toggle="tooltip"
 							data-trigger="hover click"
 							data-html="true"

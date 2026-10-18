@@ -124,6 +124,25 @@ class FieldPolicy extends BaseService
 			return $row;
 		}
 
+		// A marked price of 0 is an unknown price, and unknown is null on the wire (ADR-0045
+		// open question 10). Mapped before the marker itself is removed below, and before a
+		// caller without STOCK_PRICES_VIEW loses the price altogether.
+		if (isset(self::INTERNAL_FIELDS[$entity]))
+		{
+			$marked = is_array($row) || $row instanceof \ArrayAccess ? ($row['legacy_zero_price'] ?? 0) : ($row->legacy_zero_price ?? 0);
+			if ((int)$marked === 1)
+			{
+				if (is_array($row) || $row instanceof \ArrayAccess)
+				{
+					$row['price'] = null;
+				}
+				else
+				{
+					$row->price = null;
+				}
+			}
+		}
+
 		foreach ($this->RedactedFieldsFor($entity) as $field)
 		{
 			if (is_array($row))
