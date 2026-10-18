@@ -70,11 +70,11 @@ final class WireBooleans
 	const COLUMNS = [
 		// StockLogEntry.spoiled
 		'stock_log' => ['spoiled'],
-		// CurrentStockResponse.is_aggregated_amount
-		'stock_current' => ['is_aggregated_amount'],
+		// CurrentStockResponse.is_aggregated_amount / value_incomplete
+		'stock_current' => ['is_aggregated_amount', 'value_incomplete'],
 		// ProductDetailsResponse - see StockService::GetProductDetails(), whose has_childs
 		// is already boolval()ed one line above is_aggregated_amount
-		'product_details' => ['is_aggregated_amount'],
+		'product_details' => ['is_aggregated_amount', 'stock_value_incomplete'],
 		// Chore.track_date_only / Chore.rollover
 		'chores' => ['track_date_only', 'rollover'],
 		// CurrentChoreResponse.track_date_only / is_rescheduled / is_reassigned.

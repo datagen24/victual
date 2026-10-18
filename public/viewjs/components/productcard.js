@@ -20,6 +20,8 @@ Victual.Components.ProductCard.Refresh = function(productId)
 			$('#productcard-product-stock-amount').text(stockAmount);
 			$('#productcard-product-stock-qu-name').text(__n(stockAmount, productDetails.quantity_unit_stock.name, productDetails.quantity_unit_stock.name_plural, true));
 			$('#productcard-product-stock-value').text(stockValue);
+			// ADR-0045 option B: the value is the known part when some stock has no known price
+			$('#productcard-product-stock-value-incomplete').toggleClass('d-none', !productDetails.stock_value_incomplete);
 			$('#productcard-product-last-purchased').text((productDetails.last_purchased || '2999-12-31').substring(0, 10));
 			$('#productcard-product-last-purchased-timeago').attr("datetime", productDetails.last_purchased || '2999-12-31');
 			$('#productcard-product-last-used').text((productDetails.last_used || '2999-12-31').substring(0, 10));

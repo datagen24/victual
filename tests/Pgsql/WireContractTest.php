@@ -358,6 +358,7 @@ class WireContractTest extends PgsqlSchemaTestCase
 		self::assertBool($details['has_childs'], 'product_details.has_childs, which was already a boolean');
 	}
 
+	/** Every chore flag is sent as a JSON boolean. */
 	public function testChoreFlagsAreBooleans(): void
 	{
 		foreach (self::get('/api/objects/chores') as $row)
@@ -382,6 +383,7 @@ class WireContractTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Every userfield flag is sent as a JSON boolean. */
 	public function testUserfieldFlagsAreBooleans(): void
 	{
 		$rows = self::get('/api/objects/userfields');
@@ -446,9 +448,11 @@ class WireContractTest extends PgsqlSchemaTestCase
 		'CurrentChoreResponse.is_rescheduled' => 'chores_current',
 		'CurrentChoreResponse.is_reassigned' => 'chores_current',
 		'CurrentStockResponse.is_aggregated_amount' => 'stock_current',
+		'CurrentStockResponse.value_incomplete' => 'stock_current',
 		'CurrentUserCapabilities.read_only' => 'php',
 		'ProductDetailsResponse.has_childs' => 'php',
 		'ProductDetailsResponse.is_aggregated_amount' => 'product_details',
+		'ProductDetailsResponse.stock_value_incomplete' => 'product_details',
 		'RecipeFulfillmentResponse.need_fulfilled' => 'recipes_resolved',
 		'RecipeFulfillmentResponse.need_fulfilled_with_shopping_list' => 'recipes_resolved',
 		'RecipeFulfillmentResponse.prices_incomplete' => 'recipes_resolved',
@@ -480,7 +484,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 	private const CONVERSION_COVERAGE = [
 		'stock_log.spoiled' => '/api/objects/stock_log',
 		'stock_current.is_aggregated_amount' => '/api/stock',
+		'stock_current.value_incomplete' => '/api/stock',
 		'product_details.is_aggregated_amount' => '/api/stock/products/9500',
+		'product_details.stock_value_incomplete' => '/api/stock/products/9500',
 		'chores.track_date_only' => '/api/objects/chores',
 		'chores.rollover' => '/api/objects/chores',
 		'chores_current.track_date_only' => '/api/chores',

@@ -225,6 +225,7 @@
 			<file>tests/Pgsql/FiniteNumericColumnsTest.php</file>
 			<file>tests/Pgsql/ImportFiniteNumbersTest.php</file>
 			<file>tests/Pgsql/ImportLegacyZeroPricesTest.php</file>
+			<file>tests/Pgsql/StockPriceSemanticsTest.php</file>
 		</testsuite>
 		<testsuite name="chores">
 			<file>tests/Pgsql/ChoreExecutionStockUndoTest.php</file>

@@ -66,6 +66,12 @@ count `rebuild_stock_log_cache_for_product` calls (one per product per statement
 caches with the views after a bulk update, a product move and a delete. The last block runs 0304's
 `stock_lineage_backfill` text, kept as a temporary function, and the new one on the same fixture.
 
+The [price reader tests](039-price-readers.sql) cover migration 0316 (issue #774, ADR-0045
+option B): `stock_current.value_incomplete` and the overview's copy, and the accepted differences D1
+to D4 in `products_price_history`, `products_average_price`, `products_last_purchased`,
+`products_current_price`, `recipes_pos_resolved` and `recipes_resolved`. The routes are PHP, in
+`tests/Pgsql/StockPriceSemanticsTest.php`.
+
 The [legacy zero price tests](038-legacy-zero-price.sql) cover migration 0315 (issue #774,
 ADR-0045 gate 1): the marker's constraints, `mark_legacy_zero_prices()` under both policies,
 `stock_next_use` and its triggers carrying the marker, and `stock_splits` keeping a marked 0 apart

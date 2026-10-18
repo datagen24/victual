@@ -23,6 +23,7 @@ use Victual\Controllers\Api\TasksApiController;
 use Victual\Controllers\Api\UsersApiController;
 use Victual\Middleware\PathParameterMiddleware;
 use Victual\Tests\Support\JsonShape;
+use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 use Victual\Tests\Support\RouteInventory;
 
@@ -467,6 +468,7 @@ class ContractTest extends PgsqlSchemaTestCase
 		self::assertGreaterThan(0, self::$ids['product'], 'Fixture product created');
 	}
 
+	/** The stock endpoints answer the recorded contract, for unpriced and mixed products as well as priced ones. */
 	#[Depends('testCreatesMasterData')]
 	public function testStockOperations(): void
 	{
@@ -482,6 +484,19 @@ class ContractTest extends PgsqlSchemaTestCase
 		// 1460 days (not 1461) because the mean is then fractional, which is the `number` the
 		// golden files record and the truthful type for an average.
 		self::invokeAdmin('POST /api/stock/products/{productId}/add', fn() => $stock->AddProduct(self::request('POST', ['amount' => 10, 'price' => 2.5, 'best_before_date' => '2030-01-01', 'purchased_date' => '2026-01-02']), new Response(), ['productId' => $productId]));
+		// ADR-0045 (issue #774): an unpriced and a mixed product, so GET /api/stock records the
+		// shape of an unknown and a partial value as well as a known one. Booked directly, so no
+		// route of their own is recorded.
+		foreach (['Contract Product Unpriced' => [null], 'Contract Product Mixed' => [3.0, null]] as $name => $prices)
+		{
+			$statement = self::Pdo()->prepare('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock) VALUES (?, ?, 2, 2) RETURNING id');
+			$statement->execute([$name, self::$ids['location']]);
+			$extraProduct = (int)$statement->fetchColumn();
+			foreach ($prices as $price)
+			{
+				StockService::GetInstance()->AddProduct($extraProduct, 1, '2030-01-01', StockService::TRANSACTION_TYPE_PURCHASE, '2026-01-02', $price, self::$ids['location']);
+			}
+		}
 		self::invokeAdmin('GET /api/stock', fn() => $stock->CurrentStock(self::request(), new Response(), []));
 		// One unit due in two days, so GET /api/stock/volatile has a due_products row; see
 		// testCreatesMasterData(). Booked after GET /api/stock is recorded so that route's

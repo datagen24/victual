@@ -1015,6 +1015,13 @@ jobs:
         working-directory: .devtools/frontend
         run: node nullable-integer-forms.js http://127.0.0.1:8085
 
+      # Issue #774, ADR-0045 option B: the stock overview and the product card mark a stock
+      # value whose prices are partly unknown, and show a free product's last price of 0
+      # instead of hiding it. PHP never runs public/viewjs, so no PHPUnit phase can see that.
+      - name: Run price semantics checks
+        working-directory: .devtools/frontend
+        run: node price-semantics.js http://127.0.0.1:8085
+
       # The same shape again, outside any form: the /choresoverview reschedule modal's Save
       # handler sent the user picker's "" for rescheduled_next_execution_assigned_to_user_id
       # whenever no one was picked - always, in demo mode, where chore assignments are off -
