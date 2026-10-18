@@ -66,6 +66,13 @@ count `rebuild_stock_log_cache_for_product` calls (one per product per statement
 caches with the views after a bulk update, a product move and a delete. The last block runs 0304's
 `stock_lineage_backfill` text, kept as a temporary function, and the new one on the same fixture.
 
+The [conversion chain range tests](040-conversion-chain-range.sql) cover migration 0318 (issue #952).
+They check `quantity_unit_conversion_factor_in_range()` at both ends of 2^-1022..2^1022. They also
+check that the insert, update and delete triggers refuse, with SQLSTATE VQ952, a written factor
+outside it, a chain that overflows, a chain that underflows to a subnormal, and a delete that lets a
+longer out-of-range path win. The API's message for the refusal is PHP, in
+`tests/Pgsql/ConversionChainRangeTest.php`.
+
 The [price reader tests](039-price-readers.sql) cover migration 0316 (issue #774, ADR-0045
 option B): `stock_current.value_incomplete` and the overview's copy, and the accepted differences D1
 to D4 in `products_price_history`, `products_average_price`, `products_last_purchased`,
@@ -204,6 +211,10 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `stock_booking_idempotency_keys` primary key and checks, `stock_log_transaction_id_idx` | table, constraints, indexes | 0314 | `037-stock-booking-idempotency-keys.sql` |
 | `mark_legacy_zero_prices` | function | 0315 | `038-legacy-zero-price.sql` |
 | `trg_stock_next_use_INS`, `trg_stock_next_use_UPD` (carry `legacy_zero_price`) | function | redefined 0315 | `038-legacy-zero-price.sql` |
+| `quantity_unit_conversion_factor_in_range` | function | 0318 | `040-conversion-chain-range.sql` |
+| `raise_quantity_unit_conversion_out_of_range` | function | 0318 | `040-conversion-chain-range.sql` |
+| `refresh_quantity_unit_conversion_cache` | function | 0318 | `040-conversion-chain-range.sql` |
+| `trg_quantity_unit_conversions_INS`, `trg_quantity_unit_conversions_UPD`, `trg_quantity_unit_conversions_DEL` (refuse an out-of-range factor) | function | redefined 0318 | `040-conversion-chain-range.sql` |
 
 ## Completeness
 

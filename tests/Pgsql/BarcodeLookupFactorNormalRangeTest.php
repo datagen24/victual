@@ -79,7 +79,8 @@ class BarcodeLookupFactorNormalRangeTest extends PgsqlSchemaTestCase
 	/**
 	 * @return array<string, array{0: int, 1: bool, 2: string, 3: string}>
 	 *         bits, whether a lookup accepts it, what PostgreSQL does when the factor is inserted
-	 *         directly ('ok', or 'overflow' for SQLSTATE 22003), and a barcode of its own.
+	 *         directly before migration 0318 ('ok', or 'overflow' for SQLSTATE 22003; since 0318
+	 *         every refused value is VQ952), and a barcode of its own.
 	 */
 	public static function boundaryProvider(): array
 	{
@@ -338,6 +339,7 @@ PLUGIN);
 		}
 	}
 
+	/** Issue #951: the shared statement binds a float exactly and leaves other parameter types as they were. */
 	public function testSharedStatementPreservesDirectPdoFloatAndOtherParameterValues(): void
 	{
 		$pdo = DatabaseService::GetInstance()->GetDbConnectionRaw();
@@ -364,13 +366,16 @@ PLUGIN);
 	}
 
 	/**
-	 * The classification above is only as good as PostgreSQL agreeing with it: inserting
-	 * the same factor straight into quantity_unit_conversions either succeeds (and the
-	 * trigger's inverse is what PHP computed) or raises 22003 exactly where PHP's
-	 * 1 / factor is INF. Fresh quantity units per case, rolled back after.
+	 * The classification above is only as good as PostgreSQL agreeing with it. Since migration
+	 * 0318 (issue #952) the conversion triggers apply the same rule to every conversion write:
+	 * inserting the factor straight into quantity_unit_conversions succeeds, with the trigger's
+	 * inverse equal to the one PHP computed, exactly for the values PHP accepts, and is refused
+	 * with SQLSTATE VQ952 for the rest. Before 0318 a subnormal factor raised a raw 22003 and a
+	 * factor above 2^1022 was stored with a subnormal inverse. Fresh quantity units per case,
+	 * rolled back after.
 	 */
 	#[DataProvider('boundaryProvider')]
-	public function testPostgreSqlInverseAgreesWithPhpAtTheBoundary(int $factorBits, bool $accepted, string $pgOutcome, string $barcode): void
+	public function testPostgreSqlRefusesExactlyTheFactorsPhpRefuses(int $factorBits, bool $accepted, string $pgOutcome, string $barcode): void
 	{
 		$factor = self::fromBits($factorBits);
 		$expectedInverse = 1.0 / $factor;
@@ -395,26 +400,20 @@ PLUGIN);
 			}
 			catch (\PDOException $ex)
 			{
-				self::assertSame('overflow', $pgOutcome, "PostgreSQL refused a factor PHP can invert: {$ex->getMessage()}");
-				self::assertSame('22003', $ex->errorInfo[0] ?? $ex->getCode(), 'with a numeric_value_out_of_range error');
-				self::assertSame(INF, $expectedInverse, 'exactly where PHP\'s inverse is INF');
-				self::assertFalse($accepted);
+				self::assertFalse($accepted, "PostgreSQL refused a factor PHP accepts: {$ex->getMessage()}");
+				self::assertSame('VQ952', $ex->errorInfo[0] ?? $ex->getCode(), 'with the conversion range refusal');
 
 				return;
 			}
 
-			self::assertSame('ok', $pgOutcome, 'PostgreSQL accepted a factor whose inverse overflows');
-			self::assertNotSame(INF, $expectedInverse);
-
+			self::assertTrue($accepted, 'PostgreSQL accepted a factor PHP refuses');
 			$read = self::$db->prepare('SELECT factor FROM quantity_unit_conversions WHERE from_qu_id = ? AND to_qu_id = ?');
 			$read->execute([$units['To'], $units['From']]);
-			$inverse = (float)$read->fetchColumn();
-			self::assertSame($expectedInverse, $inverse, 'the trigger-written inverse is the inverse PHP computed');
-			self::assertSame($accepted, $inverse >= PHP_FLOAT_MIN && $factor >= PHP_FLOAT_MIN, 'and it is normal, together with the factor, exactly for the accepted values');
+			self::assertSame($expectedInverse, (float)$read->fetchColumn(), 'the trigger-written inverse is the inverse PHP computed');
 		}
 		finally
 		{
-			// After a 22003 the transaction is aborted; rollBack() is the way out either way.
+			// After a refusal the transaction is aborted; rollBack() is the way out either way.
 			self::$db->rollBack();
 		}
 	}

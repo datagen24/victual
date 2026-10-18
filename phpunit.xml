@@ -155,6 +155,7 @@
 			<file>tests/Pgsql/MergeProductsConversionLockTest.php</file>
 			<file>tests/Pgsql/BarcodeLookupNonFiniteHttpTest.php</file>
 			<file>tests/Pgsql/BarcodeLookupFactorNormalRangeTest.php</file>
+			<file>tests/Pgsql/ConversionChainRangeTest.php</file>
 		</testsuite>
 		<testsuite name="stockconcurrency">
 			<file>tests/Pgsql/StockConcurrencyTest.php</file>

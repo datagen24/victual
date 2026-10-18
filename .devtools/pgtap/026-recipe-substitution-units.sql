@@ -204,6 +204,9 @@ VALUES (
 -- constraint (see StockService::SubstitutionAwareProductIdWhereClause()'s own comment), and
 -- built here by dropping the constraint 0309 added.
 ALTER TABLE quantity_unit_conversions DROP CONSTRAINT quantity_unit_conversions_factor_positive;
+-- Migration 0318 (issue #952) refuses the row in the conversion triggers too; the range rule is
+-- made permissive here, and the file's ROLLBACK restores it.
+CREATE OR REPLACE FUNCTION quantity_unit_conversion_factor_in_range(f DOUBLE PRECISION) RETURNS BOOLEAN AS 'SELECT true' LANGUAGE sql IMMUTABLE;
 INSERT INTO quantity_unit_conversions (from_qu_id, to_qu_id, factor, product_id)
 VALUES (
 	(SELECT id FROM quantity_units WHERE name = 'M629 Parent Unit'),
