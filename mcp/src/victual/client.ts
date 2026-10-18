@@ -78,7 +78,7 @@ export class VictualClient {
   ): Promise<T> {
     const url = new URL(path, this.config.VICTUAL_BASE_URL);
     if (searchParams) url.search = searchParams.toString();
-    return this.send<T>(url, path, { method: "GET", headers: { ...credential.headers, accept: "application/json" } });
+    return (await this.send<T>(url, path, { method: "GET", headers: { ...credential.headers, accept: "application/json" } })).body;
   }
 
   /**
@@ -87,6 +87,18 @@ export class VictualClient {
    * a JSON parse error.
    */
   async post<T = undefined>(path: string, credential: ResolvedCredential, body: Record<string, unknown>): Promise<T> {
+    return (await this.postWithStatus<T>(path, credential, body)).body;
+  }
+
+  /**
+   * POST a JSON body and keep the 2xx status beside the parsed answer, for a caller that has
+   * to report an answer it cannot use without losing the status Victual gave it (#937).
+   */
+  async postWithStatus<T = undefined>(
+    path: string,
+    credential: ResolvedCredential,
+    body: Record<string, unknown>,
+  ): Promise<{ status: number; body: T }> {
     const url = new URL(path, this.config.VICTUAL_BASE_URL);
     return this.send<T>(url, path, {
       method: "POST",
@@ -95,7 +107,7 @@ export class VictualClient {
     });
   }
 
-  private async send<T>(url: URL, path: string, init: RequestInit): Promise<T> {
+  private async send<T>(url: URL, path: string, init: RequestInit): Promise<{ status: number; body: T }> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.MCP_REQUEST_TIMEOUT_MS);
 
@@ -122,7 +134,7 @@ export class VictualClient {
       // headers said 2xx, so a write may well have been applied.
       try {
         const text = await response.text();
-        return (text === "" ? undefined : JSON.parse(text)) as T;
+        return { status: response.status, body: (text === "" ? undefined : JSON.parse(text)) as T };
       } catch (cause) {
         throw new VictualApiError(
           write ? "outcome_unknown" : "victual_unavailable",

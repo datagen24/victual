@@ -30,12 +30,12 @@ export const consumeProduct: ToolDefinition<typeof inputSchema, typeof outputSch
   inputSchema,
   outputSchema,
   handler: async (input, ctx) => {
-    const rows = await ctx.client.post<StockLogRow[]>(
+    const { status, body: rows } = await ctx.client.postWithStatus<StockLogRow[]>(
       `/api/stock/products/${input.product_id}/consume`,
       ctx.credential,
       { amount: input.amount, spoiled: input.spoiled },
     );
-    const id = transactionId(rows);
+    const id = transactionId(rows, status);
     return {
       data: { transaction_id: id, product_id: input.product_id, amount: input.amount, spoiled: input.spoiled },
       text: `Consumed ${input.amount} of product ${input.product_id}${input.spoiled ? " as spoiled" : ""} (transaction ${id}). ${UNDO_NOTE}`,

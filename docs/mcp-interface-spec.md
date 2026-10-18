@@ -391,7 +391,10 @@ Two layers, never mixed:
   The timeout covers the whole response, body included. A failure while reading the body
   of a 2xx answer (a stall, a truncated body, or one that is not valid JSON) is
   `outcome_unknown` on a write, because the headers say it was probably applied, and
-  `victual_unavailable` on a read.
+  `victual_unavailable` on a read. So is a booking (`consume_product`, `purchase_product`)
+  whose 2xx answer is read but carries no transaction row: the booking was probably
+  applied, but what was booked cannot be confirmed. Both keep `victual_status`, and the
+  `text` gives the same check-before-retry advice.
 
 This mapping is why [plan 11](plans/11-api-error-handling.md) gates this work: today
 Victual answers 400 for "not allowed" and 500 for "bad filter" on some routes, which
