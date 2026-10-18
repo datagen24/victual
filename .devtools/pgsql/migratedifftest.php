@@ -56,6 +56,7 @@ const ENGINE_EXCLUSIVE_TABLES = ['files', 'roles', 'role_permissions', 'user_rol
  // compare against and its absence on that side is the design rather than a difference.
  'label_templates', 'label_template_drafts', 'label_template_versions', 'label_assets', 'label_media_profiles',
  'label_captures', 'label_render_requests', 'label_artifacts', 'label_idempotency_keys',
+	'stock_booking_idempotency_keys',
  // Plan 23, migration 0274. Same freeze, not a deliberate engine difference: locations
  // gains a nullable storage_class_id alongside it, which is a column on a shared table and
  // therefore already invisible to CompareTableSets - only the new table needs naming here.

@@ -33,6 +33,12 @@ use Victual\Services\Storage\FileStorage;
  */
 class StockService extends BaseService
 {
+	/** Opaque booking identity, shared unchanged by nested service calls. */
+	public static function NewTransactionId(): string
+	{
+		return bin2hex(random_bytes(16));
+	}
+
 	/** Stock removal by consuming (eating/using/spoiling) - negative amount booking */
 	const TRANSACTION_TYPE_CONSUME = 'consume';
 
@@ -309,7 +315,7 @@ class StockService extends BaseService
 	 * @param float|null $price Price per stock quantity unit
 	 * @param int|null $locationId Destination location; null means the product's default location
 	 * @param int|null $shoppingLocationId Store where the product was bought
-	 * @param string|null $transactionId By-reference; generated via uniqid() when null, shared across all bookings of this call
+	 * @param string|null $transactionId By-reference; generated via NewTransactionId() when null, shared across all bookings of this call
 	 * @param int $stockLabelType 0 = no label, 1 = one label for the whole booking, 2 = one label (and stock entry) per unit
 	 * @param string|null $note Free text note stored on the stock entry and booking
 	 * @return string The transaction id of the booking(s)
@@ -392,7 +398,7 @@ class StockService extends BaseService
 		{
 			if ($transactionId === null)
 			{
-				$transactionId = uniqid();
+				$transactionId = StockService::NewTransactionId();
 			}
 
 			// The booking, the stock entry it describes, the label it may print and the
@@ -704,7 +710,7 @@ class StockService extends BaseService
 	 * @param string $specificStockEntryId 'default' consumes in default order; otherwise a stock_id restricting consumption to that single stock entry
 	 * @param int|null $recipeId When consuming due to a recipe, its id (stored in the bookings)
 	 * @param int|null $locationId When given, only stock at this location is consumed
-	 * @param string|null $transactionId By-reference; generated via uniqid() when null, shared across all bookings of this call
+	 * @param string|null $transactionId By-reference; generated via NewTransactionId() when null, shared across all bookings of this call
 	 * @param bool $allowSubproductSubstitution See above
 	 * @param bool $consumeExactAmount Retired with the product-level tare mechanism (ADR-0022); has no effect
 	 * @param string|null $usedDate Y-m-d date stored as used_date on every booking; today (server time zone) when null
@@ -745,7 +751,7 @@ class StockService extends BaseService
 		{
 			if ($transactionId === null)
 			{
-				$transactionId = uniqid();
+				$transactionId = StockService::NewTransactionId();
 			}
 
 			// One booking per touched stock entry, each paired with a delete or an amount
@@ -1083,7 +1089,7 @@ class StockService extends BaseService
 
 		$productId = $stockRow->product_id;
 		$correlationId = uniqid();
-		$transactionId = uniqid();
+		$transactionId = StockService::NewTransactionId();
 
 		// An eighth transactional entrypoint, added by plan 18's review rather than by
 		// plan 13, which wrapped the seven stock *booking* paths and left this one out.
@@ -1253,7 +1259,7 @@ class StockService extends BaseService
 
 		$productId = $stockRow->product_id;
 		$correlationId = uniqid();
-		$transactionId = uniqid();
+		$transactionId = StockService::NewTransactionId();
 
 		DatabaseService::GetInstance()->InTransaction(function () use (
 			$stockRowId, $productId, $correlationId, $transactionId, $measurement
@@ -2402,7 +2408,7 @@ class StockService extends BaseService
 	 * @param int $productId
 	 * @param float $amount Amount to open, in the product's stock quantity unit
 	 * @param string $specificStockEntryId 'default' opens in default order; otherwise a stock_id restricting opening to that single stock entry
-	 * @param string|null $transactionId By-reference; generated via uniqid() when null, shared across all bookings of this call
+	 * @param string|null $transactionId By-reference; generated via NewTransactionId() when null, shared across all bookings of this call
 	 * @param bool $allowSubproductSubstitution When true, unopened stock of resolved sub products may be opened
 	 * @param array|null $measurement See above
 	 * @return string The transaction id of the booking(s)
@@ -2438,7 +2444,7 @@ class StockService extends BaseService
 
 		if ($transactionId === null)
 		{
-			$transactionId = uniqid();
+			$transactionId = StockService::NewTransactionId();
 		}
 
 		// The booking and the stock entry it describes (and the split-off rest entry) have to
@@ -2900,7 +2906,7 @@ class StockService extends BaseService
 	 * @param int $locationIdFrom Source location id
 	 * @param int $locationIdTo Destination location id
 	 * @param string $specificStockEntryId 'default' transfers in default order; otherwise a stock_id restricting the transfer to that single stock entry
-	 * @param string|null $transactionId By-reference; generated via uniqid() when null, shared across all bookings of this call
+	 * @param string|null $transactionId By-reference; generated via NewTransactionId() when null, shared across all bookings of this call
 	 * @return string The transaction id of the booking(s)
 	 * @throws \Exception When the product or a location does not exist, the product is tare weight handled
 	 *                    (not supported), or the amount exceeds the stock amount available within the
@@ -2943,7 +2949,7 @@ class StockService extends BaseService
 		// entry after the transfer has already moved the (untared) amount.
 		if ($transactionId === null)
 		{
-			$transactionId = uniqid();
+			$transactionId = StockService::NewTransactionId();
 		}
 
 		// Both bookings of an entry plus the stock row itself have to land together, or the

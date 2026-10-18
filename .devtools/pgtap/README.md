@@ -66,6 +66,12 @@ count `rebuild_stock_log_cache_for_product` calls (one per product per statement
 caches with the views after a bulk update, a product move and a delete. The last block runs 0304's
 `stock_lineage_backfill` text, kept as a temporary function, and the new one on the same fixture.
 
+The [stock booking key tests](037-stock-booking-idempotency-keys.sql) cover migration 0314 (issue #775,
+ADR-0046): one key per user, operation and key value, the five operations, the key and fingerprint
+grammars, the nullable transaction id, the expiry and `stock_log.transaction_id` indexes, and the
+cascade from a deleted user. The reservation, replay and race behaviour is PHP, in
+`tests/Pgsql/StockBookingIdempotencyTest.php`.
+
 The [chore consume flag tests](036-chores-consume-flag.sql) cover migration 0312 (issue #923).
 `chores.consume_product_on_execution` accepts 0 and 1 and refuses any other value on insert and update,
 the column stays `NOT NULL` (the check alone would let a NULL through), and the constraint cannot be added
@@ -184,6 +190,7 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `trg_consumption_refill_order_closed_final` (trigger `consumption_refill_order_closed_final`) | function + trigger | 0307 | `033-consumption-refill.sql` |
 | `trg_consumption_event_transaction_roles` (trigger `consumption_event_transaction_roles`) | function + trigger | 0310 | `035-consumption-event-transaction-roles.sql` |
 | `chores_consume_product_on_execution_check` | check constraint | 0312 | `036-chores-consume-flag.sql` |
+| `stock_booking_idempotency_keys` primary key and checks, `stock_log_transaction_id_idx` | table, constraints, indexes | 0314 | `037-stock-booking-idempotency-keys.sql` |
 
 ## Completeness
 

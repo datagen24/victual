@@ -136,7 +136,7 @@ class RecipesService extends BaseService
 			throw new \Exception('Recipe does not exist');
 		}
 
-		$transactionId = uniqid();
+		$transactionId = StockService::NewTransactionId();
 
 		// Only which products the recipe (and any recipe it nests - recipes_pos_resolved
 		// joins recipes_nestings_resolved, see db/pgsql/baseline/05_views_l3.sql) names is

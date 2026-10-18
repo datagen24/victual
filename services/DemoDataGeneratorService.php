@@ -317,7 +317,7 @@ class DemoDataGeneratorService extends BaseService
 			// ids of their own.
 			$db->GetDialect()->ResyncGeneratedIdCounters($db->GetDbConnectionRaw());
 
-			$stockTransactionId = uniqid();
+			$stockTransactionId = StockService::NewTransactionId();
 			$stockService = StockService::GetInstance();
 			$stockService->AddProduct(3, 1, date('Y-m-d', strtotime('+180 days')), StockService::TRANSACTION_TYPE_PURCHASE, date('Y-m-d', strtotime('-10 days')), $this->RandomPrice(), null, $this->NextSupermarketId(), $stockTransactionId);
 			$stockService->AddProduct(3, 1, date('Y-m-d', strtotime('+180 days')), StockService::TRANSACTION_TYPE_PURCHASE, date('Y-m-d', strtotime('-20 days')), $this->RandomPrice(), null, $this->NextSupermarketId(), $stockTransactionId);

@@ -182,11 +182,11 @@ the baseline loads, because it is what records that the baseline was applied.
 Migration 0305 (2026-10-09) adds five tables, migration 0306 (2026-10-09) a sixth and migration
 0307 (2026-10-10) five refill tables, all listed under *Private consumption* below.
 
-**Stock & products (17)** — `products`, `product_groups`, `product_barcodes`,
+**Stock & products (18)** — `products`, `product_groups`, `product_barcodes`,
 `product_substitutions`, `quantity_units`, `quantity_unit_conversions`, `locations`,
 `storage_classes`, `product_location_min_stock`, `shopping_locations`, `stock`, `stock_log`,
-`stock_entry_origins`, `stock_row_lots`, `stock_booking_lots`, `shopping_list`,
-`shopping_lists`.
+`stock_entry_origins`, `stock_row_lots`, `stock_booking_lots`, `stock_booking_idempotency_keys`,
+`shopping_list`, `shopping_lists`.
 
 `stock` holds current entries and `stock_log` is the append-only ledger; a consumed entry
 disappears from `stock` while its bookings stay in the ledger the views read.
@@ -194,6 +194,14 @@ disappears from `stock` while its bookings stay in the ledger the views read.
 `recipes.default_shopping_list_id` (migration 0286,
 [plan 05](plans/05-store-shopping-lists.md)) tie a list to a store and name the list a
 product or recipe adds to by default; like the other references they are by convention.
+
+`stock_booking_idempotency_keys` (migration 0314, [issue 775](https://github.com/datagen24/victual/issues/775),
+[ADR-0046](adr/0046-stock-bookings-accept-an-optional-idempotency-key.md)) remembers the
+`Idempotency-Key` of a purchase, consume, transfer, open or inventory request for seven days:
+the user, the operation, the key, a fingerprint of the request and the transaction id it
+booked. A retry with the same key replays that transaction instead of booking again. The
+row is written in the booking's transaction, it is not an exposed entity, and the importer
+clears it because an import replaces the `stock_log` rows it names.
 
 `stock_entry_origins` (migration 0267) links an entry split off by a partial open back to
 the purchase it came from, because the split entry has no `stock_log` row of its own.

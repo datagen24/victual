@@ -683,3 +683,14 @@ the suite runs (`.devtools/pgsql/run-tests.sh`):
   equals the constant that sets `expires_at`.
 - A CORS preflight test, alongside the assertions in `tests/Pgsql/AuthStackTest.php` and
   `HttpBootTest.php`, showing `Idempotency-Key` allowed and `Idempotent-Replayed` exposed.
+
+## Implementation
+
+The pull request for [issue 775](https://github.com/datagen24/victual/issues/775) implements
+decisions 1 to 12 with migration `0314.pgsql.sql`: `stock_booking_idempotency_keys`, the
+`stock_log.transaction_id` index, `StockBookingIdempotencyService`,
+`StockApiController::HandleBookingCall()`, `StockService::NewTransactionId()` at the nine
+minting sites, the CORS and `GET /api/system/info` changes, and the tests under Verification
+(`tests/Pgsql/StockBookingIdempotencyTest.php`, `.devtools/pgtap/037-stock-booking-idempotency-keys.sql`,
+the contract snapshots and the CORS assertions). Implementing this record does not accept it.
+Acceptance is a separate pull request.
