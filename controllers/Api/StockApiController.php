@@ -228,12 +228,15 @@ class StockApiController extends BaseApiController
 	/**
 	 * POST /api/stock/shoppinglist/add-missing-products - adds all products below their
 	 * minimum stock amount to the shopping list given by the numeric body field list_id
-	 * (default 1). Requires the SHOPPINGLIST_ITEMS_ADD permission (403 otherwise).
+	 * (default 1). Requires the SHOPPINGLIST_ITEMS_ADD permission, and STOCK_VIEW: the items
+	 * it adds are exactly which products are below their minimum, a stock fact a caller
+	 * without STOCK_VIEW may not learn (issue #933, ADR-0050). 403 otherwise.
 	 * Returns 204 on success or a 400 error response.
 	 */
 	public function AddMissingProductsToShoppingList(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_SHOPPINGLIST_ITEMS_ADD);
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 
 		return $this->HandleApiCall($response, function () use ($request, $response)
 		{

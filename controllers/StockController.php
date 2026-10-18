@@ -708,12 +708,19 @@ class StockController extends BaseController
 		$productUserfieldsReadable = $mayReadUserfieldsOf('products');
 		$productGroupUserfieldsReadable = $mayReadUserfieldsOf('product_groups');
 
+		// Which products are below their minimum stock amount is a stock fact: a caller
+		// without STOCK_VIEW gets no shortfall count, no per-row marker and no shortfall
+		// filter (issue #933, ADR-0050). Product barcodes stay, as part of the shopping-list
+		// workflow itself.
+		$shortfallsVisible = User::HasPermissions(User::PERMISSION_STOCK_VIEW);
+
 		return $this->RenderPage($response, 'shoppinglist', [
 			'listItems' => $listItems->orderBy('product_name', 'COLLATE NOCASE'),
 			'listItemsCount' => $listItems->count(),
 			'products' => $this->DB->products()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 			'quantityunits' => $this->DB->quantity_units()->orderBy('name', 'COLLATE NOCASE'),
-			'missingProducts' => StockService::GetInstance()->GetMissingProducts(),
+			'missingProducts' => $shortfallsVisible ? StockService::GetInstance()->GetMissingProducts() : [],
+			'shortfallsVisible' => $shortfallsVisible,
 			'shoppingLists' => $this->DB->shopping_lists_view()->orderBy('name', 'COLLATE NOCASE'),
 			'selectedShoppingListId' => $listId,
 			'quantityUnitConversionsResolved' => $this->DB->cache__quantity_unit_conversions_resolved(),
