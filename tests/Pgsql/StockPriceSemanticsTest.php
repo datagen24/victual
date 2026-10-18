@@ -456,4 +456,24 @@ class StockPriceSemanticsTest extends PgsqlSchemaTestCase
 
 		self::assertSame([], $pricePaid(self::purchase(self::product(), 1, null)), 'nor is an unpriced purchase');
 	}
+
+	/**
+	 * Issue #990: a meal plan day holding a product with no known price is a recipe whose
+	 * cost leaves a price out, which is what the meal plan's day marker reads.
+	 */
+	public function testAMealPlanDayWithAnUnpricedProductReadsAsIncomplete(): void
+	{
+		$unpriced = self::product();
+		self::purchase($unpriced, 2, null);
+		$free = self::product();
+		self::purchase($free, 2, 0.0);
+		self::$db->prepare("INSERT INTO meal_plan (day, type, product_id, product_amount) VALUES ('2031-03-03', 'product', ?, 1), ('2031-03-03', 'product', ?, 1)")->execute([$unpriced, $free]);
+
+		$day = self::$db->query("SELECT rr.* FROM recipes_resolved rr JOIN recipes r ON r.id = rr.recipe_id WHERE r.type = 'mealplan-day' AND r.name = '2031-03-03'")->fetch(PDO::FETCH_ASSOC);
+		$positions = self::$db->query("SELECT rpr.product_id, rpr.costs FROM recipes_pos_resolved rpr JOIN recipes r ON r.id = rpr.recipe_id WHERE r.type = 'mealplan-day' AND r.name = '2031-03-03'")->fetchAll(PDO::FETCH_ASSOC);
+		self::assertIsArray($day, 'the day has a shadow recipe');
+		self::assertSame(1, (int)$day['prices_incomplete'], 'the day leaves a price out: ' . json_encode([$day, $positions]));
+		self::assertNotEmpty($day['product_names_comma_separated']);
+	}
 }
+

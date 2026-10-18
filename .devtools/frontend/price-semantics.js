@@ -127,7 +127,17 @@ const assert = require('node:assert/strict');
 		}, id);
 		assert.deepEqual(await mealCost(unpricedMeal), { currency: false, marked: true }, 'a meal plan product with no known price shows the marker, not a cost of 0');
 		assert.deepEqual(await mealCost(freeMeal), { currency: true, marked: false }, 'a free one shows its cost');
-		assert.equal(await page.evaluate((day) => document.querySelector('#day-summary-' + day + ' i.fa-exclamation.text-danger') !== null, day), true, "and the day's cost is marked as leaving a price out");
+		const daySummary = await page.evaluate((day) =>
+		{
+			const recipe = Victual.InternalRecipes.find(found => found.name === day && found.type === 'mealplan-day');
+			return {
+				marked: document.querySelector('#day-summary-' + day + ' i.fa-exclamation.text-danger') !== null,
+				html: document.querySelector('#day-summary-' + day)?.outerHTML ?? null,
+				recipe: recipe ?? null,
+				resolved: recipe === undefined ? null : Victual.RecipesResolved.find(found => found.recipe_id == recipe.id) ?? null
+			};
+		}, day);
+		assert.equal(daySummary.marked, true, "and the day's cost is marked as leaving a price out: " + JSON.stringify(daySummary));
 
 		console.log('price semantics: the overview and the product card the stock entries page and the meal plan tell an unknown value from a known zero');
 	}
