@@ -50,18 +50,28 @@ const assert = require('node:assert/strict');
 		assert.equal((await api('stock/products/' + free)).stock_value_incomplete, false);
 
 		await page.goto(base + '/stockoverview');
-		const marked = async (id) => page.evaluate((id) =>
+		// The value and price columns are hidden by default, and DataTables detaches a hidden
+		// column's cells from the document, so they are looked up among the table's own cell
+		// nodes rather than with getElementById
+		const inCells = async (selector) => page.evaluate((selector) =>
 		{
-			const icon = document.getElementById('product-' + id + '-value-incomplete');
-			return icon === null ? null : !icon.classList.contains('d-none');
-		}, id);
+			for (const cell of $('#stock-overview-table').DataTable().cells().nodes().toArray())
+			{
+				const found = cell.querySelector(selector);
+				if (found !== null) return { hidden: found.classList.contains('d-none'), html: found.outerHTML };
+			}
+			return null;
+		}, selector);
+		const marked = async (id) => { const icon = await inCells('#product-' + id + '-value-incomplete'); return icon === null ? null : !icon.hidden; };
 		assert.equal(await marked(unpriced), true, 'the overview marks the unpriced value as incomplete');
 		assert.equal(await marked(free), false, 'and not the free one');
 
 		const lastPriceShown = await page.evaluate((id) =>
 		{
-			const row = document.getElementById('product-' + id + '-row');
-			return row !== null && Array.from(row.querySelectorAll('span[data-toggle="tooltip"] .locale-number-currency')).length > 0;
+			const table = $('#stock-overview-table').DataTable();
+			const row = table.row('#product-' + id + '-row');
+			return row.any() && table.cells(row.index(), '*').nodes().toArray()
+				.some(cell => cell.querySelector('span[data-toggle="tooltip"] .locale-number-currency') !== null);
 		}, free);
 		assert.equal(lastPriceShown, true, 'a last price of 0 is shown, not hidden as empty');
 
