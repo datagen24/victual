@@ -1,6 +1,6 @@
 # ADR-0050: Shopping-list workflows show product barcodes, and stock shortfalls need STOCK_VIEW
 
-- **Status:** Proposed
+- **Status:** Accepted, 2026-10-18
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-18, against `master` at `033f9912`. It records the maintainer's two
