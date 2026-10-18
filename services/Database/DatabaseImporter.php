@@ -125,7 +125,11 @@ class DatabaseImporter
 	/**
 	 * Tables that belong to the target engine alone and have no counterpart in the source.
 	 */
-	const TARGET_ONLY_TABLES = ['user_settings_defaults', 'system_db_changed_time', 'roles', 'role_permissions', 'user_roles', 'permission_fields'];
+	const TARGET_ONLY_TABLES = ['user_settings_defaults', 'system_db_changed_time', 'roles', 'role_permissions', 'user_roles', 'permission_fields', 'price_interpretation_reports'];
+
+	/** How an imported price of 0 is read (ADR-0045 open questions 6 and 11). */
+	const LEGACY_ZERO_PRICES_UNKNOWN = 'unknown';
+	const LEGACY_ZERO_PRICES_KNOWN = 'known';
 
 	/**
 	 * Tables that exist on both sides but are deliberately not copied.
@@ -308,6 +312,7 @@ class DatabaseImporter
 	private $Target;
 	private $TargetDialect;
 	private $Progress;
+	private string $LegacyZeroPrices = self::LEGACY_ZERO_PRICES_UNKNOWN;
 
 	/**
 	 * @param \PDO $source The SQLite database to copy from
@@ -323,6 +328,21 @@ class DatabaseImporter
 		$this->Progress = $progress ?? function ($message)
 		{
 		};
+	}
+
+	/**
+	 * Chooses how every imported price of 0 is read (ADR-0045 open question 11): as unknown,
+	 * the default, because the web UI stored 0 for a blank price, or as a known zero for a
+	 * source whose operator knows it recorded free items as 0. The choice covers every zero,
+	 * including those that were never entered, and the import report records it.
+	 */
+	public function SetLegacyZeroPrices(string $policy): void
+	{
+		if (!in_array($policy, [self::LEGACY_ZERO_PRICES_UNKNOWN, self::LEGACY_ZERO_PRICES_KNOWN], true))
+		{
+			throw new \InvalidArgumentException('legacy zero prices must be "unknown" or "known"');
+		}
+		$this->LegacyZeroPrices = $policy;
 	}
 
 	/**
@@ -964,6 +984,14 @@ class DatabaseImporter
 			$this->AssertRowCountsMatch($report);
 			$this->AssertValuesMatch($tables);
 
+			// Inside the copy transaction, so the import commits with every legacy zero read as
+			// chosen or not at all (ADR-0045 gate 1), and after verification, because the report
+			// row draws a sequence value a rollback does not return
+			if ($applyRowMigrations)
+			{
+				$this->MarkLegacyZeroPrices($tables);
+			}
+
 			$this->TargetDialect->ResyncGeneratedIdCounters($this->Target);
 			$this->RebuildStockLineage();
 			$this->Target->commit();
@@ -1352,6 +1380,37 @@ class DatabaseImporter
 	}
 
 	/**
+	 * Marks every imported row priced exactly 0 as an unknown price (legacy_zero_price = 1),
+	 * or leaves it a known zero under the "known" policy, without changing any stored price.
+	 * Both write a price_interpretation_reports row and a progress line, so the reading chosen
+	 * stays visible after the terminal is gone (ADR-0045 open question 8).
+	 *
+	 * @param string[] $tables The tables this import copied
+	 */
+	private function MarkLegacyZeroPrices(array $tables): void
+	{
+		if (!in_array('stock', $tables, true) && !in_array('stock_log', $tables, true))
+		{
+			return;
+		}
+
+		// The same function migration 0315 marked pre-existing zeros with. stock_log_UPD would
+		// rebuild a price cache per marked row; RebuildPriceCaches() rebuilds them all once
+		// after the commit. ALTER TABLE is transactional, so a failed import restores it.
+		$this->Target->exec('ALTER TABLE stock_log DISABLE TRIGGER stock_log_UPD');
+		$statement = $this->Target->prepare('SELECT stock_rows, stock_log_rows FROM mark_legacy_zero_prices(?, ?)');
+		$statement->execute(['import', $this->LegacyZeroPrices]);
+		$counts = $statement->fetch(\PDO::FETCH_ASSOC);
+		$this->Target->exec('ALTER TABLE stock_log ENABLE TRIGGER stock_log_UPD');
+
+		$reading = $this->LegacyZeroPrices === self::LEGACY_ZERO_PRICES_UNKNOWN ? 'read as unknown (imported legacy zero)' : 'read as known zeros (--legacy-zero-prices=known)';
+		foreach (['stock' => 'stock_rows', 'stock_log' => 'stock_log_rows'] as $table => $column)
+		{
+			($this->Progress)('  ' . str_pad($table, 12) . ' ' . (int)$counts[$column] . ' row(s) priced 0 ' . $reading . '; stored prices unchanged');
+		}
+	}
+
+	/**
 	 * Columns of the given table present in both databases; source-only columns are
 	 * reported through the progress callback and not copied.
 	 *
@@ -1374,6 +1433,12 @@ class DatabaseImporter
 			// the five kinds that joined the label subsystem) must never be restored from
 			// foreign input.
 			$common = array_values(array_diff($common, ['import_epoch']));
+		}
+		if ($table === 'stock' || $table === 'stock_log')
+		{
+			// The reading of a stored price is the target's to decide (MarkLegacyZeroPrices()),
+			// never a source's to supply
+			$common = array_values(array_diff($common, ['legacy_zero_price']));
 		}
 
 		foreach (array_diff($sourceColumns, $targetColumns) as $column)

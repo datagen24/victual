@@ -972,3 +972,20 @@ its pull request:
   also shows that a blank purchase price is sent as `null`.
 - Influx, option A only: A publisher test shows that an unknown value is not
   published as `0.0`.
+
+## Implementation
+
+Two pull requests for [issue 774](https://github.com/datagen24/victual/issues/774) implement
+this record:
+
+1. Migration `0315.pgsql.sql` implements gate 1 option (a) with no change to any response.
+   It adds `legacy_zero_price` on `stock` and `stock_log` with both constraints, and marks
+   every pre-existing price of `0` (open question 9). `mark_legacy_zero_prices()` writes the
+   counts to `price_interpretation_reports`, and the importer calls the same function
+   (open questions 6, 8 and 11, with `--legacy-zero-prices=known`). `stock_next_use` and its
+   triggers carry the marker, and `stock_splits` groups by it. The marker is copied by every
+   `StockService` path gate 1 lists, and `FieldPolicy` keeps it off the wire (open question 10).
+2. Migration `0316.pgsql.sql` implements the readers, the flags of gate 5, the accepted
+   differences of gate 7 and the P2 write paths.
+
+Implementing this record does not accept it. Acceptance is a separate pull request.

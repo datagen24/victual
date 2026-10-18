@@ -3,7 +3,7 @@
 
 // Imports an existing SQLite database into the configured target database.
 //
-//   php bin/victual-db-import [/path/to/victual.db] [--force]
+//   php bin/victual-db-import [/path/to/victual.db] [--force] [--legacy-zero-prices=unknown|known]
 //
 // The source defaults to victual.db in the data path. The target is whatever config.php
 // selects, which since ADR-0008's retirement is PostgreSQL and nothing else - this command
@@ -43,13 +43,41 @@ if (!defined('VICTUAL_DATAPATH'))
 
 require_once __DIR__ . '/../packages/autoload.php';
 
+// How an imported price of 0 is read (ADR-0045): unknown unless the operator says otherwise
+$legacyZeroPrices = DatabaseImporter::LEGACY_ZERO_PRICES_UNKNOWN;
+foreach ($arguments as $argument)
+{
+	if (str_starts_with($argument, '--legacy-zero-prices='))
+	{
+		$legacyZeroPrices = substr($argument, strlen('--legacy-zero-prices='));
+		if (!in_array($legacyZeroPrices, [DatabaseImporter::LEGACY_ZERO_PRICES_UNKNOWN, DatabaseImporter::LEGACY_ZERO_PRICES_KNOWN], true))
+		{
+			fwrite(STDERR, '--legacy-zero-prices must be "unknown" or "known"' . PHP_EOL);
+			exit(1);
+		}
+	}
+	elseif (str_starts_with($argument, '-') && !in_array($argument, ['--force', '--help', '-h'], true))
+	{
+		// Refused rather than ignored: a misspelt option must not run an import that does
+		// something other than what the operator asked for
+		fwrite(STDERR, 'Unknown option ' . $argument . '; see --help' . PHP_EOL);
+		exit(1);
+	}
+}
+
 if (in_array('--help', $arguments, true) || in_array('-h', $arguments, true))
 {
-	echo "Usage: php bin/victual-db-import [/path/to/victual.db] [--force]\n\n";
+	echo "Usage: php bin/victual-db-import [/path/to/victual.db] [--force] [--legacy-zero-prices=unknown|known]\n\n";
 	echo "  Copies an existing SQLite database into the database configured in config.php.\n";
 	echo '  The source must be at migration ' . DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MIN
 		. ' through ' . DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MAX . ".\n";
-	echo "  --force  Overwrite a target that already contains data.\n\n";
+	echo "  --force  Overwrite a target that already contains data.\n";
+	echo "  --legacy-zero-prices=unknown|known\n";
+	echo "           How every imported price of 0 is read. The default, unknown, treats it as a\n";
+	echo "           price never entered, because the web UI stored 0 for a blank price. known\n";
+	echo "           treats every 0 as free, including any that were never entered. Stored\n";
+	echo "           prices are unchanged either way, and the choice is recorded in\n";
+	echo "           price_interpretation_reports.\n\n";
 	echo "  Replacement scope: every table both engines share is replaced verbatim; a few\n";
 	echo "  target tables are always kept (this engine's own configuration, print/label\n";
 	echo "  history, the target's own MQTT broker state) or are cleared/repaired/recomputed\n";
@@ -137,6 +165,7 @@ try
 		echo $message . PHP_EOL;
 	});
 
+	$importer->SetLegacyZeroPrices($legacyZeroPrices);
 	$report = $importer->Import($force);
 
 	echo PHP_EOL . 'Imported ' . array_sum($report) . ' rows across ' . count($report) . ' tables.' . PHP_EOL;

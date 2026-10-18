@@ -224,6 +224,7 @@
 			<file>tests/Pgsql/ImportChoreConsumeFlagTest.php</file>
 			<file>tests/Pgsql/FiniteNumericColumnsTest.php</file>
 			<file>tests/Pgsql/ImportFiniteNumbersTest.php</file>
+			<file>tests/Pgsql/ImportLegacyZeroPricesTest.php</file>
 		</testsuite>
 		<testsuite name="chores">
 			<file>tests/Pgsql/ChoreExecutionStockUndoTest.php</file>
@@ -236,6 +237,7 @@
 			<file>tests/Pgsql/StockMaintenanceLineageConfinementKeptIdTest.php</file>
 			<file>tests/Pgsql/StockMaintenanceCommandPrivilegesTest.php</file>
 			<file>tests/Pgsql/StockLineageBackfillTest.php</file>
+			<file>tests/Pgsql/LegacyZeroPricePropagationTest.php</file>
 			<file>tests/Pgsql/StockLineageWorkedExamplesTest.php</file>
 		</testsuite>
 		<testsuite name="consumption">

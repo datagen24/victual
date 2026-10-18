@@ -200,7 +200,9 @@ foreach ($views as $view)
 		{
 			$strip = function (&$row)
 			{
-				unset($row['opened_amount'], $row['opened_qu_id'], $row['opened_tare'], $row['opened_measured_at']);
+				// legacy_zero_price (migration 0315, ADR-0045 gate 1) the same way: PostgreSQL's
+				// stock_next_use re-expands s.* over it, and the SQLite fixture adds it
+				unset($row['opened_amount'], $row['opened_qu_id'], $row['opened_tare'], $row['opened_measured_at'], $row['legacy_zero_price']);
 			};
 			foreach ($a as &$row) $strip($row);
 			foreach ($b as &$row) $strip($row);

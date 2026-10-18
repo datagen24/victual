@@ -1612,6 +1612,15 @@ class WireContractTest extends PgsqlSchemaTestCase
 		$schemas = $spec['components']['schemas'];
 
 		$columns = self::relationColumns();
+		// FieldPolicy::INTERNAL_FIELDS are never sent, whatever the caller holds, so they are
+		// not part of what a row of the relation carries on the wire
+		foreach (\Victual\Services\FieldPolicy::INTERNAL_FIELDS as $internalEntity => $internalFields)
+		{
+			if (isset($columns[$internalEntity]))
+			{
+				$columns[$internalEntity] = array_values(array_diff($columns[$internalEntity], $internalFields));
+			}
+		}
 		$noListing = $schemas['ExposedEntityNoListing']['enum'];
 		$keysByEntity = [];
 		$rowsByEntity = [];

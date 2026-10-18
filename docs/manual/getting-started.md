@@ -134,6 +134,14 @@ rows arrive — it also runs the HTML sanitizer over the five rich-text columns 
 any plaintext API key with its hash. Calendar sharing keys stay readable, as they do in an
 in-place grocy upgrade.
 
+A stock price of `0` is read as unknown after an import, not as free, because grocy's purchase
+page stores `0` when the price field is left blank. The stored prices are copied unchanged; the
+import says how many rows it read this way, and records it in the
+`price_interpretation_reports` table. If your source recorded free items as `0`, pass
+`--legacy-zero-prices=known`. That reads every `0` as free, including any price that was
+never entered. Upgrading an existing Victual database applies the same "unknown" reading to
+the zero prices it already holds.
+
 See [db/pgsql/README.md](../../db/pgsql/README.md)
 for the porting rules and the accepted behavioural differences between the two engines.
 
