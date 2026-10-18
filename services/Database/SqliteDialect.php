@@ -168,6 +168,11 @@ class SqliteDialect extends DatabaseDialect
 	{
 	}
 
+	/** @see DatabaseDialect::LockQuantityUnitConversionWrites() */
+	public function LockQuantityUnitConversionWrites(\PDO $pdo): void
+	{
+	}
+
 	/** @see DatabaseDialect::GetRowClaimLockClause() */
 	public function GetRowClaimLockClause(): string
 	{

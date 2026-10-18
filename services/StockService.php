@@ -4958,6 +4958,15 @@ class StockService extends BaseService
 			// overlapping product pair from deadlocking instead of simply queuing.
 			DatabaseService::GetInstance()->LockProductsStock([$productIdToKeep, $productIdToRemove]);
 
+			// Issue #930: the conversion check below and the merge it guards must read the same
+			// conversions, so no conversion may be written - inserted, edited or deleted, global
+			// rows included - until this merge commits. Taken after the product locks, so a path
+			// that holds a product lock and then writes a conversion queues behind the merge
+			// instead of deadlocking with it. The opposite order, a conversion write and then a
+			// product lock in one transaction, would deadlock; generic entity writes take no
+			// product lock, and no StockService booking path writes a conversion before its lock.
+			DatabaseService::GetInstance()->LockQuantityUnitConversionWrites();
+
 			$productToKeep = $this->DB->products($productIdToKeep);
 			$productToRemove = $this->DB->products($productIdToRemove);
 			$conversion = $this->DB->cache__quantity_unit_conversions_resolved()->where('product_id = :1 AND from_qu_id = :2 AND to_qu_id = :3', $productToRemove->id, $productToRemove->qu_id_stock, $productToKeep->qu_id_stock)->fetch();
