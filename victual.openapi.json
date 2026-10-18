@@ -7334,7 +7334,7 @@
 				},
 				"responses": {
 					"200": {
-						"description": "The operation was successful",
+						"description": "The charge cycle was tracked. A caller with BATTERIES_VIEW gets the new battery_charge_cycles row. A caller without it, such as a write-only charger integration, gets only `id`, the new cycle's id, which is what POST /batteries/charge-cycles/{chargeCycleId}/undo takes; reading the row needs BATTERIES_VIEW (ADR-0035, issue #908).",
 						"content": {
 							"application/json": {
 								"schema": {

@@ -226,4 +226,54 @@ class ViewPermissionGatingTest extends PgsqlSchemaTestCase
 		self::grant(['ADMIN']);
 		$this->expectStatus(fn () => self::$generic->UserentitiesList(self::request(), new Response(), []), 200, 'UserentitiesList allowed with ADMIN alone');
 	}
+
+	/** POST /api/batteries/{id}/charge as the fixture caller; returns the response. */
+	private function trackCharge(int $expectedStatus, string $message)
+	{
+		$request = self::request('POST')->withParsedBody([])->withHeader('Content-Type', 'application/json');
+
+		return $this->expectStatus(fn () => self::$batteriesApi->TrackChargeCycle($request, new Response(), ['batteryId' => 501]), $expectedStatus, $message);
+	}
+
+	/**
+	 * Issue #908 (maintainer decision 2026-10-18): a write-only caller, holding
+	 * BATTERIES_TRACK_CHARGE_CYCLE without BATTERIES_VIEW, may track a charge and gets back only
+	 * the new cycle's id. With BATTERIES_VIEW it gets the full row, and with neither the write
+	 * is refused.
+	 */
+	public function testTrackingAChargeWithoutBatteriesViewReturnsOnlyTheNewCycleId(): void
+	{
+		self::grant([]);
+		$this->trackCharge(403, 'tracking refuses no grants');
+
+		self::grant(['BATTERIES_TRACK_CHARGE_CYCLE']);
+		$receipt = json_decode((string)$this->trackCharge(200, 'tracking is allowed without BATTERIES_VIEW')->getBody(), true);
+		$latest = (int)self::$db->query('SELECT max(id) FROM battery_charge_cycles WHERE battery_id = 501')->fetchColumn();
+		self::assertSame(['id' => $latest], $receipt, 'a caller without BATTERIES_VIEW gets the new cycle id and nothing else');
+
+		self::grant(['BATTERIES_TRACK_CHARGE_CYCLE', 'BATTERIES_VIEW']);
+		$row = json_decode((string)$this->trackCharge(200, 'tracking with BATTERIES_VIEW')->getBody(), true);
+		self::assertSame((int)self::$db->query('SELECT max(id) FROM battery_charge_cycles WHERE battery_id = 501')->fetchColumn(), $row['id']);
+		self::assertSame(501, $row['battery_id'], 'a caller with BATTERIES_VIEW gets the full row');
+		self::assertArrayHasKey('tracked_time', $row);
+	}
+
+	/**
+	 * Issue #908: undo keeps its own permission. A caller holding only
+	 * BATTERIES_UNDO_CHARGE_CYCLE undoes a cycle by the id a write-only tracker received, and
+	 * gets the empty success it always got.
+	 */
+	public function testAnUndoOnlyCallerUndoesACycleByItsReceiptId(): void
+	{
+		self::grant(['BATTERIES_TRACK_CHARGE_CYCLE']);
+		$id = json_decode((string)$this->trackCharge(200, 'a write-only tracker tracks a charge')->getBody(), true)['id'];
+
+		self::grant(['BATTERIES_UNDO_CHARGE_CYCLE']);
+		$this->expectStatus(fn () => self::$batteriesApi->UndoChargeCycle(self::request('POST'), new Response(), ['chargeCycleId' => $id]), 204, 'undo is allowed without BATTERIES_VIEW');
+		self::assertSame(1, (int)self::$db->query("SELECT undone FROM battery_charge_cycles WHERE id = $id")->fetchColumn(), 'and the cycle is undone');
+
+		self::grant([]);
+		$this->expectStatus(fn () => self::$batteriesApi->UndoChargeCycle(self::request('POST'), new Response(), ['chargeCycleId' => $id]), 403, 'undo refuses no grants');
+	}
 }
+
