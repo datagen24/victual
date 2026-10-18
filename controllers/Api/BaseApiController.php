@@ -127,6 +127,13 @@ class BaseApiController extends BaseController
 			return $errorMessage;
 		}
 
+		// Issue #952: the conversion range refusal (migration 0318) carries its own client text,
+		// whichever path rethrew the driver's message
+		if (string_starts_with($errorMessage, 'SQLSTATE[' . \Victual\Services\Database\ConversionChainRange::SQLSTATE . ']'))
+		{
+			return \Victual\Services\Database\ConversionChainRange::FromDriverText($errorMessage);
+		}
+
 		if (string_starts_with($errorMessage, 'SQLSTATE['))
 		{
 			return 'The database rejected this request - check that every value it carries suits the field it is for';
