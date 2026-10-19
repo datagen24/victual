@@ -39,7 +39,7 @@ Evidence classes: device, simulator, live server through fixtures, unit test, de
 | 4. Manual/import duplicate resolution, direct stock undo | Matrix 7.U, 8.U; live fixtures 10 to 13 | unit, live server | A real client across both projects |
 | 5. Refill notices | Matrix 9.U to 11.U (victual-kit PR 18, merge `a91e48d`); the client computes a stand-in status in tests | unit, simulator build | The live replay instance had no refill data and the fixtures do not cover refill routes; local notification delivery never ran |
 | 6. Real-device end-to-end scenario | None | none | All of it; procedure below |
-| 7. Exact commits, commands, native versus fixture evidence | Matrix records client `743ab1f`, server `6ec4173`, spec 0.3.2 | design | `743ab1f` does not resolve after a rebase (merged equivalent: PR 18 head `89e71eb`); the matrix was not re-pinned after victual-kit PR 21 vendored the v0.4.0 spec (upstream `89cea94`) |
+| 7. Exact commits, commands, native versus fixture evidence | Matrix re-pinned 2026-10-19 to client `e837335` (victual-kit PR 43 merge, v0.4.4 contract), server v0.4.4 `f1247252`, spec sha256 `a73cdb65…b0b4`; `swift test` passed in victual-kit CI run 39060910056 | unit, live server | None. The earlier client commit `743ab1f` did not resolve after a rebase. The client tracks released server versions only |
 
 The live replay (victual-kit PR 20, merge `2f77301`, run 4) passed 28 of 28 server fixtures against a
 v0.4.0 instance (tag commit `f73d2bec`, database version 307), with both actors holding `ADMIN`.
