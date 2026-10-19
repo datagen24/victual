@@ -785,6 +785,15 @@ that requirement.
 
 **Limitations for the release record.** No real Health store was observed, so identifier changes on
 edit and delete, late delivery and background delivery are known from Apple's documentation and the
-client's design, not from observation. The victual-kit acceptance matrix still names a client commit
-(`743ab1f`) that no longer resolves after a rebase and predates the v0.4.0 spec pin.
+client's design, not from observation.
+
+**Client commit, 2026-10-19.** The victual-kit matrix first named client commit `743ab1f`, which no
+longer resolves after a rebase. It is now recorded at victual-kit `e837335`, the merge that moved the
+client to the v0.4.4 contract, with `swift test` passing in CI run 39060910056 and every cited test
+present at that commit. With the client from the same pull request, a live run against a 0.4.3
+instance, whose document differs from 0.4.4 only in `info.version`, passed the client calls and 28 of
+28 consumption fixtures (victual-kit `docs/acceptance/live-server-replay.md`).
+
+The client follows released server versions only, because its evidence needs a live server running
+the release. It is not moved to an unreleased contract, which is why #891 was closed as not planned.
 
