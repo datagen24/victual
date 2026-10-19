@@ -115,6 +115,7 @@ These records are excluded from the page-cleanup audit:
 
 - Upstream `changelog/` history and `LICENSE.md`.
 - Agent instructions, skills, execution records, and `memory/`.
+- The verbatim release-planning copies under `release-planning/2026-10-15/evidence/historical-*`.
 - `.work/`, `.devtools/adr00*` (spike evidence attached to an ADR), and archived `docs/plans/.versions/` snapshots.
 - GitHub issue and pull request templates.
 - Generated audit reports and rule-test fixtures.
