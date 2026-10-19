@@ -68,60 +68,6 @@
    "pr": null
   },
   {
-   "number": 987,
-   "title": "Consume stores any integer recipe_id, including negative ids and ids no recipe has",
-   "url": "https://github.com/datagen24/victual/issues/987",
-   "state": "open",
-   "labels": [
-    "bug",
-    "php",
-    "Low"
-   ],
-   "closed_at": null,
-   "priority": "P3",
-   "size": "S",
-   "fit": "Compatible fix: invalid input is refused, valid input is unchanged.",
-   "classification": "bug",
-   "next_action": "Review and merge PR #1013.",
-   "pr": "https://github.com/datagen24/victual/pull/1013"
-  },
-  {
-   "number": 988,
-   "title": "prose-baseline-prune fails daily: it pushes to master, which requires a pull request",
-   "url": "https://github.com/datagen24/victual/issues/988",
-   "state": "open",
-   "labels": [
-    "bug",
-    "Low"
-   ],
-   "closed_at": null,
-   "priority": "P3",
-   "size": "S",
-   "fit": "CI hygiene: no application change.",
-   "classification": "ci",
-   "next_action": "Merge PR #1012, enable 'Allow GitHub Actions to create and approve pull requests', then run the workflow by hand once.",
-   "pr": "https://github.com/datagen24/victual/pull/1012"
-  },
-  {
-   "number": 989,
-   "title": "Calendar API 500 includes the user-supplied event title in its body",
-   "url": "https://github.com/datagen24/victual/issues/989",
-   "state": "open",
-   "labels": [
-    "bug",
-    "php",
-    "Low",
-    "Security"
-   ],
-   "closed_at": null,
-   "priority": "P3",
-   "size": "S",
-   "fit": "Low-severity disclosure fix: the response body changes only on the error path.",
-   "classification": "security",
-   "next_action": "Review and merge PR #1015.",
-   "pr": "https://github.com/datagen24/victual/pull/1015"
-  },
-  {
    "number": 991,
    "title": "Uploading a userfile under an existing unreferenced name reveals that the name exists",
    "url": "https://github.com/datagen24/victual/issues/991",
@@ -136,8 +82,8 @@
    "size": "S",
    "fit": "Low-severity disclosure fix: needs the ADR-0048 item 9 decision first.",
    "classification": "security",
-   "next_action": "Decide whether the existence signal matters; update ADR-0048 item 9.",
-   "pr": null
+   "next_action": "Review PR #1016. It corrects the planning premise: DELETE does not reveal the name.",
+   "pr": "https://github.com/datagen24/victual/pull/1016"
   },
   {
    "number": 1010,
@@ -154,6 +100,60 @@
    "classification": "release evidence",
    "next_action": "Run the documented dump and restore against the v0.5.0 images on a disposable database and record the report.",
    "pr": null
+  },
+  {
+   "number": 987,
+   "title": "Consume stores any integer recipe_id, including negative ids and ids no recipe has",
+   "url": "https://github.com/datagen24/victual/issues/987",
+   "state": "closed",
+   "labels": [
+    "bug",
+    "php",
+    "Low"
+   ],
+   "closed_at": "2026-10-19T21:12:15Z",
+   "priority": "P3",
+   "size": "S",
+   "fit": "Compatible fix: invalid input is refused, valid input is unchanged.",
+   "classification": "bug",
+   "next_action": "Review and merge PR #1013.",
+   "pr": "https://github.com/datagen24/victual/pull/1013"
+  },
+  {
+   "number": 988,
+   "title": "prose-baseline-prune fails daily: it pushes to master, which requires a pull request",
+   "url": "https://github.com/datagen24/victual/issues/988",
+   "state": "closed",
+   "labels": [
+    "bug",
+    "Low"
+   ],
+   "closed_at": "2026-10-19T21:06:35Z",
+   "priority": "P3",
+   "size": "S",
+   "fit": "CI hygiene: no application change.",
+   "classification": "ci",
+   "next_action": "Merge PR #1012, enable 'Allow GitHub Actions to create and approve pull requests', then run the workflow by hand once.",
+   "pr": "https://github.com/datagen24/victual/pull/1012"
+  },
+  {
+   "number": 989,
+   "title": "Calendar API 500 includes the user-supplied event title in its body",
+   "url": "https://github.com/datagen24/victual/issues/989",
+   "state": "closed",
+   "labels": [
+    "bug",
+    "php",
+    "Low",
+    "Security"
+   ],
+   "closed_at": "2026-10-19T21:21:58Z",
+   "priority": "P3",
+   "size": "S",
+   "fit": "Low-severity disclosure fix: the response body changes only on the error path.",
+   "classification": "security",
+   "next_action": "Review and merge PR #1015.",
+   "pr": "https://github.com/datagen24/victual/pull/1015"
   }
  ],
  "milestones": [
@@ -171,8 +171,8 @@
    "number": 7,
    "title": "0.5.1",
    "state": "open",
-   "open_issues": 8,
-   "closed_issues": 0,
+   "open_issues": 5,
+   "closed_issues": 3,
    "description": "Follow-ups found while building 0.5.0 that do not block the first production release: presentation residuals, low-severity disclosures and CI hygiene. Lands after 0.5.0 and before 0.6.0.",
    "html_url": "https://github.com/datagen24/victual/milestone/7",
    "due_on": null
@@ -199,14 +199,14 @@
   }
  ],
  "observation": {
-  "observed_at": "2026-10-19T20:48:10Z",
+  "observed_at": "2026-10-19T21:22:24Z",
   "source": "GitHub REST API via gh",
-  "evidence_directory": "evidence/refresh-2026-10-19T204810Z",
-  "master_sha": "1058a2431528c730c6a72cd59b155e6105908f12",
+  "evidence_directory": "evidence/refresh-2026-10-19T212224Z",
+  "master_sha": "edccb8884748b898cbd4423d80ff0cbc577b20f5",
   "latest_release": "v0.5.0",
   "latest_release_published_at": "2026-10-19T12:28:41Z",
-  "open_issues": 27,
-  "open_prs": 0,
+  "open_issues": 24,
+  "open_prs": 2,
   "unassigned_open_issues": [
    80,
    86,
@@ -293,6 +293,33 @@
    "question": "Where does the 0.5.1 dashboard live?",
    "answer": "A new dated directory, release-planning/2026-10-19. The 0.5.0 plan in release-planning/2026-10-15 stays frozen.",
    "issues": []
+  },
+  {
+   "id": "P4",
+   "date": "2026-10-19",
+   "question": "How does the Vale baseline prune land, now that master accepts only pull requests (#988)?",
+   "answer": "The workflow opens or updates a pull request from chore/vale-baseline-prune using GITHUB_TOKEN. The maintainer enables \"Allow GitHub Actions to create and approve pull requests\" and closes and reopens each prune pull request to start its checks.",
+   "issues": [
+    988
+   ]
+  },
+  {
+   "id": "P5",
+   "date": "2026-10-19",
+   "question": "May the calendar 500 body carry the user-supplied event title (#989)?",
+   "answer": "No. The body is the fixed message; the title, type and id go to the server log.",
+   "issues": [
+    989
+   ]
+  },
+  {
+   "id": "P6",
+   "date": "2026-10-19",
+   "question": "Does the userfile name-existence signal on upload need a fix (#991)?",
+   "answer": "No. Accepted as a residual in ADR-0048 item 9. The first rationale offered said DELETE revealed the same signal; it does not (204 either way). The maintainer kept the acceptance on the corrected reasoning.",
+   "issues": [
+    991
+   ]
   }
  ],
  "github_writes": [

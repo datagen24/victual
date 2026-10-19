@@ -8,8 +8,9 @@
   [issue 905](https://github.com/datagen24/victual/issues/905), and the view-owner decision
   of 2026-10-13 recorded in decision item 8, are the source of every decision item below.
 - **Referenced by:** [issue 905](https://github.com/datagen24/victual/issues/905),
-  [issue 920](https://github.com/datagen24/victual/issues/920), and the implementation
-  in [PR 919](https://github.com/datagen24/victual/pull/919).
+  [issue 920](https://github.com/datagen24/victual/issues/920), the implementation
+  in [PR 919](https://github.com/datagen24/victual/pull/919), and
+  [issue 991](https://github.com/datagen24/victual/issues/991) (accepted residual).
 - **Relationship:** partly supersedes accepted
   [ADR-0035](0035-batteries-equipment-calendar-and-custom-entities-require-view-permissions.md):
   only the sentence in its 2026-10-13 amendment that leaves the `userfiles` file group
@@ -182,6 +183,25 @@ current owner, checked atomically with the mutation."
 That is how an upload is attached, and nothing records whether an unreferenced file was
 uploaded a moment ago or left behind by an earlier owner. An upload under an existing
 unreferenced name still answers 400, so it tells the caller that the name exists.
+
+**Accepted residual, 2026-10-19.** The maintainer accepted this signal on
+[issue 991](https://github.com/datagen24/victual/issues/991). It is not a change to any
+decision item. The signal is limited in four ways:
+
+- Only a caller who holds the group's write right can make the upload, so only that caller
+  learns anything.
+- The caller learns only that the name is taken. An unreferenced file is an orphan under
+  item 3, so its bytes remain readable by `ADMIN` only, and nothing names its earlier owner.
+- Other routes give no answer. Deleting an unreferenced name answers 204 whether or not a
+  file has it, and a refused read answers the same whether or not the name exists (see
+  "Refusals are indistinguishable" below).
+- The browser names each upload with two `Math.random()` draws in base 36 before the
+  extension. A caller must therefore already know the name, or guess one that an API
+  client chose predictably.
+
+A uniform answer would need an upload to replace an orphan, or names scoped to the
+uploader. The first lets one caller replace bytes it could not read. The second is a schema
+change, which a patch release does not carry.
 
 ## Consequences
 
