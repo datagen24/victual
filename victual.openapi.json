@@ -7695,7 +7695,7 @@
 						"$ref": "#/components/responses/Forbidden"
 					}
 				},
-				"description": "If an internal calendar event lacks the type or entity ID needed for a stable UID, the current 500 error_message names the missing fields and may include that event’s title. Access to this endpoint follows its documented credentials; the title disclosure is tracked separately."
+				"description": "If an internal calendar event lacks the type or entity ID needed for a stable UID, the 500 error_message names the missing fields and nothing else. The event's title is written to the server log, never to the response. Access to this endpoint follows its documented credentials."
 			}
 		},
 		"/calendar/ical/sharing-link": {

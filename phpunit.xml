@@ -180,6 +180,7 @@
 		<testsuite name="httpboot">
 			<file>tests/Pgsql/HttpBootTest.php</file>
 			<file>tests/Pgsql/CalendarIdentityTest.php</file>
+			<file>tests/Pgsql/CalendarMalformedEventTest.php</file>
 			<file>tests/Pgsql/ViewCorrectionsHttpTest.php</file>
 			<file>tests/Pgsql/ReferenceRefusalTest.php</file>
 			<file>tests/Pgsql/ApiInputShapesTest.php</file>
