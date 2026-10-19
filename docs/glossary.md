@@ -58,6 +58,13 @@ relationship does not follow automatically. Explicit relationships use
 `product_substitutions`; packaging relationships also contribute to the resolved view.
 See [ADR-0023](adr/0023-taxonomy-is-groups-packaging-is-parent-product.md).
 
+### Household asset
+
+Proposed in [Household inventory and the equipment rebuild](plans/38-household-inventory.md).
+An identifiable belonging with its own placement, documents and lifecycle, such as a
+television or drill. Distinct from a stock product and its quantity balances. The proposal
+expands Equipment; it is not implemented.
+
 ### Inventory
 
 In a stock action, setting the recorded amount to a counted value. Use **stock** for
@@ -69,6 +76,9 @@ when the context could be ambiguous. See [Stock](manual/using-victual/stock.md).
 A place where stock is stored, represented by `locations`. Locations can nest, such as
 a shelf inside a fridge. A location can also represent a refillable vessel.
 A shopping location identifies a store. See [Stock](manual/using-victual/stock.md).
+The [household inventory proposal](plans/38-household-inventory.md#houses-storage-units-and-locations)
+adds houses and storage units above these location trees. That property level is not
+implemented.
 
 ### Lot
 

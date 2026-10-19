@@ -126,6 +126,66 @@ is both regionally correct and always current. Fixing lookup is the better inves
    enough that it is worth making the manual path pleasant rather than chasing perfect
    coverage.
 
+## Household inventory lookup candidates (2026-10-19)
+
+[Household inventory](38-household-inventory.md#product-metadata-lookup) adds books,
+appliances and other belongings to the lookup requirements. The following research adds
+candidates without answering Q1 or selecting a provider. This plan remains deferred;
+manual household-inventory entry does not depend on its implementation.
+
+Official source documentation was checked on 2026-10-19. These are documentation findings,
+not measured coverage or successful integration tests.
+
+| Source | Documented access and scope | Qualification |
+|---|---|---|
+| [Brocade.io repository](https://github.com/EventideSystems/brocade.io) | Documents unauthenticated `GET /api/items/{gtin}` for general product metadata. | GitHub marks the repository archived on 2025-12-21. Federation is a stated goal, not a verified operating network. Keep it an evaluation candidate until service availability, data rights and useful coverage are established. |
+| [Open Food Facts API](https://openfoodfacts.github.io/openfoodfacts-server/api/) | Crowdsourced food-product data with public reads. Already configured as Victual's default lookup plugin. | Free access is rate-limited. Its documentation distinguishes the ODbL database, database-content license and image license. Match quality and non-food coverage require separate evidence. |
+| [Inventaire API](https://api.inventaire.io/) and [entity data](https://wiki.inventaire.io/wiki/Entities_data) | Public ISBN lookup through `/api/entities/by-uris?uris=isbn:{isbn}`, using book editions, works and linked Wikidata entities. | The API requires an identifying User-Agent and enforces rate limits. Entity data is described as CC0; that does not establish rights to every linked cover image. It is a book source, not a general appliance catalogue. |
+
+Brocade's README describes unrestricted reads but also allows future rate or authorization
+constraints. Its software license does not establish the license of every product record.
+The browsing tool could not access the site or its documented sample endpoint during this
+review; this is an availability-verification gap, not proof that the service is offline.
+
+Open Food Facts requires an identifying User-Agent and recommends dataset downloads for
+large retrievals. Provider-specific throttling, bounded retries and reusable results are
+design requirements for a source with request limits. This qualifies Q4's earlier
+latency-only rationale for caching; no cache implementation is selected here.
+
+The existing plugin contract returns fields for stock-product entry. Books and household
+assets need an explicit mapping for metadata such as authors, editions, manufacturer and
+model. Choosing a provider alone does not make those fields available to asset entry.
+
+### Evaluation and integration requirements
+
+Extend the pantry experiment with a separately reported household sample: books, tools,
+electronics, batteries, cleaning products and items without barcodes. Record expected
+identity before lookup. For each source record exact matches, wrong matches, misses,
+field completeness, response time, errors and applicable usage terms. Identify the date,
+sample and client revision so the comparison can be repeated. Do not infer household
+coverage from a food-only sample or treat any returned response as a correct match.
+
+Route verified ISBNs to book metadata and select other sources by supported product
+scope. Validate checksums and identifier equivalence without losing leading zeros.
+Compare the returned identifier with the request; fuzzy search results need explicit
+verification. A GTIN or ISBN identifies a product or edition, not the household's copy.
+
+Keep source identifiers, retrieval time and attribution with imported metadata. Preserve
+user edits and show conflicting candidates for review. Separate a confirmed miss from
+an outage or rate-limit response when caching. Cache keys include source, identifier
+scheme, normalized identifier and relevant locale; bound positive and negative lifetimes.
+
+Use approved provider endpoints and the existing restricted image-fetch path. Neither
+barcode text nor provider data may choose an arbitrary outbound destination. A federation
+claim does not authorize following unknown peers. An external lookup transmits the
+public product identifier, not receipts, serial numbers, room names or ownership records.
+Uploading household information to a community database is outside this proposal.
+
+Verify timeout, malformed response, incorrect identity, rate-limit, conflicting metadata
+and unavailable-image cases before enabling any provider. Manual entry remains usable
+through each failure. Bookmarks to open services do not establish a reliable lookup chain;
+source selection and order still depend on the experiment.
+
 ## Effort
 
 Small. The FDC plugin is a few hours including the verification logic; the chaining plugin
