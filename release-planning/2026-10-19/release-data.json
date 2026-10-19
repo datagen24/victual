@@ -82,8 +82,8 @@
    "size": "S",
    "fit": "Compatible fix: invalid input is refused, valid input is unchanged.",
    "classification": "bug",
-   "next_action": "Validate recipe_id names a recipe; 400 otherwise.",
-   "pr": null
+   "next_action": "Review and merge PR #1013.",
+   "pr": "https://github.com/datagen24/victual/pull/1013"
   },
   {
    "number": 988,
