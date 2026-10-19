@@ -280,6 +280,29 @@ New attachment design must address shared receipts, inherited row restrictions, 
 files, derivatives and atomic authorization. A new file group is not an exemption from
 record visibility. Any changed accepted file policy needs its own superseding ADR.
 
+## Product metadata lookup
+
+Household inventory needs metadata for several product categories. Open Food Facts,
+Inventaire and Brocade.io are candidates documented in
+[plan 09's household lookup research](09-barcode-lookup-sources.md#household-inventory-lookup-candidates-2026-10-19).
+That research records access limits, source status and the coverage experiment still
+needed. It does not establish universal lookup coverage or choose a provider.
+
+Use local inventory and previously retrieved metadata before an external lookup when
+appropriate. A known product can prefill another asset's descriptive fields, but its
+purchase date, serial number, warranty, condition and ownership remain instance-specific.
+An ISBN identifies a book edition; several owned copies remain separate assets.
+
+Lookup provides reviewable suggestions with source information. Preserve user corrections,
+handle conflicting results, and allow manual entry for misses or unavailable providers.
+Do not silently replace asset data when a provider changes its catalogue. Attribution
+and image-use requirements must be retained through display and export.
+
+Plan 09 owns provider evaluation. This plan owns the asset-field mapping and entry
+experience; the current stock plugin's return fields are not already an asset metadata
+contract. Provider selection does not gate manual entry in stage A. The household sample
+must include books and non-food goods as well as pantry items before lookup is promised.
+
 ## Mobile and other clients
 
 Apple Intelligence, camera capture, voice entry and room scanning belong in the native
@@ -409,6 +432,9 @@ The implementation's acceptance evidence must demonstrate these outcomes:
 16. Restore a database dump and any filesystem-backed uploads through the existing
     operator procedure. Verify the new household records, relationships and attachments.
     Native backup-file export/import verification belongs to plan 39.
+17. Metadata lookup rejects a wrong returned identifier and keeps separate copies of the
+    same product or book edition. Provider misses, timeouts and rate limits leave manual
+    entry available. Refresh preserves user edits, provenance and attribution.
 
 Use an agreed representative household fixture to measure entry time, item retrieval,
 report generation and migration completeness before and after implementation. Record its
