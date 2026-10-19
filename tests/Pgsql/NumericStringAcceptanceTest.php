@@ -270,17 +270,17 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 		],
 		'consume.recipe_id' => [
 			'2' => '200|1|rows=1 sum=9 price=null recipe_id=2',
-			'-2' => '200|1|rows=1 sum=9 price=null recipe_id=-2',
+			'-2' => '400|1|rows=1 sum=10 price=null recipe_id=-',
 			'2.5' => '400|1|rows=1 sum=10 price=null recipe_id=-',
 			'1e3' => '200|1|rows=1 sum=9 price=null recipe_id=1000',
 			'1E3' => '200|1|rows=1 sum=9 price=null recipe_id=1000',
 			'1e-3' => '400|1|rows=1 sum=10 price=null recipe_id=-',
 			'1e309' => '400|1|rows=1 sum=10 price=null recipe_id=-',
-			'-0' => '200|1|rows=1 sum=9 price=null recipe_id=0',
-			'0' => '200|1|rows=1 sum=9 price=null recipe_id=0',
+			'-0' => '400|1|rows=1 sum=10 price=null recipe_id=-',
+			'0' => '400|1|rows=1 sum=10 price=null recipe_id=-',
 			'400 digits (number)' => '400|1|rows=1 sum=10 price=null recipe_id=-',
 			'"2"' => '200|1|rows=1 sum=9 price=null recipe_id=2',
-			'"-2"' => '200|1|rows=1 sum=9 price=null recipe_id=-2',
+			'"-2"' => '400|1|rows=1 sum=10 price=null recipe_id=-',
 			'"+2"' => '200|1|rows=1 sum=9 price=null recipe_id=2',
 			'"2.5"' => '400|1|rows=1 sum=10 price=null recipe_id=-',
 			'".5"' => '400|1|rows=1 sum=10 price=null recipe_id=-',
@@ -302,8 +302,8 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 			'"NaN"' => '400|1|rows=1 sum=10 price=null recipe_id=-',
 			'"INF"' => '400|1|rows=1 sum=10 price=null recipe_id=-',
 			'"1e309"' => '400|1|rows=1 sum=10 price=null recipe_id=-',
-			'"-0"' => '200|1|rows=1 sum=9 price=null recipe_id=0',
-			'"0"' => '200|1|rows=1 sum=9 price=null recipe_id=0',
+			'"-0"' => '400|1|rows=1 sum=10 price=null recipe_id=-',
+			'"0"' => '400|1|rows=1 sum=10 price=null recipe_id=-',
 			'"400 digits"' => '400|1|rows=1 sum=10 price=null recipe_id=-',
 			'"\\r2"' => '200|1|rows=1 sum=9 price=null recipe_id=2',
 			'"\\u000b2"' => '200|1|rows=1 sum=9 price=null recipe_id=2',
@@ -326,7 +326,9 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 			'99999999999' => '400|1|rows=1 sum=10 price=null recipe_id=-',
 			'"99999999999"' => '400|1|rows=1 sum=10 price=null recipe_id=-',
 			'-1e309' => '400|1|rows=1 sum=10 price=null recipe_id=-',
-			'-2147483648' => '200|1|rows=1 sum=9 price=null recipe_id=-2147483648',
+			'-2147483648' => '400|1|rows=1 sum=10 price=null recipe_id=-',
+			// #987: a positive id that names no recipe is refused like zero and the negatives.
+			'3' => '400|1|rows=1 sum=10 price=null recipe_id=-',
 		],
 		'consume.by-barcode.recipe_id' => [
 			'2' => '200|1|rows=1 sum=9 price=null recipe_id=2',
@@ -1138,6 +1140,7 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 	/** @var array<string, array<string, string>> field => input => server message, for the failure report only */
 	private static array $messages = [];
 
+	/** Creates the admin API key, a quantity unit, and the fixed products and recipes 2 and 1000. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -1163,6 +1166,14 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 		{
 			self::$db->prepare('INSERT INTO products (id, name, location_id, qu_id_purchase, qu_id_stock) VALUES (?, ?, ?, ?, ?)')
 				->execute([$id, "NumFixedProduct $id", $locationId, self::$quId, self::$quId]);
+		}
+
+		// The same two ids as recipes, for consume's recipe_id: it must name an existing recipe
+		// (#987), and a value read as 2 or as 1000 still shows which spelling was accepted.
+		self::$db->exec("SELECT setval(pg_get_serial_sequence('recipes', 'id'), 5000)");
+		foreach ([2, 1000] as $id)
+		{
+			self::$db->prepare('INSERT INTO recipes (id, name) VALUES (?, ?)')->execute([$id, "NumFixedRecipe $id"]);
 		}
 	}
 
@@ -1204,6 +1215,7 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 	// HTTP + fixture helpers (same pattern as StockPurchaseInventoryInputTest.php)
 	// ------------------------------------------------------------------------------
 
+	/** Sends one request with the raw JSON body through the subprocess helper and returns its status and body. */
 	private static function Request(string $method, string $path, string $rawBody): array
 	{
 		$spec = [
@@ -1244,6 +1256,7 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 		return $result;
 	}
 
+	/** Inserts one row and returns its id. */
 	private static function insertRow(string $table, array $columns): int
 	{
 		$names = implode(', ', array_keys($columns));
@@ -1254,6 +1267,7 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/** Returns the first column of the first row as a string, or "-" when there is none. */
 	private static function scalar(string $sql, array $params = []): string
 	{
 		$statement = self::$db->prepare($sql);
@@ -1280,6 +1294,7 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 		return [$locationId, $productId];
 	}
 
+	/** Inserts one stock entry for the product and returns its id. */
 	private static function insertStock(int $productId, int $locationId, float $amount, array $overrides = []): int
 	{
 		self::$counter++;
@@ -1538,6 +1553,10 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 			// Negative extremes #950 probed: an infinite double and the 32-bit minimum.
 			$inputs['-1e309'] = '-1e309';
 			$inputs['-2147483648'] = '-2147483648';
+			if ($field === 'consume.recipe_id')
+			{
+				$inputs['3'] = '3';
+			}
 		}
 
 		// A price of null is "no price" (or, on edit, "clear it"), which the document says.
@@ -1553,6 +1572,7 @@ class NumericStringAcceptanceTest extends PgsqlSchemaTestCase
 	// Characterisation
 	// ------------------------------------------------------------------------------
 
+	/** Every input to the field answers its pinned status and leaves its pinned stored state. */
 	#[DataProvider('fieldProvider')]
 	public function testFieldAcceptance(string $field): void
 	{

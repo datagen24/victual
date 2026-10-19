@@ -665,6 +665,17 @@ class StockApiController extends BaseApiController
 					throw new \Exception('The recipe id must be finite');
 				}
 				$recipeId = $requestBody['recipe_id'];
+
+				// Issue #987: an id that names no recipe was stored as sent, so zero, a negative
+				// number or a deleted recipe's id became stock_log.recipe_id, which has no
+				// foreign key. The raw value is looked up rather than a cast of it, so
+				// PostgreSQL's integer parser decides what is readable, exactly as it does for
+				// the stock_log insert. The accepted spellings stay unchanged, and an
+				// unreadable one still fails here, before anything is booked.
+				if ($this->DB->recipes()->where('id = :1', $recipeId)->fetch() === null)
+				{
+					throw new \Exception('Recipe does not exist');
+				}
 			}
 
 			$consumeExact = false;
