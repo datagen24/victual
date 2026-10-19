@@ -104,7 +104,7 @@ describe them.
 The section above was written on 2026-09-04 and said the locations UI was owned by nobody
 else. That was true of the UI and false of everything underneath it. ADR-0011 had decided the
 payload, the stability mechanism, the symbology and the print path, and had scheduled none of
-them; [22](22-medication-tracking.md)'s question 6 found the same gap and declined to close
+them; [22](landed/22-medication-tracking.md)'s question 6 found the same gap and declined to close
 it. So this plan was left holding a print action with nothing to print — the `labels` table,
 the print job, the printer configuration and the worker that renders were all unowned.
 

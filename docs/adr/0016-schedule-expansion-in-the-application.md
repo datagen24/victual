@@ -4,13 +4,13 @@
   scope; see Disposition. The reasoning below stays as history.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
-- **Recorded:** 2026-09-04, alongside [plan 22](../plans/22-medication-tracking.md).
+- **Recorded:** 2026-09-04, alongside [plan 22](../plans/landed/22-medication-tracking.md).
 - **Relationship:** an **input to** [ADR-0009](0009-database-as-the-logic-layer.md), not a
   contradiction of it. 0009 is Proposed, and per the constitution a Proposed record
   constrains nothing — so this record does not overrule anything. What it does is name one
   class of logic that should stay in PHP *even if 0009 is accepted*, and hand 0009 a concrete
   case to be judged against instead of an abstraction.
-- **Constrains:** [22](../plans/22-medication-tracking.md) piece 4.
+- **Constrains:** [22](../plans/landed/22-medication-tracking.md) piece 4.
 - **Would affect:** [0009](0009-database-as-the-logic-layer.md)'s scope if accepted,
   [18](../plans/18-mqtt-state-publication.md) and [02](../plans/02-mcp-endpoint.md) by way of
   what they can answer without waking the pod.
@@ -20,7 +20,7 @@
 This section prepares the maintainer's lifecycle decision. It does not change the status
 line, which stays Proposed, and it removes nothing from the record below.
 
-On 2026-10-09 the maintainer narrowed [plan 22](../plans/22-medication-tracking.md) to
+On 2026-10-09 the maintainer narrowed [plan 22](../plans/landed/22-medication-tracking.md) to
 inventory, private consumption recipes and refill notices. The plan no longer schedules doses,
 expands recurrence rules, classifies missed doses or raises dose alerts. This record's subject,
 where recurrence expansion runs, therefore has no consumer in the planned release. Its
@@ -40,7 +40,7 @@ nothing while Proposed), or accept it, which would bind a scheduler that does no
 
 ## Context
 
-[Plan 22](../plans/22-medication-tracking.md) needs one question answered constantly: *what
+[Plan 22](../plans/landed/22-medication-tracking.md) needs one question answered constantly: *what
 doses are due between A and B*. Answering it means expanding a recurrence rule — twice daily at
 08:00 and 20:00, every third day, 21 days on and 7 off — into discrete occurrences over a
 window.

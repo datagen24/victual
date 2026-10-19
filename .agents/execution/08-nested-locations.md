@@ -167,7 +167,7 @@ branch. D2 after C. E last. One feature branch, one pull request, following plan
 ### A. Schema, view, triggers, reservations
 
 Files: `migrations/0273.pgsql.sql` (new), `migrations/RESERVATIONS.md`, `db/pgsql/README.md`
-(the target line), `docs/plans/22-medication-tracking.md` and
+(the target line), `docs/plans/landed/22-medication-tracking.md` and
 `docs/plans/landed/23-storage-classes.md` (migration numbers only), `docs/plans/README.md` (the
 same numbers in the status rows for 22, 23 and 08).
 

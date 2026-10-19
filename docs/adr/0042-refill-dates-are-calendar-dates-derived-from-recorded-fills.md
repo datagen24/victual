@@ -5,7 +5,7 @@
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-09, against `master` at `216af2b2`. Design work only: it changes no
   code, reserves no migration number and amends no accepted record.
-- **Referenced by:** [plan 22](../plans/22-medication-tracking.md) (Q14, Q16) and
+- **Referenced by:** [plan 22](../plans/landed/22-medication-tracking.md) (Q14, Q16) and
   [issue 697](https://github.com/datagen24/victual/issues/697). Dependent implementation:
   [issue 701](https://github.com/datagen24/victual/issues/701). Native delivery:
   [issue 702](https://github.com/datagen24/victual/issues/702).

@@ -7,7 +7,7 @@ cheese cave and a medication fridge stop being the same thing.
 **Depends on:** nothing. Interacts with [08](08-nested-locations.md), whose Q3 answer this
 adopts unchanged.
 
-**Consumed by:** [22](../22-medication-tracking.md), which needs a product to be able to
+**Consumed by:** [22](22-medication-tracking.md), which needs a product to be able to
 require a class. Extracted from 22 per its Q1 — this is a general locations feature that
 medication happens to need first, and it changes a column every client of `/objects/locations`
 can see, which is not a change that should arrive as a side effect of a medication plan.
@@ -30,7 +30,7 @@ The household already has four things on the wrong side of that boolean — a wi
 cheese cave, a medication fridge and a deep freeze. All four are `is_freezer = 0` except the
 last, which is `is_freezer = 1` and thereby indistinguishable from a domestic freezer holding
 peas. Nothing in the tree can express that 2–8 °C is a requirement rather than a preference,
-which is why [22](../22-medication-tracking.md) cannot be built on what exists.
+which is why [22](22-medication-tracking.md) cannot be built on what exists.
 
 ## Proposed change
 
@@ -118,7 +118,7 @@ That is the fixture this plan should be tested against too.
 
 ## Interaction with 22
 
-[22](../22-medication-tracking.md) adds `required_storage_class_id` to its own medication master
+[22](22-medication-tracking.md) adds `required_storage_class_id` to its own medication master
 data and warns on a mismatch — the product declares a requirement, the location declares a
 capability, and the comparison is between two fields a human entered. That comparison lives in
 22, not here. This plan supplies the vocabulary and nothing else.
@@ -143,7 +143,7 @@ capability, and the comparison is between two fields a human entered. That compa
    > `is_freezer = 1`, which is correct by construction, and **Ambient everywhere else**,
    > which is a guess. NULL and Ambient are not the same claim: NULL says nobody has
    > classified this, Ambient says someone has classified it as room temperature. Plan
-   > [22](../22-medication-tracking.md) warns on a mismatch between a product's required class
+   > [22](22-medication-tracking.md) warns on a mismatch between a product's required class
    > and its location's, so a guessed Ambient would make that check fire against data no
    > human entered — and a warning derived from a guess is the kind of thing
    > [ADR-0015](../../adr/0015-medication-records-never-advises.md) exists to keep out of a
@@ -169,7 +169,7 @@ capability, and the comparison is between two fields a human entered. That compa
    > worth a trigger pair on both engines plus its differential proof — a real cost under
    > the live dual-engine discipline, paid against a speculative caller.
    >
-   > **This does not automatically settle [22](../22-medication-tracking.md) Q4**, which asks
+   > **This does not automatically settle [22](22-medication-tracking.md) Q4**, which asks
    > the same trigger-versus-application question about copying medication stock attributes
    > on a split. 22 Q4 said the two should be answered together or the difference explained;
    > here is the difference. This question's trigger case was the importer, and it
@@ -185,7 +185,7 @@ capability, and the comparison is between two fields a human entered. That compa
 4. **Do the seeded temperature ranges mean anything to the code, or are they documentation?**
    Nothing in v1 resolves a class *from* a temperature, so the ranges are metadata that
    happens to be structured — which also means the touching boundaries (Cooler 8–15, Ambient
-   15–25) are harmless. *Lean: keep them structured anyway. [22](../22-medication-tracking.md)'s
+   15–25) are harmless. *Lean: keep them structured anyway. [22](22-medication-tracking.md)'s
    excursion handling wants to compare an observed temperature against a range, and a range
    stored as two numbers is ready for that while a range stored in a name is not.*
 

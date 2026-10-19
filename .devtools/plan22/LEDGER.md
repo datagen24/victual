@@ -1,6 +1,6 @@
 # Plan 22 remaining work: coordination ledger
 
-Working record for the remaining work of [plan 22](../../docs/plans/22-medication-tracking.md)
+Working record for the remaining work of [plan 22](../../docs/plans/landed/22-medication-tracking.md)
 and the defects victual-kit testing found. The plan's Executed section and the plans index stay
 the authority on what shipped; this file tracks what is open, what each item waits on, and what
 evidence exists. Read against `master` at `d4960138` (merge of #707) on 2026-10-11. Research was

@@ -13,7 +13,7 @@ else. It also interacts with [07](../retired/07-nested-products.md), which rewri
 aggregation in `stock_current`, and with the container decision recorded below that came out
 of the same review. Scheduled into wave 4 beside 07 for that reason.
 
-**Consumed by:** nothing yet. [22](../22-medication-tracking.md) is the obvious later
+**Consumed by:** nothing yet. [22](22-medication-tracking.md) is the obvious later
 customer — a part-used bottle is the same shape of problem — but that plan is unscheduled
 and this one does not wait for it.
 

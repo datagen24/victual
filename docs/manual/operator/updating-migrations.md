@@ -268,7 +268,7 @@ shows merging is needed.
 
 ## Migrations 0305 to 0307: consumption recipes, external events and refills
 
-Release 0.4.0 adds three migrations for [plan 22](../../plans/22-medication-tracking.md). They
+Release 0.4.0 adds three migrations for [plan 22](../../plans/landed/22-medication-tracking.md). They
 create new tables and one set of columns on a table the first of them creates. None rewrites
 `stock`, `stock_log` or any other table that existed before, and none refuses an upgrade over
 existing data, so the upgrade preflight has nothing to refuse and there is nothing to repair first.

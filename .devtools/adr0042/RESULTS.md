@@ -307,7 +307,7 @@ ended) when a newer fill is recorded.
 | Tables since migration 0266 enforce invariants with constraints | True for 0270 and 0272 (19 and 20 `CHECK` occurrences); not checked for every later migration. |
 | Date table: 2028-01-15 plus 16 days labelled "leap year" | The date is right (2028-01-31), but the span never reaches February, so the row does not test a leap day. A leap-day case would be 2028-02-20 plus 16 days = 2028-03-07 (2028-03-06 in a non-leap year). The random set covers 12,000 cases around February 27 to March 1 with 0 differences. |
 | Table dates checked "on 2026-10-09" | Reproduced: all four dates and `floor(90 * 0.75) = 67` agree in PHP and SQL. |
-| Maintainer decision on 2026-10-09; seven days is a recommendation | Cannot be verified from the tree. Plan 22 Q14 and Q16 exist (`docs/plans/22-medication-tracking.md:325,337`). Issues 697, 701 and 702 exist and are open. |
+| Maintainer decision on 2026-10-09; seven days is a recommendation | Cannot be verified from the tree. Plan 22 Q14 and Q16 exist (`docs/plans/landed/22-medication-tracking.md:325,337`). Issues 697, 701 and 702 exist and are open. |
 
 ## Gaps in the ADR text the probes made concrete
 

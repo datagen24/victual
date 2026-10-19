@@ -28,7 +28,7 @@ was written.
 [ADR-0011](../adr/0011-label-namespace.md) was accepted 2026-09-04 and says so itself: "no
 `labels` table exists, no print outbox exists, and the fork still emits Grocycodes through the
 webhook … acceptance decides the namespace, not the schedule." Nothing was scheduled
-afterwards. [22](22-medication-tracking.md)'s question 6 found the same gap from the other
+afterwards. [22](landed/22-medication-tracking.md)'s question 6 found the same gap from the other
 side and declined to close it, for a reason worth repeating here: a medication plan that built
 a general label system would have become that system's owner by accident.
 

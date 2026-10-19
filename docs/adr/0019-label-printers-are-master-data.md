@@ -52,7 +52,7 @@
   supplying them.
 - **Would affect:** [06](../plans/06-location-barcodes.md),
   [17](../plans/17-ecosystem-clients.md), [20](../plans/20-container-infrastructure.md),
-  [22](../plans/22-medication-tracking.md).
+  [22](../plans/landed/22-medication-tracking.md).
 
 ## Context
 
@@ -80,7 +80,7 @@ edited through `Victual.EntityList` / `Victual.EntityForm`
 [ADR-0011](0011-label-namespace.md) was accepted 2026-09-04: label payloads are
 `vctl:<uid>`, printing becomes an outbox a drainer consumes, rendering leaves this
 repository, and the webhook is retired. Nothing of it is built.
-[Plan 22](../plans/22-medication-tracking.md) question 6 declined to own the machinery —
+[Plan 22](../plans/landed/22-medication-tracking.md) question 6 declined to own the machinery —
 its lean is that medication ships without labels rather than a medication plan quietly
 becoming the label subsystem's owner — so the `labels` table, the print event and the
 worker have no owning plan today.
@@ -1789,7 +1789,7 @@ The boundaries above are decided; these are the values inside them, and they bel
 implementation plan rather than to this record.
 
 1. **Which plan owns delivery.** No plan does today —
-   [22](../plans/22-medication-tracking.md) question 6 declined the label machinery and
+   [22](../plans/landed/22-medication-tracking.md) question 6 declined the label machinery and
    [06](../plans/06-location-barcodes.md) covers the locations half only. The verification
    these gates deliberately exclude has to land somewhere, and a plan is where.
 
