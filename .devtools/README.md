@@ -60,7 +60,7 @@ evidence; it is not part of any CI job.
 | `issue648/` | `run.sh` (a Swift package that checks OpenAPI union decoding) | [ADR-0027](../docs/adr/0027-timestamps-are-local-strings-documented-booleans-are-booleans.md) |
 | `issue742/` | `run.sh` | [ADR-0043](../docs/adr/0043-creating-shared-master-data-is-a-right-below-master-data-edit.md) |
 | `home-assistant/` | `probe/deploy.sh <ssh-host>`; `lifecycle-spike/spike.sh` | [Plan 35: Home Assistant target](../docs/plans/35-home-assistant-target.md) |
-| `plan22/` | `LEDGER.md` and `NATIVE-ACCEPTANCE.md`, working records with no scripts | [Plan 22: medication tracking](../docs/plans/22-medication-tracking.md) |
+| `plan22/` | `LEDGER.md` and `NATIVE-ACCEPTANCE.md`, working records with no scripts | [Plan 22: medication tracking](../docs/plans/landed/22-medication-tracking.md) |
 | `spikes/oauth-hydra/` | `run.sh` | [oauth-hydra README](spikes/oauth-hydra/README.md) |
 
 ## Inherited from upstream grocy

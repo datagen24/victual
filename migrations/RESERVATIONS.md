@@ -89,9 +89,9 @@ have recorded it.
 | 0302 | `stock_edited_entries` rewritten without a join between two aggregated CTEs, so the price-cache triggers, `reconcile_stock_log_cache()` and `uihelper_product_details` stop costing time quadratic in `stock_log`; same rows as 0267's definition | in `master` |
 | 0303 | issue [#612](https://github.com/datagen24/victual/issues/612), [ADR-0037](../docs/adr/0037-an-undo-of-a-whole-row-consumption-revives-the-stock-entry-label-it-retired.md) — `stock_label_retirements` (one event per stock-entry label retirement, written by a trigger on `labels`), the legacy backfill with its own validation, and an index on `print_jobs (label_uid, id)` for the trigger and the claim predicate | in `master` |
 | 0304 | issue [#665](https://github.com/datagen24/victual/issues/665), [ADR-0036](../docs/adr/0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md) — `stock_row_lots` (contributions) and `stock_booking_lots` (allocations), the legacy backfill (`stock_lineage_families()`, `stock_lineage_backfill()`) with invariant validation (`stock_lineage_violations()`), and `trg_cascade_change_qu_id_stock` redefined to rescale both tables | in `master` ([PR 669](https://github.com/datagen24/victual/pull/669), issue #665) |
-| 0305 | [plan 22](../docs/plans/22-medication-tracking.md), [issue 698](https://github.com/datagen24/victual/issues/698), [ADR-0040](../docs/adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md) and [ADR-0041](../docs/adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md) — `consumption_recipes`, `consumption_recipe_lines`, `consumption_recipe_shares`, `consumption_events`, `consumption_event_lines` and the two share-owner triggers. The source-mapping table and the external-source event columns move to issue #700's own migration, claimed when it is written | in `master` (PRs #735, #736) |
-| 0306 | [plan 22](../docs/plans/22-medication-tracking.md), [issue 700](https://github.com/datagen24/victual/issues/700), [ADR-0041](../docs/adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md) — `consumption_mappings` and the external-source columns of `consumption_events` and `consumption_event_lines` (the half 0305 deferred to this issue); no second ledger | in `master` ([PR 739](https://github.com/datagen24/victual/pull/739), issue #700) |
-| 0307 | [plan 22](../docs/plans/22-medication-tracking.md), [issue 701](https://github.com/datagen24/victual/issues/701) — refill settings, fills, orders and notice acknowledgements ([ADR-0042](../docs/adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md), Accepted 2026-10-09) — `consumption_refill_settings`, `consumption_refill_fills`, `consumption_refill_dates`, `consumption_refill_orders` and `consumption_refill_acks`, with six trigger functions that keep fills immutable, end an explicit date when a newer fill or a void supersedes it, and keep a closed order closed. Replaces the 2026-09-04 sketch (`regimens`, `regimen_doses`, `administrations`, `storage_excursions`), which the 2026-10-09 scope withdrew | in `master` ([PR 748](https://github.com/datagen24/victual/pull/748), issue #701) |
+| 0305 | [plan 22](../docs/plans/landed/22-medication-tracking.md), [issue 698](https://github.com/datagen24/victual/issues/698), [ADR-0040](../docs/adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md) and [ADR-0041](../docs/adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md) — `consumption_recipes`, `consumption_recipe_lines`, `consumption_recipe_shares`, `consumption_events`, `consumption_event_lines` and the two share-owner triggers. The source-mapping table and the external-source event columns move to issue #700's own migration, claimed when it is written | in `master` (PRs #735, #736) |
+| 0306 | [plan 22](../docs/plans/landed/22-medication-tracking.md), [issue 700](https://github.com/datagen24/victual/issues/700), [ADR-0041](../docs/adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md) — `consumption_mappings` and the external-source columns of `consumption_events` and `consumption_event_lines` (the half 0305 deferred to this issue); no second ledger | in `master` ([PR 739](https://github.com/datagen24/victual/pull/739), issue #700) |
+| 0307 | [plan 22](../docs/plans/landed/22-medication-tracking.md), [issue 701](https://github.com/datagen24/victual/issues/701) — refill settings, fills, orders and notice acknowledgements ([ADR-0042](../docs/adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md), Accepted 2026-10-09) — `consumption_refill_settings`, `consumption_refill_fills`, `consumption_refill_dates`, `consumption_refill_orders` and `consumption_refill_acks`, with six trigger functions that keep fills immutable, end an explicit date when a newer fill or a void supersedes it, and keep a closed order closed. Replaces the 2026-09-04 sketch (`regimens`, `regimen_doses`, `administrations`, `storage_excursions`), which the 2026-10-09 scope withdrew | in `master` ([PR 748](https://github.com/datagen24/victual/pull/748), issue #701) |
 | 0308 | [ADR-0043](../docs/adr/0043-creating-shared-master-data-is-a-right-below-master-data-edit.md) (Proposed), [issue 742](https://github.com/datagen24/victual/issues/742) — the `MASTER_DATA_ADD` permission, nested under `MASTER_DATA_EDIT` the way `STOCK_PRICES_VIEW` (0281) nests under `STOCK_PURCHASE`, with no grant backfill; the statement is `db/pgsql/master-data-add-seed.sql`, which `DatabaseImporter` replays after a legacy import | in `master` ([PR 883](https://github.com/datagen24/victual/pull/883), issue #742) |
 | 0309 | [issues #849, #853, #866, #868](https://github.com/datagen24/victual/issues/868), 2026-10-12 audit remediation — `quantity_unit_conversions_factor_positive` (with a refusing preflight), `trg_cascade_change_qu_id_stock` redefined to refuse a non-positive resolved factor and to rescale `consumption_mappings.quantity_factor` (qu_id NULL) and `consumption_event_lines.amount`, `stock_log_UPD` and `stock_log_DEL` as statement-level triggers, `stock_lineage_backfill` without the correlated subquery | in `master` ([PR 879](https://github.com/datagen24/victual/pull/879), issues #849, #853, #866, #868) |
 | 0310 | audit 2026-10-12, issues [#864](https://github.com/datagen24/victual/issues/864) and [#867](https://github.com/datagen24/victual/issues/867), [ADR-0041](../docs/adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md) — `consumption_event_lines.location_id` becomes `ON DELETE SET NULL`, and a trigger on `consumption_events` refuses one stock transaction used as the booking of one event and the link of another, except the same user's own `manual` event (rule 9), with a read-only preflight that stops on existing offenders | in `master` ([PR 882](https://github.com/datagen24/victual/pull/882), issues #863, #864, #867, #870) |
@@ -229,7 +229,7 @@ Renumbered again on 2026-09-28, once more: issue [#552](https://github.com/datag
 written on this branch as `0295.pgsql.sql`, above plan 22's still-unwritten claims. Per the
 lowest-free-slot rule, the file the branch is actually writing takes the lowest free slot and
 plan 22's two unwritten claims move up in turn, from 0295–0296 to **0296–0297**, keeping their
-own order. [Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note moves with this
+own order. [Plan 22](../docs/plans/landed/22-medication-tracking.md)'s numbering note moves with this
 table. The next unclaimed number is now **0298**.
 
 Renumbered again on 2026-09-29, yet again: three branches claimed the same lowest free slots
@@ -241,7 +241,7 @@ Issue [#492](https://github.com/datagen24/victual/issues/492) (H3, #487 remediat
 `stock_amount_non_negative_check` fix is written on this branch as `0297.pgsql.sql`, the next
 lowest free slot once 0295–0296 are spoken for, above plan 22's still-unwritten claims. Per the
 lowest-free-slot rule, plan 22's two unwritten claims move up in turn, from 0295–0296 to
-**0298–0299**, keeping their own order. [Plan 22](../docs/plans/22-medication-tracking.md)'s
+**0298–0299**, keeping their own order. [Plan 22](../docs/plans/landed/22-medication-tracking.md)'s
 numbering note moves with this table.
 
 **Update, same day:** PR #624 has since merged to `master` (18d0389d), so 0295's row above now
@@ -275,7 +275,7 @@ recipe cost/calorie follow-up) has since claimed 0300 on its own branch. Per the
 lowest-free-slot rule, a number with a file, or a number another still-open branch has
 already claimed, both outrank an unscheduled draft's placeholder. Plan 22's two claims yield
 to both and move up in turn, from 0299–0300 to **0301–0302**, keeping their own order.
-[Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note moves with this table.
+[Plan 22](../docs/plans/landed/22-medication-tracking.md)'s numbering note moves with this table.
 
 The migration-numbering check needs no `--allow-reserved-holes` waiver on this branch any
 more: 0295 through 0299 are all now files on disk with no hole below them, and 0300's open
@@ -345,7 +345,7 @@ Renumbered again on 2026-09-28, once more: issue [#552](https://github.com/datag
 written on this branch as `0295.pgsql.sql`, above plan 22's still-unwritten claims. Per the
 lowest-free-slot rule, the file the branch is actually writing takes the lowest free slot and
 plan 22's two unwritten claims move up in turn, from 0295–0296 to **0296–0297**, keeping their
-own order. [Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note moves with this
+own order. [Plan 22](../docs/plans/landed/22-medication-tracking.md)'s numbering note moves with this
 table. The next unclaimed number is now **0298**.
 
 Renumbered again on 2026-09-29, yet again: three branches claimed the same lowest free slots
@@ -357,7 +357,7 @@ Issue [#492](https://github.com/datagen24/victual/issues/492) (H3, #487 remediat
 `stock_amount_non_negative_check` fix is written on this branch as `0297.pgsql.sql`, the next
 lowest free slot once 0295–0296 are spoken for, above plan 22's still-unwritten claims. Per the
 lowest-free-slot rule, plan 22's two unwritten claims move up in turn, from 0295–0296 to
-**0298–0299**, keeping their own order. [Plan 22](../docs/plans/22-medication-tracking.md)'s
+**0298–0299**, keeping their own order. [Plan 22](../docs/plans/landed/22-medication-tracking.md)'s
 numbering note moves with this table.
 
 **Update, same day:** PR #624 has since merged to `master` (18d0389d), so 0295's row above now
@@ -377,7 +377,7 @@ and [#546](https://github.com/datagen24/victual/issues/546) (#487 remediation)'s
 plan 22's still-unwritten claims. Per the lowest-free-slot rule, the file the branch is
 actually writing takes the lowest free slot and plan 22's two unwritten claims move up in
 turn, from 0294–0295 to **0295–0296**, keeping their own order.
-[Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note moves with this table. The
+[Plan 22](../docs/plans/landed/22-medication-tracking.md)'s numbering note moves with this table. The
 next unclaimed number is now **0297**.
 
 Renumbered again on 2026-09-28: issue [#508](https://github.com/datagen24/victual/issues/508)
@@ -386,7 +386,7 @@ Renumbered again on 2026-09-28: issue [#508](https://github.com/datagen24/victua
 written on this branch as `0293.pgsql.sql`, above plan 22's still-unwritten claims. Per the
 lowest-free-slot rule, the file the branch is actually writing takes the lowest free slot and
 plan 22's two unwritten claims move up in turn, from 0293–0294 to **0294–0295**, keeping their
-own order. [Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note moves with this
+own order. [Plan 22](../docs/plans/landed/22-medication-tracking.md)'s numbering note moves with this
 table. The next unclaimed number is now **0296**.
 
 The file under 0262 was edited in place during review rather than followed by a migration
@@ -400,7 +400,7 @@ Renumbered 2026-09-28, later still again: issue [#588](https://github.com/datage
 this branch as `0292.pgsql.sql`, above plan 22's still-unwritten claims. Per the lowest-free-slot
 rule, the file the branch is actually writing takes the lowest free slot and plan 22's two
 unwritten claims move up in turn, from 0292–0293 to **0293–0294**, keeping their own order.
-[Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note moves with this table. The
+[Plan 22](../docs/plans/landed/22-medication-tracking.md)'s numbering note moves with this table. The
 next unclaimed number is now **0295**.
 
 Renumbered 2026-09-28, later still: issue [#506](https://github.com/datagen24/victual/issues/506)'s
@@ -409,7 +409,7 @@ maintainer decision D5 is being written on this branch as `0291.pgsql.sql`. It a
 after a second validator round showed `xmin` identifies a whole transaction rather than one
 execution. 0291 is the lowest free slot now that PR #580's move (below) has settled `0290`.
 Plan 22's two unwritten claims move up in turn, from 0291–0292 to **0292–0293**, keeping their
-own order. [Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note moves with this
+own order. [Plan 22](../docs/plans/landed/22-medication-tracking.md)'s numbering note moves with this
 table. The next unclaimed number is now **0294**.
 
 Renumbered 2026-09-28: issue [#487](https://github.com/datagen24/victual/issues/487)
@@ -419,14 +419,14 @@ never-expiring, unlabelled rows for issues 488 and 491) was written to disk as
 `check-migrations.php` refuses without `--allow-reserved-holes`, which CI does not set. Per
 the lowest-free-slot rule, the file moves down to **0290** and plan 22's two unwritten claims
 move up in turn, from 0290–0291 to **0291–0292**, keeping their own order.
-[Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note moves with this table.
+[Plan 22](../docs/plans/landed/22-medication-tracking.md)'s numbering note moves with this table.
 The next unclaimed number is now **0293**.
 
 Renumbered 2026-09-26: issue [#487](https://github.com/datagen24/victual/issues/487)
 remediation's view-correction migration (PR #542, fixing issues 501, 505, 497 and the
 weekly-schedule half of 506) takes **0289** under the lowest-free-slot rule; plan 22's two
 unwritten claims move from 0289–0290 to **0290–0291**, keeping their own order.
-[Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note moves with this table.
+[Plan 22](../docs/plans/landed/22-medication-tracking.md)'s numbering note moves with this table.
 The next unclaimed number is now **0292**.
 
 Renumbered 2026-09-24: issue 461 takes 0288 under the lowest-free-slot rule.
@@ -449,7 +449,7 @@ the fifth, sixth and seventh moves — while 0278–0281 remain claims with no f
 So the fix takes the lowest free slot, 0277, and plans 30, 31 and 22 each move up by one: 30
 to 0278, 31 to 0279, 22 to 0280–0281. [Plan 30](../docs/plans/landed/30-nested-product-groups.md) and
 [31](../docs/plans/landed/31-directed-substitution.md)'s own migration-number lines move with this
-table; [22](../docs/plans/22-medication-tracking.md)'s numbering note does too.
+table; [22](../docs/plans/landed/22-medication-tracking.md)'s numbering note does too.
 
 ## The merge order this implies — discharged
 
@@ -491,7 +491,7 @@ lowest free slot and the unscheduled claim moves up.
 
 So plan 19 piece 2 takes **0280** (displacing its own prior 0282 claim down
 by two) and plan 22 moves from 0280-0281 to **0281-0282**, keeping its own two-number span
-intact. [Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note moves with this
+intact. [Plan 22](../docs/plans/landed/22-medication-tracking.md)'s numbering note moves with this
 table. The next unclaimed number is now **0283**.
 
 0263 and 0264 are one change in two numbers on purpose: the column has to exist before the

@@ -18,7 +18,7 @@
 -- is merged rather than solely deleted).
 --
 -- Round 2 (same migration number - see migrations/RESERVATIONS.md and
--- docs/plans/22-medication-tracking.md for why this stays 0292 rather than claiming a new
+-- docs/plans/landed/22-medication-tracking.md for why this stays 0292 rather than claiming a new
 -- number): a validator found that #588's third "Expected" bullet was not met yet. Fixing
 -- only DEL's key (OLD.id -> OLD.product_id) is not enough, because trg_stock_log_UPD has a
 -- *different* bug from the same family - reachable from the UI, not just from an id

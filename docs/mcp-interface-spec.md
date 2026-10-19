@@ -456,7 +456,7 @@ Recorded so their absence reads as decided, not forgotten:
 
 ### 10.1 Medication and private consumption data
 
-Decided for [plan 22](plans/22-medication-tracking.md) and recorded in
+Decided for [plan 22](plans/landed/22-medication-tracking.md) and recorded in
 [ADR-0015](adr/0015-medication-records-never-advises.md) (Accepted 2026-10-09):
 
 - **No tool reads or writes the consumption or refill routes.** The routes under

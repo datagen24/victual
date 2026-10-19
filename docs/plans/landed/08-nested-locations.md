@@ -147,7 +147,7 @@ Fourteen things are worth recording because they are not derivable from it.
 
 **The migration number moved once more, and this was the eighth move of the same three
 numbers.** The plan was scoped against a table that had 0273 for [23](23-storage-classes.md)
-and 0274–0275 for [22](../22-medication-tracking.md); 0273 went to this plan, so 23 is now 0274
+and 0274–0275 for [22](22-medication-tracking.md); 0273 went to this plan, so 23 is now 0274
 and 22 is 0275–0276. The rule is the one the reservations table has applied seven times
 before: the number about to have a *file* behind it takes the lowest free slot and unwritten
 drafts move up.

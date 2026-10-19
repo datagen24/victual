@@ -106,7 +106,7 @@ handling this plan owns. The ADRs are published and the plans are not, so every 
 those links has to resolve to the repository instead of to a page.
 
 **One defect found during this research has been fixed.** Four citations in
-[plan 22](../22-medication-tracking.md) were written as links to a
+[plan 22](22-medication-tracking.md) were written as links to a
 `services/StockService.php:1457` line-suffix form, which is not a path in the tree —
 `git ls-files --error-unmatch 'services/StockService.php:204'` fails — so they rendered as
 links on GitHub and resolved to nothing. They are now plain `` `StockService.php:1472` ``

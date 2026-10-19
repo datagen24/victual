@@ -35,7 +35,7 @@ See [Stock](manual/using-victual/stock.md).
 Defined in [ADR-0040](adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md) (Accepted 2026-10-09, implemented by issue 698).
 An owned list of product lines and quantities consumed together, such as a prescription.
 It is separate from the food `recipes` table and visible only to its owner and users it is
-shared with. See [plan 22](plans/22-medication-tracking.md).
+shared with. See [plan 22](plans/landed/22-medication-tracking.md).
 
 ### Consumption event
 
