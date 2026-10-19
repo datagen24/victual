@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Victual · 0.5.1 release</title>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--ink:#192936;--muted:#526575;--line:#d7e0e5;--accent:#075f70;--warn:#8b3e10;--soft:#e8f3f4;--red:#a22936}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,sans-serif}a{color:var(--accent);text-underline-offset:3px}button,input,select{font:inherit}button,select{cursor:pointer}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #e99124;outline-offset:3px}header{background:#132d3a;color:white;padding:28px max(24px,calc((100vw - 1440px)/2))}header a{color:#a9e2e7}header p{max-width:1100px;margin:8px 0}h1{font-size:30px;letter-spacing:-.5px;margin:0}h2{font-size:23px;margin:0 0 14px}h3{font-size:17px;margin:0 0 8px}p{margin:8px 0 14px}.eyebrow{font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:#b7d5de}.meta{font:12px/1.6 ui-monospace,monospace;overflow-wrap:anywhere;color:#d0dfe4}.layout{display:grid;grid-template-columns:190px minmax(0,1fr);max-width:1488px;margin:auto}.nav{position:sticky;top:0;align-self:start;padding:24px 12px}.nav button{display:block;width:100%;text-align:left;border:0;background:transparent;color:var(--muted);padding:11px 12px;border-radius:7px;margin-bottom:4px}.nav button[aria-selected=true]{background:var(--accent);color:white}.nav a{display:block;font-size:13px;padding:7px 12px}main{min-width:0;padding:24px}.panel{display:none}.panel.active{display:block}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:0 0 20px}.card,.block{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:16px}.cards .card{margin:0}.metric{font-size:28px;font-weight:700}.label{font-size:12px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}.muted{color:var(--muted);font-size:13px}.badge{display:inline-block;background:var(--soft);color:var(--accent);padding:3px 8px;border-radius:5px;font-size:12px;margin:3px 5px 3px 0}.warning{border-left:4px solid var(--warn)}.risk{color:var(--red)}.filters{display:flex;flex-wrap:wrap;gap:10px;align-items:end;background:var(--card);border:1px solid var(--line);padding:16px;border-radius:10px;margin-bottom:16px}.filters label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:5px}.filters select,.filters input{max-width:230px;min-height:38px;border:1px solid var(--line);padding:7px;border-radius:5px;background:var(--card);color:var(--ink)}.button{background:var(--accent);color:white;border:0;padding:9px 13px;border-radius:6px}.secondary{background:var(--soft);color:var(--accent)}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:9px;background:var(--card)}table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;padding:12px;vertical-align:top;border-bottom:1px solid var(--line)}th{position:sticky;top:0;background:var(--soft);white-space:nowrap}th button{color:var(--ink);border:0;background:transparent;font-weight:600;padding:0}td{min-width:110px}td:first-child{min-width:300px;max-width:440px}tr:last-child td{border-bottom:0}summary{cursor:pointer;color:var(--accent);font-weight:600}details p{font-size:13px;font-weight:400;color:var(--ink)}details{margin:4px 0}ul{padding-left:22px}.path{display:grid;gap:10px}.step{display:grid;grid-template-columns:36px 1fr;gap:12px;background:var(--card);padding:17px;border:1px solid var(--line);border-radius:8px}.step-num{background:var(--accent);color:white;border-radius:50%;width:30px;height:30px;display:grid;place-items:center}.sources{display:flex;flex-wrap:wrap;gap:7px;font-size:12px;margin-top:10px}.sources a{overflow-wrap:anywhere}.decision{border-left:4px solid #b17420}.pillbar{margin:5px 0 10px}.empty{padding:30px;text-align:center;color:var(--muted)}.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}.small{font-size:12px}.footer{margin-top:24px;border-top:1px solid var(--line);padding-top:12px;color:var(--muted);font-size:12px}.sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0)}code{overflow-wrap:anywhere}pre{overflow:auto;white-space:pre-wrap;font-size:12px}.release-card{border-top:3px solid var(--accent)}
+@media(max-width:900px){.layout{grid-template-columns:1fr}.nav{position:static;display:flex;flex-wrap:wrap;gap:4px;padding:12px}.nav button{width:auto;margin:0}.nav a{padding:10px}.pair{grid-template-columns:1fr}main{padding:14px}header{padding:22px}h1{font-size:25px}}
+@media(prefers-color-scheme:dark){:root{--bg:#101c24;--card:#192934;--ink:#e0e9ee;--muted:#abc0cd;--line:#354b59;--accent:#83d6df;--soft:#233d47;--warn:#dc9a55;--red:#f5a0a5}.button,.step-num,.nav button[aria-selected=true]{background:#176c7d;color:white}header{background:#0b1720}.secondary{background:var(--soft);color:var(--accent)}}
+@media print{.nav,.filters,.no-print{display:none}.layout{display:block}.panel{display:block!important;break-before:page}header{color:black;background:white;padding:0}header a,.meta,.eyebrow{color:black}main{padding:0}.card,.block{break-inside:avoid}table{font-size:9px}th{position:static}.table-wrap{overflow:visible}body{background:white;color:black}.sources a{color:black}}
+</style>
+<style>main{max-width:1440px;margin:auto}.done{opacity:.6}</style>
+</head>
+<body>
+<header><div class="eyebrow">datagen24/victual · patch release lane</div><h1 id="title"></h1><p id="summary"></p><p class="meta" id="meta"></p>
+<a href="dashboard.md">Markdown fallback</a> · <a href="release-data.json">Structured data</a> · <a href="execution.md">Execution ledger</a> · <a href="HANDOFF.md">Handoff</a> · <a href="../2026-10-15/dashboard.html">0.5.0 plan (frozen)</a></header>
+<main>
+<div class="cards" id="metrics"></div>
+<div class="block warning"><h2>Standing rules</h2><ul id="rules"></ul><p class="muted" id="policy"></p></div>
+<h2>Lane issues</h2>
+<div class="filters no-print"><label>State<select id="state-filter"><option value="">All</option><option>open</option><option>closed</option></select></label><label>Search<input id="search" type="search" placeholder="Title, fit, action"></label></div>
+<div class="table-wrap"><table><thead><tr><th scope="col">Issue</th><th scope="col">State</th><th scope="col">Priority / size</th><th scope="col">Classification</th><th scope="col">Patch fit</th><th scope="col">Next action</th><th scope="col">PR</th></tr></thead><tbody id="items"></tbody></table></div>
+<h2 style="margin-top:24px">Open milestones</h2><p class="muted" id="unassigned"></p><div class="cards" id="milestones"></div>
+<h2>Gates carried from 0.5.0</h2><div id="gates"></div>
+<h2>Planning decisions</h2><div id="decisions"></div>
+<h2>GitHub writes made by planning</h2><ul id="writes"></ul>
+<p class="footer">Generated by render.py from release-data.json. The page makes no network requests.</p>
+</main>
+<script>
+const D=__RELEASE_DATA__;
+const ISSUE='https://github.com/datagen24/victual/issues/';
+/** Return the element with the given id. */
+function $(id){return document.getElementById(id);}
+/** Create an element with optional text content and class name. */
+function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefined&&text!==null)e.textContent=text;if(cls)e.className=cls;return e;}
+/** Create a link, accepting only https URLs and relative paths. */
+function anchor(text,url){const a=node('a',text);const u=String(url||'');if(/^(https:\/\/|[\w.\/#-]+$)/.test(u))a.href=u;return a;}
+/** Append links to the given issue numbers to a parent element. */
+function issueLinks(parent,nums){const div=node('div',undefined,'sources');for(const n of nums)div.append(anchor('#'+n,ISSUE+n));parent.append(div);}
+/** Append a card with a title and optional text, and return it. */
+function card(parent,title,text,cls){const c=node('article',undefined,'card '+(cls||''));c.append(node('h3',title));if(text)c.append(node('p',text));parent.append(c);return c;}
+/** Append one metric card. */
+function metric(label,value,note){const c=card($('metrics'),'',null);c.append(node('div',label,'label'),node('div',value,'metric'),node('div',note,'muted'));}
+/** Render the lane issue table using the current filter values. */
+function renderItems(){const st=$('state-filter').value,q=$('search').value.trim().toLowerCase(),body=$('items');body.replaceChildren();
+ const rows=D.items.filter(i=>(!st||i.state===st)&&(!q||JSON.stringify(i).toLowerCase().includes(q)));
+ for(const i of rows){const tr=node('tr',undefined,i.state==='closed'?'done':'');const td=node('td');td.append(anchor('#'+i.number+' '+i.title,i.url));tr.append(td,node('td',i.state),node('td',i.priority+' / '+i.size),node('td',i.classification),node('td',i.fit),node('td',i.next_action));const pr=node('td');if(i.pr)pr.append(anchor(i.pr,i.pr));else pr.textContent='None';tr.append(pr);body.append(tr);}
+ if(!rows.length){const tr=node('tr'),td=node('td','No matching issues.','empty');td.colSpan=7;tr.append(td);body.append(tr);}}
+/** Fill every section of the page from the embedded data. */
+function render(){const o=D.observation,closed=D.items.filter(i=>i.state==='closed').length;
+ $('title').textContent=D.lane+' release lane';
+ $('summary').textContent=closed+' of '+D.items.length+' issues closed. Latest release '+o.latest_release+', published '+o.latest_release_published_at+'.';
+ $('meta').textContent='Observed '+o.observed_at+' · master '+o.master_sha.slice(0,8)+' · evidence '+o.evidence_directory;
+ metric(D.lane+' progress',closed+' / '+D.items.length,'issues closed');
+ metric('Latest release',o.latest_release,o.latest_release_published_at);
+ metric('Open backlog',String(o.open_issues),o.unassigned_open_issues.length+' without a milestone');
+ metric('Open PRs',String(o.open_prs),'repository-wide');
+ for(const r of D.standing_rules)$('rules').append(node('li',r));
+ $('policy').textContent=D.policy.patch;
+ $('unassigned').textContent='Unassigned open issues: '+(o.unassigned_open_issues.map(n=>'#'+n).join(', ')||'none');
+ for(const m of D.milestones){const c=card($('milestones'),m.title,m.description,m.title===D.lane?'release-card':'');c.append(node('p',m.open_issues+' open · '+m.closed_issues+' closed · due '+(m.due_on||'unset'),'muted'));c.append(anchor('Open milestone',m.html_url));}
+ for(const g of D.gates){const c=card($('gates'),g.id+' · '+g.title,null,'warning');c.append(node('p','At v0.5.0: '+g.status_at_v0_5_0),node('p','Now: '+g.status),node('p','Remaining: '+g.remaining),node('p','Closure rule: '+g.closure_rule,'muted'));issueLinks(c,g.issues);}
+ for(const d of D.decisions){const c=card($('decisions'),d.id+' · '+d.question,d.answer,'decision');c.append(node('p',d.date,'muted'));issueLinks(c,d.issues);}
+ for(const w of D.github_writes){const li=node('li',w.at+' · ');li.append(anchor(w.action,w.url));$('writes').append(li);}
+ $('state-filter').addEventListener('change',renderItems);$('search').addEventListener('input',renderItems);renderItems();}
+render();
+</script>
+</body>
+</html>
