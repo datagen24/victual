@@ -136,8 +136,8 @@
    "size": "S",
    "fit": "Low-severity disclosure fix: needs the ADR-0048 item 9 decision first.",
    "classification": "security",
-   "next_action": "Decide whether the existence signal matters; update ADR-0048 item 9.",
-   "pr": null
+   "next_action": "Review PR #1016. It corrects the planning premise: DELETE does not reveal the name.",
+   "pr": "https://github.com/datagen24/victual/pull/1016"
   },
   {
    "number": 1010,

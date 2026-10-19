@@ -29,5 +29,5 @@ refresh.py needs an authenticated `gh` and writes a new evidence directory; rend
 - #987 (P3, S): Validate recipe_id names a recipe; 400 otherwise.
 - #988 (P3, S): Merge PR #1012, enable 'Allow GitHub Actions to create and approve pull requests', then run the workflow by hand once.
 - #989 (P3, S): Decide whether the 500 body may carry the title; otherwise log it server-side.
-- #991 (P3, S): Decide whether the existence signal matters; update ADR-0048 item 9.
+- #991 (P3, S): Review PR #1016. It corrects the planning premise: DELETE does not reveal the name.
 - #1010 (P2, M): Run the documented dump and restore against the v0.5.0 images on a disposable database and record the report.
