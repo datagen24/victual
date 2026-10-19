@@ -38,7 +38,7 @@ python3 .devtools/vale/audit.py docs/manual/getting-started.md --check
 
 The audit command exits 0 after producing a report, even when it finds prose problems.
 `--check` exits 1 for new findings and 2 for setup failures. Stale baseline entries are reported
-but do not fail the check; the scheduled prune on `master` removes them. The JSON report
+but do not fail the check; the scheduled prune pull request removes them. The JSON report
 contains every selected page, including pages with no findings, and the excluded-file list.
 
 ## Rules
@@ -151,8 +151,11 @@ must be fixed or receive a justified rule-specific exception.
 
 **A page cleanup does not edit `baseline.json`.** Fix the findings and leave the baseline
 alone. `--check` reports the entries your fix stranded, and the `prose-baseline-prune`
-workflow removes them from `master` on a schedule. `prune_baseline.py` does the same thing
-locally if you want to see the result:
+workflow removes them on a schedule. It cannot push to `master`, so it opens or updates a
+pull request from the `chore/vale-baseline-prune` branch. Close and reopen that pull
+request to start the required checks before merging it. GitHub does not run workflows for
+a pull request the workflow token opened. `prune_baseline.py` does the same thing locally
+if you want to see the result:
 
 ```sh
 python3 .devtools/vale/prune_baseline.py

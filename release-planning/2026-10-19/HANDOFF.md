@@ -27,7 +27,7 @@ refresh.py needs an authenticated `gh` and writes a new evidence directory; rend
 - #900 (P2, M): Review factual correction separately; defer behavior decisions unless production label scope needs them.
 - #904 (P2, M): Recover 31b3439c/72fdffef without replacing them; migrate only callers required by upcoming validation first.
 - #987 (P3, S): Review and merge PR #1013.
-- #988 (P3, S): Open or update a PR from a fixed branch instead of pushing to master.
+- #988 (P3, S): Merge PR #1012, enable 'Allow GitHub Actions to create and approve pull requests', then run the workflow by hand once.
 - #989 (P3, S): Decide whether the 500 body may carry the title; otherwise log it server-side.
 - #991 (P3, S): Decide whether the existence signal matters; update ADR-0048 item 9.
 - #1010 (P2, M): Run the documented dump and restore against the v0.5.0 images on a disposable database and record the report.
