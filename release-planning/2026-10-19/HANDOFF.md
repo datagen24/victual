@@ -26,7 +26,7 @@ refresh.py needs an authenticated `gh` and writes a new evidence directory; rend
 - #252 (P3, M): Draft a keep or delete proposal per item on the issue; the maintainer decides each one before any code moves.
 - #900 (P2, M): Review factual correction separately; defer behavior decisions unless production label scope needs them.
 - #904 (P2, M): Recover 31b3439c/72fdffef without replacing them; migrate only callers required by upcoming validation first.
-- #987 (P3, S): Validate recipe_id names a recipe; 400 otherwise.
+- #987 (P3, S): Review and merge PR #1013.
 - #988 (P3, S): Merge PR #1012, enable 'Allow GitHub Actions to create and approve pull requests', then run the workflow by hand once.
 - #989 (P3, S): Review and merge PR #1015.
 - #991 (P3, S): Decide whether the existence signal matters; update ADR-0048 item 9.
