@@ -29,9 +29,9 @@ goals.
 ## Current state
 
 **Current version: [0.5.0](docs/releases/0.5.0.md), 2026-10-19**; release tag
-`v0.5.0` is planned. This is an unpublished candidate. Use the last published release,
-[0.4.2](docs/releases/0.4.2.md), for deployment until the candidate's
-signed tag and GHCR artifacts are available.
+`v0.5.0`. A version is published once its signed tag's release workflow has run; the
+[GitHub releases](https://github.com/datagen24/victual/releases) list each published tag with
+its image and chart digests, and its release record says what was verified.
 
 Images and the Helm chart are published
 by the tag-triggered release workflow; changing the version here does not publish them.

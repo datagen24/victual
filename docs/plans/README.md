@@ -102,9 +102,7 @@ Unscheduled work:
   ([issue 209](https://github.com/datagen24/victual/issues/209)).
 - 05 B, if shopping trips justify it.
 - 04's importer and datasets.
-- Plan 22 targets v0.5.0. Its [design records](landed/22-medication-tracking.md#release-readiness)
-  are accepted, issues 698 to 702 are closed, and issue 703's verification is in
-  [0.5.0](../releases/0.5.0.md); plans 23 and 14 piece 2 have landed.
+- Plans 23 and 14 piece 2 have landed, and plan 22 shipped in [0.5.0](../releases/0.5.0.md).
 - The two retirements 24 deferred: archiving migrations 0001–0255, and the differential
   harness itself. Both are unblocked now that 14 piece 2 has landed; neither has been done.
 
