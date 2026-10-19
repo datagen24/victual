@@ -230,11 +230,11 @@ constrained to the old two-migration design.
 The design records are decided: ADR-0015 revised and accepted, ADR-0016 rejected, and ADR-0040,
 ADR-0041 and ADR-0042 accepted, each in its own bookkeeping pull request. ADR-0040 leaves
 ADR-0014 and ADR-0018 unamended. The evidence is in `.devtools/adr0040/`, `.devtools/adr0041/` and
-`.devtools/adr0042/`. Implementation is tracked by issues 698 to 703. Issues 698 to 700 have
-merged. The implementation of issue 701 merged on 2026-10-10 in pull requests 748, 749 and 751, and
-the issue stays open (see its Executed section). The maintainer accepted issue 702 on simulator
-evidence on 2026-10-11. Issues 701, 702 and 742 closed on 2026-10-19 after the gate M1
-reconciliation, and issue 703's verification is in its Executed section.
+`.devtools/adr0042/`.
+
+Implementation is tracked by issues 698 to 703. Issues 698 to 702 are closed; 701, 702 and 742
+closed on 2026-10-19 after the gate M1 reconciliation. Issue 703's verification is in its Executed
+section.
 
 The API contract is developed in this repository. Native HealthKit implementation and
 platform-specific notices belong to `victual-kit`. Server verification can use representative
