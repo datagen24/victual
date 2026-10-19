@@ -52,6 +52,9 @@ Observed 2026-10-19T20:48:10Z. Unassigned open issues: [#80](https://github.com/
 | P1 | 2026-10-19 | Does #909, battery and equipment authorization residuals, stay in 0.5.1? | No. Moved to vNext: the issue is unscheduled and waits on the battery and equipment rework. | [#909](https://github.com/datagen24/victual/issues/909) |
 | P2 | 2026-10-19 | Which backlog items join 0.5.1? | A new restore-drill issue for gate R5 (#1010) and #252, unreachable code. #133 stays unassigned. | [#1010](https://github.com/datagen24/victual/issues/1010), [#252](https://github.com/datagen24/victual/issues/252), [#133](https://github.com/datagen24/victual/issues/133) |
 | P3 | 2026-10-19 | Where does the 0.5.1 dashboard live? | A new dated directory, release-planning/2026-10-19. The 0.5.0 plan in release-planning/2026-10-15 stays frozen. | None |
+| P4 | 2026-10-19 | How does the Vale baseline prune land, now that master accepts only pull requests (#988)? | The workflow opens or updates a pull request from chore/vale-baseline-prune using GITHUB_TOKEN. The maintainer enables "Allow GitHub Actions to create and approve pull requests" and closes and reopens each prune pull request to start its checks. | [#988](https://github.com/datagen24/victual/issues/988) |
+| P5 | 2026-10-19 | May the calendar 500 body carry the user-supplied event title (#989)? | No. The body is the fixed message; the title, type and id go to the server log. | [#989](https://github.com/datagen24/victual/issues/989) |
+| P6 | 2026-10-19 | Does the userfile name-existence signal on upload need a fix (#991)? | No. Accepted as a residual in ADR-0048 item 9. The first rationale offered said DELETE revealed the same signal; it does not (204 either way). The maintainer kept the acceptance on the corrected reasoning. | [#991](https://github.com/datagen24/victual/issues/991) |
 
 ## GitHub writes made by planning
 

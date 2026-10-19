@@ -293,6 +293,33 @@
    "question": "Where does the 0.5.1 dashboard live?",
    "answer": "A new dated directory, release-planning/2026-10-19. The 0.5.0 plan in release-planning/2026-10-15 stays frozen.",
    "issues": []
+  },
+  {
+   "id": "P4",
+   "date": "2026-10-19",
+   "question": "How does the Vale baseline prune land, now that master accepts only pull requests (#988)?",
+   "answer": "The workflow opens or updates a pull request from chore/vale-baseline-prune using GITHUB_TOKEN. The maintainer enables \"Allow GitHub Actions to create and approve pull requests\" and closes and reopens each prune pull request to start its checks.",
+   "issues": [
+    988
+   ]
+  },
+  {
+   "id": "P5",
+   "date": "2026-10-19",
+   "question": "May the calendar 500 body carry the user-supplied event title (#989)?",
+   "answer": "No. The body is the fixed message; the title, type and id go to the server log.",
+   "issues": [
+    989
+   ]
+  },
+  {
+   "id": "P6",
+   "date": "2026-10-19",
+   "question": "Does the userfile name-existence signal on upload need a fix (#991)?",
+   "answer": "No. Accepted as a residual in ADR-0048 item 9. The first rationale offered said DELETE revealed the same signal; it does not (204 either way). The maintainer kept the acceptance on the corrected reasoning.",
+   "issues": [
+    991
+   ]
   }
  ],
  "github_writes": [
