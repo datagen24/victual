@@ -60,6 +60,8 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 35 | [Home Assistant add-on target](35-home-assistant-target.md) | Draft, [issue 654](https://github.com/datagen24/victual/issues/654) and [issue 655](https://github.com/datagen24/victual/issues/655) | Wave-independent. Baseline, requirement ledger, and Supervisor probe results recorded (2026-10-05). Recommends separate add-ons, pending a lifecycle spike whose first run found five design requirements. Ingress design and an MCP client are open. [ADR-0030](../adr/0030-released-images-are-published-to-ghcr.md) is Proposed. |
 | 36 | [Database credential rotation](36-database-credential-rotation.md) | Draft, research only; revised 2026-10-08 after review | Wave-independent. Follows [ADR-0038](../adr/0038-kubernetes-deployments-ship-as-a-helm-chart.md) decision 10 (Proposed). [#674](https://github.com/datagen24/victual/pull/674) and [#676](https://github.com/datagen24/victual/pull/676) (passwords off argv and out of server logs) merged. Implementation waits on open questions 1–2; rotation is enabled only after the item-layout migration (question 13, answered). Vault deferred. |
 | 37 | [API keys that carry chosen rights](37-api-key-scoped-permissions.md) | Draft, research only, 2026-10-10; no issue yet | Wave-independent. Implementation waits on [ADR-0044](../adr/0044-api-keys-carry-a-subset-of-their-owners-permissions.md) (Proposed) and open questions 1 and 2. |
+| 38 | [Household inventory and the equipment rebuild](38-household-inventory.md) | Draft, research only, 2026-10-19 | Wave-independent and unscheduled. Covers belongings, properties, battery links, maintenance, projects, insurance, heirs, moving and exchange. Implementation waits on the foundation questions and separate architectural decisions. |
+| 39 | [Native backup file export and import](39-native-backup-file.md) | Draft design, 2026-10-19 | Unscheduled and independent of plan 38. Designs a UI-based native backup file; database dumps remain the operational approach. Format, scope and restore architecture are open. |
 
 ## Order of operations
 
@@ -98,6 +100,10 @@ publication. See [17](17-ecosystem-clients.md) for client contracts and impact r
 
 Unscheduled work:
 
+- [Household inventory and the equipment rebuild](38-household-inventory.md): research
+  draft; its delivery stages do not assign dates or alter the existing wave order.
+- [Native backup file export and import](39-native-backup-file.md): separate design;
+  no delivery slot and no dependency for the equipment rebuild.
 - MCP writes, after read-only use is proven
   ([issue 209](https://github.com/datagen24/victual/issues/209)).
 - 05 B, if shopping trips justify it.
