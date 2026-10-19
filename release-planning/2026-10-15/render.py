@@ -53,7 +53,7 @@ parts += ['Version 0.5.0, the first production release, is the latest shipped re
           scope_explanation,
           'The 0.5.0 checklist below is the record of how each gate closed at the v0.5.0 tag. Milestone assignment by itself does not make an issue a production gate.',
           '## Current GitHub milestone inventory',
-          'Observed ' + data['observation']['observed_at'] + '. Dates remain unset.',
+          'Observed ' + data['dashboard_refresh'].get('milestones_refreshed_at', data['observation']['observed_at']) + '. Dates remain unset.',
           table(['Milestone', 'State', 'Open issues', 'Closed issues', 'Due date', 'Description'], [[link(m['title'],m['html_url']),m['state'],m['open_issues'],m['closed_issues'],m['due_on'] or 'Unset',m['description']] for m in data['actual_milestones']]),
           '## Milestone metadata proposal',
           table(['Milestone', 'Action', 'Proposed title', 'Proposed description', 'Date', 'Reason'], [[link(m['current'], m['url']), m['action'], m['proposed'], m['proposed_description'], 'Leave unset', m['reason']] for m in data['milestone_changes']]),
