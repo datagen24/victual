@@ -33,10 +33,10 @@
 <section id="next" class="panel" role="tabpanel" aria-labelledby="tab-next"><h2>Smallest useful first batch</h2><p id="batch-note"></p><div id="batch-list"></div><div class="block"><h2>Session budget and handoff</h2><div id="budget"></div><p><a href="HANDOFF.md">Open durable handoff</a> · <a href="release-data.json">Open data source</a> · <a href="render.py">Renderer</a></p><p class="muted">Execution status is recorded in the ledger. The dashboard is local, contains no credentials, and performs no network requests.</p></div></section>
 <footer class="footer" id="footer"></footer>
 </main></div>
-<script id="release-data" type="application/json">__RELEASE_DATA__</script>
 <script>
 'use strict';
-const D=JSON.parse(document.getElementById('release-data').textContent);
+// Data is embedded as a script literal by render.py (which escapes <, U+2028 and U+2029), not read back from DOM text.
+const D=__RELEASE_DATA__;
 const $=id=>document.getElementById(id);
 function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function paragraph(parent,text,cls){parent.append(node('p',text,cls));}
@@ -54,7 +54,7 @@ const deferredCount=scopeCounts['Candidate or deferred; not an automatic product
 $('release-status-banner').textContent=D.observation.latest_release+' is published ('+D.observation.published_at+'). 0.5.1 is the next active release lane. '+ad.note+` Gate status in the checklist is as of the v0.5.0 tag; R5 and R6 were not evidenced. This is a backlog count, not a production-readiness score.`;
 for(const [label,value,note] of [['Latest release',D.observation.latest_release,D.observation.published_at+' · release workflow passed'],['All open backlog',String(D.observation.open_issues),`${aa['0.5.1']} assigned to 0.5.1 · ${aa['0.6.0']} to 0.6.0 · ${aa.Unassigned} unassigned`],['0.5.1 lane',String(aa['0.5.1']||0),'open follow-ups · '+(D.gates.filter(g=>g.status.startsWith('Not evidenced')).map(g=>g.id).join(', ')||'none')+' not evidenced at v0.5.0'],['Open PRs',String(D.observation.open_prs),'Complete repository-wide open-PR query'],['Validated release SHA',D.observation.release_master_sha.slice(0,8),D.execution.published_release.tag+' tag target']]){const c=card($('metrics'),'',null);c.append(node('div',label,'label'),node('div',value,'metric'),node('div',note,'muted'));}
 for(const m of D.actual_milestones){const c=card($('milestone-status'),m.title,null,'release-card');badge(c,m.state);paragraph(c,m.open_issues+' open · '+m.closed_issues+' closed · due '+(m.due_on||'unset'));paragraph(c,m.description||'No description');const a=node('a','Open GitHub milestone');setHref(a,m.html_url);c.append(a);}
-$('milestone-observed').textContent='Fetched '+D.actual_milestones.length+' GitHub milestones and complete issue and pull-request pages at '+D.observation.observed_at+'.';
+$('milestone-observed').textContent='Fetched '+D.actual_milestones.length+' GitHub milestones at '+(D.dashboard_refresh.milestones_refreshed_at||D.observation.observed_at)+'; issue and pull-request pages at '+D.observation.observed_at+'.';
 for(const r of D.releases){const target=r.historical?'shipped-cards':'release-cards';const c=card($(target),r.version,r.outcome,'release-card');badge(c,r.status);paragraph(c,r.actual,'muted');paragraph(c,r.scope);paragraph(c,'Defers / limits: '+r.defers,'muted');links(c,r.evidence);}
 for(const s of D.critical_sequence){const c=node('div',undefined,'step');c.append(node('div',s.step,'step-num'));const body=node('div');body.append(node('h3',s.title));paragraph(body,s.detail);paragraph(body,s.owner+' · '+s.gate_ids.join(', '),'muted');c.append(body);$('critical-path').append(c);}
 for(const m of D.milestone_changes){const e=node('details');e.append(node('summary',m.current+' → '+m.proposed+' · '+m.action));paragraph(e,m.reason);paragraph(e,'Actual description: '+(m.current_description||'(empty)'));paragraph(e,'Proposed: '+m.proposed_description);paragraph(e,'Dates remain unset.');$('metadata-proposals').append(e);}
