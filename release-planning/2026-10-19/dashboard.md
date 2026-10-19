@@ -1,6 +1,6 @@
 # Victual 0.5.1 release dashboard
 
-0.5.1: 0 of 8 issues closed. Latest release v0.5.0 (published 2026-10-19T12:28:41Z). Master `1058a243`. 27 open issues and 0 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-19T20:48:10Z.
+0.5.1: 3 of 8 issues closed. Latest release v0.5.0 (published 2026-10-19T12:28:41Z). Master `edccb888`. 24 open issues and 2 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-19T21:22:24Z.
 
 [Interactive dashboard](dashboard.html) · [Structured source](release-data.json) · [Execution ledger](execution.md) · [Handoff](HANDOFF.md) · [0.5.0 release plan (frozen)](../2026-10-15/dashboard.md)
 
@@ -21,20 +21,20 @@
 | [#252 Code that coverage proved nothing can reach](https://github.com/datagen24/victual/issues/252) | open | P3 | M | investigation | Compatible removal of unreachable code, or a comment that keeps it as a deliberate guard. | Draft a keep or delete proposal per item on the issue; the maintainer decides each one before any code moves. | None |
 | [#900 ADR-0019 does not list the Resolve() validation refusal as a dead-letter cause](https://github.com/datagen24/victual/issues/900) | open | P2 | M | documentation / investigation | Documentation correction only. | Review factual correction separately; defer behavior decisions unless production label scope needs them. | None |
 | [#904 Subprocess test helpers read stdout before stderr and deadlock on more than 64 KB of stderr](https://github.com/datagen24/victual/issues/904) | open | P2 | M | compatible fix (conditional) | Test infrastructure: no application change. | Recover 31b3439c/72fdffef without replacing them; migrate only callers required by upcoming validation first. | None |
-| [#987 Consume stores any integer recipe_id, including negative ids and ids no recipe has](https://github.com/datagen24/victual/issues/987) | open | P3 | S | bug | Compatible fix: invalid input is refused, valid input is unchanged. | Review and merge PR #1013. | https://github.com/datagen24/victual/pull/1013 |
-| [#988 prose-baseline-prune fails daily: it pushes to master, which requires a pull request](https://github.com/datagen24/victual/issues/988) | open | P3 | S | ci | CI hygiene: no application change. | Merge PR #1012, enable 'Allow GitHub Actions to create and approve pull requests', then run the workflow by hand once. | https://github.com/datagen24/victual/pull/1012 |
-| [#989 Calendar API 500 includes the user-supplied event title in its body](https://github.com/datagen24/victual/issues/989) | open | P3 | S | security | Low-severity disclosure fix: the response body changes only on the error path. | Review and merge PR #1015. | https://github.com/datagen24/victual/pull/1015 |
 | [#991 Uploading a userfile under an existing unreferenced name reveals that the name exists](https://github.com/datagen24/victual/issues/991) | open | P3 | S | security | Low-severity disclosure fix: needs the ADR-0048 item 9 decision first. | Review PR #1016. It corrects the planning premise: DELETE does not reveal the name. | https://github.com/datagen24/victual/pull/1016 |
 | [#1010 Backup/restore drill against the v0.5.0 artifacts (release gate R5)](https://github.com/datagen24/victual/issues/1010) | open | P2 | M | release evidence | Verification and documentation only: closes release gate R5. | Run the documented dump and restore against the v0.5.0 images on a disposable database and record the report. | None |
+| [#987 Consume stores any integer recipe_id, including negative ids and ids no recipe has](https://github.com/datagen24/victual/issues/987) | closed | P3 | S | bug | Compatible fix: invalid input is refused, valid input is unchanged. | Review and merge PR #1013. | https://github.com/datagen24/victual/pull/1013 |
+| [#988 prose-baseline-prune fails daily: it pushes to master, which requires a pull request](https://github.com/datagen24/victual/issues/988) | closed | P3 | S | ci | CI hygiene: no application change. | Merge PR #1012, enable 'Allow GitHub Actions to create and approve pull requests', then run the workflow by hand once. | https://github.com/datagen24/victual/pull/1012 |
+| [#989 Calendar API 500 includes the user-supplied event title in its body](https://github.com/datagen24/victual/issues/989) | closed | P3 | S | security | Low-severity disclosure fix: the response body changes only on the error path. | Review and merge PR #1015. | https://github.com/datagen24/victual/pull/1015 |
 
 ## Open milestones
 
-Observed 2026-10-19T20:48:10Z. Unassigned open issues: [#80](https://github.com/datagen24/victual/issues/80), [#86](https://github.com/datagen24/victual/issues/86), [#93](https://github.com/datagen24/victual/issues/93), [#133](https://github.com/datagen24/victual/issues/133), [#139](https://github.com/datagen24/victual/issues/139).
+Observed 2026-10-19T21:22:24Z. Unassigned open issues: [#80](https://github.com/datagen24/victual/issues/80), [#86](https://github.com/datagen24/victual/issues/86), [#93](https://github.com/datagen24/victual/issues/93), [#133](https://github.com/datagen24/victual/issues/133), [#139](https://github.com/datagen24/victual/issues/139).
 
 | Milestone | Open | Closed | Due | Description |
 | --- | --- | --- | --- | --- |
 | [0.6.0](https://github.com/datagen24/victual/milestone/6) | 8 | 0 | Unset | Later feature release: OAuth then federation; installation country, canonical/scoped barcode resolution and web onboarding, each behind its own design/ADR gates. Full API audit remains later work. These are not requirements for 0.5.0. |
-| [0.5.1](https://github.com/datagen24/victual/milestone/7) | 8 | 0 | Unset | Follow-ups found while building 0.5.0 that do not block the first production release: presentation residuals, low-severity disclosures and CI hygiene. Lands after 0.5.0 and before 0.6.0. |
+| [0.5.1](https://github.com/datagen24/victual/milestone/7) | 5 | 3 | Unset | Follow-ups found while building 0.5.0 that do not block the first production release: presentation residuals, low-severity disclosures and CI hygiene. Lands after 0.5.0 and before 0.6.0. |
 | [0.5.2](https://github.com/datagen24/victual/milestone/8) | 5 | 0 | Unset | Interm quality of life fixes |
 | [vNext](https://github.com/datagen24/victual/milestone/9) | 1 | 0 | Unset | Farther in the future Ideas and Concepts, not commited to a planned release |
 
@@ -66,4 +66,4 @@ Observed 2026-10-19T20:48:10Z. Unassigned open issues: [#80](https://github.com/
 
 ## Evidence
 
-The latest snapshot is in `evidence/refresh-2026-10-19T204810Z`, taken from the GitHub REST API via gh. Assessments are planning estimates, not validation results.
+The latest snapshot is in `evidence/refresh-2026-10-19T212224Z`, taken from the GitHub REST API via gh. Assessments are planning estimates, not validation results.

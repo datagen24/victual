@@ -68,60 +68,6 @@
    "pr": null
   },
   {
-   "number": 987,
-   "title": "Consume stores any integer recipe_id, including negative ids and ids no recipe has",
-   "url": "https://github.com/datagen24/victual/issues/987",
-   "state": "open",
-   "labels": [
-    "bug",
-    "php",
-    "Low"
-   ],
-   "closed_at": null,
-   "priority": "P3",
-   "size": "S",
-   "fit": "Compatible fix: invalid input is refused, valid input is unchanged.",
-   "classification": "bug",
-   "next_action": "Review and merge PR #1013.",
-   "pr": "https://github.com/datagen24/victual/pull/1013"
-  },
-  {
-   "number": 988,
-   "title": "prose-baseline-prune fails daily: it pushes to master, which requires a pull request",
-   "url": "https://github.com/datagen24/victual/issues/988",
-   "state": "open",
-   "labels": [
-    "bug",
-    "Low"
-   ],
-   "closed_at": null,
-   "priority": "P3",
-   "size": "S",
-   "fit": "CI hygiene: no application change.",
-   "classification": "ci",
-   "next_action": "Merge PR #1012, enable 'Allow GitHub Actions to create and approve pull requests', then run the workflow by hand once.",
-   "pr": "https://github.com/datagen24/victual/pull/1012"
-  },
-  {
-   "number": 989,
-   "title": "Calendar API 500 includes the user-supplied event title in its body",
-   "url": "https://github.com/datagen24/victual/issues/989",
-   "state": "open",
-   "labels": [
-    "bug",
-    "php",
-    "Low",
-    "Security"
-   ],
-   "closed_at": null,
-   "priority": "P3",
-   "size": "S",
-   "fit": "Low-severity disclosure fix: the response body changes only on the error path.",
-   "classification": "security",
-   "next_action": "Review and merge PR #1015.",
-   "pr": "https://github.com/datagen24/victual/pull/1015"
-  },
-  {
    "number": 991,
    "title": "Uploading a userfile under an existing unreferenced name reveals that the name exists",
    "url": "https://github.com/datagen24/victual/issues/991",
@@ -154,6 +100,60 @@
    "classification": "release evidence",
    "next_action": "Run the documented dump and restore against the v0.5.0 images on a disposable database and record the report.",
    "pr": null
+  },
+  {
+   "number": 987,
+   "title": "Consume stores any integer recipe_id, including negative ids and ids no recipe has",
+   "url": "https://github.com/datagen24/victual/issues/987",
+   "state": "closed",
+   "labels": [
+    "bug",
+    "php",
+    "Low"
+   ],
+   "closed_at": "2026-10-19T21:12:15Z",
+   "priority": "P3",
+   "size": "S",
+   "fit": "Compatible fix: invalid input is refused, valid input is unchanged.",
+   "classification": "bug",
+   "next_action": "Review and merge PR #1013.",
+   "pr": "https://github.com/datagen24/victual/pull/1013"
+  },
+  {
+   "number": 988,
+   "title": "prose-baseline-prune fails daily: it pushes to master, which requires a pull request",
+   "url": "https://github.com/datagen24/victual/issues/988",
+   "state": "closed",
+   "labels": [
+    "bug",
+    "Low"
+   ],
+   "closed_at": "2026-10-19T21:06:35Z",
+   "priority": "P3",
+   "size": "S",
+   "fit": "CI hygiene: no application change.",
+   "classification": "ci",
+   "next_action": "Merge PR #1012, enable 'Allow GitHub Actions to create and approve pull requests', then run the workflow by hand once.",
+   "pr": "https://github.com/datagen24/victual/pull/1012"
+  },
+  {
+   "number": 989,
+   "title": "Calendar API 500 includes the user-supplied event title in its body",
+   "url": "https://github.com/datagen24/victual/issues/989",
+   "state": "closed",
+   "labels": [
+    "bug",
+    "php",
+    "Low",
+    "Security"
+   ],
+   "closed_at": "2026-10-19T21:21:58Z",
+   "priority": "P3",
+   "size": "S",
+   "fit": "Low-severity disclosure fix: the response body changes only on the error path.",
+   "classification": "security",
+   "next_action": "Review and merge PR #1015.",
+   "pr": "https://github.com/datagen24/victual/pull/1015"
   }
  ],
  "milestones": [
@@ -171,8 +171,8 @@
    "number": 7,
    "title": "0.5.1",
    "state": "open",
-   "open_issues": 8,
-   "closed_issues": 0,
+   "open_issues": 5,
+   "closed_issues": 3,
    "description": "Follow-ups found while building 0.5.0 that do not block the first production release: presentation residuals, low-severity disclosures and CI hygiene. Lands after 0.5.0 and before 0.6.0.",
    "html_url": "https://github.com/datagen24/victual/milestone/7",
    "due_on": null
@@ -199,14 +199,14 @@
   }
  ],
  "observation": {
-  "observed_at": "2026-10-19T20:48:10Z",
+  "observed_at": "2026-10-19T21:22:24Z",
   "source": "GitHub REST API via gh",
-  "evidence_directory": "evidence/refresh-2026-10-19T204810Z",
-  "master_sha": "1058a2431528c730c6a72cd59b155e6105908f12",
+  "evidence_directory": "evidence/refresh-2026-10-19T212224Z",
+  "master_sha": "edccb8884748b898cbd4423d80ff0cbc577b20f5",
   "latest_release": "v0.5.0",
   "latest_release_published_at": "2026-10-19T12:28:41Z",
-  "open_issues": 27,
-  "open_prs": 0,
+  "open_issues": 24,
+  "open_prs": 2,
   "unassigned_open_issues": [
    80,
    86,
