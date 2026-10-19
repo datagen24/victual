@@ -189,12 +189,20 @@ class CalendarApiController extends BaseApiController
 				// 500 (HttpInternalServerErrorException, an HttpSpecializedException - see
 				// HandleApiCall's docblock) carrying only this message, never a \RuntimeException,
 				// which HandleApiCall's generic \Exception catch would otherwise answer 400.
+				//
+				// The title is user-supplied text, so it goes to the operator's log and never
+				// into the response body (#989). It is JSON-encoded there, so a newline in a
+				// title cannot start a forged log line.
 				if (!isset($event['event_type']) || !isset($event['entity_id']))
 				{
+					error_log('Victual: calendar event is missing event_type/entity_id (#511): ' . json_encode([
+						'event_type' => $event['event_type'] ?? null,
+						'entity_id' => $event['entity_id'] ?? null,
+						'title' => $event['title'] ?? null,
+					], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR));
 					throw new HttpInternalServerErrorException(
 						$request,
 						'Calendar event is missing event_type/entity_id required for a stable UID (#511)'
-						. (isset($event['title']) ? ": {$event['title']}" : '')
 					);
 				}
 				$uid = new UniqueIdentifier($event['event_type'] . '-' . $event['entity_id'] . '@' . $uidDomain);
