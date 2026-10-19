@@ -118,8 +118,8 @@
    "size": "S",
    "fit": "Low-severity disclosure fix: the response body changes only on the error path.",
    "classification": "security",
-   "next_action": "Decide whether the 500 body may carry the title; otherwise log it server-side.",
-   "pr": null
+   "next_action": "Review and merge PR #1015.",
+   "pr": "https://github.com/datagen24/victual/pull/1015"
   },
   {
    "number": 991,
