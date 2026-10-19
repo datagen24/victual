@@ -178,10 +178,12 @@ class BaselineBehavior(unittest.TestCase):
 
     def test_scope_preserves_historical_records_and_includes_repo_guides(self):
         for path in ('docs/plans/landed/01-file-storage.md', '.devtools/coverage/README.md',
-                     'docs/adr/0001-postgresql-alongside-sqlite.md', '.github/CONTRIBUTING.md'):
+                     'docs/adr/0001-postgresql-alongside-sqlite.md', '.github/CONTRIBUTING.md',
+                     'release-planning/2026-10-15/HANDOFF.md'):
             self.assertTrue(audit.in_scope(path), path)
         for path in ('LICENSE.md', 'changelog/81_4.6.0_2026-03-06.md',
-                     'docs/plans/.versions/17-ecosystem-clients.v1.md', 'memory/MEMORY.md'):
+                     'docs/plans/.versions/17-ecosystem-clients.v1.md', 'memory/MEMORY.md',
+                     'release-planning/2026-10-15/evidence/historical-LEDGER.md'):
             self.assertFalse(audit.in_scope(path), path)
 
 

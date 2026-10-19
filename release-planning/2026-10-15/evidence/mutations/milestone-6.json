@@ -1,0 +1,1 @@
+{"title": "0.6.0", "description": "Later feature release: OAuth then federation; installation country, canonical/scoped barcode resolution and web onboarding, each behind its own design/ADR gates. Full API audit remains later work. These are not requirements for 0.5.0."}

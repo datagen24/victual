@@ -1,0 +1,25 @@
+2026-10-14T23:15:46.0114367Z   Methods:  ( 0/ 0)   Lines:  (  0/  0)
+2026-10-14T23:15:46.0114924Z   Methods:  83.33% ( 5/ 6)   Lines:  84.38% ( 27/ 32)
+2026-10-14T23:15:46.0115499Z   Methods:  80.00% ( 4/ 5)   Lines:  93.10% ( 27/ 29)
+2026-10-14T23:15:46.0116120Z   Methods:  ( 0/ 0)   Lines:  (  0/  0)
+2026-10-14T23:15:46.0116693Z   Methods:  80.00% ( 8/10)   Lines:  93.44% ( 57/ 61)
+2026-10-14T23:15:46.0117581Z   Methods:  ( 0/ 0)   Lines:  (  0/  0)
+2026-10-14T23:15:46.0118099Z   Methods:  25.00% ( 1/ 4)   Lines:  89.66% ( 26/ 29)
+2026-10-14T23:15:46.0118625Z   Methods: 100.00% (11/11)   Lines: 100.00% ( 64/ 64)
+2026-10-14T23:15:46.0119188Z   Methods: 100.00% (10/10)   Lines: 100.00% ( 57/ 57)
+2026-10-14T23:15:46.0119710Z   Methods:  57.14% ( 8/14)   Lines:  89.47% (102/114)
+2026-10-14T23:15:46.0120250Z   Methods:  75.00% ( 3/ 4)   Lines:  96.00% ( 24/ 25)
+2026-10-14T23:15:46.0650758Z 14618 of 15100 executable lines covered (96.81%) from 4857 process(es)
+2026-10-14T23:15:46.0922288Z ##[group]Run php .devtools/coverage/inventory.php clover.xml
+2026-10-14T23:15:46.0922749Z [36;1mphp .devtools/coverage/inventory.php clover.xml[0m
+2026-10-14T23:15:46.1750626Z Files below the 75% floor: 0 of 162 measured (7 with no executable lines)
+2026-10-14T23:15:46.1753537Z No executable lines (not a percentage, and not a gap):
+2026-10-14T23:15:46.1758881Z Total: 14618 of 15100 executable lines (96.80794701986754091649%)
+2026-10-14T23:15:46.1974704Z   name: coverage-clover
+2026-10-14T23:15:46.6135431Z Uploading artifact: coverage-clover.zip
+2026-10-14T23:15:47.2533623Z Artifact coverage-clover successfully finalized. Artifact ID 11935906518
+2026-10-14T23:15:47.2535193Z Artifact coverage-clover has been successfully uploaded! Final size is 70630 bytes. Artifact ID is 11935906518
+2026-10-14T23:15:48.0414935Z  2026-10-14 23:02:50.577 UTC [4667] CONTEXT:  PL/pgSQL function coverage_fail_barcode_insert() line 1 at RAISE
+2026-10-14T23:15:48.0418114Z  2026-10-14 23:02:53.143 UTC [4695] CONTEXT:  PL/pgSQL function coverage_fail_conversion_write() line 1 at RAISE
+2026-10-14T23:15:48.0428946Z  2026-10-14 23:02:55.135 UTC [4710] CONTEXT:  PL/pgSQL function coverage_fail_picture_update() line 1 at RAISE
+2026-10-14T23:15:48.0430734Z  2026-10-14 23:02:55.446 UTC [4712] CONTEXT:  PL/pgSQL function coverage_fail_picture_update() line 1 at RAISE

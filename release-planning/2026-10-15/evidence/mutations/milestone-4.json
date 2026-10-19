@@ -1,0 +1,1 @@
+{"title": "0.4.3", "description": "Conditional precision patch: lossless application/import float binding and persisted lookup-boundary verification. Preserve valid inputs, source values and rollback. Publish only after observable storage/output compatibility is reviewed."}

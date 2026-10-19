@@ -1,0 +1,10 @@
+{
+  "ref": "refs/tags/v0.4.4",
+  "node_id": "REF_kwDOUEWha7ByZWZzL3RhZ3MvdjAuNC40",
+  "url": "https://api.github.com/repos/datagen24/victual/git/refs/tags/v0.4.4",
+  "object": {
+    "sha": "9e8f2964a206c8dab2e2723f6217abec1f04871e",
+    "type": "tag",
+    "url": "https://api.github.com/repos/datagen24/victual/git/tags/9e8f2964a206c8dab2e2723f6217abec1f04871e"
+  }
+}
