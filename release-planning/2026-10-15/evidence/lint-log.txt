@@ -1,0 +1,244 @@
+2026-10-14T22:49:31.1841065Z Current runner version: '2.337.0'
+2026-10-14T22:49:31.1861187Z ##[group]Runner Image Provisioner
+2026-10-14T22:49:31.1861810Z Hosted Compute Agent
+2026-10-14T22:49:31.1862170Z Version: 20261002.596
+2026-10-14T22:49:31.1862653Z Commit: c3d12f3313a95f25162a1503be624f3b0617f8c0
+2026-10-14T22:49:31.1863103Z Build Date: 2026-10-02T22:28:27Z
+2026-10-14T22:49:31.1863560Z Worker ID: {f1b84ea3-16a7-437c-84a9-87aa4b91a3eb}
+2026-10-14T22:49:31.1864030Z Region: centralus
+2026-10-14T22:49:31.1864386Z Cloud: Azure
+2026-10-14T22:49:31.1865051Z ##[endgroup]
+2026-10-14T22:49:31.1866090Z ##[group]Operating System
+2026-10-14T22:49:31.1866488Z Ubuntu
+2026-10-14T22:49:31.1866901Z 24.04.5
+2026-10-14T22:49:31.1867234Z LTS
+2026-10-14T22:49:31.1867631Z ##[endgroup]
+2026-10-14T22:49:31.1867983Z ##[group]Runner Image
+2026-10-14T22:49:31.1868372Z Image: ubuntu-24.04
+2026-10-14T22:49:31.1868778Z Version: 20261004.327.1
+2026-10-14T22:49:31.1869594Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261004.327/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-14T22:49:31.1870593Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261004.327
+2026-10-14T22:49:31.1871207Z ##[endgroup]
+2026-10-14T22:49:31.1871997Z ##[group]GITHUB_TOKEN Permissions
+2026-10-14T22:49:31.1873466Z Contents: read
+2026-10-14T22:49:31.1873888Z Metadata: read
+2026-10-14T22:49:31.1874246Z ##[endgroup]
+2026-10-14T22:49:31.1875712Z Secret source: Actions
+2026-10-14T22:49:31.1876460Z Cache mode: write
+2026-10-14T22:49:31.1877074Z Prepare workflow directory
+2026-10-14T22:49:31.2103862Z Prepare all required actions
+2026-10-14T22:49:31.2145246Z Getting action download info
+2026-10-14T22:49:31.4431267Z Download action repository 'actions/checkout@v7' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
+2026-10-14T22:49:31.5113453Z Download action repository 'shivammathur/setup-php@v2' (SHA:eb7c497e18156a6bbabfef1d3a82760b9eda3962)
+2026-10-14T22:49:31.8801780Z Complete job name: lint
+2026-10-14T22:49:31.9316228Z ##[group]Run actions/checkout@v7
+2026-10-14T22:49:31.9316687Z with:
+2026-10-14T22:49:31.9316921Z   fetch-depth: 0
+2026-10-14T22:49:31.9317180Z   repository: datagen24/victual
+2026-10-14T22:49:31.9319409Z   token: ***
+2026-10-14T22:49:31.9319643Z   ssh-strict: true
+2026-10-14T22:49:31.9319882Z   ssh-user: git
+2026-10-14T22:49:31.9320130Z   persist-credentials: true
+2026-10-14T22:49:31.9320398Z   clean: true
+2026-10-14T22:49:31.9320645Z   sparse-checkout-cone-mode: true
+2026-10-14T22:49:31.9320931Z   fetch-tags: false
+2026-10-14T22:49:31.9321174Z   show-progress: true
+2026-10-14T22:49:31.9321419Z   lfs: false
+2026-10-14T22:49:31.9321647Z   submodules: false
+2026-10-14T22:49:31.9321895Z   set-safe-directory: true
+2026-10-14T22:49:31.9322172Z   allow-unsafe-pr-checkout: false
+2026-10-14T22:49:31.9322526Z ##[endgroup]
+2026-10-14T22:49:32.0053735Z Syncing repository: datagen24/victual
+2026-10-14T22:49:32.0055438Z ##[group]Getting Git version info
+2026-10-14T22:49:32.0056398Z Working directory is '/home/runner/work/victual/victual'
+2026-10-14T22:49:32.0057389Z [command]/usr/bin/git version
+2026-10-14T22:49:32.0091248Z git version 2.55.0
+2026-10-14T22:49:32.0114857Z ##[endgroup]
+2026-10-14T22:49:32.0122860Z Temporarily overriding HOME='/home/runner/work/_temp/06e68ee2-5cca-4ea2-905c-fc8302be059c' before making global git config changes
+2026-10-14T22:49:32.0123702Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-14T22:49:32.0128396Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/victual/victual
+2026-10-14T22:49:32.0172719Z Deleting the contents of '/home/runner/work/victual/victual'
+2026-10-14T22:49:32.0176151Z ##[group]Determining repository object format
+2026-10-14T22:49:32.0177635Z ##[endgroup]
+2026-10-14T22:49:32.0178222Z ##[group]Initializing the repository
+2026-10-14T22:49:32.0181451Z [command]/usr/bin/git init /home/runner/work/victual/victual
+2026-10-14T22:49:32.0277693Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-14T22:49:32.0278894Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-14T22:49:32.0279972Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-14T22:49:32.0280575Z hint: call:
+2026-10-14T22:49:32.0280853Z hint:
+2026-10-14T22:49:32.0281347Z hint: 	git config --global init.defaultBranch <name>
+2026-10-14T22:49:32.0281828Z hint:
+2026-10-14T22:49:32.0282227Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-14T22:49:32.0283013Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-14T22:49:32.0283505Z hint:
+2026-10-14T22:49:32.0283777Z hint: 	git branch -m <name>
+2026-10-14T22:49:32.0284042Z hint:
+2026-10-14T22:49:32.0284392Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-14T22:49:32.0284932Z Initialized empty Git repository in /home/runner/work/victual/victual/.git/
+2026-10-14T22:49:32.0287859Z [command]/usr/bin/git remote add origin https://github.com/datagen24/victual
+2026-10-14T22:49:32.0336000Z ##[endgroup]
+2026-10-14T22:49:32.0336720Z ##[group]Disabling automatic garbage collection
+2026-10-14T22:49:32.0338557Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-14T22:49:32.0372557Z ##[endgroup]
+2026-10-14T22:49:32.0373220Z ##[group]Setting up auth
+2026-10-14T22:49:32.0373702Z Removing SSH command configuration
+2026-10-14T22:49:32.0378578Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-14T22:49:32.0432475Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-14T22:49:32.0719380Z Removing HTTP extra header
+2026-10-14T22:49:32.0724109Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-14T22:49:32.0755641Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-14T22:49:32.0938503Z Removing includeIf entries pointing to credentials config files
+2026-10-14T22:49:32.0942841Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-14T22:49:32.0973913Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-14T22:49:32.1172525Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-9c38d21c-c6a0-4fa4-884b-c2aec23cc663.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-14T22:49:32.1209593Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/victual/victual/.git.path /home/runner/work/_temp/git-credentials-9c38d21c-c6a0-4fa4-884b-c2aec23cc663.config
+2026-10-14T22:49:32.1242433Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/victual/victual/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-9c38d21c-c6a0-4fa4-884b-c2aec23cc663.config
+2026-10-14T22:49:32.1277765Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-9c38d21c-c6a0-4fa4-884b-c2aec23cc663.config
+2026-10-14T22:49:32.1369419Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-9c38d21c-c6a0-4fa4-884b-c2aec23cc663.config
+2026-10-14T22:49:32.1402375Z ##[endgroup]
+2026-10-14T22:49:32.1402842Z ##[group]Fetching the repository
+2026-10-14T22:49:32.1409514Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/*
+2026-10-14T22:49:34.9527340Z From https://github.com/datagen24/victual
+2026-10-14T22:49:34.9528833Z  * [new branch]        79-wave-3b-plan-06-location-labels-and-the-print-action -> origin/79-wave-3b-plan-06-location-labels-and-the-print-action
+2026-10-14T22:49:34.9530028Z  * [new branch]        claude/adr-0020-plan-rows-wbwrpq -> origin/claude/adr-0020-plan-rows-wbwrpq
+2026-10-14T22:49:34.9530844Z  * [new branch]        claude/adr-decisions-0027-0028-0033-ca56f4 -> origin/claude/adr-decisions-0027-0028-0033-ca56f4
+2026-10-14T22:49:34.9531637Z  * [new branch]        claude/adr0039-prerequisites -> origin/claude/adr0039-prerequisites
+2026-10-14T22:49:34.9532521Z  * [new branch]        claude/error-handler-without-a-database-8h3kq2 -> origin/claude/error-handler-without-a-database-8h3kq2
+2026-10-14T22:49:34.9533438Z  * [new branch]        claude/fable51_adr-0020-accept-wmmhhv -> origin/claude/fable51_adr-0020-accept-wmmhhv
+2026-10-14T22:49:34.9534285Z  * [new branch]        claude/opus5_adr0021-prerequisites -> origin/claude/opus5_adr0021-prerequisites
+2026-10-14T22:49:34.9535235Z  * [new branch]        claude/opus5_ha-addon-pilot-66ee2a -> origin/claude/opus5_ha-addon-pilot-66ee2a
+2026-10-14T22:49:34.9536646Z  * [new branch]        claude/opus5_plan22-ledger-scope-7e1c -> origin/claude/opus5_plan22-ledger-scope-7e1c
+2026-10-14T22:49:34.9538004Z  * [new branch]        claude/plans-punch-list-review-ec1qhm -> origin/claude/plans-punch-list-review-ec1qhm
+2026-10-14T22:49:34.9539195Z  * [new branch]        claude/sonnet5_700-ui-docs-d4e92b -> origin/claude/sonnet5_700-ui-docs-d4e92b
+2026-10-14T22:49:34.9540442Z  * [new branch]        claude/sonnet5_adr0023-prerequisites -> origin/claude/sonnet5_adr0023-prerequisites
+2026-10-14T22:49:34.9541676Z  * [new branch]        claude/sonnet_object-roundtrips-r487 -> origin/claude/sonnet_object-roundtrips-r487
+2026-10-14T22:49:34.9543096Z  * [new branch]        claude/sonnet_stockentry-price-redaction-r487 -> origin/claude/sonnet_stockentry-price-redaction-r487
+2026-10-14T22:49:34.9544620Z  * [new branch]        claude/stacked-pr-review-fixes-9m3isk -> origin/claude/stacked-pr-review-fixes-9m3isk
+2026-10-14T22:49:34.9546183Z  * [new branch]        claude/wave-1-execution-6xidrj -> origin/claude/wave-1-execution-6xidrj
+2026-10-14T22:49:34.9546869Z  * [new branch]        claude/wave-1-plan-10-6xidrj -> origin/claude/wave-1-plan-10-6xidrj
+2026-10-14T22:49:34.9547494Z  * [new branch]        codex/gpt-6_prose-rules-260 -> origin/codex/gpt-6_prose-rules-260
+2026-10-14T22:49:34.9548242Z  * [new branch]        codex/sonnet5_plan22-evidence-refresh-3c8e15 -> origin/codex/sonnet5_plan22-evidence-refresh-3c8e15
+2026-10-14T22:49:34.9549095Z  * [new branch]        codex/sonnet5_refill-service-api-4d83a7 -> origin/codex/sonnet5_refill-service-api-4d83a7
+2026-10-14T22:49:34.9549872Z  * [new branch]        codex/sonnet5_refill-ui-docs-e61b0d -> origin/codex/sonnet5_refill-ui-docs-e61b0d
+2026-10-14T22:49:34.9550475Z  * [new branch]        master     -> origin/master
+2026-10-14T22:49:34.9550902Z  * [new tag]           v0.1.0-MVP -> v0.1.0-MVP
+2026-10-14T22:49:34.9551305Z  * [new tag]           v0.2.0-MVP -> v0.2.0-MVP
+2026-10-14T22:49:34.9551704Z  * [new tag]           v0.3.0     -> v0.3.0
+2026-10-14T22:49:34.9552084Z  * [new tag]           v0.3.1     -> v0.3.1
+2026-10-14T22:49:34.9552461Z  * [new tag]           v0.3.2     -> v0.3.2
+2026-10-14T22:49:34.9552851Z  * [new tag]           v0.4.0     -> v0.4.0
+2026-10-14T22:49:34.9553383Z  * [new tag]           v0.4.1     -> v0.4.1
+2026-10-14T22:49:34.9554686Z [command]/usr/bin/git branch --list --remote origin/master
+2026-10-14T22:49:34.9569727Z   origin/master
+2026-10-14T22:49:34.9576495Z [command]/usr/bin/git rev-parse refs/remotes/origin/master
+2026-10-14T22:49:34.9600992Z b5532aafd7b91306f7e98dd3361ba82d1ebbe5da
+2026-10-14T22:49:34.9604138Z ##[endgroup]
+2026-10-14T22:49:34.9604582Z ##[group]Determining the checkout info
+2026-10-14T22:49:34.9605186Z ##[endgroup]
+2026-10-14T22:49:34.9608030Z [command]/usr/bin/git sparse-checkout disable
+2026-10-14T22:49:34.9654090Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-14T22:49:34.9684154Z ##[group]Checking out the ref
+2026-10-14T22:49:34.9687107Z [command]/usr/bin/git checkout --progress --force -B master refs/remotes/origin/master
+2026-10-14T22:49:35.1197284Z Reset branch 'master'
+2026-10-14T22:49:35.1198449Z branch 'master' set up to track 'origin/master'.
+2026-10-14T22:49:35.1217806Z ##[endgroup]
+2026-10-14T22:49:35.1261459Z [command]/usr/bin/git log -1 --format=%H
+2026-10-14T22:49:35.1288441Z b5532aafd7b91306f7e98dd3361ba82d1ebbe5da
+2026-10-14T22:49:35.1534029Z ##[group]Run shivammathur/setup-php@v2
+2026-10-14T22:49:35.1534395Z with:
+2026-10-14T22:49:35.1534649Z   php-version: 8.4
+2026-10-14T22:49:35.1534919Z   ini-file: production
+2026-10-14T22:49:35.1537348Z   github-token: ***
+2026-10-14T22:49:35.1537618Z ##[endgroup]
+2026-10-14T22:49:35.1807151Z [command]/usr/bin/bash /home/runner/work/_actions/shivammathur/setup-php/v2/src/scripts/run.sh
+2026-10-14T22:49:35.2133923Z 
+2026-10-14T22:49:35.2135206Z ==> Setup PHP
+2026-10-14T22:49:39.6395423Z ✓ PHP Installed PHP 8.4.26
+2026-10-14T22:49:39.6396218Z 
+2026-10-14T22:49:39.6396419Z ==> Setup Tools
+2026-10-14T22:49:40.0728413Z ✓ composer Added composer 2.10.3
+2026-10-14T22:49:40.0729268Z 
+2026-10-14T22:49:40.0729601Z ==> Sponsor setup-php
+2026-10-14T22:49:40.0730470Z ✓ setup-php https://setup-php.com/sponsor
+2026-10-14T22:49:40.0892124Z ##[group]Run pip install --quiet pyyaml==6.0.1 jsonschema==4.25.1
+2026-10-14T22:49:40.0892462Z pip install --quiet pyyaml==6.0.1 jsonschema==4.25.1
+2026-10-14T22:49:40.1097487Z shell: /usr/bin/bash -e {0}
+2026-10-14T22:49:40.1097749Z env:
+2026-10-14T22:49:40.1097924Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-10-14T22:49:40.1098125Z   COMPOSER_NO_INTERACTION: 1
+2026-10-14T22:49:40.1098297Z   COMPOSER_NO_AUDIT: 1
+2026-10-14T22:49:40.1098484Z ##[endgroup]
+2026-10-14T22:49:41.5335681Z ##[group]Run archive="helm-$HELM_VERSION-linux-amd64.tar.gz"
+2026-10-14T22:49:41.5336171Z archive="helm-$HELM_VERSION-linux-amd64.tar.gz"
+2026-10-14T22:49:41.5336452Z curl -fsSLo "$RUNNER_TEMP/$archive" "https://get.helm.sh/$archive"
+2026-10-14T22:49:41.5336773Z echo "$HELM_SHA256  $RUNNER_TEMP/$archive" | sha256sum --check --strict
+2026-10-14T22:49:41.5337052Z tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" linux-amd64/helm
+2026-10-14T22:49:41.5337360Z # On PATH for the later steps; GITHUB_PATH does not apply to this one.
+2026-10-14T22:49:41.5337603Z echo "$RUNNER_TEMP/linux-amd64" >> "$GITHUB_PATH"
+2026-10-14T22:49:41.5337802Z "$RUNNER_TEMP/linux-amd64/helm" version
+2026-10-14T22:49:41.5393635Z shell: /usr/bin/bash -e {0}
+2026-10-14T22:49:41.5393793Z env:
+2026-10-14T22:49:41.5393916Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-10-14T22:49:41.5394068Z   COMPOSER_NO_INTERACTION: 1
+2026-10-14T22:49:41.5394236Z   COMPOSER_NO_AUDIT: 1
+2026-10-14T22:49:41.5394362Z   HELM_VERSION: v4.3.0
+2026-10-14T22:49:41.5394597Z   HELM_SHA256: 86584a54def73570558f66f5111cc53dfed56689637ae32c1201205d494f54fb
+2026-10-14T22:49:41.5394829Z ##[endgroup]
+2026-10-14T22:49:41.7472972Z /home/runner/work/_temp/helm-v4.3.0-linux-amd64.tar.gz: OK
+2026-10-14T22:49:42.0912863Z version.BuildInfo{Version:"v4.3.0", GitCommit:"bec5b06ed841fe5269972d864d5177944fd5970f", GitTreeState:"clean", GoVersion:"go1.27.1", KubeClientVersion:"v1.37"}
+2026-10-14T22:49:42.0957227Z ##[group]Run python3 -m unittest discover -s .devtools/ci
+2026-10-14T22:49:42.0957492Z python3 -m unittest discover -s .devtools/ci
+2026-10-14T22:49:42.1013156Z shell: /usr/bin/bash -e {0}
+2026-10-14T22:49:42.1013314Z env:
+2026-10-14T22:49:42.1013441Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-10-14T22:49:42.1013592Z   COMPOSER_NO_INTERACTION: 1
+2026-10-14T22:49:42.1013729Z   COMPOSER_NO_AUDIT: 1
+2026-10-14T22:49:42.1013862Z ##[endgroup]
+2026-10-14T22:49:47.5163991Z .....................................................................................................F...
+2026-10-14T22:49:47.5164547Z ======================================================================
+2026-10-14T22:49:47.5164908Z FAIL: test_a_stale_copy_is_named_with_its_line (test_release_version.CheckTest.test_a_stale_copy_is_named_with_its_line)
+2026-10-14T22:49:47.5165750Z ----------------------------------------------------------------------
+2026-10-14T22:49:47.5166223Z Traceback (most recent call last):
+2026-10-14T22:49:47.5166637Z   File "/home/runner/work/victual/victual/.devtools/ci/test_release_version.py", line 56, in test_a_stale_copy_is_named_with_its_line
+2026-10-14T22:49:47.5166989Z     self.assertEqual(len(problems), 1, problems)
+2026-10-14T22:49:47.5167488Z AssertionError: 2 != 1 : ['deploy/helm/victual/Chart.yaml:12: 9.9.9, expected 0.4.1-hotfix1', 'docs/releases/0.4.1-hotfix1.md is still the generated draft; fill it in and delete the DRAFT comment']
+2026-10-14T22:49:47.5167848Z 
+2026-10-14T22:49:47.5167951Z ----------------------------------------------------------------------
+2026-10-14T22:49:47.5168147Z Ran 105 tests in 5.326s
+2026-10-14T22:49:47.5168232Z 
+2026-10-14T22:49:47.5168288Z FAILED (failures=1)
+2026-10-14T22:49:47.5396626Z ##[error]Process completed with exit code 1.
+2026-10-14T22:49:47.5513003Z Post job cleanup.
+2026-10-14T22:49:47.6131083Z [command]/usr/bin/git version
+2026-10-14T22:49:47.6166283Z git version 2.55.0
+2026-10-14T22:49:47.6197940Z Temporarily overriding HOME='/home/runner/work/_temp/25661e63-64d9-4df4-ad14-a0cdc8682b53' before making global git config changes
+2026-10-14T22:49:47.6198849Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-14T22:49:47.6201621Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/victual/victual
+2026-10-14T22:49:47.6232427Z Removing SSH command configuration
+2026-10-14T22:49:47.6238177Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-14T22:49:47.6273970Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-14T22:49:47.6496091Z Removing HTTP extra header
+2026-10-14T22:49:47.6501084Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-14T22:49:47.6537884Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-14T22:49:47.6748929Z Removing includeIf entries pointing to credentials config files
+2026-10-14T22:49:47.6755364Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-14T22:49:47.6785011Z includeif.gitdir:/home/runner/work/victual/victual/.git.path
+2026-10-14T22:49:47.6785335Z includeif.gitdir:/home/runner/work/victual/victual/.git/worktrees/*.path
+2026-10-14T22:49:47.6785594Z includeif.gitdir:/github/workspace/.git.path
+2026-10-14T22:49:47.6785964Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-14T22:49:47.6792259Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/victual/victual/.git.path
+2026-10-14T22:49:47.6817075Z /home/runner/work/_temp/git-credentials-9c38d21c-c6a0-4fa4-884b-c2aec23cc663.config
+2026-10-14T22:49:47.6824949Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/victual/victual/.git.path \/home\/runner\/work\/_temp\/git\-credentials\-9c38d21c\-c6a0\-4fa4\-884b\-c2aec23cc663\.config
+2026-10-14T22:49:47.6858850Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/victual/victual/.git/worktrees/*.path
+2026-10-14T22:49:47.6882163Z /home/runner/work/_temp/git-credentials-9c38d21c-c6a0-4fa4-884b-c2aec23cc663.config
+2026-10-14T22:49:47.6888564Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/victual/victual/.git/worktrees/*.path \/home\/runner\/work\/_temp\/git\-credentials\-9c38d21c\-c6a0\-4fa4\-884b\-c2aec23cc663\.config
+2026-10-14T22:49:47.6921588Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-14T22:49:47.6945241Z /github/runner_temp/git-credentials-9c38d21c-c6a0-4fa4-884b-c2aec23cc663.config
+2026-10-14T22:49:47.6950379Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-9c38d21c\-c6a0\-4fa4\-884b\-c2aec23cc663\.config
+2026-10-14T22:49:47.6981288Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-14T22:49:47.7004845Z /github/runner_temp/git-credentials-9c38d21c-c6a0-4fa4-884b-c2aec23cc663.config
+2026-10-14T22:49:47.7010657Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-9c38d21c\-c6a0\-4fa4\-884b\-c2aec23cc663\.config
+2026-10-14T22:49:47.7042767Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-14T22:49:47.7227110Z Removing credentials config '/home/runner/work/_temp/git-credentials-9c38d21c-c6a0-4fa4-884b-c2aec23cc663.config'
+2026-10-14T22:49:47.7350533Z Cleaning up orphan processes

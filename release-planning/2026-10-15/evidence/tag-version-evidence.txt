@@ -1,0 +1,11 @@
+v0.4.1 version.json:
+{
+	"Version": "0.4.0",
+	"ReleaseDate": "2026-10-10"
+}
+
+v0.4.1-hotfix1 version.json:
+{
+	"Version": "0.4.1-hotfix1",
+	"ReleaseDate": "2026-10-14"
+}

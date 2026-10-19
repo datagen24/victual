@@ -1,0 +1,97 @@
+{
+  "total_count": 1,
+  "jobs": [
+    {
+      "id": 116950598234,
+      "run_id": 38894184659,
+      "workflow_name": "prose-baseline-prune",
+      "head_branch": "master",
+      "run_url": "https://api.github.com/repos/datagen24/victual/actions/runs/38894184659",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOUEWha88AAAAbOsyCWg",
+      "head_sha": "631c6b27cf0d743b6068b5f503940ff9dc97e496",
+      "url": "https://api.github.com/repos/datagen24/victual/actions/jobs/116950598234",
+      "html_url": "https://github.com/datagen24/victual/actions/runs/38894184659/job/116950598234",
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-10-16T11:30:08Z",
+      "started_at": "2026-10-16T11:30:11Z",
+      "completed_at": "2026-10-16T11:30:23Z",
+      "name": "prune",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-16T11:30:11Z",
+          "completed_at": "2026-10-16T11:30:12Z"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-16T11:30:12Z",
+          "completed_at": "2026-10-16T11:30:15Z"
+        },
+        {
+          "name": "Install pinned Vale",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-16T11:30:15Z",
+          "completed_at": "2026-10-16T11:30:16Z"
+        },
+        {
+          "name": "Prune resolved baseline entries",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-10-16T11:30:16Z",
+          "completed_at": "2026-10-16T11:30:17Z"
+        },
+        {
+          "name": "Confirm the pruned baseline still rejects new findings",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-10-16T11:30:17Z",
+          "completed_at": "2026-10-16T11:30:19Z"
+        },
+        {
+          "name": "Commit if the baseline changed",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 6,
+          "started_at": "2026-10-16T11:30:19Z",
+          "completed_at": "2026-10-16T11:30:21Z"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-10-16T11:30:21Z",
+          "completed_at": "2026-10-16T11:30:21Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-10-16T11:30:21Z",
+          "completed_at": "2026-10-16T11:30:21Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/datagen24/victual/check-runs/116950598234",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000025287,
+      "runner_name": "GitHub Actions 1000025287",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}

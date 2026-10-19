@@ -1,0 +1,20 @@
+ .devtools/ci/README.md               |  24 ++++
+ .devtools/ci/release_version.py      | 266 +++++++++++++++++++++++++++++++++++
+ .devtools/ci/test_release_version.py | 124 ++++++++++++++++
+ .devtools/parity/README.md           |   6 +-
+ .github/workflows/tests.yml          |   7 +
+ README.md                            |   4 +-
+ deploy/compose/label-workers.yml     |   4 +-
+ deploy/helm/victual/Chart.yaml       |   4 +-
+ deploy/k3s/label-workers.yaml        |   4 +-
+ deploy/k3s/victual-mcp.yaml          |   2 +-
+ deploy/k3s/victual.yaml              |   6 +-
+ deploy/podman/label-workers.yaml     |   4 +-
+ deploy/podman/victual.yaml           |   6 +-
+ docs/releases/0.4.1-hotfix1.md       |  24 ++++
+ docs/releases/0.4.1.md               |  54 +++++++
+ docs/releases/README.md              |  16 ++-
+ phpdoc.dist.xml                      |   2 +-
+ version.json                         |   4 +-
+ victual.openapi.json                 |   2 +-
+ 19 files changed, 537 insertions(+), 26 deletions(-)

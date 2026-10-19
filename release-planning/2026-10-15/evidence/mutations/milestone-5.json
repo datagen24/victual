@@ -1,0 +1,1 @@
+{"title": "0.4.4", "description": "Conditional label artifact lifecycle patch: new-render bytes survive reuse/collection, and visible state changes signal correctly. Preserve historical artifact retention and reprint refusals. Keep PRs independently reviewable."}

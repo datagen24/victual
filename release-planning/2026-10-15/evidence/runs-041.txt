@@ -1,0 +1,6 @@
+{"conclusion":"failure","event":"push","head_sha":"b69f5a626673ea1363990f8711a5958584f7bc04","html_url":"https://github.com/datagen24/victual/actions/runs/38638714469","id":38638714469,"name":"release","status":"completed"}
+{"conclusion":"success","event":"dynamic","head_sha":"b69f5a626673ea1363990f8711a5958584f7bc04","html_url":"https://github.com/datagen24/victual/actions/runs/38598883625","id":38598883625,"name":"Scheduled","status":"completed"}
+{"conclusion":"success","event":"push","head_sha":"b69f5a626673ea1363990f8711a5958584f7bc04","html_url":"https://github.com/datagen24/victual/actions/runs/38562924950","id":38562924950,"name":"prose","status":"completed"}
+{"conclusion":"success","event":"push","head_sha":"b69f5a626673ea1363990f8711a5958584f7bc04","html_url":"https://github.com/datagen24/victual/actions/runs/38562925518","id":38562925518,"name":"Psalm Security Scan","status":"completed"}
+{"conclusion":"success","event":"push","head_sha":"b69f5a626673ea1363990f8711a5958584f7bc04","html_url":"https://github.com/datagen24/victual/actions/runs/38562925108","id":38562925108,"name":"tests","status":"completed"}
+{"conclusion":"success","event":"dynamic","head_sha":"b69f5a626673ea1363990f8711a5958584f7bc04","html_url":"https://github.com/datagen24/victual/actions/runs/38562924421","id":38562924421,"name":"Push on master","status":"completed"}

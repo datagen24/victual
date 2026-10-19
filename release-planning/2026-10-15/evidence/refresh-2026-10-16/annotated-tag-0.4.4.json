@@ -1,0 +1,24 @@
+{
+  "node_id": "TA_kwDOUEWha9oAKDllOGYyOTY0YTIwNmM4ZGFiMmUyNzIzZjYyMTdhYmVjMWYwNDg3MWU",
+  "sha": "9e8f2964a206c8dab2e2723f6217abec1f04871e",
+  "url": "https://api.github.com/repos/datagen24/victual/git/tags/9e8f2964a206c8dab2e2723f6217abec1f04871e",
+  "tagger": {
+    "name": "Steven Peterson",
+    "email": "steve@scpeterson.com",
+    "date": "2026-10-16T12:11:36Z"
+  },
+  "object": {
+    "sha": "631c6b27cf0d743b6068b5f503940ff9dc97e496",
+    "type": "commit",
+    "url": "https://api.github.com/repos/datagen24/victual/git/commits/631c6b27cf0d743b6068b5f503940ff9dc97e496"
+  },
+  "tag": "v0.4.4",
+  "message": "Victual 0.4.4\n-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgAsPSbLTKaZ9deZ2AQjkF+t0sir\nJPxanG8FRdQWglIUgAAAADZ2l0AAAAAAAAAAZzaGE1MTIAAABTAAAAC3NzaC1lZDI1NTE5\nAAAAQJW7wh5nmYjdpCK6OGt1BZqvB5G1HbogGBJDCbwURov4T7e0LJCPrtXNQHxtELYPuP\n7ZPqOBeLZocZaB5WVpWw0=\n-----END SSH SIGNATURE-----\n",
+  "verification": {
+    "verified": true,
+    "reason": "valid",
+    "signature": "-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgAsPSbLTKaZ9deZ2AQjkF+t0sir\nJPxanG8FRdQWglIUgAAAADZ2l0AAAAAAAAAAZzaGE1MTIAAABTAAAAC3NzaC1lZDI1NTE5\nAAAAQJW7wh5nmYjdpCK6OGt1BZqvB5G1HbogGBJDCbwURov4T7e0LJCPrtXNQHxtELYPuP\n7ZPqOBeLZocZaB5WVpWw0=\n-----END SSH SIGNATURE-----\n",
+    "payload": "object 631c6b27cf0d743b6068b5f503940ff9dc97e496\ntype commit\ntag v0.4.4\ntagger Steven Peterson <steve@scpeterson.com> 1792152696 -0400\n\nVictual 0.4.4\n",
+    "verified_at": "2026-10-16T14:47:37Z"
+  }
+}

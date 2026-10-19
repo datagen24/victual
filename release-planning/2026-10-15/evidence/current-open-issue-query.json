@@ -1,0 +1,14 @@
+{
+  "repository": "datagen24/victual",
+  "observed_at": "2026-10-15T23:15:50Z",
+  "source": "GitKraken GitHub issue listing; open issues queried as one paginated page, closed listing returned 4 pages",
+  "current_open_count": 45,
+  "initial_open_cohort": 53,
+  "newly_closed_from_initial_cohort": {
+    "0.4.2": [801, 893, 913, 936, 953],
+    "0.4.3": [890, 917, 951]
+  },
+  "closed_listing_limit": "Connector exposed 328 closed records (4 pages), fewer than the prior complete snapshot's 889 closed count. Current closed total is therefore baseline 889 plus 8 verified tracked closures, not a new exhaustive closed scan.",
+  "pull_request_limit": "Available pull-request lookup searches authored/assigned requests, not the full repository. It identifies PR #971 as open; it does not establish complete repository-wide open PR count.",
+  "milestone_limit": "Issue listing/detail connector did not expose milestone fields; actual assignments remain from the last verified snapshot."
+}

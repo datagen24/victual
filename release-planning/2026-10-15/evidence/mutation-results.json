@@ -1,0 +1,343 @@
+[
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/milestones/1",
+      "file": "release-planning/2026-10-15/evidence/mutations/milestone-1.json"
+    },
+    "chunk_id": "95df63",
+    "wall_time_seconds": 0.290746042,
+    "exit_code": 0,
+    "original_token_count": 32,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/milestone/1\",\"milestone\":null,\"number\":1,\"state\":\"closed\",\"title\":\"0.3.0\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/milestones/2",
+      "file": "release-planning/2026-10-15/evidence/mutations/milestone-2.json"
+    },
+    "chunk_id": "1bfecc",
+    "wall_time_seconds": 0.364924667,
+    "exit_code": 0,
+    "original_token_count": 31,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/milestone/2\",\"milestone\":null,\"number\":2,\"state\":\"open\",\"title\":\"0.5.0\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/milestones/3",
+      "file": "release-planning/2026-10-15/evidence/mutations/milestone-3.json"
+    },
+    "chunk_id": "2d92bd",
+    "wall_time_seconds": 0.230801416,
+    "exit_code": 0,
+    "original_token_count": 31,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/milestone/3\",\"milestone\":null,\"number\":3,\"state\":\"open\",\"title\":\"0.4.2\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/milestones/4",
+      "file": "release-planning/2026-10-15/evidence/mutations/milestone-4.json"
+    },
+    "chunk_id": "cb2d0f",
+    "wall_time_seconds": 0.29360775,
+    "exit_code": 0,
+    "original_token_count": 31,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/milestone/4\",\"milestone\":null,\"number\":4,\"state\":\"open\",\"title\":\"0.4.3\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/milestones/5",
+      "file": "release-planning/2026-10-15/evidence/mutations/milestone-5.json"
+    },
+    "chunk_id": "4dc6e6",
+    "wall_time_seconds": 0.39754125,
+    "exit_code": 0,
+    "original_token_count": 31,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/milestone/5\",\"milestone\":null,\"number\":5,\"state\":\"open\",\"title\":\"0.4.4\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/milestones/6",
+      "file": "release-planning/2026-10-15/evidence/mutations/milestone-6.json"
+    },
+    "chunk_id": "763bfb",
+    "wall_time_seconds": 0.310936666,
+    "exit_code": 0,
+    "original_token_count": 31,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/milestone/6\",\"milestone\":null,\"number\":6,\"state\":\"open\",\"title\":\"0.6.0\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/953",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-953.json"
+    },
+    "chunk_id": "c02ebd",
+    "wall_time_seconds": 1.2077065,
+    "exit_code": 0,
+    "original_token_count": 55,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/953\",\"milestone\":\"0.4.2\",\"number\":953,\"state\":\"open\",\"title\":\"OpenAPI stock_label_type labels are off by one: the document says 1/2/3, the runtime uses 0/1/2\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/952",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-952.json"
+    },
+    "chunk_id": "4c5635",
+    "wall_time_seconds": 1.029797083,
+    "exit_code": 0,
+    "original_token_count": 60,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/952\",\"milestone\":\"0.5.0\",\"number\":952,\"state\":\"open\",\"title\":\"Conversion chains can overflow in quantity_unit_conversions_resolved, refusing an accepted factor with a generic 400\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/951",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-951.json"
+    },
+    "chunk_id": "a7ee35",
+    "wall_time_seconds": 1.196709542,
+    "exit_code": 0,
+    "original_token_count": 62,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/951\",\"milestone\":\"0.4.3\",\"number\":951,\"state\":\"open\",\"title\":\"App write path stores floats at 14 significant digits (PDO precision), changing factors and breaking #890's boundary guarantee\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/950",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-950.json"
+    },
+    "chunk_id": "2d0b15",
+    "wall_time_seconds": 1.034747083,
+    "exit_code": 0,
+    "original_token_count": 58,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/950\",\"milestone\":\"0.5.0\",\"number\":950,\"state\":\"open\",\"title\":\"Consume silently drops an unusable recipe_id; shopping-list remove accepts a negative product_id as a no-op\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/947",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-947.json"
+    },
+    "chunk_id": "e2efc8",
+    "wall_time_seconds": 1.269509041,
+    "exit_code": 0,
+    "original_token_count": 58,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/947\",\"milestone\":\"0.5.0\",\"number\":947,\"state\":\"open\",\"title\":\"Shopping list add/remove: invalid or negative product_amount is silently stored as 1, -2, or deletes the row\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/946",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-946.json"
+    },
+    "chunk_id": "db83b6",
+    "wall_time_seconds": 1.482388333,
+    "exit_code": 0,
+    "original_token_count": 57,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/946\",\"milestone\":\"0.5.0\",\"number\":946,\"state\":\"open\",\"title\":\"Request purifier rewrites numeric fields before validation: \\\"1\\\\^@2\\\" becomes 12 (incl. permission_id)\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/944",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-944.json"
+    },
+    "chunk_id": "677ce5",
+    "wall_time_seconds": 1.346605833,
+    "exit_code": 0,
+    "original_token_count": 58,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/944\",\"milestone\":\"0.5.0\",\"number\":944,\"state\":\"open\",\"title\":\"Label worker register: NUL bytes give an undocumented 400 in capability_document and are accepted in driver_id\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/942",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-942.json"
+    },
+    "chunk_id": "de4268",
+    "wall_time_seconds": 0.903668917,
+    "exit_code": 0,
+    "original_token_count": 56,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/942\",\"milestone\":\"0.5.0\",\"number\":942,\"state\":\"open\",\"title\":\"Intermittent failure: ConsumptionEventFixtureTest fixture 11 (partial undo) step 5 stock 8.0 vs 10.0\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/937",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-937.json"
+    },
+    "chunk_id": "e03d54",
+    "wall_time_seconds": 1.400196792,
+    "exit_code": 0,
+    "original_token_count": 56,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/937\",\"milestone\":\"0.5.0\",\"number\":937,\"state\":\"open\",\"title\":\"MCP: a 2xx write answered without a transaction row is reported as victual_error, not outcome_unknown\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/936",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-936.json"
+    },
+    "chunk_id": "d5d68f",
+    "wall_time_seconds": 1.1041525,
+    "exit_code": 0,
+    "original_token_count": 58,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/936\",\"milestone\":\"0.4.2\",\"number\":936,\"state\":\"open\",\"title\":\"OpenAPI: ChoreDetailsResponse.average_execution_frequency_hours is a number on the wire, documented as integer\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/933",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-933.json"
+    },
+    "chunk_id": "966740",
+    "wall_time_seconds": 0.895954708,
+    "exit_code": 0,
+    "original_token_count": 56,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/933\",\"milestone\":\"0.5.0\",\"number\":933,\"state\":\"open\",\"title\":\"Shopping list pages give SHOPPINGLIST_VIEW-only callers product barcodes and stock shortfall (decide)\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/930",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-930.json"
+    },
+    "chunk_id": "70890a",
+    "wall_time_seconds": 1.30303225,
+    "exit_code": 0,
+    "original_token_count": 53,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/930\",\"milestone\":\"0.5.0\",\"number\":930,\"state\":\"open\",\"title\":\"MergeProducts conversion check and merge can be separated by a concurrent conversion edit\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/928",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-928.json"
+    },
+    "chunk_id": "94bf5e",
+    "wall_time_seconds": 1.31759825,
+    "exit_code": 0,
+    "original_token_count": 55,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/928\",\"milestone\":\"0.5.0\",\"number\":928,\"state\":\"open\",\"title\":\"Outbox drain stops at a batch of only unreadable rows, leaving deliverable rows queued behind it\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/920",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-920.json"
+    },
+    "chunk_id": "924571",
+    "wall_time_seconds": 1.119431708,
+    "exit_code": 0,
+    "original_token_count": 63,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/920\",\"milestone\":\"0.5.0\",\"number\":920,\"state\":\"open\",\"title\":\"Security: removing a protected userfile's owning reference (clearing the value or deleting the owner) bypasses the #905 read gate\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/916",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-916.json"
+    },
+    "chunk_id": "e2bb20",
+    "wall_time_seconds": 1.297203709,
+    "exit_code": 0,
+    "original_token_count": 54,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/916\",\"milestone\":\"0.5.0\",\"number\":916,\"state\":\"open\",\"title\":\"Numeric columns accept the strings 'NaN' and 'Infinity', leaving rows the API cannot serialise\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/913",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-913.json"
+    },
+    "chunk_id": "487cb4",
+    "wall_time_seconds": 0.834635542,
+    "exit_code": 0,
+    "original_token_count": 58,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/913\",\"milestone\":\"0.4.2\",\"number\":913,\"state\":\"open\",\"title\":\"Manual: roles-permissions page omits the ADR-0035 view leaves (BATTERIES_VIEW, CALENDAR_VIEW, EQUIPMENT_VIEW)\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/908",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-908.json"
+    },
+    "chunk_id": "0abce6",
+    "wall_time_seconds": 1.192129708,
+    "exit_code": 0,
+    "original_token_count": 51,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/908\",\"milestone\":\"0.5.0\",\"number\":908,\"state\":\"open\",\"title\":\"Battery charge-cycle write returns the new row to a caller without BATTERIES_VIEW\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/905",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-905.json"
+    },
+    "chunk_id": "235df4",
+    "wall_time_seconds": 1.301874458,
+    "exit_code": 0,
+    "original_token_count": 57,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/905\",\"milestone\":\"0.5.0\",\"number\":905,\"state\":\"open\",\"title\":\"userfiles are readable by any authenticated caller; they should follow the owning record's read permission\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/904",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-904.json"
+    },
+    "chunk_id": "a38aa3",
+    "wall_time_seconds": 1.033131958,
+    "exit_code": 0,
+    "original_token_count": 53,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/904\",\"milestone\":null,\"number\":904,\"state\":\"open\",\"title\":\"Subprocess test helpers read stdout before stderr and deadlock on more than 64 KB of stderr\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/898",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-898.json"
+    },
+    "chunk_id": "e93e02",
+    "wall_time_seconds": 1.049811875,
+    "exit_code": 0,
+    "original_token_count": 48,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/898\",\"milestone\":\"0.4.4\",\"number\":898,\"state\":\"open\",\"title\":\"Render claim changes visible state without signalling a data change\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/892",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-892.json"
+    },
+    "chunk_id": "90c71d",
+    "wall_time_seconds": 1.170779458,
+    "exit_code": 0,
+    "original_token_count": 48,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/892\",\"milestone\":\"0.5.0\",\"number\":892,\"state\":\"open\",\"title\":\"Request fields typed number/integer accept numeric strings at runtime\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/891",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-891.json"
+    },
+    "chunk_id": "5bcd56",
+    "wall_time_seconds": 1.167833208,
+    "exit_code": 0,
+    "original_token_count": 54,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/891\",\"milestone\":\"0.5.0\",\"number\":891,\"state\":\"open\",\"title\":\"victual-kit and the client handoff: adopt the anyOf entity unions and x-victual-entity-schemas\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/890",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-890.json"
+    },
+    "chunk_id": "8a03cb",
+    "wall_time_seconds": 1.36110875,
+    "exit_code": 0,
+    "original_token_count": 49,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/890\",\"milestone\":\"0.4.3\",\"number\":890,\"state\":\"open\",\"title\":\"Decide whether the lookup's purchase-to-stock factor needs a range limit\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/796",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-796.json"
+    },
+    "chunk_id": "4f4265",
+    "wall_time_seconds": 1.1288426249999999,
+    "exit_code": 0,
+    "original_token_count": 50,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/796\",\"milestone\":\"0.6.0\",\"number\":796,\"state\":\"open\",\"title\":\"Audit and bring the REST API specification into full OpenAPI 3.2 compliance\"}\n"
+  },
+  {
+    "op": {
+      "endpoint": "repos/datagen24/victual/issues/774",
+      "file": "release-planning/2026-10-15/evidence/mutations/issue-774.json"
+    },
+    "chunk_id": "facf05",
+    "wall_time_seconds": 1.5450059170000001,
+    "exit_code": 0,
+    "original_token_count": 51,
+    "output": "{\"html_url\":\"https://github.com/datagen24/victual/issues/774\",\"milestone\":\"0.5.0\",\"number\":774,\"state\":\"open\",\"title\":\"Unpriced stock is reported as value 0, so a client cannot tell free from unknown\"}\n"
+  }
+]

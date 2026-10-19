@@ -1,0 +1,274 @@
+{
+  "sha": "631c6b27cf0d743b6068b5f503940ff9dc97e496",
+  "node_id": "C_kwDOUEWha9oAKDYzMWM2YjI3Y2YwZDc0M2I2MDY4YjVmNTAzOTQwZmY5ZGM5N2U0OTY",
+  "commit": {
+    "author": {
+      "name": "datagen24",
+      "email": "steve@scpeterson.com",
+      "date": "2026-10-16T01:07:49Z"
+    },
+    "committer": {
+      "name": "GitHub",
+      "email": "noreply@github.com",
+      "date": "2026-10-16T01:07:49Z"
+    },
+    "message": "docs: record Victual 0.4.4 release\n\ndocs: record Victual 0.4.4 release",
+    "tree": {
+      "sha": "62ed07c59d6b98629d79cd1f3e5898ce91df31e0",
+      "url": "https://api.github.com/repos/datagen24/victual/git/trees/62ed07c59d6b98629d79cd1f3e5898ce91df31e0"
+    },
+    "url": "https://api.github.com/repos/datagen24/victual/git/commits/631c6b27cf0d743b6068b5f503940ff9dc97e496",
+    "comment_count": 0,
+    "verification": {
+      "verified": true,
+      "reason": "valid",
+      "signature": "-----BEGIN PGP SIGNATURE-----\n\nwsFcBAABCAAQBQJq0XjlCRC1aQ7uu5UhlAAAO98QACLEY1NoGJzETUHwYWXK80sm\nfgHVTBeBnmA5SdFYEqbmjVoHkV4vm/VnQ8UMLVWq9LeqnRuMDO8CCCngv1C+QTj5\n3iYL5chig23VAsJpEDgM0jTYhEELJgdBPWmJZ0F6jW2qcsFhATpmR79MbsvV6rIy\n398X9ihmjfRs749k57ELOkT2q5o9Ow6T1oBBOum+NKAx3zdqKl4Jmv7SgbjRfY6P\nZXp6bwMo8kr8co7RZDp3NaUyH7cnirwM0+36rMqruSC6TYnEPBcoXy4JaLyBlc9Z\nqF3OfF/P6liggV/L2uXGb/4YQdxTdkD8g0gDuEY1u6EuCprg19S5i0L4slrlc/Wc\nYIvMrzRCvk6Kpw2o5sUoHgt5ea2AAvYO80PlEfWZL7VnJW5LL0ZKJaEQR2aqn9R4\n5pVIQkCNeMFSoS5/sn5KSeQPBUeR5XNt8bloVNieo9kA/021+sdZl1SJQY336+y7\ndjB3YTHAvGiYieFwOeS8rWclcuBEkyXkOr0OD1zjn1XW6MJVKBOK+J+v18bAcQcS\nL1yu1Dq3Rx2XKHwbwSN/QKBsBWFByBCoFfgtOYiiug3xt1WDiEZzxsZ1E8wuoWyS\nfTHM+MDbC1TsZeDYFhAgehNDcnyUZuIZN+AFz2YfyHmi1mVmn8LvKIx3X4gvccTw\n3jqYZyU3F65UkpiIGFxP\n=fusF\n-----END PGP SIGNATURE-----\n",
+      "payload": "tree 62ed07c59d6b98629d79cd1f3e5898ce91df31e0\nparent 79945292d3ff29e177f7639ca7588a67d933e20b\nparent f1247252311ccea9786b66b8cda3c6f1c537d5e9\nauthor datagen24 <steve@scpeterson.com> 1792112869 -0400\ncommitter GitHub <noreply@github.com> 1792112869 -0400\n\ndocs: record Victual 0.4.4 release\n\ndocs: record Victual 0.4.4 release",
+      "verified_at": "2026-10-16T01:07:49Z"
+    }
+  },
+  "url": "https://api.github.com/repos/datagen24/victual/commits/631c6b27cf0d743b6068b5f503940ff9dc97e496",
+  "html_url": "https://github.com/datagen24/victual/commit/631c6b27cf0d743b6068b5f503940ff9dc97e496",
+  "comments_url": "https://api.github.com/repos/datagen24/victual/commits/631c6b27cf0d743b6068b5f503940ff9dc97e496/comments",
+  "author": {
+    "login": "datagen24",
+    "id": 20876965,
+    "node_id": "MDQ6VXNlcjIwODc2OTY1",
+    "avatar_url": "https://avatars.githubusercontent.com/u/20876965?v=4",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/datagen24",
+    "html_url": "https://github.com/datagen24",
+    "followers_url": "https://api.github.com/users/datagen24/followers",
+    "following_url": "https://api.github.com/users/datagen24/following{/other_user}",
+    "gists_url": "https://api.github.com/users/datagen24/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/datagen24/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/datagen24/subscriptions",
+    "organizations_url": "https://api.github.com/users/datagen24/orgs",
+    "repos_url": "https://api.github.com/users/datagen24/repos",
+    "events_url": "https://api.github.com/users/datagen24/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/datagen24/received_events",
+    "type": "User",
+    "user_view_type": "public",
+    "site_admin": false
+  },
+  "committer": {
+    "login": "web-flow",
+    "id": 19864447,
+    "node_id": "MDQ6VXNlcjE5ODY0NDQ3",
+    "avatar_url": "https://avatars.githubusercontent.com/u/19864447?v=4",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/web-flow",
+    "html_url": "https://github.com/web-flow",
+    "followers_url": "https://api.github.com/users/web-flow/followers",
+    "following_url": "https://api.github.com/users/web-flow/following{/other_user}",
+    "gists_url": "https://api.github.com/users/web-flow/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/web-flow/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/web-flow/subscriptions",
+    "organizations_url": "https://api.github.com/users/web-flow/orgs",
+    "repos_url": "https://api.github.com/users/web-flow/repos",
+    "events_url": "https://api.github.com/users/web-flow/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/web-flow/received_events",
+    "type": "User",
+    "user_view_type": "public",
+    "site_admin": false
+  },
+  "parents": [
+    {
+      "sha": "79945292d3ff29e177f7639ca7588a67d933e20b",
+      "url": "https://api.github.com/repos/datagen24/victual/commits/79945292d3ff29e177f7639ca7588a67d933e20b",
+      "html_url": "https://github.com/datagen24/victual/commit/79945292d3ff29e177f7639ca7588a67d933e20b"
+    },
+    {
+      "sha": "f1247252311ccea9786b66b8cda3c6f1c537d5e9",
+      "url": "https://api.github.com/repos/datagen24/victual/commits/f1247252311ccea9786b66b8cda3c6f1c537d5e9",
+      "html_url": "https://github.com/datagen24/victual/commit/f1247252311ccea9786b66b8cda3c6f1c537d5e9"
+    }
+  ],
+  "stats": {
+    "total": 82,
+    "additions": 54,
+    "deletions": 28
+  },
+  "files": [
+    {
+      "sha": "90d40d081bca93f28cf4357168c90ff9ee59ddca",
+      "filename": ".devtools/parity/README.md",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3,
+      "changes": 6,
+      "blob_url": "https://github.com/datagen24/victual/blob/631c6b27cf0d743b6068b5f503940ff9dc97e496/.devtools%2Fparity%2FREADME.md",
+      "raw_url": "https://github.com/datagen24/victual/raw/631c6b27cf0d743b6068b5f503940ff9dc97e496/.devtools%2Fparity%2FREADME.md",
+      "contents_url": "https://api.github.com/repos/datagen24/victual/contents/.devtools%2Fparity%2FREADME.md?ref=631c6b27cf0d743b6068b5f503940ff9dc97e496",
+      "patch": "@@ -234,9 +234,9 @@ says so by not pretending to be one.\n \n | Container | Image | Port |\n |---|---|---|\n-| `parity-victual-app` | `localhost/victual-app:0.4.3`, in pod `parity-victual` | — (FastCGI on the pod's loopback) |\n-| `parity-victual-web` | `localhost/victual-web:0.4.3`, in the same pod | 8080, published by the pod |\n-| — | `localhost/victual-migrate:0.4.3`, run once and removed | — |\n+| `parity-victual-app` | `localhost/victual-app:0.4.4`, in pod `parity-victual` | — (FastCGI on the pod's loopback) |\n+| `parity-victual-web` | `localhost/victual-web:0.4.4`, in the same pod | 8080, published by the pod |\n+| — | `localhost/victual-migrate:0.4.4`, run once and removed | — |\n | `parity-upstream` | `docker.io/linuxserver/grocy:version-v4.6.0` | 8081 |\n | `parity-postgres` | `postgres:16`, on a tmpfs | — |\n | `parity-mosquitto` | `eclipse-mosquitto:2` | 1883 |"
+    },
+    {
+      "sha": "0ae2d647314f05f6ba114e51cddba360f566a43e",
+      "filename": "README.md",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2,
+      "changes": 4,
+      "blob_url": "https://github.com/datagen24/victual/blob/631c6b27cf0d743b6068b5f503940ff9dc97e496/README.md",
+      "raw_url": "https://github.com/datagen24/victual/raw/631c6b27cf0d743b6068b5f503940ff9dc97e496/README.md",
+      "contents_url": "https://api.github.com/repos/datagen24/victual/contents/README.md?ref=631c6b27cf0d743b6068b5f503940ff9dc97e496",
+      "patch": "@@ -28,8 +28,8 @@ goals.\n \n ## Current state\n \n-**Current version: [0.4.3](docs/releases/0.4.3.md), 2026-10-15**; release tag\n-`v0.4.3` is planned. This is an unpublished candidate. Use the last published release,\n+**Current version: [0.4.4](docs/releases/0.4.4.md), 2026-10-16**; release tag\n+`v0.4.4` is planned. This is an unpublished candidate. Use the last published release,\n [0.4.2](docs/releases/0.4.2.md), for deployment until the candidate's\n signed tag and GHCR artifacts are available.\n "
+    },
+    {
+      "sha": "e3beae33b07415d151b10b7c8f156590f0f47696",
+      "filename": "deploy/compose/label-workers.yml",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2,
+      "changes": 4,
+      "blob_url": "https://github.com/datagen24/victual/blob/631c6b27cf0d743b6068b5f503940ff9dc97e496/deploy%2Fcompose%2Flabel-workers.yml",
+      "raw_url": "https://github.com/datagen24/victual/raw/631c6b27cf0d743b6068b5f503940ff9dc97e496/deploy%2Fcompose%2Flabel-workers.yml",
+      "contents_url": "https://api.github.com/repos/datagen24/victual/contents/deploy%2Fcompose%2Flabel-workers.yml?ref=631c6b27cf0d743b6068b5f503940ff9dc97e496",
+      "patch": "@@ -81,7 +81,7 @@ name: victual-labels\n \n services:\n   renderer:\n-    image: localhost/victual-label-renderer:0.4.3\n+    image: localhost/victual-label-renderer:0.4.4\n     profiles: [\"manual\"]\n     # Drains the queue rather than rendering one label per run, exactly as the CronJob's\n     # arguments do on Kubernetes.\n@@ -105,7 +105,7 @@ services:\n     networks: [\"victual\"]\n \n   worker:\n-    image: localhost/victual-label-worker:0.4.3\n+    image: localhost/victual-label-worker:0.4.4\n     profiles: [\"manual\"]\n     # No `restart:` key, and that is the point of this file. The claim loop breaks on an\n     # empty queue and the process exits 0 — and only there, never mid-attempt, so it exits"
+    },
+    {
+      "sha": "b8e4b4acc0cdb114bd18f08f6bab8ef77dcfb362",
+      "filename": "deploy/helm/victual/Chart.yaml",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2,
+      "changes": 4,
+      "blob_url": "https://github.com/datagen24/victual/blob/631c6b27cf0d743b6068b5f503940ff9dc97e496/deploy%2Fhelm%2Fvictual%2FChart.yaml",
+      "raw_url": "https://github.com/datagen24/victual/raw/631c6b27cf0d743b6068b5f503940ff9dc97e496/deploy%2Fhelm%2Fvictual%2FChart.yaml",
+      "contents_url": "https://api.github.com/repos/datagen24/victual/contents/deploy%2Fhelm%2Fvictual%2FChart.yaml?ref=631c6b27cf0d743b6068b5f503940ff9dc97e496",
+      "patch": "@@ -8,8 +8,8 @@ apiVersion: v2\n name: victual\n description: Victual, a self-hosted household inventory, with its MCP sidecar and label workers\n type: application\n-version: 0.4.3\n-appVersion: \"0.4.3\"\n+version: 0.4.4\n+appVersion: \"0.4.4\"\n home: https://github.com/datagen24/victual\n sources:\n   - https://github.com/datagen24/victual"
+    },
+    {
+      "sha": "e1710730e9f7bee7e3d54e3a5fafe39dc6f66850",
+      "filename": "deploy/k3s/label-workers.yaml",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2,
+      "changes": 4,
+      "blob_url": "https://github.com/datagen24/victual/blob/631c6b27cf0d743b6068b5f503940ff9dc97e496/deploy%2Fk3s%2Flabel-workers.yaml",
+      "raw_url": "https://github.com/datagen24/victual/raw/631c6b27cf0d743b6068b5f503940ff9dc97e496/deploy%2Fk3s%2Flabel-workers.yaml",
+      "contents_url": "https://api.github.com/repos/datagen24/victual/contents/deploy%2Fk3s%2Flabel-workers.yaml?ref=631c6b27cf0d743b6068b5f503940ff9dc97e496",
+      "patch": "@@ -125,7 +125,7 @@ spec:\n                     path: renderer-key\n           containers:\n             - name: renderer\n-              image: ghcr.io/datagen24/victual-label-renderer:0.4.3\n+              image: ghcr.io/datagen24/victual-label-renderer:0.4.4\n               args:\n                 - \"--api\"\n                 - \"$(VICTUAL_API_BASE)\"\n@@ -225,7 +225,7 @@ spec:\n                     path: worker-key\n           containers:\n             - name: worker\n-              image: ghcr.io/datagen24/victual-label-worker:0.4.3\n+              image: ghcr.io/datagen24/victual-label-worker:0.4.4\n               args:\n                 - \"--api\"\n                 - \"$(VICTUAL_API_BASE)\""
+    },
+    {
+      "sha": "890f410dcfeca28d4d18b3934ffb82d8850dc36e",
+      "filename": "deploy/k3s/victual-mcp.yaml",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "blob_url": "https://github.com/datagen24/victual/blob/631c6b27cf0d743b6068b5f503940ff9dc97e496/deploy%2Fk3s%2Fvictual-mcp.yaml",
+      "raw_url": "https://github.com/datagen24/victual/raw/631c6b27cf0d743b6068b5f503940ff9dc97e496/deploy%2Fk3s%2Fvictual-mcp.yaml",
+      "contents_url": "https://api.github.com/repos/datagen24/victual/contents/deploy%2Fk3s%2Fvictual-mcp.yaml?ref=631c6b27cf0d743b6068b5f503940ff9dc97e496",
+      "patch": "@@ -88,7 +88,7 @@ spec:\n             sizeLimit: 16Mi\n       containers:\n         - name: mcp\n-          image: ghcr.io/datagen24/victual-mcp:0.4.3\n+          image: ghcr.io/datagen24/victual-mcp:0.4.4\n           ports:\n             - name: http\n               containerPort: 3000"
+    },
+    {
+      "sha": "bb6a713f374bba989a684449ff83d589213fe5fd",
+      "filename": "deploy/k3s/victual.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3,
+      "changes": 6,
+      "blob_url": "https://github.com/datagen24/victual/blob/631c6b27cf0d743b6068b5f503940ff9dc97e496/deploy%2Fk3s%2Fvictual.yaml",
+      "raw_url": "https://github.com/datagen24/victual/raw/631c6b27cf0d743b6068b5f503940ff9dc97e496/deploy%2Fk3s%2Fvictual.yaml",
+      "contents_url": "https://api.github.com/repos/datagen24/victual/contents/deploy%2Fk3s%2Fvictual.yaml?ref=631c6b27cf0d743b6068b5f503940ff9dc97e496",
+      "patch": "@@ -188,7 +188,7 @@ spec:\n         # See deploy/podman/victual.yaml for why migration is a startup step and why this\n         # is the only container holding a role that can run DDL.\n         - name: migrate\n-          image: ghcr.io/datagen24/victual-migrate:0.4.3\n+          image: ghcr.io/datagen24/victual-migrate:0.4.4\n           envFrom:\n             - configMapRef:\n                 name: victual-config\n@@ -215,7 +215,7 @@ spec:\n \n       containers:\n         - name: app\n-          image: ghcr.io/datagen24/victual-app:0.4.3\n+          image: ghcr.io/datagen24/victual-app:0.4.4\n           ports:\n             - name: fastcgi\n               containerPort: 9000\n@@ -266,7 +266,7 @@ spec:\n             stopSignal: SIGQUIT\n \n         - name: web\n-          image: ghcr.io/datagen24/victual-web:0.4.3\n+          image: ghcr.io/datagen24/victual-web:0.4.4\n           ports:\n             - name: http\n               containerPort: 8080"
+    },
+    {
+      "sha": "201409365c58d20d657acf6034b4cdcacf5726df",
+      "filename": "deploy/podman/label-workers.yaml",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2,
+      "changes": 4,
+      "blob_url": "https://github.com/datagen24/victual/blob/631c6b27cf0d743b6068b5f503940ff9dc97e496/deploy%2Fpodman%2Flabel-workers.yaml",
+      "raw_url": "https://github.com/datagen24/victual/raw/631c6b27cf0d743b6068b5f503940ff9dc97e496/deploy%2Fpodman%2Flabel-workers.yaml",
+      "contents_url": "https://api.github.com/repos/datagen24/victual/contents/deploy%2Fpodman%2Flabel-workers.yaml?ref=631c6b27cf0d743b6068b5f503940ff9dc97e496",
+      "patch": "@@ -161,7 +161,7 @@ spec:\n                 path: renderer-key\n       containers:\n         - name: renderer\n-          image: localhost/victual-label-renderer:0.4.3\n+          image: localhost/victual-label-renderer:0.4.4\n           imagePullPolicy: Never\n           args:\n             - \"--api\"\n@@ -242,7 +242,7 @@ spec:\n                 path: worker-key\n       containers:\n         - name: worker\n-          image: localhost/victual-label-worker:0.4.3\n+          image: localhost/victual-label-worker:0.4.4\n           imagePullPolicy: Never\n           args:\n             - \"--api\""
+    },
+    {
+      "sha": "fc3cc93a77a9f6fac5e6de21f2d68f9b94fb1d4d",
+      "filename": "deploy/podman/victual.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3,
+      "changes": 6,
+      "blob_url": "https://github.com/datagen24/victual/blob/631c6b27cf0d743b6068b5f503940ff9dc97e496/deploy%2Fpodman%2Fvictual.yaml",
+      "raw_url": "https://github.com/datagen24/victual/raw/631c6b27cf0d743b6068b5f503940ff9dc97e496/deploy%2Fpodman%2Fvictual.yaml",
+      "contents_url": "https://api.github.com/repos/datagen24/victual/contents/deploy%2Fpodman%2Fvictual.yaml?ref=631c6b27cf0d743b6068b5f503940ff9dc97e496",
+      "patch": "@@ -88,7 +88,7 @@ spec:\n     # that could be supplied by either would make \"which role is this container\" depend on\n     # list order.\n     - name: migrate\n-      image: localhost/victual-migrate:0.4.3\n+      image: localhost/victual-migrate:0.4.4\n       imagePullPolicy: Never\n       envFrom:\n         - configMapRef:\n@@ -116,7 +116,7 @@ spec:\n \n   containers:\n     - name: app\n-      image: localhost/victual-app:0.4.3\n+      image: localhost/victual-app:0.4.4\n       imagePullPolicy: Never\n       ports:\n         - name: fastcgi\n@@ -179,7 +179,7 @@ spec:\n         stopSignal: SIGQUIT\n \n     - name: web\n-      image: localhost/victual-web:0.4.3\n+      image: localhost/victual-web:0.4.4\n       imagePullPolicy: Never\n       ports:\n         - name: http"
+    },
+    {
+      "sha": "0705de2e8c6f36ce57db8211a81d171cf62f2192",
+      "filename": "docs/releases/0.4.3.md",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 4,
+      "changes": 7,
+      "blob_url": "https://github.com/datagen24/victual/blob/631c6b27cf0d743b6068b5f503940ff9dc97e496/docs%2Freleases%2F0.4.3.md",
+      "raw_url": "https://github.com/datagen24/victual/raw/631c6b27cf0d743b6068b5f503940ff9dc97e496/docs%2Freleases%2F0.4.3.md",
+      "contents_url": "https://api.github.com/repos/datagen24/victual/contents/docs%2Freleases%2F0.4.3.md?ref=631c6b27cf0d743b6068b5f503940ff9dc97e496",
+      "patch": "@@ -1,9 +1,8 @@\n # Victual 0.4.3\n \n-This is the release record for `v0.4.3`. The tag has not been placed. It follows\n-[0.4.2](0.4.2.md). PR #969 merged at `c2e9ece9592588305dca0b96e7aecb5c026d1de6`\n-on 2026-10-15. The maintainer places a signed tag only after validating the final merge\n-commit.\n+This is the release record for `v0.4.3`, published on 2026-10-15. The signed tag targets\n+`320f610e62c966b1b5dc4a1987bb728cf9966718`. It follows [0.4.2](0.4.2.md). PR #969\n+merged at `c2e9ece9592588305dca0b96e7aecb5c026d1de6` on 2026-10-15.\n \n ## What changed\n "
+    },
+    {
+      "sha": "7564bf1f8af194e121006536c6512a18e5d83294",
+      "filename": "docs/releases/0.4.4.md",
+      "status": "added",
+      "additions": 26,
+      "deletions": 0,
+      "changes": 26,
+      "blob_url": "https://github.com/datagen24/victual/blob/631c6b27cf0d743b6068b5f503940ff9dc97e496/docs%2Freleases%2F0.4.4.md",
+      "raw_url": "https://github.com/datagen24/victual/raw/631c6b27cf0d743b6068b5f503940ff9dc97e496/docs%2Freleases%2F0.4.4.md",
+      "contents_url": "https://api.github.com/repos/datagen24/victual/contents/docs%2Freleases%2F0.4.4.md?ref=631c6b27cf0d743b6068b5f503940ff9dc97e496",
+      "patch": "@@ -0,0 +1,26 @@\n+# Victual 0.4.4\n+\n+**Tag `v0.4.4`, on `master` at the commit that merges this record.** It follows\n+[0.4.3](0.4.3.md).\n+\n+## What changed\n+\n+| Change | Effect for an operator or client |\n+|---|---|\n+| Renderer claim ticks signal `db-changed-time` when they reap or claim work ([PR 973](https://github.com/datagen24/victual/pull/973), issue 898). | Clients can refresh after a claim tick changes visible state. Empty polls remain no-ops, and the response contract is unchanged. |\n+| Artifact storage and preview collection are serialized ([PR 972](https://github.com/datagen24/victual/pull/972), issue 926). | Concurrent collection cannot remove an artifact while its storage operation is completing. |\n+| Published artifact references for 0.4.3 were added to its release record ([PR 971](https://github.com/datagen24/victual/pull/971)). | Documentation only; no runtime effect. |\n+\n+The release adds no database migration, permission, configuration, or deployment-path\n+change. It preserves response shapes and accepted inputs.\n+\n+## Verified before the tag\n+\n+| Check | Result | Reproduce |\n+|---|---|---|\n+| Version copies, chart render, OpenAPI and CI helpers after the version update | pending | `python3 .devtools/ci/release_version.py --check`; `python3 .devtools/ci/render_k3s.py --check`; `python3 .devtools/ci/check_openapi_document.py victual.openapi.json`; `python3 -m unittest discover -s .devtools/ci` |\n+| Upgrade from `v0.4.3` over a populated database | No migration files changed since `v0.4.3`; no schema upgrade is required. A populated-database rehearsal was not run for this release. | Compare `db/` migration files with the `v0.4.3` tag; `.devtools/pgsql/upgrade-rehearsal/rehearse.sh` covers the project's fixed historical upgrade path. |\n+| `tests` workflow, suite-floor and frontend-security | Passed on PR #973 head tree `c80b3d3bb72b581dbdcd6a6f3c11534e91b31d56`; the merged tree is identical. | [tests workflow](https://github.com/datagen24/victual/actions/runs/38828409695) |\n+| Psalm security scan and prose checks | Passed on PR #973 head tree; the merged tree is identical. | [Psalm](https://github.com/datagen24/victual/actions/runs/38828409764); [prose](https://github.com/datagen24/victual/actions/runs/38828409689) |\n+| Focused claim tick tests | Passed locally with PostgreSQL 16: `labeltracking` (4 tests/18 assertions), `labelservices` (310/1,945), and `labelapi` (177/4,827). | `.devtools/pgsql/run-tests.sh labeltracking`; `.devtools/pgsql/run-tests.sh labelservices`; `.devtools/pgsql/run-tests.sh labelapi` |\n+| Production images and Helm chart publication | Pending signed tag and release workflow. | `.github/workflows/release.yml` |"
+    },
+    {
+      "sha": "6747d40ec59820858c6ffba19a55d89a96ace8b6",
+      "filename": "docs/releases/README.md",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 0,
+      "changes": 1,
+      "blob_url": "https://github.com/datagen24/victual/blob/631c6b27cf0d743b6068b5f503940ff9dc97e496/docs%2Freleases%2FREADME.md",
+      "raw_url": "https://github.com/datagen24/victual/raw/631c6b27cf0d743b6068b5f503940ff9dc97e496/docs%2Freleases%2FREADME.md",
+      "contents_url": "https://api.github.com/repos/datagen24/victual/contents/docs%2Freleases%2FREADME.md?ref=631c6b27cf0d743b6068b5f503940ff9dc97e496",
+      "patch": "@@ -56,6 +56,7 @@ These records are not published on the documentation site\n \n | Version | Date | Record |\n |---|---|---|\n+| 0.4.4 | 2026-10-16 | [0.4.4.md](0.4.4.md) |\n | 0.4.3 | 2026-10-15 | [0.4.3.md](0.4.3.md) |\n | 0.4.2 | 2026-10-15 | [0.4.2.md](0.4.2.md) |\n | 0.4.1-hotfix1 | 2026-10-14 | [0.4.1-hotfix1.md](0.4.1-hotfix1.md) |"
+    },
+    {
+      "sha": "52dd5b98f7b41300719e3af20ae797280deb5e14",
+      "filename": "phpdoc.dist.xml",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "blob_url": "https://github.com/datagen24/victual/blob/631c6b27cf0d743b6068b5f503940ff9dc97e496/phpdoc.dist.xml",
+      "raw_url": "https://github.com/datagen24/victual/raw/631c6b27cf0d743b6068b5f503940ff9dc97e496/phpdoc.dist.xml",
+      "contents_url": "https://api.github.com/repos/datagen24/victual/contents/phpdoc.dist.xml?ref=631c6b27cf0d743b6068b5f503940ff9dc97e496",
+      "patch": "@@ -26,7 +26,7 @@\n \t</paths>\n \n \t<!-- Mirrors version.json; bump both together on a release -->\n-\t<version number=\"0.4.3\">\n+\t<version number=\"0.4.4\">\n \t\t<api>\n \t\t\t<!--\n \t\t\t\tThe four PSR-4 roots from composer.json (Victual\\Controllers, Victual\\Services,"
+    },
+    {
+      "sha": "2723b62af7e863d6cb4057248f3096d560d4ba55",
+      "filename": "version.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2,
+      "changes": 4,
+      "blob_url": "https://github.com/datagen24/victual/blob/631c6b27cf0d743b6068b5f503940ff9dc97e496/version.json",
+      "raw_url": "https://github.com/datagen24/victual/raw/631c6b27cf0d743b6068b5f503940ff9dc97e496/version.json",
+      "contents_url": "https://api.github.com/repos/datagen24/victual/contents/version.json?ref=631c6b27cf0d743b6068b5f503940ff9dc97e496",
+      "patch": "@@ -1,4 +1,4 @@\n {\n-\t\"Version\": \"0.4.3\",\n-\t\"ReleaseDate\": \"2026-10-15\"\n+\t\"Version\": \"0.4.4\",\n+\t\"ReleaseDate\": \"2026-10-16\"\n }"
+    },
+    {
+      "sha": "8eab13e61a03c15518f7eb5d9b9bb3a50904f079",
+      "filename": "victual.openapi.json",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "blob_url": "https://github.com/datagen24/victual/blob/631c6b27cf0d743b6068b5f503940ff9dc97e496/victual.openapi.json",
+      "raw_url": "https://github.com/datagen24/victual/raw/631c6b27cf0d743b6068b5f503940ff9dc97e496/victual.openapi.json",
+      "contents_url": "https://api.github.com/repos/datagen24/victual/contents/victual.openapi.json?ref=631c6b27cf0d743b6068b5f503940ff9dc97e496",
+      "patch": "@@ -3,7 +3,7 @@\n \t\"info\": {\n \t\t\"title\": \"Victual REST API\",\n \t\t\"description\": \"Authentication uses one of the credentials below. Which one is accepted depends on the operation.<br><br>**API key.** Send an API key you manage [here](PlaceHolderManageApiKeysUrl) in the *VICTUAL-API-KEY* header. Add the optional *VICTUAL-API-KEY-TYPE* header to narrow which key types may match; it can only remove authority, never add it. A read-only key is limited to GET, HEAD and OPTIONS and gets **403** on anything else; it also gets **403** on three GET operations that write: GET /calendar/ical/sharing-link, GET /stock/barcodes/external-lookup/{barcode} and GET /print/shoppinglist/thermal. A general API key is never accepted in the query string; the calendar secret on GET /calendar/ical is the only query-string credential.<br><br>**Session cookie.** Requests from the frontend authenticate with the *victual_session* cookie. On API routes, a request authenticated by the session cookie other than GET, HEAD or OPTIONS is refused with **403** when its Origin header (or its Referer header, if there is no Origin) names another origin. A request with neither header is allowed. Requests authenticated by an API key rather than the session cookie are exempt.<br><br>**Calendar secret.** The calendar feed link carries a calendar key in the *secret* query parameter. It is accepted on GET /calendar/ical only. GET /calendar/ical/sharing-link does not accept it, and no other operation does.<br><br>**Label worker, verifier and renderer keys.** These use the same *VICTUAL-API-KEY* header but are accepted only on the label worker and renderer operations that name them. On those operations user API keys, session cookies and a disabled-authentication setup are refused with **401**. POST /labels/pair is public.<br><br>**Deployment modes.** These are not credentials. With reverse-proxy authentication the server takes the user's identity from a header set by the proxy. In dev, demo and prerelease modes, in an embedded install, and with authentication disabled, requests run as the default user without a credential, except on the label worker and renderer operations above.<br><br>**Dates and times.** Every instant this API stores or sends is RFC 3339 in UTC with exactly six fractional digits - `2026-10-04T18:30:00.000000Z` - typed *format: date-time* (ADR-0027 decision 2, issue #650). The fixed width is part of the contract: text order is chronological order, so two values may be compared as strings. The one exception is *time_local* on the system time endpoint, the same instant with the server's offset (`2026-10-04T14:30:00.000000-04:00`). Fields whose column is a SQL DATE are calendar dates, typed *format: date* and written `YYYY-MM-DD`; they are never converted between zones. Days the server computes - due today, overdue, expiring in N days - are days in the server's configured time zone. A value sent without an offset - to the three write fields *tracked_time* and *done_time*, to a generic entity write, or as a `query[]` comparison - is a wall clock in the server's configured zone: a repeated hour names the earlier instant, and a skipped hour is refused with **400**. Send an offset to name any instant unambiguously. These values were local wall clocks in the server's zone, `YYYY-MM-DD HH:MM:SS`, until migration 0301 converted them.<br><br>**Routing failures.** A path that matches no API route answers 404, and an unsupported method on a matched path answers 405. These routing outcomes are not listed on individual operations. A missing domain resource still uses the 404 response documented on its operation.\",\n-\t\t\"version\": \"0.4.3\",\n+\t\t\"version\": \"0.4.4\",\n \t\t\"license\": {\n \t\t\t\"name\": \"MIT (code originating from upstream grocy) AND BSD-3-Clause (Victual)\",\n \t\t\t\"url\": \"https://github.com/datagen24/victual/blob/master/LICENSE.md\""
+    }
+  ]
+}
