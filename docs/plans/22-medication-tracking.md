@@ -6,13 +6,13 @@ user-entered consumption recipe with access restricted to its owner and specific
 authorized members. Dosing schedules, adherence tracking and dose reminders are outside
 Victual's scope.
 
-**Status:** in progress for v0.5.0; product scope decided and design records accepted
-2026-10-09. Implemented: private consumption recipes and manual consumption (issue 698, merged),
-the external-event schema, service, API and reconciliation inbox (issue 700, merged), and the
-organizer inventory workflow's test evidence (issue 699, merged in pull requests 738 and 744).
-Issues 698 to 700 are closed. Refill tracking (issue 701) merged in pull requests 748, 749 and 751, and
-its read-authorization fix in pull request 755. Native acceptance (issue 702) was accepted on simulator
-evidence on 2026-10-11 (see its Executed section). Not complete: integrated verification (issue 703).
+**Status:** complete for v0.5.0, 2026-10-19; landed once the `v0.5.0` tag is published.
+Issues 698 to 702 and 742 are closed. Private consumption recipes and manual consumption (issue 698),
+the external-event schema, service, API and reconciliation inbox (issue 700) and the organizer
+inventory workflow (issue 699) merged first. Refill tracking (issue 701) merged in pull requests 748,
+749 and 751, and its read-authorization fix in pull request 755. Native acceptance (issue 702) was
+accepted on simulator evidence on 2026-10-11. Integrated verification (issue 703) is recorded in
+[release 0.5.0](../releases/0.5.0.md).
 
 **Release target:** v0.5.0. [Release 0.4.0](../releases/0.4.0.md) ships issues 698 to 701. The maintainer clarified this scope on 2026-10-09. The target
 is a schedule; the release record and signed tag follow verified implementation under
@@ -233,7 +233,8 @@ ADR-0014 and ADR-0018 unamended. The evidence is in `.devtools/adr0040/`, `.devt
 `.devtools/adr0042/`. Implementation is tracked by issues 698 to 703. Issues 698 to 700 have
 merged. The implementation of issue 701 merged on 2026-10-10 in pull requests 748, 749 and 751, and
 the issue stays open (see its Executed section). The maintainer accepted issue 702 on simulator
-evidence on 2026-10-11. Issue 703 has not started.
+evidence on 2026-10-11. Issues 701, 702 and 742 closed on 2026-10-19 after the gate M1
+reconciliation, and issue 703's verification is in its Executed section.
 
 The API contract is developed in this repository. Native HealthKit implementation and
 platform-specific notices belong to `victual-kit`. Server verification can use representative
@@ -797,3 +798,24 @@ instance, whose document differs from 0.4.4 only in `info.version`, passed the c
 The client follows released server versions only, because its evidence needs a live server running
 the release. It is not moved to an unreleased contract, which is why #891 was closed as not planned.
 
+### Issue 703: integrated verification for v0.5.0
+
+Prepared on 2026-10-19 against `master` at `56abf0a0`. The release record,
+[0.5.0](../releases/0.5.0.md), holds the full verification table; this section records what it
+means for this plan.
+
+- **Linked work.** Issues 698 to 702 and 742 are closed, as is every item of the v0.5.0 boundary
+  above: 774, 775, 782, 783, 785, 787 and 788. Gate M1 reconciled issues 701, 702 and 742; each
+  closing comment carries its evidence. Issue 702's housekeeping item, the client commit in the
+  victual-kit matrix, was resolved by victual-kit pull request 44 and pull request 1003 here.
+  Issue 891 was closed as not planned: the client follows released server versions only.
+- **Upgrade.** A populated v0.4.4 database upgraded through migrations 0313 to 0318, and a second
+  run changed nothing. A database holding a NaN price was refused by migration 0313 and left
+  unchanged. See the [rehearsal record](../releases/0.5.0-upgrade-rehearsal.md).
+- **Suite, coverage, contract and migration checks** run in the `tests` workflow on the release
+  pull request. Images and the chart are built, booted and published by `release.yml` on the
+  signed tag. The release record states each result.
+- **Unmet gates, stated.** Native evidence is simulator evidence, as decided on 2026-10-11. No real
+  Health store was observed. Creating a conversion still needs `MASTER_DATA_EDIT` (ADR-0043).
+- **Landing.** This file moves to `landed/` after the tag is published. The move repairs links in
+  26 files, so it is a pull request of its own.
