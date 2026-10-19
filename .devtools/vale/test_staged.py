@@ -14,6 +14,7 @@ import audit
 
 class StagedProse(unittest.TestCase):
     def setUp(self):
+        """Create a throwaway repository with the hook, the pinned Vale and one clean page."""
         self.directory = tempfile.TemporaryDirectory(prefix='victual-hook-test-')
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
@@ -47,19 +48,23 @@ class StagedProse(unittest.TestCase):
         shutil.copy2(audit.ROOT / '.githooks/pre-commit', target)
 
     def git(self, *arguments, check=True, environment=None):
+        """Run git in the throwaway repository and return the completed process."""
         return subprocess.run(['git', *arguments], cwd=self.root, text=True,
                               capture_output=True, check=check,
                               env=environment or self.environment)
 
     def write(self, path, content):
+        """Write a file in the throwaway repository, creating parent directories."""
         target = self.root / path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
 
     def commit(self, environment=None):
+        """Attempt a commit and return the completed process without raising on failure."""
         return self.git('commit', '-qm', 'Change test page', check=False, environment=environment)
 
     def test_staged_violation_cannot_be_hidden_by_clean_working_file(self):
+        """The hook checks the staged text, so a clean working copy cannot hide a staged finding."""
         bad = 'Let me be clear: the API rejects invalid quantities.\n'
         good = 'The API rejects invalid requests.\n'
         self.write('docs/page.md', bad)
@@ -72,6 +77,7 @@ class StagedProse(unittest.TestCase):
         self.assertEqual((self.root / 'docs/page.md').read_text(), good)
 
     def test_clean_staged_file_passes_despite_unstaged_violation(self):
+        """An unstaged finding does not block a commit whose staged text is clean."""
         good = 'The API rejects invalid requests.\n'
         bad = 'Hope this helps.\n'
         self.write('docs/page.md', good)
@@ -83,6 +89,7 @@ class StagedProse(unittest.TestCase):
         self.assertEqual((self.root / 'docs/page.md').read_text(), bad)
 
     def test_non_documentation_commit_skips_missing_vale(self):
+        """A commit with no documentation pages succeeds even when Vale is missing."""
         self.write('example.py', 'answer = 42\n')
         self.git('add', 'example.py')
         environment = {**self.environment, 'VALE': '/nonexistent/vale'}
@@ -90,6 +97,7 @@ class StagedProse(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_missing_vale_blocks_documentation_commit(self):
+        """A documentation commit fails with a clear message when Vale is missing."""
         self.write('docs/page.md', 'The API rejects invalid requests.\n')
         self.git('add', 'docs/page.md')
         result = self.commit({**self.environment, 'VALE': '/nonexistent/vale'})
@@ -97,6 +105,7 @@ class StagedProse(unittest.TestCase):
         self.assertIn('Vale is missing', result.stdout + result.stderr)
 
     def test_renamed_file_with_spaces_is_checked(self):
+        """A renamed page whose name contains spaces is still checked."""
         self.git('mv', 'docs/page.md', 'docs/new page.md')
         self.write('docs/new page.md', 'Hope this helps.\n')
         self.git('add', 'docs/new page.md')
@@ -105,6 +114,7 @@ class StagedProse(unittest.TestCase):
         self.assertIn('docs/new page.md', result.stdout + result.stderr)
 
     def test_staged_config_cannot_be_hidden_by_working_config(self):
+        """A staged rule change is detected even when the working configuration is unchanged."""
         name = '.vale.ini'
         original = (self.root / name).read_text()
         self.write(name, original + '\n# New staged configuration\n')
@@ -115,6 +125,7 @@ class StagedProse(unittest.TestCase):
         self.assertIn('rule digest does not match', result.stdout + result.stderr)
 
     def test_alternate_index_is_preserved(self):
+        """The hook honours GIT_INDEX_FILE and leaves that index byte-identical."""
         environment = {**self.environment, 'GIT_INDEX_FILE': str(self.root / 'alternate-index')}
         self.git('read-tree', 'HEAD', environment=environment)
         self.write('docs/page.md', 'Hope this helps.\n')
@@ -128,6 +139,7 @@ class StagedProse(unittest.TestCase):
         self.assertEqual(self.git('diff', '--cached', '--name-only').stdout, '')
 
     def test_staged_symlink_is_rejected(self):
+        """A staged symlink is refused instead of being followed outside the page."""
         self.write('outside.md', 'The API rejects invalid quantities.\n')
         (self.root / 'docs/page.md').unlink()
         (self.root / 'docs/page.md').symlink_to('../outside.md')
@@ -143,7 +155,7 @@ class StagedProse(unittest.TestCase):
         a new one -- an unrecognised fingerprint still fails. Refusing the commit
         instead forced every page cleanup to edit .devtools/vale/baseline.json,
         which made that single file a conflict between every concurrent branch.
-        The scheduled prune on master removes stale entries.
+        The scheduled prune pull request removes stale entries.
         """
         self.write('docs/page.md', 'Hope this helps.\n')
         subprocess.run([sys.executable, '.devtools/vale/audit.py', '--write-baseline',
