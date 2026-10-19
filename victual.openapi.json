@@ -3672,7 +3672,7 @@
 									},
 									"recipe_id": {
 										"type": "integer",
-										"description": "Recipe attribution for statistical purposes; the id is not checked against existing recipes. When supplied, the value must be numeric and finite. A string must also be readable by PostgreSQL as an integer: an optional sign and digits with optional surrounding space, tab, newline or carriage return (\"2\", \"+2\", \" 2\", \"02\"). JSON numbers with integral values in the integer column range are accepted (1e3 is stored as 1000). Negative ids and zero retain their existing meaning. Invalid supplied values return 400 without consuming stock. Numeric strings containing controls, character references or markup are refused before purification."
+										"description": "Recipe attribution for statistical purposes. When supplied, it must name an existing recipe; any other id, including zero and negative numbers, returns 400 without consuming stock. When supplied, the value must be numeric and finite. A string must also be readable by PostgreSQL as an integer: an optional sign and digits with optional surrounding space, tab, newline or carriage return (\"2\", \"+2\", \" 2\", \"02\"). JSON numbers with integral values in the integer column range are accepted (1e3 is stored as 1000). Invalid supplied values return 400 without consuming stock. Numeric strings containing controls, character references or markup are refused before purification."
 									},
 									"location_id": {
 										"type": "integer",
@@ -4709,7 +4709,7 @@
 									},
 									"recipe_id": {
 										"type": "integer",
-										"description": "Recipe attribution for statistical purposes; the id is not checked against existing recipes. When supplied, the value must be numeric and finite. A string must also be readable by PostgreSQL as an integer: an optional sign and digits with optional surrounding space, tab, newline or carriage return (\"2\", \"+2\", \" 2\", \"02\"). JSON numbers with integral values in the integer column range are accepted (1e3 is stored as 1000). Negative ids and zero retain their existing meaning. Invalid supplied values return 400 without consuming stock. Numeric strings containing controls, character references or markup are refused before purification."
+										"description": "Recipe attribution for statistical purposes. When supplied, it must name an existing recipe; any other id, including zero and negative numbers, returns 400 without consuming stock. When supplied, the value must be numeric and finite. A string must also be readable by PostgreSQL as an integer: an optional sign and digits with optional surrounding space, tab, newline or carriage return (\"2\", \"+2\", \" 2\", \"02\"). JSON numbers with integral values in the integer column range are accepted (1e3 is stored as 1000). Invalid supplied values return 400 without consuming stock. Numeric strings containing controls, character references or markup are refused before purification."
 									},
 									"location_id": {
 										"type": "integer",
