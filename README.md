@@ -28,8 +28,8 @@ goals.
 
 ## Current state
 
-**Current version: [0.4.4](docs/releases/0.4.4.md), 2026-10-16**; release tag
-`v0.4.4` is planned. This is an unpublished candidate. Use the last published release,
+**Current version: [0.5.0](docs/releases/0.5.0.md), 2026-10-19**; release tag
+`v0.5.0` is planned. This is an unpublished candidate. Use the last published release,
 [0.4.2](docs/releases/0.4.2.md), for deployment until the candidate's
 signed tag and GHCR artifacts are available.
 
