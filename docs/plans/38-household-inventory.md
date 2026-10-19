@@ -55,9 +55,9 @@ export needs a real sample; this plan does not assume a documented interchange s
 
 ### Comparison applications
 
-The comparison set includes Under My Roof, Encircle, Itemtopia, Sortly, Nest Egg and
-BluePlum Home Inventory. Each supplies a different workflow to evaluate. The following
-capabilities come from vendor documentation checked on 2026-10-19. They are not measured
+The comparison set includes Under My Roof, Encircle, Itemtopia, Sortly, Nest Egg,
+BluePlum Home Inventory and Homebox. Each supplies a different workflow to evaluate.
+The following capabilities come from publisher documentation checked on 2026-10-19. They are not measured
 rankings of usability, adoption or report quality. The proposed Victual behavior is our
 design assessment, not a claim that each source implements the same rules.
 
@@ -75,6 +75,32 @@ Product editions matter when testing these workflows. Nest Egg's
 iPhone/iPad home inventory apps from Nest Egg Cloud. BluePlum's current site calls the
 desktop product Home Inventory 4 and describes an iOS helper; that does not establish
 equal functionality or independent editing across all Apple devices.
+
+### Homebox source and workflow reference
+
+[Homebox](https://github.com/sysadminsmedia/homebox) supplies an open-source comparison
+for the household model. Source and documentation were inspected on 2026-10-19 at
+[`1fd28822634a3d5935c002d569559ef46530d4a0`](https://github.com/sysadminsmedia/homebox/tree/1fd28822634a3d5935c002d569559ef46530d4a0).
+These findings describe that revision, not a tested release or a running demo.
+
+| Evidence | Observed design | Application to Victual |
+|---|---|---|
+| [Item guide](https://github.com/sysadminsmedia/homebox/blob/1fd28822634a3d5935c002d569559ef46530d4a0/docs/src/content/docs/en/user-guide/items.mdx) | Item types can supply default templates. Creation supports adding another item, and advanced editing exposes purchase, warranty and custom fields. | Evaluate a short entry form, repeated entry in the same location and optional detail sections. Templates must not duplicate serial numbers or asset identities. |
+| [Location guide](https://github.com/sysadminsmedia/homebox/blob/1fd28822634a3d5935c002d569559ef46530d4a0/docs/src/content/docs/en/user-guide/locations.mdx) | Nested locations have their own photos, tags, fields, attachments and detail pages listing contents and child locations. | Give houses, storage units and rooms useful detail pages. Show authorized contents and documents together while preserving separate visibility rules. |
+| [Entity schema](https://github.com/sysadminsmedia/homebox/blob/1fd28822634a3d5935c002d569559ef46530d4a0/backend/internal/data/ent/schema/entity.go) | Items and locations share a typed entity model. Parent relationships and location overrides are distinct; item fields include purchase, warranty, sale and archive state. | Compare shared capabilities with separate asset/property records when answering question 11. Keep physical containment distinct from component relationships and category membership. |
+| [Maintenance schema](https://github.com/sysadminsmedia/homebox/blob/1fd28822634a3d5935c002d569559ef46530d4a0/backend/internal/data/ent/schema/maintenance_entry.go) | Maintenance entries belong to an entity and carry scheduled date, date, description and cost. | Keep service history next to the maintained asset. Evaluate its presentation while retaining Victual's chores, tasks and stock-booking behavior. |
+| [CSV guide](https://github.com/sysadminsmedia/homebox/blob/1fd28822634a3d5935c002d569559ef46530d4a0/docs/src/content/docs/en/advanced/import-csv.mdx) | Import references support deduplication. The guide states that attachments, full exported location paths and item-to-item relationships are not supported by CSV exchange. | Test stable import identity and full property/location references explicitly. Native backup-file design remains plan 39; ordinary CSV must state what it omits. |
+
+The unified entity model is an alternative to investigate, not a decision to collapse
+Victual's stock, locations and assets into one table. Homebox's location guide also
+documents deletion of contained items when a location is deleted. Victual should retain
+its location delete protections and require an explicit disposition for contents and
+history before allowing removal of an occupied property or location.
+
+Homebox's [license](https://github.com/sysadminsmedia/homebox/blob/1fd28822634a3d5935c002d569559ef46530d4a0/LICENSE)
+is AGPL-3.0; Victual's [license record](../../LICENSE.md) retains upstream MIT terms and
+BSD-3-Clause terms for fork changes. This plan uses Homebox as a design reference and
+copies no implementation. Any later source reuse needs an explicit license assessment.
 
 ### Design consequences of the comparison
 
@@ -435,6 +461,9 @@ The implementation's acceptance evidence must demonstrate these outcomes:
 17. Metadata lookup rejects a wrong returned identifier and keeps separate copies of the
     same product or book edition. Provider misses, timeouts and rate limits leave manual
     entry available. Refresh preserves user edits, provenance and attribution.
+18. Repeated entry or template use creates distinct asset identities. An item's component
+    relationship cannot silently change its physical placement. Deleting an occupied
+    location cannot erase its contents or their service and ownership history implicitly.
 
 Use an agreed representative household fixture to measure entry time, item retrieval,
 report generation and migration completeness before and after implementation. Record its
