@@ -9,6 +9,7 @@ use Victual\Services\BaseService;
 use Victual\Services\ConsumptionRecipeService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #930: StockService::MergeProducts() checks that the kept and removed products' effective
@@ -111,26 +112,22 @@ class MergeProductsConversionLockTest extends PgsqlSchemaTestCase
 			'PGHOST' => getenv('PGHOST'), 'PGPORT' => getenv('PGPORT'), 'PGUSER' => getenv('PGUSER'), 'PGPASSWORD' => getenv('PGPASSWORD'), 'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 		$spec = ['keep' => $keep, 'remove' => $remove, 'lock_timeout_ms' => self::WAIT_SECONDS * 2000];
-		$process = proc_open([PHP_BINARY, __DIR__ . '/merge-products-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
+		$process = Subprocess::start([PHP_BINARY, __DIR__ . '/merge-products-subprocess-helper.php', base64_encode(json_encode($spec))], $env, null, true);
 
-		$ready = (string)fgets($pipes[1]);
+		$ready = (string)$process->readLine();
 		self::assertStringStartsWith('ready ', $ready, 'the helper connected');
-		fwrite($pipes[0], "go\n");
-		fclose($pipes[0]);
+		$process->write("go\n");
+		$process->closeStdin();
 
-		return [$process, $pipes, (int)substr($ready, 6)];
+		return [$process, (int)substr($ready, 6)];
 	}
 
 	/** Waits for the merge process and returns its JSON result. */
 	private function finishMerge(array $handle): array
 	{
-		[$process, $pipes] = $handle;
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed($handle[0]->finish());
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 		$decoded = json_decode($output, true);
 		self::assertIsArray($decoded, "the helper printed no JSON. stdout: $output stderr: $errors");
 
@@ -176,7 +173,7 @@ class MergeProductsConversionLockTest extends PgsqlSchemaTestCase
 		$merge = $this->startMerge($keep, $remove);
 		try
 		{
-			$waited = $this->waitsOnConversionsTable($merge[2]);
+			$waited = $this->waitsOnConversionsTable($merge[1]);
 		}
 		finally
 		{

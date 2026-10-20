@@ -10,6 +10,7 @@ use Victual\Services\ApiKeyService;
 use Victual\Services\StockBookingIdempotencyService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /** #775: each request has its own authenticated process and shares only PostgreSQL state. */
 class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
@@ -63,17 +64,15 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 		if ($key !== null) { $headers['Idempotency-Key'] = $key; }
 		$spec = ['method'=>$method,'path'=>$path,'headers'=>$headers,'body'=>$body];
 		$env = array_merge(array_filter(array_merge($_SERVER,$_ENV),'is_scalar'), ['RBAC_TEST_SCHEMA'=>self::Schema(),'VICTUAL_ROOT'=>VICTUAL_ROOT_PATH]);
-		$process = proc_open([PHP_BINARY,__DIR__.'/request-subprocess-helper.php',base64_encode(json_encode($spec))],[1=>['pipe','w'],2=>['pipe','w']],$pipes,null,$env);
-		return [$process,$pipes];
+		return Subprocess::start([PHP_BINARY,__DIR__.'/request-subprocess-helper.php',base64_encode(json_encode($spec))],$env);
 	}
 
 	/** Waits for a request start() began and returns its status, decoded body and lower-cased headers. */
 	private static function finish(array $started): array
 	{
-		[$process,$pipes] = $started;
-		$out = stream_get_contents($pipes[1]); $err = stream_get_contents($pipes[2]);
-		fclose($pipes[1]); fclose($pipes[2]);
-		self::assertSame(0,proc_close($process),$out.$err);
+		$finished = Subprocess::Completed($started->finish());
+		$out = $finished['stdout']; $err = $finished['stderr'];
+		self::assertSame(0,$finished['exit'],$out.$err);
 		$result = json_decode($out,true);
 		self::assertIsArray($result,$out.$err);
 		$result['body'] = json_decode($result['body'],true);

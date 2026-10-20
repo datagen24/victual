@@ -27,6 +27,7 @@ use Victual\Services\Labels\SettingsSchemaValidator;
 use Victual\Services\Labels\TemplateDocument;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 use Victual\Tests\Support\SfntFixture;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * The label services the artifact, identity and worker-API phases in `.devtools/labels/`
@@ -1537,9 +1538,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 				if ($value !== false) $env[$key] = $value;
 			}
 			$env['RBAC_TEST_SCHEMA'] = self::Schema();
-			$process = proc_open([PHP_BINARY, __DIR__ . '/artifact-accept-subprocess-helper.php', $spec],
-				[1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-			self::assertIsResource($process, 'The independent writer process starts');
+			$process = Subprocess::start([PHP_BINARY, __DIR__ . '/artifact-accept-subprocess-helper.php', $spec], $env);
 			$deadline = microtime(true) + 5;
 			while (!is_file($ready) && microtime(true) < $deadline) {
 				usleep(10000);
@@ -1558,12 +1557,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 				usleep(10000);
 			}
 			self::$db->commit();
-			$stdout = stream_get_contents($pipes[1]);
-			$stderr = stream_get_contents($pipes[2]);
-			fclose($pipes[1]);
-			fclose($pipes[2]);
-			$exit = proc_close($process);
-			$process = null;
+			$finished = Subprocess::Completed($process->finish());
+			$stdout = $finished['stdout'];
+			$stderr = $finished['stderr'];
+			$exit = $finished['exit'];
 			self::assertTrue($waiting, 'Store waited on the collector\'s per-file transaction lock');
 			self::assertSame(0, $exit, 'The writer completes after collection commits: ' . $stderr);
 			$result = json_decode($stdout, true, 512, JSON_THROW_ON_ERROR);
@@ -1573,13 +1570,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			if (self::$db->inTransaction()) {
 				self::$db->rollBack();
 			}
-			if (is_resource($process)) {
-				proc_terminate($process);
-				foreach ($pipes as $pipe) {
-					if (is_resource($pipe)) fclose($pipe);
-				}
-				proc_close($process);
-			}
+			$process?->abort();
 			if (is_file($ready)) unlink($ready);
 		}
 	}
