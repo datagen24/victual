@@ -84,6 +84,7 @@ Observed 2026-10-20T18:38:59Z. Unassigned open issues: [#80](https://github.com/
 | 2026-10-20 | [Opened #1026 in 0.5.2: prove or keep the CanonicalJson and StderrLogger fallbacks](https://github.com/datagen24/victual/issues/1026) |
 | 2026-10-20 | [Opened PR #1027 for #904](https://github.com/datagen24/victual/pull/1027) |
 | 2026-10-20 | [Opened PR #1028 for #1010 (restore drill, gate R5)](https://github.com/datagen24/victual/pull/1028) |
+| 2026-10-20 | [Opened PR #1029, the 0.5.1 release pull request](https://github.com/datagen24/victual/pull/1029) |
 
 ## Evidence
 
