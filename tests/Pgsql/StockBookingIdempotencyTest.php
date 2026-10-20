@@ -58,7 +58,7 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 	}
 
 	/** Starts one HTTP request in a subprocess, with the key as Idempotency-Key unless it is null, and returns the process handle for finish(). */
-	private static function start(string $path, array $body, ?string $key, int $user = 9801, string $method = 'POST', array $headers = []): array
+	private static function start(string $path, array $body, ?string $key, int $user = 9801, string $method = 'POST', array $headers = []): Subprocess
 	{
 		$headers['VICTUAL-API-KEY'] = self::$keys[$user];
 		if ($key !== null) { $headers['Idempotency-Key'] = $key; }
@@ -68,7 +68,7 @@ class StockBookingIdempotencyTest extends PgsqlSchemaTestCase
 	}
 
 	/** Waits for a request start() began and returns its status, decoded body and lower-cased headers. */
-	private static function finish(array $started): array
+	private static function finish(Subprocess $started): array
 	{
 		$finished = Subprocess::Completed($started->finish());
 		$out = $finished['stdout']; $err = $finished['stderr'];
