@@ -1,6 +1,6 @@
 # 0.5.1 release handoff
 
-0.5.1: 6 of 8 issues closed. Latest release v0.5.0 (published 2026-10-19T12:28:41Z). Master `e639389b`. 23 open issues and 1 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-20T17:17:47Z.
+0.5.1: 8 of 8 issues closed. Latest release v0.5.0 (published 2026-10-19T12:28:41Z). Master `64b7113f`. 21 open issues and 0 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-20T18:38:59Z.
 
 ## Read first
 
@@ -23,5 +23,4 @@ refresh.py needs an authenticated `gh` and writes a new evidence directory; rend
 
 ## Open work
 
-- #904 (P2, M): Merge PR #1027: -x5-b plus the nine post-2026-10-13 sites, every touched file documented to 80%, all 56 pgsql phases passing.
-- #1010 (P2, M): Merge PR #1028: R5 evidenced by docs/releases/0.5.0-restore-drill.md; backup-restore.md corrected (roles.sql before pg_restore, restore as victual_migrate).
+- None.

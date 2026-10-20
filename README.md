@@ -28,8 +28,8 @@ goals.
 
 ## Current state
 
-**Current version: [0.5.0](docs/releases/0.5.0.md), 2026-10-19**; release tag
-`v0.5.0`. A version is published once its signed tag's release workflow has run; the
+**Current version: [0.5.1](docs/releases/0.5.1.md), 2026-10-20**; release tag
+`v0.5.1`. A version is published once its signed tag's release workflow has run; the
 [GitHub releases](https://github.com/datagen24/victual/releases) list each published tag with
 its image and chart digests, and its release record says what was verified.
 
