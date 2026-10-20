@@ -20,6 +20,10 @@
 - **Amended 2026-10-12** by the maintainer, in [PR #881](https://github.com/datagen24/victual/pull/881):
   the closed set of reasons a print job is dead-lettered gains a third cause, a job whose
   render request ended `invalid`, terminally `failed` or expired. See *Offline behaviour*.
+- **Partly superseded 2026-10-20** by
+  [ADR-0049](0049-label-print-job-dead-letter-causes-as-the-code-applies-them.md) part 1:
+  only the closed list of dead-letter causes under *Offline behaviour*, including the
+  2026-10-12 amendment's place in it. Every other part of this record remains in force.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-06.
@@ -860,6 +864,9 @@ days ago" and "reported healthy three seconds ago" must not render identically, 
   failure [ADR-0011](0011-label-namespace.md) fact 2 named — "a printer that is off for a
   day eats a day of labels" — which the outbox removes, and it is distinct from decision
   item 6's rule, which starts at the claim.
+  *This list is superseded by
+  [ADR-0049](0049-label-print-job-dead-letter-causes-as-the-code-applies-them.md) part 1
+  (2026-10-20), which states the causes the claim applies.*
   Dead-lettering stays for what 0259 defined it for, a payload no version can read, plus
   decision item 4's deleted-printer case, plus the third cause added by the amendment of
   2026-10-12 (below).
