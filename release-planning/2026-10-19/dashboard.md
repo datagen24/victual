@@ -1,6 +1,6 @@
 # Victual 0.5.1 release dashboard
 
-0.5.1: 5 of 8 issues closed. Latest release v0.5.0 (published 2026-10-19T12:28:41Z). Master `05c8ca68`. 23 open issues and 0 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-20T14:17:06Z.
+0.5.1: 5 of 8 issues closed. Latest release v0.5.0 (published 2026-10-19T12:28:41Z). Master `05c8ca68`. 23 open issues and 1 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-20T14:30:37Z.
 
 [Interactive dashboard](dashboard.html) · [Structured source](release-data.json) · [Execution ledger](execution.md) · [Handoff](HANDOFF.md) · [0.5.0 release plan (frozen)](../2026-10-15/dashboard.md)
 
@@ -18,7 +18,7 @@
 
 | Issue | State | Priority | Size | Classification | Patch fit | Next action | PR |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| [#252 Code that coverage proved nothing can reach](https://github.com/datagen24/victual/issues/252) | open | P3 | M | record correction / cleanup | Compatible removal of unreachable code, or a comment that keeps it as a deliberate guard. | Merge PR #1024, the webhook residue cleanup (ADR-0051 decision 2). Then one PR for the remaining review-comment items: the SystemController fallback and render dispatch arms, plus the ConfigurationValidator guard once the maintainer rules on it. | https://github.com/datagen24/victual/pull/1024 |
+| [#252 Code that coverage proved nothing can reach](https://github.com/datagen24/victual/issues/252) | open | P3 | M | record correction / cleanup | Compatible removal of unreachable code, or a comment that keeps it as a deliberate guard. | Merge PR #1024 (webhook residue) and PR #1025 (unreachable branches). #252 then closes; the CanonicalJson and StderrLogger fallbacks stay until each has a per-PHP-version proof (0.5.2 at the earliest). | https://github.com/datagen24/victual/pull/1025 |
 | [#904 Subprocess test helpers read stdout before stderr and deadlock on more than 64 KB of stderr](https://github.com/datagen24/victual/issues/904) | open | P2 | M | compatible fix (conditional) | Test infrastructure: no application change. | On the pushed branch -x5-b (91 files), merge master, migrate the post-2026-10-13 stragglers, run the full pgsql suite once, open one PR. | None |
 | [#1010 Backup/restore drill against the v0.5.0 artifacts (release gate R5)](https://github.com/datagen24/victual/issues/1010) | open | P2 | M | release evidence | Verification and documentation only: closes release gate R5. | Run the drill in its own session against the v0.5.0 digests; report at docs/releases/0.5.0-restore-drill.md; check the manual's php bin/victual-migrate step against the migrate image. | None |
 | [#900 ADR-0019 does not list the Resolve() validation refusal as a dead-letter cause](https://github.com/datagen24/victual/issues/900) | closed | P2 | M | documentation / investigation | Documentation correction only. | Merge PR #1020 (Claim() comment correction). Per the 2026-10-20 plan, #900 then closes and ADR-0049 part 2 gets its own issue, outside 0.5.1. | https://github.com/datagen24/victual/pull/1020 |
@@ -29,7 +29,7 @@
 
 ## Open milestones
 
-Observed 2026-10-20T14:17:06Z. Unassigned open issues: [#80](https://github.com/datagen24/victual/issues/80), [#86](https://github.com/datagen24/victual/issues/86), [#93](https://github.com/datagen24/victual/issues/93), [#133](https://github.com/datagen24/victual/issues/133), [#139](https://github.com/datagen24/victual/issues/139).
+Observed 2026-10-20T14:30:37Z. Unassigned open issues: [#80](https://github.com/datagen24/victual/issues/80), [#86](https://github.com/datagen24/victual/issues/86), [#93](https://github.com/datagen24/victual/issues/93), [#133](https://github.com/datagen24/victual/issues/133), [#139](https://github.com/datagen24/victual/issues/139).
 
 | Milestone | Open | Closed | Due | Description |
 | --- | --- | --- | --- | --- |
@@ -58,6 +58,7 @@ Observed 2026-10-20T14:17:06Z. Unassigned open issues: [#80](https://github.com/
 | P7 | 2026-10-20 | How do the four open 0.5.1 issues proceed? | #900 is waiting on ADR-0049 acceptance, not on new design work. #904 lands the existing -x5-b migration as one PR rather than a caller-by-caller subset. #252 starts with a record correction, because WebhookRunner was deleted while accepted ADR-0024 says it stays. #1010 runs in its own session. Drafts are in issue-responses-2026-10-20.md. | [#252](https://github.com/datagen24/victual/issues/252), [#900](https://github.com/datagen24/victual/issues/900), [#904](https://github.com/datagen24/victual/issues/904), [#1010](https://github.com/datagen24/victual/issues/1010) |
 | P8 | 2026-10-20 | Is ADR-0049 accepted? | Yes, part 1, on the maintainer's motion. Part 2 decides nothing and stays open, so #900 stays open until the comment correction lands. Acceptance is PR #1019, which carries only the lifecycle edits; its dashboard row lives here. | [#900](https://github.com/datagen24/victual/issues/900) |
 | P9 | 2026-10-20 | How is ADR-0024's WebhookRunner claim corrected (#252)? | By a superseding record, ADR-0051, as the maintainer directed. The InfluxDB writer never called WebhookRunner (Guzzle directly since 296d99dd), so ADR-0019's original last-caller statement stands. ADR-0051 also proposes removing the webhook residue: three unused catalogue strings, one docstring and plan 20's curl row. | [#252](https://github.com/datagen24/victual/issues/252) |
+| P10 | 2026-10-20 | Does ConfigurationValidator keep its demo/prerelease label refusal (#252)? | No. The maintainer ruled to remove it, as the review comment said. checkFileStorage() and the label check already refuse every demo or prerelease configuration that enables labels, and HelperUnitsTest keeps proving it. | [#252](https://github.com/datagen24/victual/issues/252) |
 
 ## GitHub writes made by planning
 
@@ -76,7 +77,8 @@ Observed 2026-10-20T14:17:06Z. Unassigned open issues: [#80](https://github.com/
 | 2026-10-20 | [Opened #1021 in 0.6.0: decide ADR-0049 part 2](https://github.com/datagen24/victual/issues/1021) |
 | 2026-10-20 | [Opened PR #1023, accepting ADR-0051](https://github.com/datagen24/victual/pull/1023) |
 | 2026-10-20 | [Opened PR #1024, removing the webhook residue ADR-0051 lists](https://github.com/datagen24/victual/pull/1024) |
+| 2026-10-20 | [Opened PR #1025, removing three unreachable branches (#252)](https://github.com/datagen24/victual/pull/1025) |
 
 ## Evidence
 
-The latest snapshot is in `evidence/refresh-2026-10-20T141706Z`, taken from the GitHub REST API via gh. Assessments are planning estimates, not validation results.
+The latest snapshot is in `evidence/refresh-2026-10-20T143037Z`, taken from the GitHub REST API via gh. Assessments are planning estimates, not validation results.
