@@ -1,6 +1,6 @@
 # ADR-0051: `WebhookRunner` never had an InfluxDB caller, and the webhook's residue is removed
 
-- **Status:** Proposed
+- **Status:** Accepted, 2026-10-20
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-20, against `master` at `0e3a15ff`. The maintainer's direction of
@@ -9,7 +9,7 @@
   remaining webhook code. Design record only: it changes no code and reserves no migration
   number.
 - **Referenced by:** [issue 252](https://github.com/datagen24/victual/issues/252).
-- **Relationship:** would partly supersede accepted
+- **Relationship:** partly supersedes accepted
   [ADR-0024](0024-the-fork-writes-its-own-clients.md): only its claim that `WebhookRunner`
   stays because plan 18's InfluxDB writer uses it, and the matching correction it placed on
   [ADR-0019](0019-label-printers-are-master-data.md) decision item 7. Every decision in
