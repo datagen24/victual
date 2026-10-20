@@ -1,6 +1,6 @@
 # 0.5.1 release handoff
 
-0.5.1: 3 of 8 issues closed. Latest release v0.5.0 (published 2026-10-19T12:28:41Z). Master `edccb888`. 24 open issues and 2 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-19T21:22:24Z.
+0.5.1: 4 of 8 issues closed. Latest release v0.5.0 (published 2026-10-19T12:28:41Z). Master `11ab0244`. 23 open issues and 0 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-20T13:07:59Z.
 
 ## Read first
 
@@ -23,8 +23,7 @@ refresh.py needs an authenticated `gh` and writes a new evidence directory; rend
 
 ## Open work
 
-- #252 (P3, M): Draft a keep or delete proposal per item on the issue; the maintainer decides each one before any code moves.
-- #900 (P2, M): Review factual correction separately; defer behavior decisions unless production label scope needs them.
-- #904 (P2, M): Recover 31b3439c/72fdffef without replacing them; migrate only callers required by upcoming validation first.
-- #991 (P3, S): Review PR #1016. It corrects the planning premise: DELETE does not reveal the name.
-- #1010 (P2, M): Run the documented dump and restore against the v0.5.0 images on a disposable database and record the report.
+- #252 (P3, M): WebhookRunner is already gone (0ea46c25) and ADR-0024 still says it stays. Maintainer picks the form of that record correction and rules on the ConfigurationValidator guard; then one code PR for the confirmed removals.
+- #900 (P2, M): Maintainer accepts or rejects ADR-0049 (Proposed, PR #932) in a lifecycle-only PR; then correct the PrintAttemptService.php:56-59 comment. Part 2 stays out of 0.5.1.
+- #904 (P2, M): Push the local-only branch -x5-b (91 files), merge master, migrate the post-2026-10-13 stragglers, run the full pgsql suite once, open one PR.
+- #1010 (P2, M): Run the drill in its own session against the v0.5.0 digests; report at docs/releases/0.5.0-restore-drill.md; check the manual's php bin/victual-migrate step against the migrate image.
