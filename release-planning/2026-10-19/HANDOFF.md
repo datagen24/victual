@@ -1,6 +1,6 @@
 # 0.5.1 release handoff
 
-0.5.1: 5 of 8 issues closed. Latest release v0.5.0 (published 2026-10-19T12:28:41Z). Master `05c8ca68`. 23 open issues and 1 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-20T14:30:37Z.
+0.5.1: 6 of 8 issues closed. Latest release v0.5.0 (published 2026-10-19T12:28:41Z). Master `e639389b`. 23 open issues and 0 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-20T15:05:32Z.
 
 ## Read first
 
@@ -23,6 +23,5 @@ refresh.py needs an authenticated `gh` and writes a new evidence directory; rend
 
 ## Open work
 
-- #252 (P3, M): Merge PR #1024 (webhook residue) and PR #1025 (unreachable branches). #252 then closes; the CanonicalJson and StderrLogger fallbacks stay until each has a per-PHP-version proof (0.5.2 at the earliest).
-- #904 (P2, M): On the pushed branch -x5-b (91 files), merge master, migrate the post-2026-10-13 stragglers, run the full pgsql suite once, open one PR.
+- #904 (P2, M): Merge PR #1027: -x5-b plus the nine post-2026-10-13 sites, every touched file documented to 80%, all 56 pgsql phases passing.
 - #1010 (P2, M): Run the drill in its own session against the v0.5.0 digests; report at docs/releases/0.5.0-restore-drill.md; check the manual's php bin/victual-migrate step against the migrate image.
