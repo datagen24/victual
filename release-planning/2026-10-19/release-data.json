@@ -34,23 +34,6 @@
    "pr": null
   },
   {
-   "number": 900,
-   "title": "ADR-0019 does not list the Resolve() validation refusal as a dead-letter cause",
-   "url": "https://github.com/datagen24/victual/issues/900",
-   "state": "open",
-   "labels": [
-    "documentation",
-    "Low"
-   ],
-   "closed_at": null,
-   "priority": "P2",
-   "size": "M",
-   "fit": "Documentation correction only.",
-   "classification": "documentation / investigation",
-   "next_action": "Merge PR #1019 (ADR-0049 part 1 acceptance, lifecycle-only); then correct the PrintAttemptService.php:56-59 comment in its own PR. Part 2 stays out of 0.5.1.",
-   "pr": "https://github.com/datagen24/victual/pull/1019"
-  },
-  {
    "number": 904,
    "title": "Subprocess test helpers read stdout before stderr and deadlock on more than 64 KB of stderr",
    "url": "https://github.com/datagen24/victual/issues/904",
@@ -82,6 +65,23 @@
    "classification": "release evidence",
    "next_action": "Run the drill in its own session against the v0.5.0 digests; report at docs/releases/0.5.0-restore-drill.md; check the manual's php bin/victual-migrate step against the migrate image.",
    "pr": null
+  },
+  {
+   "number": 900,
+   "title": "ADR-0019 does not list the Resolve() validation refusal as a dead-letter cause",
+   "url": "https://github.com/datagen24/victual/issues/900",
+   "state": "closed",
+   "labels": [
+    "documentation",
+    "Low"
+   ],
+   "closed_at": "2026-10-20T13:27:16Z",
+   "priority": "P2",
+   "size": "M",
+   "fit": "Documentation correction only.",
+   "classification": "documentation / investigation",
+   "next_action": "Merge PR #1020 (Claim() comment correction). Per the 2026-10-20 plan, #900 then closes and ADR-0049 part 2 gets its own issue, outside 0.5.1.",
+   "pr": "https://github.com/datagen24/victual/pull/1020"
   },
   {
    "number": 987,
@@ -171,8 +171,8 @@
    "number": 7,
    "title": "0.5.1",
    "state": "open",
-   "open_issues": 4,
-   "closed_issues": 4,
+   "open_issues": 3,
+   "closed_issues": 5,
    "description": "Follow-ups found while building 0.5.0 that do not block the first production release: presentation residuals, low-severity disclosures and CI hygiene. Lands after 0.5.0 and before 0.6.0.",
    "html_url": "https://github.com/datagen24/victual/milestone/7",
    "due_on": null
@@ -199,14 +199,14 @@
   }
  ],
  "observation": {
-  "observed_at": "2026-10-20T13:07:59Z",
+  "observed_at": "2026-10-20T13:28:09Z",
   "source": "GitHub REST API via gh",
-  "evidence_directory": "evidence/refresh-2026-10-20T130759Z",
-  "master_sha": "11ab0244ed9e0c345063987a21db8f3594593558",
+  "evidence_directory": "evidence/refresh-2026-10-20T132809Z",
+  "master_sha": "e8e721ee0523ec4d595cb1e6eb9f6aa70eaa9f3a",
   "latest_release": "v0.5.0",
   "latest_release_published_at": "2026-10-19T12:28:41Z",
-  "open_issues": 23,
-  "open_prs": 0,
+  "open_issues": 22,
+  "open_prs": 1,
   "unassigned_open_issues": [
    80,
    86,
@@ -388,6 +388,11 @@
    "at": "2026-10-20",
    "action": "Opened PR #1019, accepting ADR-0049 part 1",
    "url": "https://github.com/datagen24/victual/pull/1019"
+  },
+  {
+   "at": "2026-10-20",
+   "action": "Opened PR #1020, correcting the Claim() dead-letter comment to ADR-0049 part 1",
+   "url": "https://github.com/datagen24/victual/pull/1020"
   }
  ]
 }
