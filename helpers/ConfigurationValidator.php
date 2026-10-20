@@ -42,6 +42,9 @@ class ConfigurationValidator
 		self::checkInfluxDbSettings();
 	}
 
+	/**
+	 * MODE is one of production, dev, demo or prerelease.
+	 */
 	private function checkMode()
 	{
 		$allowedModes = ['production', 'dev', 'demo', 'prerelease'];
@@ -218,16 +221,15 @@ class ConfigurationValidator
 			throw new EInvalidConfig('FEATURE_FLAG_LABELS requires FILE_STORAGE "database", but FILE_STORAGE is "' . VICTUAL_FILE_STORAGE . '" - label artifacts and assets carry captured household data and every printed label, and putting them on disk would reintroduce the persistent volume the deployment does not have');
 		}
 
-		// Said directly rather than left to be derived from two separate refusals:
-		// checkFileStorage() already refuses FILE_STORAGE "database" in these modes, so
-		// requiring it here excludes them transitively, and an operator should read that
-		// once rather than assemble it.
-		if (VICTUAL_MODE === 'demo' || VICTUAL_MODE === 'prerelease')
-		{
-			throw new EInvalidConfig('FEATURE_FLAG_LABELS cannot be enabled in "' . VICTUAL_MODE . '" mode: it requires FILE_STORAGE "database", which these modes do not support because demo instances share a storage location by file name suffix and the files table has no column for it');
-		}
+		// Demo and prerelease modes cannot reach this point with labels on: checkFileStorage()
+		// runs first and refuses FILE_STORAGE "database" in them, and the check above refuses
+		// every other storage. A separate refusal for those modes here was unreachable and was
+		// removed (issue 252).
 	}
 
+	/**
+	 * DEFAULT_LOCALE names a folder under localization/, so the UI has catalogues to load.
+	 */
 	private function checkDefaultLocale()
 	{
 		if (!file_exists(__DIR__ . '/../localization/' . VICTUAL_DEFAULT_LOCALE))
@@ -236,6 +238,9 @@ class ConfigurationValidator
 		}
 	}
 
+	/**
+	 * CALENDAR_FIRST_DAY_OF_WEEK is empty (the locale decides) or a day number from 0 to 6.
+	 */
 	private function checkFirstDayOfWeek()
 	{
 		if (!(VICTUAL_CALENDAR_FIRST_DAY_OF_WEEK == '' ||
@@ -245,6 +250,9 @@ class ConfigurationValidator
 		}
 	}
 
+	/**
+	 * CURRENCY is a three-letter ISO 4217 code.
+	 */
 	private function checkCurrencyFormat()
 	{
 		if (!(preg_match('/^([A-z]){3}$/', VICTUAL_CURRENCY)))
@@ -253,6 +261,9 @@ class ConfigurationValidator
 		}
 	}
 
+	/**
+	 * ENTRY_PAGE is one of the pages GET / can send a caller to.
+	 */
 	private function checkEntryPage()
 	{
 		$allowedPages = ['stock', 'shoppinglist', 'recipes', 'chores', 'tasks', 'batteries', 'equipment', 'calendar', 'mealplan'];
@@ -262,6 +273,9 @@ class ConfigurationValidator
 		}
 	}
 
+	/**
+	 * MEAL_PLAN_FIRST_DAY_OF_WEEK is empty, a day number from 0 to 6, or -1 to start the week on today.
+	 */
 	private function checkMealplanFirstDayOfWeek()
 	{
 		if (!(VICTUAL_MEAL_PLAN_FIRST_DAY_OF_WEEK == '' ||
@@ -357,6 +371,9 @@ class ConfigurationValidator
 		}
 	}
 
+	/**
+	 * Both ends of the default auto night mode time range are HH:mm times.
+	 */
 	private function checkAutoNightModeRange()
 	{
 		global $VICTUAL_DEFAULT_USER_SETTINGS;

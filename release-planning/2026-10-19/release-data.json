@@ -30,8 +30,8 @@
    "size": "M",
    "fit": "Compatible removal of unreachable code, or a comment that keeps it as a deliberate guard.",
    "classification": "record correction / cleanup",
-   "next_action": "Merge PR #1024, the webhook residue cleanup (ADR-0051 decision 2). Then one PR for the remaining review-comment items: the SystemController fallback and render dispatch arms, plus the ConfigurationValidator guard once the maintainer rules on it.",
-   "pr": "https://github.com/datagen24/victual/pull/1024"
+   "next_action": "Merge PR #1024 (webhook residue) and PR #1025 (unreachable branches). #252 then closes; the CanonicalJson and StderrLogger fallbacks stay until each has a per-PHP-version proof (0.5.2 at the earliest).",
+   "pr": "https://github.com/datagen24/victual/pull/1025"
   },
   {
    "number": 904,
@@ -199,14 +199,14 @@
   }
  ],
  "observation": {
-  "observed_at": "2026-10-20T14:17:06Z",
+  "observed_at": "2026-10-20T14:30:37Z",
   "source": "GitHub REST API via gh",
-  "evidence_directory": "evidence/refresh-2026-10-20T141706Z",
+  "evidence_directory": "evidence/refresh-2026-10-20T143037Z",
   "master_sha": "05c8ca687c328450b8573796729e085cc3ae97e8",
   "latest_release": "v0.5.0",
   "latest_release_published_at": "2026-10-19T12:28:41Z",
   "open_issues": 23,
-  "open_prs": 0,
+  "open_prs": 1,
   "unassigned_open_issues": [
    80,
    86,
@@ -350,6 +350,15 @@
    "issues": [
     252
    ]
+  },
+  {
+   "id": "P10",
+   "date": "2026-10-20",
+   "question": "Does ConfigurationValidator keep its demo/prerelease label refusal (#252)?",
+   "answer": "No. The maintainer ruled to remove it, as the review comment said. checkFileStorage() and the label check already refuse every demo or prerelease configuration that enables labels, and HelperUnitsTest keeps proving it.",
+   "issues": [
+    252
+   ]
   }
  ],
  "github_writes": [
@@ -417,6 +426,11 @@
    "at": "2026-10-20",
    "action": "Opened PR #1024, removing the webhook residue ADR-0051 lists",
    "url": "https://github.com/datagen24/victual/pull/1024"
+  },
+  {
+   "at": "2026-10-20",
+   "action": "Opened PR #1025, removing three unreachable branches (#252)",
+   "url": "https://github.com/datagen24/victual/pull/1025"
   }
  ]
 }
