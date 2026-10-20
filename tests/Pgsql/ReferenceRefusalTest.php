@@ -54,6 +54,10 @@ class ReferenceRefusalTest extends PgsqlSchemaTestCase
 	private static PDO $db;
 	private static string $apiKey = '';
 
+	/**
+	 * Creates the caller user with MASTER_DATA_EDIT and issues it a default API key for the
+	 * subprocess requests.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -78,6 +82,7 @@ class ReferenceRefusalTest extends PgsqlSchemaTestCase
 	// Helpers
 	// ------------------------------------------------------------------------------
 
+	/** Inserts one row built from the column map and returns the new id. */
 	private static function insertRow(string $table, array $columns): int
 	{
 		$names = implode(', ', array_keys($columns));
@@ -97,6 +102,10 @@ class ReferenceRefusalTest extends PgsqlSchemaTestCase
 		$statement->execute(array_values($columns));
 	}
 
+	/**
+	 * Inserts a product at the given location with quantity unit 2 as purchase and stock unit, and
+	 * returns its id.
+	 */
 	private static function insertProduct(string $name, int $locationId): int
 	{
 		return self::insertRow('products', [
@@ -107,6 +116,7 @@ class ReferenceRefusalTest extends PgsqlSchemaTestCase
 		]);
 	}
 
+	/** Returns whether a row with the given id is still present in the table. */
 	private static function rowExists(string $table, int $id): bool
 	{
 		$statement = self::$db->prepare("SELECT count(*) FROM $table WHERE id = ?");

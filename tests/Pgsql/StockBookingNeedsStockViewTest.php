@@ -59,6 +59,11 @@ class StockBookingNeedsStockViewTest extends PgsqlSchemaTestCase
 	private static int $cellar;
 	private static int $sequence = 0;
 
+	/**
+	 * Creates two locations and, for each booking permission in ROUTES, one user holding it
+	 * alone and one holding it with STOCK_VIEW, plus a STOCK_VIEW-only user, each with an API
+	 * key.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -93,6 +98,7 @@ class StockBookingNeedsStockViewTest extends PgsqlSchemaTestCase
 		self::$keys['STOCK_VIEW'] = self::issueKey($userId);
 	}
 
+	/** Data provider: each route name in ROUTES paired with the booking permission it checks. */
 	public static function routes(): array
 	{
 		$cases = [];
@@ -165,6 +171,7 @@ class StockBookingNeedsStockViewTest extends PgsqlSchemaTestCase
 		return $response;
 	}
 
+	/** Inserts one row into $table from the column map and returns the new id. */
 	private static function insertRow(string $table, array $columns): int
 	{
 		$names = implode(', ', array_keys($columns));
@@ -175,6 +182,10 @@ class StockBookingNeedsStockViewTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/**
+	 * Inserts a product at the given location with the unit 2 for purchase, stock, consume and
+	 * price, and returns its id.
+	 */
 	private static function insertProduct(string $name, int $locationId): int
 	{
 		return self::insertRow('products', [
@@ -193,6 +204,7 @@ class StockBookingNeedsStockViewTest extends PgsqlSchemaTestCase
 		self::$stock->AddProduct($productId, $amount, self::BEST_BEFORE, StockService::TRANSACTION_TYPE_PURCHASE, self::PURCHASED, 1.0, $locationId);
 	}
 
+	/** Returns the lowest stock row id of the product. */
 	private static function stockRowId(int $productId): int
 	{
 		return (int)self::$db->query("SELECT id FROM stock WHERE product_id = $productId ORDER BY id LIMIT 1")->fetchColumn();
@@ -205,6 +217,7 @@ class StockBookingNeedsStockViewTest extends PgsqlSchemaTestCase
 			. " || '|' || coalesce((SELECT string_agg(row_to_json(l)::text, ',' ORDER BY l.id) FROM stock_log l WHERE l.product_id = $productId), ''))")->fetchColumn();
 	}
 
+	/** Returns how many stock_log rows the product has. */
 	private static function stockLogRows(int $productId): int
 	{
 		return (int)self::$db->query("SELECT count(*) FROM stock_log WHERE product_id = $productId")->fetchColumn();
@@ -304,6 +317,10 @@ class StockBookingNeedsStockViewTest extends PgsqlSchemaTestCase
 	// Tests
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Proves that a caller holding the route's booking permission but not STOCK_VIEW gets 403
+	 * "Permission missing: STOCK_VIEW" and no stock or stock_log row changes.
+	 */
 	#[DataProvider('routes')]
 	public function testABookingPermissionWithoutStockViewIsRefusedBeforeAnythingIsBooked(string $route, string $permission): void
 	{
@@ -319,6 +336,10 @@ class StockBookingNeedsStockViewTest extends PgsqlSchemaTestCase
 		self::assertSame($digest, self::ledgerDigest($productId), "$route: a refused booking changes no stock");
 	}
 
+	/**
+	 * Proves that a caller holding the booking permission together with STOCK_VIEW gets 200 and
+	 * the booking writes stock_log rows.
+	 */
 	#[DataProvider('routes')]
 	public function testABookingPermissionWithStockViewStillBooks(string $route, string $permission): void
 	{
@@ -361,6 +382,10 @@ class StockBookingNeedsStockViewTest extends PgsqlSchemaTestCase
 		self::assertSame(400, $withBoth['status'], "$action by barcode: an unknown barcode is still a 400 for a caller holding both permissions");
 	}
 
+	/**
+	 * Proves that a STOCK_VIEW-only caller using a by-barcode route for a known barcode gets
+	 * 403 naming the missing booking permission and nothing is booked.
+	 */
 	#[DataProvider('barcodeRoutes')]
 	public function testAByBarcodeRouteRefusesStockViewWithoutTheBookingPermissionForAKnownBarcode(string $action, string $permission, array $body): void
 	{

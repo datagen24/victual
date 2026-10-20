@@ -26,6 +26,11 @@ class ConsumptionEventApiTest extends PgsqlSchemaTestCase
 	private static int $sequence = 0;
 	private static string $bodyTime;
 
+	/**
+	 * Creates the alice, bob, viewer and nobody users with their permissions, a second API key for
+	 * alice, and the shared quantity unit and location; also fixes the one-hour-old timestamp used
+	 * in event bodies.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -58,6 +63,7 @@ class ConsumptionEventApiTest extends PgsqlSchemaTestCase
 		self::$location = (int)self::$db->query("INSERT INTO locations (name) VALUES ('EV organizer') RETURNING id")->fetchColumn();
 	}
 
+	/** Inserts a read-write default API key for the user and returns the plaintext key. */
 	private static function key(int $userId): string
 	{
 		$plaintext = bin2hex(random_bytes(25));
@@ -67,6 +73,10 @@ class ConsumptionEventApiTest extends PgsqlSchemaTestCase
 		return $plaintext;
 	}
 
+	/**
+	 * Inserts a product in the shared unit and location, purchases the given amount of it into
+	 * stock, and returns its id.
+	 */
 	private static function product(float $onHand): int
 	{
 		$statement = self::$db->prepare('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price) VALUES (?, ?, ?, ?, ?, ?) RETURNING id');
@@ -77,6 +87,7 @@ class ConsumptionEventApiTest extends PgsqlSchemaTestCase
 		return $id;
 	}
 
+	/** Returns the total amount currently in stock for the product, 0 when there is none. */
 	private static function onHand(int $product): float
 	{
 		return (float)self::$db->query("SELECT COALESCE(sum(amount), 0) FROM stock WHERE product_id = $product")->fetchColumn();
@@ -114,16 +125,29 @@ class ConsumptionEventApiTest extends PgsqlSchemaTestCase
 		return $response;
 	}
 
+	/**
+	 * Builds a mapping request body for the product (unit label 'tablet', fixed location, effective
+	 * from 2026-01-01), with $override replacing any field.
+	 */
 	private static function mapping(int $product, array $override = []): array
 	{
 		return $override + ['product_id' => $product, 'unit_labels' => ['tablet'], 'location' => ['mode' => 'fixed', 'location_id' => self::$location], 'effective_from' => '2026-01-01T00:00:00Z'];
 	}
 
+	/**
+	 * Builds a taken-event request body for the medication reference (one tablet at the fixed
+	 * timestamp), with $extra overriding any field.
+	 */
 	private static function event(string $ref, array $extra = []): array
 	{
 		return $extra + ['status' => 'taken', 'medication_ref' => $ref, 'quantity' => 1, 'unit_label' => 'tablet', 'occurred_at' => self::$bodyTime];
 	}
 
+	/**
+	 * Every consumption route answers 401 without a key and 403 to a caller with no grants, the
+	 * write routes also answer 403 to a STOCK_VIEW-only caller, and a viewer can still read their
+	 * own list.
+	 */
 	public function testEveryRouteNeedsAuthenticationAndTheRightPermissions(): void
 	{
 		$routes = [['GET', '/api/consumption/capabilities', false], ['GET', '/api/consumption/events', false], ['GET', '/api/consumption/events/healthkit/x', false],
@@ -146,6 +170,10 @@ class ConsumptionEventApiTest extends PgsqlSchemaTestCase
 		self::assertSame(200, self::send('GET', '/api/consumption/events', 'viewer')['status'], 'a viewer reads their own list');
 	}
 
+	/**
+	 * The capabilities route answers 200 with contract version 1 and exactly the list of features
+	 * the server implements.
+	 */
 	public function testCapabilitiesAdvertiseOnlyWhatTheServerDoes(): void
 	{
 		$response = self::send('GET', '/api/consumption/capabilities', 'alice');
@@ -155,6 +183,11 @@ class ConsumptionEventApiTest extends PgsqlSchemaTestCase
 		self::assertSame(['events', 'mappings', 'batch', 'bulk_resolve', 'manual_consume', 'deletion_reasons', 'not_logged', 'default_quantity', 'unit_labels', 'replaces', 'refill', 'refill_notices'], $response['body']['features']);
 	}
 
+	/**
+	 * A mapping PUT returns 201 and then 200 on update, an event PUT books once (201) and replays
+	 * as 200, stock drops by one, and the ledger row is attributed to the caller without leaking
+	 * user_id or id in the body.
+	 */
 	public function testMappingThenEventThroughTheRoutesBooksOnceAndAttributesTheCaller(): void
 	{
 		$product = self::product(10);
@@ -176,6 +209,10 @@ class ConsumptionEventApiTest extends PgsqlSchemaTestCase
 		self::assertArrayNotHasKey('id', $first['body']);
 	}
 
+	/**
+	 * A second API key of the same user replays the same event instead of creating one, and the key
+	 * that first received the event is recorded only as audit data.
+	 */
 	public function testARotatedKeyFindsTheSameEventAndTheKeyIsOnlyAudit(): void
 	{
 		$product = self::product(10);
@@ -192,6 +229,10 @@ class ConsumptionEventApiTest extends PgsqlSchemaTestCase
 		self::assertSame(substr(self::$keys['alice'], -4), $audit, 'the key that received the event is recorded');
 	}
 
+	/**
+	 * Another user gets 404 not_found for the event and mapping routes and sees empty lists;
+	 * submitting the same ids as that user creates a separate event that needs its own mapping.
+	 */
 	public function testAnotherUsersEventAndMappingAreNotFoundAndTheirOwnIdsAreIndependent(): void
 	{
 		$product = self::product(10);
@@ -215,6 +256,11 @@ class ConsumptionEventApiTest extends PgsqlSchemaTestCase
 		self::assertSame('booked', self::send('GET', '/api/consumption/events/healthkit/api-ev-3', 'alice')['body']['state']);
 	}
 
+	/**
+	 * Each rejected request (conflicting version, future time, reserved or malformed ids, bad
+	 * status, bad transition, bad action or reason, invalid mapping, missing event) answers its
+	 * documented HTTP status and error token and leaves stock unchanged.
+	 */
 	public function testRefusalsCarryTheirStatusAndToken(): void
 	{
 		$product = self::product(10);
@@ -245,6 +291,10 @@ class ConsumptionEventApiTest extends PgsqlSchemaTestCase
 		self::assertSame(9.0, self::onHand($product), 'none of the refusals changed stock');
 	}
 
+	/**
+	 * An event body with a string quantity, truncated JSON, a non-JSON content type or a JSON array
+	 * is refused with 400 and books nothing.
+	 */
 	public function testTheBodyIsStrictJsonWithRealTypes(): void
 	{
 		$product = self::product(10);
@@ -264,6 +314,10 @@ class ConsumptionEventApiTest extends PgsqlSchemaTestCase
 		self::assertSame(10.0, self::onHand($product));
 	}
 
+	/**
+	 * A batch answers 200 with a per-item result (201 booked, 400 invalid_request), and a batch of
+	 * zero or of 51 events is refused with 400.
+	 */
 	public function testBatchReportsEachItemAndABatchOfZeroOrOver50IsRefused(): void
 	{
 		$product = self::product(10);
@@ -282,6 +336,10 @@ class ConsumptionEventApiTest extends PgsqlSchemaTestCase
 		self::assertSame(400, self::send('POST', '/api/consumption/events/batch', 'alice', ['events' => array_fill(0, 51, ['source_system' => 'healthkit', 'source_event_id' => 'x'])])['status']);
 	}
 
+	/**
+	 * The event list filters by comma-separated state and rejects an unknown state; deleting a
+	 * mapping answers 204, then 404, and an event that already booked stock survives it.
+	 */
 	public function testTheListFiltersByStateAndMappingDeletionAnswers204(): void
 	{
 		$product = self::product(10);
@@ -298,6 +356,10 @@ class ConsumptionEventApiTest extends PgsqlSchemaTestCase
 		self::assertSame('booked', self::send('GET', '/api/consumption/events/healthkit/api-l-1', 'alice')['body']['state'], 'an event that booked stock outlives its mapping');
 	}
 
+	/**
+	 * The generic object and userfield routes answer 400 for the consumption mapping, event and
+	 * event-line tables.
+	 */
 	public function testGenericRoutesRefuseTheMappingTableToo(): void
 	{
 		foreach (['consumption_mappings', 'consumption_events', 'consumption_event_lines'] as $table)

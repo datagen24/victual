@@ -32,6 +32,7 @@ class BatteryLabelViewPermissionTest extends PgsqlSchemaTestCase
 	private static int $batteryId;
 	private static string $batteryUid;
 
+	/** Creates a view-only user, a user with no battery grant and a view-plus-edit user with API keys, one battery, and the label identity issued for it. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -69,6 +70,11 @@ class BatteryLabelViewPermissionTest extends PgsqlSchemaTestCase
 		self::$db->commit();
 	}
 
+	/**
+	 * Runs one API request through labelapi-subprocess-helper.php with the user's API key and returns the decoded response with its body and JSON added.
+	 *
+	 * @return array<string, mixed>
+	 */
 	private static function Send(string $method, string $path, int $userId, ?array $body = null): array
 	{
 		$spec = ['method' => $method, 'path' => $path, 'headers' => ['VICTUAL-API-KEY' => self::$keys[$userId]]];
@@ -105,16 +111,19 @@ class BatteryLabelViewPermissionTest extends PgsqlSchemaTestCase
 		return $result;
 	}
 
+	/** Counts the label.print_requested rows in the outbox. */
 	private static function PrintRequestCount(): int
 	{
 		return (int)self::$db->query("SELECT COUNT(*) FROM outbox WHERE event_type = 'label.print_requested'")->fetchColumn();
 	}
 
+	/** Counts the rows in the labels table. */
 	private static function LabelCount(): int
 	{
 		return (int)self::$db->query('SELECT COUNT(*) FROM labels')->fetchColumn();
 	}
 
+	/** FieldCatalogue names BATTERIES_VIEW as the permission for the battery domain, battery.name and battery.id. */
 	public function testTheCatalogueGatesEveryBatterySiteOnTheViewLeaf(): void
 	{
 		self::assertSame(User::PERMISSION_BATTERIES_VIEW, FieldCatalogue::DomainPermission('battery'));
@@ -122,6 +131,7 @@ class BatteryLabelViewPermissionTest extends PgsqlSchemaTestCase
 		self::assertSame(User::PERMISSION_BATTERIES_VIEW, FieldCatalogue::For('battery')['battery.id']['permission']);
 	}
 
+	/** A caller holding only BATTERIES_VIEW gets 200 on the battery label context route. */
 	public function testAViewOnlyCallerReadsTheBatteryContext(): void
 	{
 		$response = self::Send('GET', '/api/labels/battery/' . self::$batteryId . '/context', self::VIEW_ONLY_USER);
@@ -129,6 +139,7 @@ class BatteryLabelViewPermissionTest extends PgsqlSchemaTestCase
 		self::assertSame(200, $response['status'], $response['body']);
 	}
 
+	/** A caller with no battery permission gets 403 on the context route and the battery name is not in the response. */
 	public function testACallerWithNeitherBatteriesPermissionIsStillRefusedTheContext(): void
 	{
 		$response = self::Send('GET', '/api/labels/battery/' . self::$batteryId . '/context', self::NO_GRANT_USER);
@@ -137,6 +148,7 @@ class BatteryLabelViewPermissionTest extends PgsqlSchemaTestCase
 		self::assertStringNotContainsString('Battery label view test', $response['body']);
 	}
 
+	/** Resolving the battery label as a BATTERIES_VIEW holder returns status resolved with the battery id and name. */
 	public function testAViewOnlyCallerSeesTheBatteryIdentityWhenResolvingItsLabel(): void
 	{
 		$response = self::Send('GET', '/api/labels/resolve/' . self::$batteryUid, self::VIEW_ONLY_USER);
@@ -148,6 +160,7 @@ class BatteryLabelViewPermissionTest extends PgsqlSchemaTestCase
 		self::assertSame('Battery label view test', $response['json']['target']['name'] ?? null);
 	}
 
+	/** Resolving the battery label as a caller without the leaf returns status unknown and no battery name. */
 	public function testACallerWithoutTheLeafDoesNotSeeTheBatteryIdentityWhenResolving(): void
 	{
 		$response = self::Send('GET', '/api/labels/resolve/' . self::$batteryUid, self::NO_GRANT_USER);
@@ -157,6 +170,7 @@ class BatteryLabelViewPermissionTest extends PgsqlSchemaTestCase
 		self::assertStringNotContainsString('Battery label view test', $response['body']);
 	}
 
+	/** Capturing battery.name and battery.id checks only BATTERIES_VIEW as the permission and captures both values. */
 	public function testCapturingBatteryFieldsAsksForTheViewLeaf(): void
 	{
 		$seen = [];
@@ -183,6 +197,7 @@ class BatteryLabelViewPermissionTest extends PgsqlSchemaTestCase
 		self::assertSame([User::PERMISSION_BATTERIES_VIEW], array_values(array_unique($seen)));
 	}
 
+	/** A view-only caller printing a battery label gets 403 and no label or print request is created. */
 	public function testOperateStillRequiresMasterDataEditOnTopOfTheViewLeaf(): void
 	{
 		$labels = self::LabelCount();
@@ -196,6 +211,7 @@ class BatteryLabelViewPermissionTest extends PgsqlSchemaTestCase
 		self::assertSame($requests, self::PrintRequestCount(), 'a refused print enqueues nothing');
 	}
 
+	/** A caller with BATTERIES_VIEW and MASTER_DATA_EDIT passes the permission gate and is refused later with 422 inactive_printer for the unknown printer, creating nothing. */
 	public function testOperateGetsPastThePermissionGateForAHolderOfBothGrants(): void
 	{
 		$labels = self::LabelCount();

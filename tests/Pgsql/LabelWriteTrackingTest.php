@@ -36,6 +36,7 @@ class LabelWriteTrackingTest extends PgsqlSchemaTestCase
 
 	private static string $key;
 
+	/** Creates an ADMIN user and an API key for the label requests. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -82,11 +83,13 @@ class LabelWriteTrackingTest extends PgsqlSchemaTestCase
 		self::$db->exec("UPDATE system_db_changed_time SET changed_time = '" . self::LONG_AGO . "' WHERE id = 1");
 	}
 
+	/** Returns the current system_db_changed_time value. */
 	private static function changedTime(): string
 	{
 		return (string)self::$db->query('SELECT changed_time FROM system_db_changed_time WHERE id = 1')->fetchColumn();
 	}
 
+	/** Creating a label template through the API moves the database changed time past the reset value. */
 	public function testACommittedLabelWriteAdvancesTheChangedTime(): void
 	{
 		self::resetChangedTime();
@@ -97,6 +100,7 @@ class LabelWriteTrackingTest extends PgsqlSchemaTestCase
 		self::assertGreaterThan(self::LONG_AGO, self::changedTime(), 'a template was created and the changed time did not move');
 	}
 
+	/** Listing label templates leaves the database changed time at the reset value. */
 	public function testReadingLabelsDoesNotAdvanceTheChangedTime(): void
 	{
 		self::resetChangedTime();
@@ -107,6 +111,7 @@ class LabelWriteTrackingTest extends PgsqlSchemaTestCase
 		self::assertSame(self::LONG_AGO, self::changedTime(), 'a read moved the changed time');
 	}
 
+	/** A template create refused with 422 leaves no row behind and does not move the changed time. */
 	public function testARefusedLabelWriteDoesNotAdvanceTheChangedTime(): void
 	{
 		self::resetChangedTime();
@@ -119,6 +124,7 @@ class LabelWriteTrackingTest extends PgsqlSchemaTestCase
 		self::assertSame(self::LONG_AGO, self::changedTime(), 'a rolled-back write moved the changed time');
 	}
 
+	/** A renderer claim that finds no work returns a null render_request_id and does not move the changed time. */
 	public function testAnEmptyRendererClaimDoesNotAdvanceTheChangedTime(): void
 	{
 		$worker = self::send('POST', '/api/labels/workers', [

@@ -56,11 +56,16 @@ use Victual\Tests\Support\Subprocess;
  */
 class LabelRevisedPrintLockOrderMutationTest extends PgsqlSchemaTestCase
 {
+	/** Loads the Brother QL driver definition from the labels fixtures. */
 	private static function driverDefinition(): array
 	{
 		return json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/.devtools/labels/fixtures/brother-ql.json'), true, 512, JSON_THROW_ON_ERROR);
 	}
 
+	/**
+	 * Registers the Brother QL driver for a new label worker, saves a printer on that worker
+	 * and returns the printer id.
+	 */
 	private static function newPrinter(): int
 	{
 		$db = self::Pdo();
@@ -100,6 +105,10 @@ class LabelRevisedPrintLockOrderMutationTest extends PgsqlSchemaTestCase
 		return $template;
 	}
 
+	/**
+	 * Returns the environment a child PHP process needs to reach this test's schema: the
+	 * inherited scalar variables plus the schema, database and path settings.
+	 */
 	private static function subprocessEnv(): array
 	{
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');

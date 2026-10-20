@@ -27,6 +27,7 @@ class SubprocessReadGuardTest extends TestCase
 	/** @var string[] */
 	private array $plantedDirectories = [];
 
+	/** Deletes the files and directories the test planted. */
 	protected function tearDown(): void
 	{
 		foreach ($this->planted as $path)
@@ -70,6 +71,10 @@ class SubprocessReadGuardTest extends TestCase
 		return $found;
 	}
 
+	/**
+	 * No PHP file under tests/, except Support/Subprocess.php, reads a child process's pipes with a
+	 * hand-written stream read.
+	 */
 	public function testNoTestReadsAChildsPipesByHand(): void
 	{
 		self::assertSame(
@@ -79,6 +84,10 @@ class SubprocessReadGuardTest extends TestCase
 		);
 	}
 
+	/**
+	 * On planted files, the scan reports exactly the four hand-written pipe reads in the violating
+	 * file and nothing in the clean file, the exempt Subprocess.php or the non-PHP file.
+	 */
 	public function testThePatternFiresOnEachShapeOfHandReadAndOnNothingElse(): void
 	{
 		$directory = sys_get_temp_dir() . '/subprocess-guard-' . getmypid() . '-' . bin2hex(random_bytes(3));
@@ -116,6 +125,7 @@ class SubprocessReadGuardTest extends TestCase
 		);
 	}
 
+	/** Writes the contents to the path and records the path for tearDown() to delete. */
 	private function plant(string $path, string $contents): void
 	{
 		file_put_contents($path, $contents);

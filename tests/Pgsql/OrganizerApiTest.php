@@ -36,6 +36,10 @@ class OrganizerApiTest extends PgsqlSchemaTestCase
 	private static int $millilitre;
 	private static int $ampoule;
 
+	/**
+	 * Creates an operator who books stock and edits master data and a reader with only STOCK_VIEW,
+	 * each with an API key, then the cabinet and three organizer locations and four quantity units.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -101,6 +105,10 @@ class OrganizerApiTest extends PgsqlSchemaTestCase
 		return $response;
 	}
 
+	/**
+	 * Inserts a product in the cabinet with the given stock unit; when a purchase unit is given,
+	 * sets its conversion to the stock unit to $perPurchaseUnit. Returns the product id.
+	 */
 	private static function product(string $name, int $stockUnit, ?int $purchaseUnit = null, ?float $perPurchaseUnit = null): int
 	{
 		$statement = self::$db->prepare('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price) VALUES (?, ?, ?, ?, ?, ?) RETURNING id');
@@ -128,12 +136,20 @@ class OrganizerApiTest extends PgsqlSchemaTestCase
 		self::assertSame(200, $response['status'], $response['raw']);
 	}
 
+	/**
+	 * Transfers $amount of the product between two fixture locations through the API as the
+	 * operator.
+	 */
 	private static function transfer(int $product, float $amount, string $from, string $to): array
 	{
 		return self::send('POST', "/api/stock/products/$product/transfer", 'operator',
 			['amount' => $amount, 'location_id_from' => self::$location[$from], 'location_id_to' => self::$location[$to]]);
 	}
 
+	/**
+	 * Consumes $amount of the product through the API as the operator, with $extra merged into the
+	 * request body.
+	 */
 	private static function consume(int $product, float $amount, array $extra = []): array
 	{
 		return self::send('POST', "/api/stock/products/$product/consume", 'operator', ['amount' => $amount, 'transaction_type' => 'consume'] + $extra);
@@ -166,6 +182,10 @@ class OrganizerApiTest extends PgsqlSchemaTestCase
 		return $state;
 	}
 
+	/**
+	 * Asserts the product's per-location quantities and household total equal the expected values,
+	 * that the stock table agrees, and that the stock lineage invariants hold.
+	 */
 	private static function assertState(string $step, int $product, float $cabinet, float $a, float $b, float $c): void
 	{
 		$expected = ['cabinet' => $cabinet, 'a' => $a, 'b' => $b, 'c' => $c, 'total' => $cabinet + $a + $b + $c];
@@ -178,6 +198,7 @@ class OrganizerApiTest extends PgsqlSchemaTestCase
 		self::assertSame([], self::$db->query('SELECT * FROM stock_lineage_violations(NULL)')->fetchAll(PDO::FETCH_ASSOC), "ADR-0036 invariants I1 to I3 hold after: $step");
 	}
 
+	/** The number of non-undone consume bookings for the product in stock_log. */
 	private static function consumeBookings(int $product): int
 	{
 		return (int)self::$db->query("SELECT count(*) FROM stock_log WHERE product_id = $product AND transaction_type = 'consume' AND undone = 0")->fetchColumn();
@@ -189,6 +210,10 @@ class OrganizerApiTest extends PgsqlSchemaTestCase
 		return array_values(array_unique(array_map(static fn (array $row) => (int)$row['location_id'], $response['body'])));
 	}
 
+	/**
+	 * A second top-level location with an existing organizer's name is refused, and the existing
+	 * label context route returns the organizer's name.
+	 */
 	public function testEachOrganizerIsAUniqueLocationAndKeepsItsLocationLabel(): void
 	{
 		$duplicate = self::send('POST', '/api/objects/locations', 'operator', ['name' => 'API organizer A']);
@@ -200,6 +225,11 @@ class OrganizerApiTest extends PgsqlSchemaTestCase
 		self::assertSame('API organizer A', $context['body']['name']);
 	}
 
+	/**
+	 * Through the API a bottle is split across three organizers by transfers, consumed from one,
+	 * undone and emptied back, and the per-location quantities and household total are right after
+	 * every step.
+	 */
 	public function testThreeOrganizersAreFilledConsumedFromUndoneAndEmptiedBackWithTheTotalHeldAtEveryStep(): void
 	{
 		$product = self::product('API pills 5 mg', self::$tablet, self::$bottle, 90);
@@ -249,6 +279,10 @@ class OrganizerApiTest extends PgsqlSchemaTestCase
 		self::assertState('the refused undo', $product, 85, 0, 0, 0);
 	}
 
+	/**
+	 * Consuming more than the selected organizer holds answers 400 and books nothing, and naming a
+	 * stock entry together with a location still takes from that location only.
+	 */
 	public function testAShortfallAtTheSelectedOrganizerRefusesAndChargesNoOtherOrganizer(): void
 	{
 		$product = self::product('API pills shortfall', self::$tablet);
@@ -284,6 +318,10 @@ class OrganizerApiTest extends PgsqlSchemaTestCase
 		self::assertState('a consumption from the empty organizer', $product, 63, 0, 7, 7);
 	}
 
+	/**
+	 * A location_id that is a string, zero, boolean, list, float or unknown id answers 400 and
+	 * consumes nothing, while null and an empty string mean any location.
+	 */
 	public function testALocationIdThatNamesNothingUsableIsRefusedInsteadOfBecomingAnyLocation(): void
 	{
 		$product = self::product('API pills selection', self::$tablet);
@@ -318,6 +356,10 @@ class OrganizerApiTest extends PgsqlSchemaTestCase
 		self::assertState('a default and an explicit location', $product, 29, 0, 7, 0);
 	}
 
+	/**
+	 * A liquid, a single-use unit and two strengths of the same tablet are each consumed from an
+	 * organizer through the routes without affecting one another.
+	 */
 	public function testLiquidSingleUseAndStrengthsStayDistinctThroughTheRoutes(): void
 	{
 		$syrup = self::product('API syrup', self::$millilitre, self::$bottle, 250);
@@ -341,6 +383,11 @@ class OrganizerApiTest extends PgsqlSchemaTestCase
 		self::assertState('the 10 mg product is untouched', $strong, 0, 10, 0, 0);
 	}
 
+	/**
+	 * After a recipe consumption from an organizer, with refill records, a user holding only
+	 * STOCK_VIEW gets no recipe name, note, refill note or reorder date from the stock, object and
+	 * label routes or from a label scan.
+	 */
 	public function testAnOrdinaryStockReaderSeesNoPrivateRecipeData(): void
 	{
 		$product = self::product('API pills private', self::$tablet);

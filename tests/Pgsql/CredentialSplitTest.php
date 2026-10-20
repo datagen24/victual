@@ -40,6 +40,9 @@ class CredentialSplitTest extends TestCase
 	/** Whether this class created the roles, and so may drop them: never someone else's. */
 	private static bool $createdRoles = false;
 
+	/**
+	 * Creates a throwaway database and data directory, refuses to run if the migrate or app role already exists, and runs deploy/postgres/roles.sql twice to check it is repeatable.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		self::$database = 'victual_credsplit_' . bin2hex(random_bytes(4));
@@ -77,6 +80,9 @@ class CredentialSplitTest extends TestCase
 		self::runRolesScript();
 	}
 
+	/**
+	 * Drops the throwaway database and, if this test created them, the two roles; a role that is still depended on is left alone.
+	 */
 	public static function tearDownAfterClass(): void
 	{
 		// The roles are cluster-wide and this database is the only thing here that referenced
@@ -98,6 +104,9 @@ class CredentialSplitTest extends TestCase
 		}
 	}
 
+	/**
+	 * The app role fails to run bin/victual-migrate on an unmigrated database, the migrate role succeeds, and a second run by the migrate role also succeeds.
+	 */
 	public function testTheMigrateRoleCanMigrateAnEmptyDatabaseAndTheAppRoleCannot(): void
 	{
 		// The role that cannot migrate first, against a database nobody has migrated. If it
@@ -115,6 +124,9 @@ class CredentialSplitTest extends TestCase
 		$this->assertSame(0, $again, "a second migrate run failed:\n" . $againOutput);
 	}
 
+	/**
+	 * The app role can connect, read, write and use sequences, including on a table created later by the migrate role, but is refused with SQLSTATE 42501 for DDL, TRUNCATE, triggers and schemas.
+	 */
 	#[Depends('testTheMigrateRoleCanMigrateAnEmptyDatabaseAndTheAppRoleCannot')]
 	public function testTheAppRoleConnectsAndWritesRowsButCannotChangeStructure(): void
 	{
@@ -141,6 +153,9 @@ class CredentialSplitTest extends TestCase
 		}
 	}
 
+	/**
+	 * Every table in the public schema is owned by the migrate role, and the app role's probe left no structure or rows behind.
+	 */
 	#[Depends('testTheAppRoleConnectsAndWritesRowsButCannotChangeStructure')]
 	public function testNothingWasLeftBehindByTheRestrictedRoleAndTheMigrateRoleStillOwnsTheSchema(): void
 	{
@@ -160,6 +175,9 @@ class CredentialSplitTest extends TestCase
 		);
 	}
 
+	/**
+	 * Runs credential-split-helper.php as the app role and returns its decoded JSON report of connection and statement attempts.
+	 */
 	private function probeAsAppRole(): array
 	{
 		[$exit, $output] = $this->runProcess([PHP_BINARY, __DIR__ . '/credential-split-helper.php'], self::APP_ROLE, self::APP_PASSWORD);
@@ -171,6 +189,9 @@ class CredentialSplitTest extends TestCase
 		return $decoded;
 	}
 
+	/**
+	 * Runs one SQL statement on the throwaway database as the migrate role.
+	 */
 	private function asMigrateRole(string $sql): void
 	{
 		$pdo = new PDO(
@@ -182,6 +203,9 @@ class CredentialSplitTest extends TestCase
 		$pdo->exec($sql);
 	}
 
+	/**
+	 * Opens a connection to the throwaway database with the suite's own credentials.
+	 */
 	private function connectToDatabase(): PDO
 	{
 		return new PDO(
@@ -192,6 +216,9 @@ class CredentialSplitTest extends TestCase
 		);
 	}
 
+	/**
+	 * Runs deploy/postgres/roles.sql with psql against the throwaway database, passing the role passwords through the environment, and asserts it exits 0.
+	 */
 	private static function runRolesScript(): void
 	{
 		$env = self::environment(getenv('PGUSER'), getenv('PGPASSWORD'));

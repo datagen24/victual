@@ -29,6 +29,11 @@ class McpAuthTest extends PgsqlSchemaTestCase
 	/** @var array<string,string> plaintext keys by name */
 	private static array $keys = [];
 
+	/**
+	 * Creates two users who differ only in RECIPES_VIEW, then a regular key, a read-only MCP key, a
+	 * writable MCP key, a read-only MCP key for the second user, a calendar sharing key and a
+	 * session.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -105,11 +110,13 @@ class McpAuthTest extends PgsqlSchemaTestCase
 		return $result;
 	}
 
+	/** The request headers carrying the named test key, with any extra headers appended. */
 	private static function withKey(string $name, array $extra = []): array
 	{
 		return ['VICTUAL-API-KEY' => self::$keys[$name]] + $extra;
 	}
 
+	/** GETs /api/user/capabilities with the named key, asserts 200 and returns the decoded body. */
 	private static function capabilities(string $name, array $extra = []): array
 	{
 		$response = self::send('GET', '/api/user/capabilities', self::withKey($name, $extra));
@@ -118,16 +125,22 @@ class McpAuthTest extends PgsqlSchemaTestCase
 		return json_decode($response['body'], true);
 	}
 
+	/** A request with no credential answers 401. */
 	public function testNoCredentialIsUnauthorized(): void
 	{
 		self::assertSame(401, self::send('GET', '/api/user/capabilities')['status']);
 	}
 
+	/** An MCP key sent in the API key header is accepted on a read route. */
 	public function testAnMcpKeyIsAcceptedInTheHeader(): void
 	{
 		self::assertSame(200, self::send('GET', '/api/stock', self::withKey('mcp-read-only'))['status']);
 	}
 
+	/**
+	 * A read-only key can GET tasks, but POST, PUT and DELETE are refused with 403 'read-only' and
+	 * the refused write leaves no row.
+	 */
 	public function testAReadOnlyKeyMayReadAndMayNotWrite(): void
 	{
 		self::assertSame(200, self::send('GET', '/api/tasks', self::withKey('mcp-read-only'))['status']);
@@ -150,6 +163,11 @@ class McpAuthTest extends PgsqlSchemaTestCase
 		self::assertSame(0, $written, 'the refused write left nothing behind');
 	}
 
+	/**
+	 * A read-only key is refused 403 on the GET routes that have side effects (calendar sharing
+	 * link, external barcode lookup, thermal print) and creates no calendar key, while a writable
+	 * key may call the sharing link.
+	 */
 	public function testAReadOnlyKeyMayNotCallTheGetRoutesThatWrite(): void
 	{
 		$sharingLink = self::send('GET', '/api/calendar/ical/sharing-link', self::withKey('mcp-read-only'));
@@ -163,12 +181,17 @@ class McpAuthTest extends PgsqlSchemaTestCase
 		self::assertSame(200, self::send('GET', '/api/calendar/ical/sharing-link', self::withKey('mcp-writable'))['status'], 'a key that is not read-only still may');
 	}
 
+	/** A writable MCP key can create a task. */
 	public function testAWritableMcpKeyMayWrite(): void
 	{
 		$post = self::send('POST', '/api/objects/tasks', self::withKey('mcp-writable'), ['name' => 'Written by a writable MCP key']);
 		self::assertSame(200, $post['status'], $post['body']);
 	}
 
+	/**
+	 * The key-type header restricts which key types are accepted: it rejects mismatched, unknown
+	 * and special-purpose types, and a calendar key is not accepted without it.
+	 */
 	public function testTheExpectedTypeHeaderNarrowsAndNeverWidens(): void
 	{
 		$mcp = ['VICTUAL-API-KEY-TYPE' => ApiKeyService::API_KEY_TYPE_MCP];
@@ -182,6 +205,7 @@ class McpAuthTest extends PgsqlSchemaTestCase
 		self::assertSame(401, self::send('GET', '/api/stock', self::withKey('calendar'))['status'], 'nor is a calendar key accepted in the header without it');
 	}
 
+	/** The capabilities answer reports the key's type, read-only flag and a sorted permission list. */
 	public function testCapabilitiesDescribeTheActingKey(): void
 	{
 		$readOnly = self::capabilities('mcp-read-only');
@@ -198,6 +222,7 @@ class McpAuthTest extends PgsqlSchemaTestCase
 		self::assertSame($sorted, $readOnly['permissions'], 'permissions are sorted');
 	}
 
+	/** For a session login the capabilities answer has a null key type and read_only false. */
 	public function testCapabilitiesForASessionHaveNoKeyType(): void
 	{
 		$response = self::send('GET', '/api/user/capabilities', [], null, 'mcp-auth-session');
@@ -208,6 +233,7 @@ class McpAuthTest extends PgsqlSchemaTestCase
 		self::assertFalse($capabilities['read_only']);
 	}
 
+	/** The capabilities of the two fixture users differ in exactly RECIPES_VIEW. */
 	public function testTwoUsersDifferingInOnePermissionDifferInExactlyThatPermission(): void
 	{
 		$cook = self::capabilities('mcp-read-only')['permissions'];

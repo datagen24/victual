@@ -24,6 +24,7 @@ class ShoppingListScopeTest extends PgsqlSchemaTestCase
 	/** API key for the HTTP-level scenarios below; see the send() helper. */
 	private static string $apiKey = '';
 
+	/** Creates the stock service and an ADMIN user with an API key for the HTTP-level scenarios. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -42,6 +43,11 @@ class ShoppingListScopeTest extends PgsqlSchemaTestCase
 		$statement->execute([ApiKeyService::HashKey(self::$apiKey), substr(self::$apiKey, -4), ApiKeyService::API_KEY_TYPE_DEFAULT]);
 	}
 
+	/**
+	 * Returns the shopping_list rows for one product on one list, ordered by id.
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
 	private static function getShoppingListItems(int $listId, int $productId): array
 	{
 		$stmt = self::$db->prepare('SELECT id, shopping_list_id, product_id, amount FROM shopping_list WHERE shopping_list_id = ? AND product_id = ? ORDER BY id');

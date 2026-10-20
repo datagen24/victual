@@ -35,6 +35,11 @@ class ConsumptionRefillRaceTest extends PgsqlSchemaTestCase
 	private static int $product;
 	private static int $seed;
 
+	/**
+	 * Fixes the race-schedule seed (from CONSUMPTION_REFILL_RACE_SEED or random), creates the owner
+	 * and editor users with stock permissions, and inserts a shared quantity unit, location and a
+	 * product holding ten units.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -114,6 +119,10 @@ class ConsumptionRefillRaceTest extends PgsqlSchemaTestCase
 		return $results;
 	}
 
+	/**
+	 * Fails if any raced call reports a PostgreSQL deadlock (SQLSTATE 40P01 or a message containing
+	 * 'deadlock'), naming the seed.
+	 */
 	private function assertNoDeadlock(array ...$results): void
 	{
 		foreach ($results as $result)
@@ -123,6 +132,10 @@ class ConsumptionRefillRaceTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Counts the rows in the table that belong to the recipe and satisfy the extra SQL condition
+	 * (all rows by default).
+	 */
 	private static function rows(string $table, int $recipe, string $where = 'TRUE'): int
 	{
 		return (int)self::$db->query("SELECT count(*) FROM $table WHERE recipe_id = $recipe AND $where")->fetchColumn();
@@ -144,6 +157,10 @@ class ConsumptionRefillRaceTest extends PgsqlSchemaTestCase
 		self::assertSame(0, self::rows('consumption_refill_orders', $recipe, "state = 'received' AND received_fill_id IS NULL"), "a received order names its fill (seed $seed)");
 	}
 
+	/**
+	 * Two simultaneous RecordOrder calls on one recipe leave exactly one order row; the loser gets
+	 * 409 order_open.
+	 */
 	public function testTwoOrdersForOneRecipeLeaveOneOpenAndTheOtherGets409(): void
 	{
 		for ($round = 0; $round < self::ROUNDS; $round++)
@@ -160,6 +177,10 @@ class ConsumptionRefillRaceTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Receiving and cancelling the same order at once has exactly one winner: a received order
+	 * records one fill, a cancelled one records none, and the loser gets 409 order_closed.
+	 */
 	public function testReceivingAgainstCancellingTheSameOrderEndsInOneOutcome(): void
 	{
 		$received = 0;
@@ -195,6 +216,7 @@ class ConsumptionRefillRaceTest extends PgsqlSchemaTestCase
 		fwrite(STDERR, "receive vs cancel: $received received first, $cancelled cancelled first (seed " . self::$seed . ")\n");
 	}
 
+	/** Two simultaneous ReceiveOrder calls for one order succeed exactly once and record a single fill. */
 	public function testTwoReceivesOfOneOrderRecordOneFill(): void
 	{
 		for ($round = 0; $round < self::ROUNDS; $round++)
@@ -210,6 +232,10 @@ class ConsumptionRefillRaceTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Voiding a fill while a new fill is recorded completes both, deletes nothing, voids one of the
+	 * two fills, and ends the explicit reorder date however the calls interleave.
+	 */
 	public function testACorrectionRacingANewFillKeepsOneCurrentFillAndAllHistory(): void
 	{
 		for ($round = 0; $round < self::ROUNDS; $round++)
@@ -228,6 +254,10 @@ class ConsumptionRefillRaceTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Setting an explicit reorder date while a newer fill is recorded completes both, and any live
+	 * date ends up on the newer fill, never the older one.
+	 */
 	public function testAnExplicitDateRacingANewerFillNeverLeavesALiveDateOnTheOlderFill(): void
 	{
 		for ($round = 0; $round < self::ROUNDS; $round++)
@@ -246,6 +276,10 @@ class ConsumptionRefillRaceTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Two simultaneous acknowledgements of one notice by the same user both succeed with the same
+	 * answer, without tripping the primary key, and store one row.
+	 */
 	public function testTwoAcknowledgementsOfOneNoticeStoreOneRowAndBothSucceed(): void
 	{
 		for ($round = 0; $round < self::ROUNDS; $round++)
@@ -261,6 +295,7 @@ class ConsumptionRefillRaceTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Two users acknowledging the same notice at once both succeed and each keeps their own row. */
 	public function testTwoUsersAcknowledgingTheSameNoticeKeepIndependentRows(): void
 	{
 		for ($round = 0; $round < self::ROUNDS; $round++)
@@ -275,6 +310,11 @@ class ConsumptionRefillRaceTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * For RecordFill and RecordOrder, a write by an editor racing the owner's revoke of the share
+	 * either writes once or is refused with 404 not_found and writes nothing; the revoke always
+	 * succeeds.
+	 */
 	public function testAWriteRacingARevokeEndsInExactlyOneOfTwoOutcomes(): void
 	{
 		$wroteFirst = 0;
@@ -310,6 +350,10 @@ class ConsumptionRefillRaceTest extends PgsqlSchemaTestCase
 		fwrite(STDERR, "write vs revoke: $wroteFirst wrote first, $refused refused (seed " . self::$seed . ")\n");
 	}
 
+	/**
+	 * An editor's acknowledgement racing the revoke of their share either succeeds or is refused
+	 * with 404 not_found, and a refused one stores no row.
+	 */
 	public function testAnAcknowledgementRacingARevokeStoresNothingAfterTheRevoke(): void
 	{
 		for ($round = 0; $round < self::ROUNDS; $round++)
@@ -328,6 +372,10 @@ class ConsumptionRefillRaceTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Voiding the current fill while an order is recorded completes both and leaves the refill with
+	 * status 'ordered', no current fill, and the one voided fill in history.
+	 */
 	public function testAVoidRacingAnOrderRecordsBothAndLeavesTheOrderedStatus(): void
 	{
 		for ($round = 0; $round < self::ROUNDS; $round++)

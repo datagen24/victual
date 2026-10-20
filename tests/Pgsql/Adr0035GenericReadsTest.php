@@ -36,6 +36,7 @@ class Adr0035GenericReadsTest extends PgsqlSchemaTestCase
 	private static int $equipmentId;
 	private static string $manualBytes;
 
+	/** Creates four users (no leaf, viewer, admin, batteries-only) with sessions, a battery with a charge cycle, an equipment row, and uploads its manual. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -60,6 +61,7 @@ class Adr0035GenericReadsTest extends PgsqlSchemaTestCase
 		self::assertSame(204, $upload['status'], 'fixture manual uploaded: ' . $upload['body']);
 	}
 
+	/** Deletes the uploaded equipment manual, then runs the parent teardown. */
 	public static function tearDownAfterClass(): void
 	{
 		self::send('DELETE', '/api/files/equipmentmanuals/' . base64_encode(self::MANUAL_NAME), self::$sessions[self::ADMIN_USER]);
@@ -67,6 +69,7 @@ class Adr0035GenericReadsTest extends PgsqlSchemaTestCase
 		parent::tearDownAfterClass();
 	}
 
+	/** Inserts a user with the named permissions and a one-day session, and records the session key under the user id. */
 	private static function createUser(int $id, string $name, array $permissions): void
 	{
 		self::$db->exec("INSERT INTO users(id, username, password) VALUES ($id, '$name', 'fixture')");
@@ -113,6 +116,11 @@ class Adr0035GenericReadsTest extends PgsqlSchemaTestCase
 		return $result;
 	}
 
+	/**
+	 * Data provider: generic list routes paired with a string that appears only in their row data.
+	 *
+	 * @return array<string, array{0: string, 1: string}>
+	 */
 	public static function readPaths(): array
 	{
 		return [
@@ -122,6 +130,7 @@ class Adr0035GenericReadsTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/** Each generic list route answers 403 without row data to a user lacking the view leaf, and 200 with the data to a user holding it. */
 	#[DataProvider('readPaths')]
 	public function testGenericListIsRefusedWithoutTheLeafAndServedWithIt(string $path, string $marker): void
 	{
@@ -135,6 +144,7 @@ class Adr0035GenericReadsTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString($marker, $served['body']);
 	}
 
+	/** The generic single-equipment route answers 403 without row data to a user lacking EQUIPMENT_VIEW, and 200 with the row to one holding it. */
 	public function testGenericEquipmentRowIsRefusedWithoutEquipmentView(): void
 	{
 		$path = '/api/objects/equipment/' . self::$equipmentId;
@@ -149,6 +159,7 @@ class Adr0035GenericReadsTest extends PgsqlSchemaTestCase
 		self::assertSame(self::EQUIPMENT_NAME, json_decode($served['body'], true)['name']);
 	}
 
+	/** The equipment manual download answers 403 without file bytes to a user lacking EQUIPMENT_VIEW, and serves the exact file to one holding it. */
 	public function testEquipmentManualIsRefusedWithoutEquipmentViewAndServedWithIt(): void
 	{
 		$path = '/api/files/equipmentmanuals/' . base64_encode(self::MANUAL_NAME);
@@ -162,6 +173,7 @@ class Adr0035GenericReadsTest extends PgsqlSchemaTestCase
 		self::assertSame(self::$manualBytes, $served['body'], 'the caller with EQUIPMENT_VIEW receives the file');
 	}
 
+	/** A user holding only BATTERIES_VIEW can list batteries but gets 403 on equipment and on the equipment manuals. */
 	public function testEachLeafGatesOnlyItsOwnEntity(): void
 	{
 		$session = self::$sessions[self::BATTERIES_ONLY_USER];

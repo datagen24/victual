@@ -35,6 +35,7 @@ class RecipeCopyPermissionTest extends PgsqlSchemaTestCase
 	/** @var int fixture product id */
 	private static int $productId;
 
+	/** Creates a zero-grant user, a RECIPES_VIEW reader and a RECIPES editor with API keys, plus a source recipe holding one ingredient and one nested recipe. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -125,12 +126,14 @@ class RecipeCopyPermissionTest extends PgsqlSchemaTestCase
 		return $response;
 	}
 
+	/** Control: a user with no grants gets 403 reading the source recipe. */
 	public function testZeroGrantUserCannotRead(): void
 	{
 		$response = self::send('GET', '/api/objects/recipes/' . self::$recipeIds['source'], null, self::$keys['zero-grants']);
 		self::assertSame(403, $response['status'], 'Zero-grant user should not read recipes (control test)');
 	}
 
+	/** A user with no grants gets 403 on the copy route and no recipe, ingredient or nesting row is created. */
 	public function testZeroGrantUserCannotCopy(): void
 	{
 		$beforeRecipes = (int)self::$db->query('SELECT COUNT(*) FROM recipes')->fetchColumn();
@@ -149,6 +152,7 @@ class RecipeCopyPermissionTest extends PgsqlSchemaTestCase
 		self::assertSame(0, $afterNestings - $beforeNestings, 'No recipes_nestings rows created on permission refusal');
 	}
 
+	/** A RECIPES_VIEW user gets 403 on the copy route and no recipe, ingredient or nesting row is created. */
 	public function testReaderCannotCopy(): void
 	{
 		$beforeRecipes = (int)self::$db->query('SELECT COUNT(*) FROM recipes')->fetchColumn();
@@ -168,6 +172,7 @@ class RecipeCopyPermissionTest extends PgsqlSchemaTestCase
 		self::assertSame(0, $afterNestings - $beforeNestings, 'No recipes_nestings rows created on permission refusal');
 	}
 
+	/** A RECIPES user gets 200 on the copy route, and exactly one recipe, one ingredient and one nesting are created and returned as created_object_id. */
 	public function testEditorCanCopy(): void
 	{
 		$beforeRecipes = (int)self::$db->query('SELECT COUNT(*) FROM recipes')->fetchColumn();

@@ -28,6 +28,7 @@ class ChoreConsumeFlagCheckTest extends PgsqlSchemaTestCase
 	private static PDO $db;
 	private static string $apiKey;
 
+	/** Creates an ADMIN user with an API key for the HTTP tests. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -40,17 +41,23 @@ class ChoreConsumeFlagCheckTest extends PgsqlSchemaTestCase
 		$statement->execute([ApiKeyService::HashKey(self::$apiKey), substr(self::$apiKey, -4), self::USER_ID, ApiKeyService::API_KEY_TYPE_DEFAULT]);
 	}
 
+	/** Runs the pending migrations so each test starts from a fully migrated schema. */
 	protected function setUp(): void
 	{
 		// Every test starts from, and the preflight tests end in, a fully migrated schema.
 		DatabaseMigrationService::GetInstance()->MigrateDatabase();
 	}
 
+	/** Returns whether the consume_product_on_execution check constraint exists on chores. */
 	private static function constraintExists(): bool
 	{
 		return (bool)self::$db->query("SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='chores'::regclass AND conname='" . self::CONSTRAINT . "')")->fetchColumn();
 	}
 
+	/**
+	 * Inserts a manually scheduled chore with the given consume_product_on_execution value and
+	 * returns its id.
+	 */
 	private static function chore(string $name, int $flag): int
 	{
 		$statement = self::$db->prepare("INSERT INTO chores (name, period_type, consume_product_on_execution) VALUES (?, 'manually', ?) RETURNING id");
@@ -58,11 +65,16 @@ class ChoreConsumeFlagCheckTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/** Returns the chore's consume_product_on_execution value. */
 	private static function flagOf(int $id): int
 	{
 		return (int)self::$db->query('SELECT consume_product_on_execution FROM chores WHERE id=' . $id)->fetchColumn();
 	}
 
+	/**
+	 * Executes the statement and returns the SQLSTATE of the PDOException it raises, or
+	 * "accepted" when it succeeds.
+	 */
 	private static function sqlState(string $sql): string
 	{
 		try { self::$db->exec($sql); }
@@ -70,12 +82,14 @@ class ChoreConsumeFlagCheckTest extends PgsqlSchemaTestCase
 		return 'accepted';
 	}
 
+	/** Proves that the constraint is validated and that migration 312 is recorded. */
 	public function testConstraintExistsAndIsValidated(): void
 	{
 		self::assertTrue((bool)self::$db->query("SELECT convalidated FROM pg_constraint WHERE conrelid='chores'::regclass AND conname='" . self::CONSTRAINT . "'")->fetchColumn());
 		self::assertSame(1, (int)self::$db->query('SELECT count(*) FROM migrations WHERE migration=312')->fetchColumn());
 	}
 
+	/** Proves that 0 and 1 can be inserted and updated into each other. */
 	public function testZeroAndOneAreAccepted(): void
 	{
 		$zero = self::chore('flag zero', 0);
@@ -89,6 +103,10 @@ class ChoreConsumeFlagCheckTest extends PgsqlSchemaTestCase
 		self::assertSame(0, self::flagOf($one));
 	}
 
+	/**
+	 * Proves that 2, -1 and 255 are refused with SQLSTATE 23514 on both insert and update, and
+	 * the existing row keeps its value.
+	 */
 	public function testOtherValuesAreRefusedOnInsertAndUpdateAndRowsAreUnchanged(): void
 	{
 		$id = self::chore('flag kept', 1);
@@ -101,6 +119,10 @@ class ChoreConsumeFlagCheckTest extends PgsqlSchemaTestCase
 		self::assertSame(1, self::flagOf($id));
 	}
 
+	/**
+	 * Proves that NULL is still refused by the column's NOT NULL (SQLSTATE 23502) rather than
+	 * passing the check constraint.
+	 */
 	public function testNullabilityIsUnchanged(): void
 	{
 		// The constraint alone would let a NULL through (NULL IN (0, 1) is not false); the
@@ -137,6 +159,11 @@ class ChoreConsumeFlagCheckTest extends PgsqlSchemaTestCase
 		return $result;
 	}
 
+	/**
+	 * Proves that the generic API answers 400 with the standard database-rejection message for
+	 * an out-of-range update or create, changes nothing, leaves no transaction open, and still
+	 * accepts 0.
+	 */
 	public function testGenericApiRefusesOtherValuesWithTheStandardRefusalAndChangesNothing(): void
 	{
 		$id = self::chore('flag api', 1);
@@ -158,6 +185,10 @@ class ChoreConsumeFlagCheckTest extends PgsqlSchemaTestCase
 		self::assertSame(0, self::flagOf($id));
 	}
 
+	/**
+	 * Proves that with the constraint dropped and chores holding other values, the upgrade
+	 * refuses without rewriting any row, and can be retried once the rows are corrected.
+	 */
 	public function testOffendingRowsRefuseTheUpgradeWithoutBeingRewrittenAndCanBeRetried(): void
 	{
 		$db = self::$db;
@@ -253,6 +284,10 @@ class ChoreConsumeFlagCheckTest extends PgsqlSchemaTestCase
 		self::assertSame(1, (int)$db->query('SELECT count(*) FROM migrations WHERE migration=312')->fetchColumn());
 	}
 
+	/**
+	 * Proves that when every chore holds 0 or 1 the upgrade adds the constraint, records
+	 * migration 312 and leaves the rows unchanged.
+	 */
 	public function testUpgradeWithOnlyZeroAndOneAddsTheConstraintAndKeepsTheRows(): void
 	{
 		$db = self::$db;

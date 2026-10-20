@@ -59,6 +59,10 @@ class DemoDataTest extends PgsqlSchemaTestCase
 	private static PDO $db;
 	private static string $Storage = '';
 
+	/**
+	 * Plants a sentinel file at every demo resource path under storage/, so any attempt by the
+	 * generator to download a resource would overwrite one.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -84,6 +88,7 @@ class DemoDataTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Runs a single-value SQL query and returns the result as an integer. */
 	private static function rows(string $sql): int
 	{
 		return (int)self::$db->query($sql)->fetchColumn();
@@ -125,6 +130,11 @@ class DemoDataTest extends PgsqlSchemaTestCase
 		self::assertSame(0, self::markerRows(), 'the marker is gone again');
 	}
 
+	/**
+	 * Running the generator against the migrated database records the run marker and creates
+	 * products, stock, ledger rows, chores, batteries, tasks, recipes, a meal plan, a shopping
+	 * list, several users, and localized location and quantity unit names.
+	 */
 	#[Depends('testTheSkipFlagRecordsTheRunWithoutGeneratingAnything')]
 	public function testTheGeneratorFillsAnEmptyDatabaseOnPostgres(): void
 	{

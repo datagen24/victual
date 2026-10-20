@@ -91,6 +91,10 @@ $container->set('UrlManager', new Victual\Helpers\UrlManager(''));
 $checks = 0;
 $failures = 0;
 
+/**
+ * Records one assertion: counts and prints an "ok" line when $ok is true, otherwise counts a
+ * failure and prints a "FAIL" line.
+ */
 function check(bool $ok, string $message): void
 {
 	global $checks, $failures;
@@ -109,6 +113,10 @@ function check(bool $ok, string $message): void
 
 // The Content-Type matters: BaseApiController::GetParsedAndFilteredRequestBody() rejects a
 // write without it before it ever looks at the body.
+/**
+ * Builds a JSON PSR-7 request with the given method and parsed body for calling a controller
+ * directly.
+ */
 function request(string $method = 'GET', $body = null)
 {
 	return (new ServerRequestFactory())->createServerRequest($method, 'http://localhost/api')
@@ -140,6 +148,10 @@ function refusal(string $sql, array $parameters = []): ?string
 	}
 }
 
+/**
+ * Inserts an active location, optionally under a parent and flagged as a freezer, and returns
+ * its id.
+ */
 function MakeLocation(string $name, ?int $parentId = null, int $isFreezer = 0): int
 {
 	global $pdo;
@@ -150,6 +162,10 @@ function MakeLocation(string $name, ?int $parentId = null, int $isFreezer = 0): 
 	return intval($statement->fetchColumn());
 }
 
+/**
+ * Inserts an active product stored at the given location, with the given default best-before
+ * days after freezing, and returns its id.
+ */
 function MakeProduct(string $name, int $locationId, int $daysAfterFreezing = 0): int
 {
 	global $pdo;
@@ -187,6 +203,10 @@ $pdo->exec('DELETE FROM user_roles WHERE user_id = 9500');
 $pdo->exec("DELETE FROM users WHERE id = 9500");
 $pdo->exec("INSERT INTO users (id, username, password) VALUES (9500, 'nested-locations-caller', 'fixture')");
 
+/**
+ * Makes test user 9500 the caller: clears its permissions and roles, then assigns the role with
+ * the given code, or none when null.
+ */
 function ActAs(?string $roleCode): void
 {
 	global $pdo;

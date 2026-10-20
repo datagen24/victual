@@ -53,6 +53,10 @@ class RecipeSelfProductionLockOrderTest extends PgsqlSchemaTestCase
 	private static int $locationId;
 	private static string $apiKey = '';
 
+	/**
+	 * Creates the ambient caller 9000, a location, and an ADMIN user 9601 with an API key for the
+	 * subprocess requests.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -78,6 +82,10 @@ class RecipeSelfProductionLockOrderTest extends PgsqlSchemaTestCase
 	// Helpers (copies of tests/Pgsql/StockConcurrencyTest.php's own - see class docblock)
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Inserts a product in the fixture location with quantity unit 2 throughout, and returns its
+	 * id.
+	 */
 	private static function insertProduct(string $name): int
 	{
 		$statement = self::$db->prepare('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price) VALUES (?, ?, 2, 2, 2, 2) RETURNING id');
@@ -96,6 +104,7 @@ class RecipeSelfProductionLockOrderTest extends PgsqlSchemaTestCase
 			->execute([$productId, $amount, $stockId, self::FAR_FUTURE_DATE, self::PAST_DATE]);
 	}
 
+	/** The total amount in stock for the product. */
 	private static function stockAmount(int $productId): float
 	{
 		$statement = self::$db->prepare('SELECT COALESCE(SUM(amount), 0) FROM stock WHERE product_id = ?');
@@ -104,6 +113,7 @@ class RecipeSelfProductionLockOrderTest extends PgsqlSchemaTestCase
 		return (float)$statement->fetchColumn();
 	}
 
+	/** Opens a second PDO connection to the test database with the test schema on its search path. */
 	private static function secondConnection(): PDO
 	{
 		$dsn = 'pgsql:host=' . getenv('PGHOST') . ';port=' . getenv('PGPORT') . ';dbname=' . getenv('PHPUNIT_DB_NAME');
@@ -113,6 +123,10 @@ class RecipeSelfProductionLockOrderTest extends PgsqlSchemaTestCase
 		return $pdo;
 	}
 
+	/**
+	 * Polls pg_locks every 20 ms until some backend is waiting on the stock booking advisory lock
+	 * of the product and returns its pid; fails the test after $timeoutSeconds.
+	 */
 	private static function waitForAdvisoryWaiter(int $productId, float $timeoutSeconds = 10.0): int
 	{
 		$waiterCheck = self::$db->prepare(
@@ -148,6 +162,10 @@ class RecipeSelfProductionLockOrderTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn() > 0;
 	}
 
+	/**
+	 * Starts the request helper in a separate PHP process for the request, authenticated with the
+	 * fixture API key, and returns the running process.
+	 */
 	private static function startSubprocess(string $method, string $path, ?array $body = null): Subprocess
 	{
 		$spec = array_filter(
@@ -187,6 +205,10 @@ class RecipeSelfProductionLockOrderTest extends PgsqlSchemaTestCase
 
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * The fixture API key lets a subprocess request read stock and get 200, so later failures are
+	 * not an authentication problem.
+	 */
 	public function testSubprocessApiKeyWorks(): void
 	{
 		$probe = self::finishSubprocess(self::startSubprocess('GET', '/api/stock'));

@@ -70,6 +70,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 	private static int $locationArtifactId;
 	private static int $attemptId;
 
+	/**
+	 * Creates the caller, administrator and operator users, grants them their permissions, issues their API keys and seeds one target per label kind.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -97,6 +100,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// ---------------------------------------------------------------- fixtures
 
+	/**
+	 * Replaces the user's permissions with exactly the named ones.
+	 */
 	private static function Grant(int $userId, array $permissions): void
 	{
 		self::$db->exec('DELETE FROM user_permissions WHERE user_id = ' . $userId);
@@ -108,6 +114,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Inserts a default-type API key valid for 30 days for the user and returns the plain key.
+	 */
 	private static function IssueUserKey(int $userId): string
 	{
 		$key = bin2hex(random_bytes(25));
@@ -256,6 +265,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/**
+	 * Runs a parameterised query and returns its first row as an associative array, or null when there is none.
+	 */
 	private static function Row(string $sql, array $parameters = []): ?array
 	{
 		$statement = self::$db->prepare($sql);
@@ -264,11 +276,17 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		return $statement->fetch(PDO::FETCH_ASSOC) ?: null;
 	}
 
+	/**
+	 * Reads the Brother QL driver definition fixture used to register driver versions.
+	 */
 	private static function Driver(): array
 	{
 		return json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/.devtools/labels/fixtures/brother-ql.json'), true, 512, JSON_THROW_ON_ERROR);
 	}
 
+	/**
+	 * Builds a valid printer create/update request body for the worker, with any overrides applied on top.
+	 */
 	private static function PrinterBody(int $workerId, array $overrides = []): array
 	{
 		return $overrides + [
@@ -416,6 +434,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		'GET /api/labels/{kind:product|stock_entry|recipe|chore|battery}/{id:[0-9]+}/context',
 	];
 
+	/**
+	 * Compares the routes registered to the five label controllers with LABEL_ROUTES, so a route added or removed without extending this suite fails.
+	 */
 	public function testTheLabelRouteTableIsTheOneThisSuiteExercises(): void
 	{
 		$controllers = [
@@ -445,6 +466,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// ============================================================ workers
 
+	/**
+	 * A non-administrator creating a worker gets 403 and no worker row is written.
+	 */
 	public function testWorkerCreationRefusesACallerWithoutAdmin(): void
 	{
 		$before = self::Counts();
@@ -454,6 +478,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['workers'], self::Counts()['workers'], 'a refused worker creation writes no row');
 	}
 
+	/**
+	 * A worker with a configuration mode other than the two defined is refused with 422 and nothing is written.
+	 */
 	public function testWorkerCreationRefusesAnUnknownConfigurationMode(): void
 	{
 		$before = self::Counts();
@@ -463,6 +490,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['workers'], self::Counts()['workers'], 'a refused worker creation writes no row');
 	}
 
+	/**
+	 * A worker whose name is only whitespace is refused with 422 on the name field.
+	 */
 	public function testWorkerCreationRefusesABlankName(): void
 	{
 		$response = self::Send('POST', '/api/labels/workers', ['name' => '   ', 'configuration_mode' => 'declared'], self::$adminKey);
@@ -470,6 +500,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::AssertRefusal($response, 422, 'name', 'value_out_of_range');
 	}
 
+	/**
+	 * An administrator creates a declared worker and the stored row carries the given name, description and mode and is active.
+	 */
 	public function testAdminCreatesADeclaredWorker(): void
 	{
 		$response = self::Send('POST', '/api/labels/workers',
@@ -486,6 +519,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(1, (int)$row['active']);
 	}
 
+	/**
+	 * Changing a worker's configuration mode through the update route is refused and the stored mode stays declared.
+	 */
 	#[Depends('testAdminCreatesADeclaredWorker')]
 	public function testWorkerUpdateRefusesAModeChangeAndLeavesTheRowAlone(): void
 	{
@@ -496,6 +532,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame('declared', self::Row('SELECT configuration_mode FROM label_workers WHERE id = ?', [self::$workerId])['configuration_mode']);
 	}
 
+	/**
+	 * The worker update route renames the same worker and answers with its id.
+	 */
 	#[Depends('testAdminCreatesADeclaredWorker')]
 	public function testWorkerUpdateRenamesTheWorker(): void
 	{
@@ -507,6 +546,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame('Labelapi worker (renamed)', self::Row('SELECT name FROM label_workers WHERE id = ?', [self::$workerId])['name']);
 	}
 
+	/**
+	 * An active value other than 0 or 1, or of the wrong type, is refused with 422 and the worker stays active.
+	 */
 	#[Depends('testAdminCreatesADeclaredWorker')]
 	public function testTheWorkerActiveFlagIsZeroOrOneAndNothingElse(): void
 	{
@@ -524,6 +566,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 			'a refused update leaves the worker as it was');
 	}
 
+	/**
+	 * Pairing material can only be issued to a paired-mode worker; for a declared worker the route refuses with wrong_mode.
+	 */
 	#[Depends('testAdminCreatesADeclaredWorker')]
 	public function testPairingMaterialIsRefusedForADeclaredWorker(): void
 	{
@@ -532,6 +577,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::AssertRefusal($response, 422, 'worker_id', 'wrong_mode');
 	}
 
+	/**
+	 * An administrator issues a credential for the declared worker; it is stored as a label-worker key bound to the issuing administrator.
+	 */
 	#[Depends('testAdminCreatesADeclaredWorker')]
 	public function testAdminIssuesADeclaredWorkerCredential(): void
 	{
@@ -548,6 +596,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(self::ADMIN_USER, (int)$row['user_id'], 'the credential is bound to the administrator who issued it');
 	}
 
+	/**
+	 * A label-worker credential is refused with 401 on a household API route.
+	 */
 	#[Depends('testAdminIssuesADeclaredWorkerCredential')]
 	public function testAWorkerKeyIsRefusedOnTheHouseholdApi(): void
 	{
@@ -558,6 +609,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(401, $response['status'], $response['body']);
 	}
 
+	/**
+	 * The job claim route refuses a request that carries no credential with 401.
+	 */
 	#[Depends('testAdminIssuesADeclaredWorkerCredential')]
 	public function testWorkerRoutesRefuseARequestWithNoCredential(): void
 	{
@@ -566,6 +620,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(401, $response['status'], $response['body']);
 	}
 
+	/**
+	 * The job claim route refuses an administrator's ordinary API key with 401.
+	 */
 	#[Depends('testAdminIssuesADeclaredWorkerCredential')]
 	public function testWorkerRoutesRefuseAHouseholdApiKey(): void
 	{
@@ -574,6 +631,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(401, $response['status'], 'an administrator key is not a worker credential: ' . $response['body']);
 	}
 
+	/**
+	 * A worker credential past its expiry is refused with 401 while an unexpired credential of the same worker still works.
+	 */
 	#[Depends('testAdminIssuesADeclaredWorkerCredential')]
 	public function testAnExpiredWorkerCredentialIsRefused(): void
 	{
@@ -591,6 +651,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(200, $live['status'], $live['body']);
 	}
 
+	/**
+	 * A worker route called with no JSON object body is refused with 422 on the body.
+	 */
 	#[Depends('testAdminIssuesADeclaredWorkerCredential')]
 	public function testWorkerRoutesRefuseARequestWithNoJsonObject(): void
 	{
@@ -599,6 +662,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::AssertRefusal($response, 422, 'body', 'invalid_body');
 	}
 
+	/**
+	 * A claim limit below 1, above 50 or sent as a string is refused with 422; 1 and 50 are accepted.
+	 */
 	#[Depends('testAdminIssuesADeclaredWorkerCredential')]
 	public function testClaimLimitOutsideOneThroughFiftyIsRefused(): void
 	{
@@ -618,6 +684,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// ============================================================ pairing
 
+	/**
+	 * A paired-mode worker exchanges its pairing material for a credential over the credential-less pair route, and replaying the same material is refused with 401.
+	 */
 	public function testAPairedWorkerPairsOverThePublicRouteExactlyOnce(): void
 	{
 		$created = self::Send('POST', '/api/labels/workers', ['name' => 'Labelapi paired worker', 'configuration_mode' => 'paired'], self::$adminKey);
@@ -639,12 +708,18 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::AssertRefusal($replayed, 401, 'material', 'unauthorized');
 	}
 
+	/**
+	 * Pairing material that is not 64 hex characters, or is not a string, is refused with 422.
+	 */
 	public function testPairingRefusesMaterialThatIsNotThirtyTwoHexBytes(): void
 	{
 		self::AssertRefusal(self::Send('POST', '/api/labels/pair', ['material' => 'not-hex']), 422, 'material', 'value_out_of_range');
 		self::AssertRefusal(self::Send('POST', '/api/labels/pair', ['material' => 42]), 422, 'material', 'value_out_of_range');
 	}
 
+	/**
+	 * Rotating a credential issues a successor, and repeating the identical rotation returns that same successor instead of minting another.
+	 */
 	#[Depends('testAPairedWorkerPairsOverThePublicRouteExactlyOnce')]
 	public function testRotationIssuesASuccessorAndReplayRederivesTheSameOne(): void
 	{
@@ -669,6 +744,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($rotated['json']['credential'], $replayed['json']['credential'], 'an identical rotation rederives the successor rather than minting a second one');
 	}
 
+	/**
+	 * A malformed rotation request id, or a pair or rotate body missing a required field, is refused with 422 and leaves sessions, credentials and keys untouched.
+	 */
 	#[Depends('testRotationIssuesASuccessorAndReplayRederivesTheSameOne')]
 	public function testRotationRefusesAMalformedRequestIdentifier(): void
 	{
@@ -706,6 +784,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// ============================================================ driver registry
 
+	/**
+	 * A worker registers its driver definitions and the capability row for the driver and schema version is stored.
+	 */
 	#[Depends('testAdminIssuesADeclaredWorkerCredential')]
 	public function testWorkerRegistersItsDriverVersions(): void
 	{
@@ -719,6 +800,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame('1.0', $capability['schema_version']);
 	}
 
+	/**
+	 * Registering 65 driver definitions is refused with 422 and no driver row is stored.
+	 */
 	#[Depends('testWorkerRegistersItsDriverVersions')]
 	public function testRegistrationRefusesMoreDriverDefinitionsThanTheRouteAccepts(): void
 	{
@@ -729,6 +813,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before, (int)self::$db->query('SELECT count(*) FROM label_drivers')->fetchColumn());
 	}
 
+	/**
+	 * A drivers value that is an object, or a missing drivers field, is refused with 422.
+	 */
 	#[Depends('testWorkerRegistersItsDriverVersions')]
 	public function testRegistrationRefusesADriverListThatIsNotAList(): void
 	{
@@ -766,6 +853,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($capabilities, self::$db->query('SELECT driver_id, schema_version FROM label_worker_capabilities ORDER BY 1, 2')->fetchAll(PDO::FETCH_ASSOC), "and the worker's capabilities are unchanged");
 	}
 
+	/**
+	 * An administrator can read a registered driver version's schema document.
+	 */
 	#[Depends('testWorkerRegistersItsDriverVersions')]
 	public function testTheDriverSchemaIsReadableByAnAdministrator(): void
 	{
@@ -776,6 +866,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(['model', 'media'], $response['json']['discriminator_properties']);
 	}
 
+	/**
+	 * Asking for a schema version that was never registered is refused with unknown_driver_version.
+	 */
 	#[Depends('testWorkerRegistersItsDriverVersions')]
 	public function testAnUnknownDriverVersionIsRefusedRatherThanApproximated(): void
 	{
@@ -785,6 +878,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * The driver schema route answers 403 to a caller without admin.
+	 */
 	#[Depends('testWorkerRegistersItsDriverVersions')]
 	public function testTheDriverSchemaRouteRefusesANonAdmin(): void
 	{
@@ -793,6 +889,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// ============================================================ printers
 
+	/**
+	 * Creating a printer on an unregistered driver schema version is refused with 422 and no printer row is written.
+	 */
 	#[Depends('testWorkerRegistersItsDriverVersions')]
 	public function testPrinterCreationRefusesAnUnknownDriverVersionAndWritesNothing(): void
 	{
@@ -803,6 +902,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['printers'], self::Counts()['printers']);
 	}
 
+	/**
+	 * A printer whose settings are not a combination the driver supports is refused with unsupported_combination and nothing is written.
+	 */
 	#[Depends('testWorkerRegistersItsDriverVersions')]
 	public function testPrinterCreationRefusesAnImpossibleMediaCombinationAndWritesNothing(): void
 	{
@@ -814,6 +916,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['printers'], self::Counts()['printers']);
 	}
 
+	/**
+	 * A non-administrator creating a printer gets 403 and no printer row is written.
+	 */
 	#[Depends('testWorkerRegistersItsDriverVersions')]
 	public function testPrinterCreationRefusesACallerWithoutAdmin(): void
 	{
@@ -823,6 +928,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['printers'], self::Counts()['printers']);
 	}
 
+	/**
+	 * An administrator creates a printer and the stored row carries the worker, driver, settings and default flag, and is active.
+	 */
 	#[Depends('testWorkerRegistersItsDriverVersions')]
 	public function testAdminCreatesAPrinter(): void
 	{
@@ -840,6 +948,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertEqualsCanonicalizing(['media' => '62red', 'resolution_x' => 300, 'resolution_y' => 300, 'color_mode' => 'black_red'], json_decode($row['settings'], true));
 	}
 
+	/**
+	 * Updating a printer to an unregistered driver schema version is refused and the printer keeps version 1.0.
+	 */
 	#[Depends('testAdminCreatesAPrinter')]
 	public function testAnUnknownDriverVersionIsRefusedBeforeAnythingElseAboutTheRequest(): void
 	{
@@ -850,6 +961,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame('1.0', self::Row('SELECT driver_schema_version FROM label_printers WHERE id = ?', [self::$printerId])['driver_schema_version']);
 	}
 
+	/**
+	 * The printer update route renames the same printer and answers with its existing id.
+	 */
 	#[Depends('testAdminCreatesAPrinter')]
 	public function testPrinterUpdateRenamesTheSameRow(): void
 	{
@@ -892,6 +1006,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame('1.0', self::Row('SELECT driver_schema_version FROM label_printers WHERE id = ?', [self::$printerId])['driver_schema_version']);
 	}
 
+	/**
+	 * Updating a printer id that does not exist is refused with not_found.
+	 */
 	#[Depends('testAdminCreatesAPrinter')]
 	public function testPrinterUpdateOfAnUnknownPrinterIsRefused(): void
 	{
@@ -900,6 +1017,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// ============================================================ templates
 
+	/**
+	 * Listing and creating templates both answer 403 to a non-administrator, and no template row is written.
+	 */
 	public function testTemplateRoutesRefuseACallerWithoutAdmin(): void
 	{
 		$before = self::Counts();
@@ -909,6 +1029,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['templates'], self::Counts()['templates'], 'a refused template creation writes no row');
 	}
 
+	/**
+	 * A template for an entity kind that labels do not support is refused with 422 and nothing is written.
+	 */
 	public function testTemplateCreationRefusesAnUnknownEntityKindAndWritesNothing(): void
 	{
 		$before = self::Counts();
@@ -918,6 +1041,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['templates'], self::Counts()['templates']);
 	}
 
+	/**
+	 * A template with a whitespace-only name is refused with 422 and nothing is written.
+	 */
 	public function testTemplateCreationRefusesABlankName(): void
 	{
 		$before = self::Counts();
@@ -926,6 +1052,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['templates'], self::Counts()['templates']);
 	}
 
+	/**
+	 * Creating a template returns it with no default version and a starting draft that carries a revision token.
+	 */
 	public function testAdminCreatesATemplateWithAPublishableStartingDraft(): void
 	{
 		$response = self::Send('POST', '/api/labels/templates',
@@ -945,6 +1074,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::$templates['location'] = $templateId;
 	}
 
+	/**
+	 * A draft document with an unknown element property is refused naming that property, and the stored draft and its revision token do not change.
+	 */
 	#[Depends('testAdminCreatesATemplateWithAPublishableStartingDraft')]
 	public function testAMalformedTemplateDocumentIsRefusedAndTheDraftIsUnchanged(): void
 	{
@@ -965,6 +1097,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['revision_token'], $after['revision_token'], 'a refused draft save does not burn the revision token');
 	}
 
+	/**
+	 * Saving a draft document whose entity kind differs from the template's is refused with entity_kind_mismatch.
+	 */
 	#[Depends('testAdminCreatesATemplateWithAPublishableStartingDraft')]
 	public function testATemplateDocumentForAnotherEntityKindIsRefused(): void
 	{
@@ -977,6 +1112,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::AssertRefusal($response, 422, 'entity_kind', 'entity_kind_mismatch');
 	}
 
+	/**
+	 * Saving a draft document with an empty element list is refused with 422.
+	 */
 	#[Depends('testAdminCreatesATemplateWithAPublishableStartingDraft')]
 	public function testATemplateDocumentWithNoElementsIsRefused(): void
 	{
@@ -991,6 +1129,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * Saving a draft with an out-of-date revision token answers 409 stale_revision instead of overwriting.
+	 */
 	#[Depends('testAdminCreatesATemplateWithAPublishableStartingDraft')]
 	public function testAStaleRevisionTokenIsAConflictRatherThanASilentOverwrite(): void
 	{
@@ -1002,6 +1143,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::AssertRefusal($response, 409, 'revision_token', 'stale_revision');
 	}
 
+	/**
+	 * Saving a draft rotates its revision token, and publishing it creates version 1 as the template's default with a digest and the required capabilities recorded.
+	 */
 	#[Depends('testAdminCreatesATemplateWithAPublishableStartingDraft')]
 	public function testSavingAndPublishingADraftProducesADefaultVersion(): void
 	{
@@ -1030,6 +1174,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 			'a document that paints no red requires no two-colour media');
 	}
 
+	/**
+	 * Setting a template's default version to another template's version is refused, its own version is accepted, and an archived template cannot be published.
+	 */
 	#[Depends('testSavingAndPublishingADraftProducesADefaultVersion')]
 	public function testTheDefaultVersionPointerRefusesAVersionOfAnotherTemplate(): void
 	{
@@ -1060,6 +1207,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::AssertRefusal($republish, 422, 'template_id', 'archived');
 	}
 
+	/**
+	 * The template list shows each template's default version number and name.
+	 */
 	#[Depends('testSavingAndPublishingADraftProducesADefaultVersion')]
 	public function testTheTemplateListNamesTheDefaultVersionAndNothingElse(): void
 	{
@@ -1078,6 +1228,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame('Labelapi location label', $byId[self::$templates['location']]['name']);
 	}
 
+	/**
+	 * Reading the draft of or publishing a template id that does not exist is refused with not_found.
+	 */
 	#[Depends('testAdminCreatesATemplateWithAPublishableStartingDraft')]
 	public function testAnUnknownTemplateIsNotFound(): void
 	{
@@ -1085,6 +1238,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::AssertRefusal(self::Send('POST', '/api/labels/templates/999999/publish', [], self::$adminKey), 422, 'template_id', 'not_found');
 	}
 
+	/**
+	 * Publishes a template for each remaining entity kind so every print route has one, giving six templates in all.
+	 */
 	#[Depends('testSavingAndPublishingADraftProducesADefaultVersion')]
 	public function testTemplatesExistForEveryKindThePrintRoutesAccept(): void
 	{
@@ -1098,6 +1254,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// ============================================================ assets
 
+	/**
+	 * An asset upload with missing or non-base64 content is refused with 422 and stores nothing.
+	 */
 	public function testAnAssetUploadCarriesItsBytesAndIsRefusedWithoutThem(): void
 	{
 		$before = self::Counts();
@@ -1109,6 +1268,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['assets'], self::Counts()['assets'], 'a refused asset upload stores nothing');
 	}
 
+	/**
+	 * An administrator uploads a PNG; the response carries its dimensions and SHA-256 digest, and the asset list names it without its bytes.
+	 */
 	public function testAdminStoresAnImageAssetAndItAppearsInTheList(): void
 	{
 		$png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==');
@@ -1137,6 +1299,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertArrayNotHasKey('content_base64', $list['json'][0]);
 	}
 
+	/**
+	 * An upload declared as a font whose bytes are not a font is refused with 422 and stores nothing.
+	 */
 	public function testAnAssetDeclaringTheWrongMimeTypeIsRefused(): void
 	{
 		$before = self::Counts();
@@ -1152,6 +1317,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['assets'], self::Counts()['assets']);
 	}
 
+	/**
+	 * Listing and uploading assets both answer 403 to a non-administrator.
+	 */
 	public function testTheAssetRoutesRefuseACallerWithoutAdmin(): void
 	{
 		self::assertSame(403, self::Send('GET', '/api/labels/assets', null, self::$operatorKey)['status']);
@@ -1160,6 +1328,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// ============================================================ print operations
 
+	/**
+	 * A caller without the master-data-edit permission gets 403 on a print request, and no label or outbox event is created.
+	 */
 	#[Depends('testTemplatesExistForEveryKindThePrintRoutesAccept')]
 	#[Depends('testAdminCreatesAPrinter')]
 	public function testPrintingRefusesACallerWithoutMasterDataEdit(): void
@@ -1175,6 +1346,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['print_requests'], self::Counts()['print_requests'], 'a refused print enqueues no outbox event');
 	}
 
+	/**
+	 * A caller with master-data-edit but without the read grant of the target's domain gets 403, and no label or outbox event is created.
+	 */
 	#[Depends('testPrintingRefusesACallerWithoutMasterDataEdit')]
 	public function testPrintingRefusesACallerWithoutTheDomainReadGrant(): void
 	{
@@ -1191,6 +1365,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['print_requests'], self::Counts()['print_requests']);
 	}
 
+	/**
+	 * A print request missing import_epoch or printer_id, or sending the epoch as a string, is refused with 422 and writes no label, job or outbox event.
+	 */
 	#[Depends('testPrintingRefusesACallerWithoutTheDomainReadGrant')]
 	public function testPrintingRefusesARequestWithNoIntegerEpochOrPrinterAndWritesNothing(): void
 	{
@@ -1207,6 +1384,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['print_requests'], $after['print_requests']);
 	}
 
+	/**
+	 * A print request quoting an import epoch that is not current is refused with stale_target_context and creates no label, job or outbox event.
+	 */
 	#[Depends('testPrintingRefusesARequestWithNoIntegerEpochOrPrinterAndWritesNothing')]
 	public function testAStaleImportEpochIsRefusedAndMintsNoLabel(): void
 	{
@@ -1222,6 +1402,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['print_requests'], $after['print_requests'], 'the label row and the outbox event stand or fall together');
 	}
 
+	/**
+	 * Printing a product id that does not exist is refused as a stale target context and creates no label.
+	 */
 	#[Depends('testPrintingRefusesARequestWithNoIntegerEpochOrPrinterAndWritesNothing')]
 	public function testPrintingAnUnknownTargetIsRefusedAndMintsNoLabel(): void
 	{
@@ -1234,6 +1417,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['print_requests'], self::Counts()['print_requests']);
 	}
 
+	/**
+	 * Printing to a printer id that does not exist is refused with inactive_printer, and no label is minted before the printer resolves.
+	 */
 	#[Depends('testPrintingRefusesARequestWithNoIntegerEpochOrPrinterAndWritesNothing')]
 	public function testPrintingAnUnknownPrinterIsRefusedAndMintsNoLabel(): void
 	{
@@ -1298,6 +1484,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * The location-specific print route reuses the label identity already issued for that location and creates a new job.
+	 */
 	#[Depends('testPrintingEachKindCreatesTheLabelAndTheOutboxEventTogether')]
 	public function testTheLocationSpecificPrintRouteIssuesTheSameIdentity(): void
 	{
@@ -1310,6 +1499,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertNotSame(self::$locationJobId, (int)$response['json']['job_id'], 'and is still its own job');
 	}
 
+	/**
+	 * A revised print of a labelled location answers 202 with the revised_print operation and the same label uid.
+	 */
 	#[Depends('testPrintingEachKindCreatesTheLabelAndTheOutboxEventTogether')]
 	public function testARevisedPrintKeepsTheIdentityAndCapturesAgain(): void
 	{
@@ -1321,6 +1513,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(self::$locationUid, $response['json']['label_uid']);
 	}
 
+	/**
+	 * A revised print of a location that has no live label is refused with no_live_label and mints no label.
+	 */
 	#[Depends('testPrintingEachKindCreatesTheLabelAndTheOutboxEventTogether')]
 	public function testARevisedPrintRefusesATargetWithNoLiveLabel(): void
 	{
@@ -1332,6 +1527,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['labels'], self::Counts()['labels'], 'a revised print keeps an existing identity rather than minting one');
 	}
 
+	/**
+	 * Repeating a print request with the same Idempotency-Key returns the first response without a second job, and changing the request under that key is refused with 409.
+	 */
 	#[Depends('testPrintingEachKindCreatesTheLabelAndTheOutboxEventTogether')]
 	public function testAnIdempotencyKeyReplaysTheFirstJobAndRefusesAChangedRequest(): void
 	{
@@ -1357,6 +1555,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['print_jobs'], self::Counts()['print_jobs']);
 	}
 
+	/**
+	 * An Idempotency-Key that is too short is refused with 422.
+	 */
 	#[Depends('testPrintingEachKindCreatesTheLabelAndTheOutboxEventTogether')]
 	public function testAMalformedIdempotencyKeyIsRefused(): void
 	{
@@ -1368,6 +1569,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// ============================================================ the renderer
 
+	/**
+	 * A renderer credential is stored as a label-renderer key and is refused with 401 on the worker job claim route.
+	 */
 	#[Depends('testAdminCreatesADeclaredWorker')]
 	public function testTheRendererCredentialIsItsOwnTypeAndIsRefusedOnWorkerRoutes(): void
 	{
@@ -1383,6 +1587,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(401, self::Send('POST', '/api/labels/jobs/claim', ['limit' => 1], self::$rendererKey)['status']);
 	}
 
+	/**
+	 * A worker key and an administrator key are both refused with 401 on the render claim route.
+	 */
 	#[Depends('testTheRendererCredentialIsItsOwnTypeAndIsRefusedOnWorkerRoutes')]
 	#[Depends('testAdminIssuesADeclaredWorkerCredential')]
 	public function testAWorkerKeyIsRefusedOnTheRendererRoutes(): void
@@ -1394,6 +1601,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 	// The two claim-limit tests take whatever job is claimable, so they are declared here
 	// rather than left to the order of the file: once this test attaches an artifact there
 	// is a claimable job, and a claim made after that point would take it.
+	/**
+	 * The renderer claims a render request, posts a painted artifact for it, and the waiting print job gets that artifact, which makes it claimable.
+	 */
 	#[Depends('testPrintingEachKindCreatesTheLabelAndTheOutboxEventTogether')]
 	#[Depends('testTheRendererCredentialIsItsOwnTypeAndIsRefusedOnWorkerRoutes')]
 	#[Depends('testAnExpiredWorkerCredentialIsRefused')]
@@ -1432,6 +1642,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(self::$locationArtifactId, (int)json_decode($outbox['payload'], true)['artifact']['id']);
 	}
 
+	/**
+	 * Posting a render result with a wrong generation token for an already committed request is refused with already_committed.
+	 */
 	#[Depends('testTheRendererClaimsRendersAndAttachesAnArtifactToTheWaitingJob')]
 	public function testAStaleGenerationTokenCannotReplaceACommittedArtifact(): void
 	{
@@ -1445,6 +1658,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::AssertRefusal($response, 422, 'generation_token', 'already_committed');
 	}
 
+	/**
+	 * A render result with missing or non-base64 artifact bytes is refused with 422.
+	 */
 	#[Depends('testTheRendererCredentialIsItsOwnTypeAndIsRefusedOnWorkerRoutes')]
 	public function testARenderResultCarriesItsArtifactBytes(): void
 	{
@@ -1452,6 +1668,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::AssertRefusal(self::Send('POST', '/api/labels/render/1/result', ['generation_token' => 'x', 'artifact_base64' => '!!!'], self::$rendererKey), 422, 'artifact_base64', 'invalid_value');
 	}
 
+	/**
+	 * A renderer reporting an invalid document leaves the request in the invalid state, with the error code and element, no artifact and not retryable.
+	 */
 	#[Depends('testTheRendererClaimsRendersAndAttachesAnArtifactToTheWaitingJob')]
 	public function testTheRendererReportsAnInvalidDocumentAndTheStatusRouteSaysSo(): void
 	{
@@ -1476,6 +1695,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertFalse($status['json']['retryable'], 'an input error is not something retrying fixes');
 	}
 
+	/**
+	 * A renderer reporting an infrastructure failure puts the request back to pending with the RENDER_FAILED code and marks it retryable.
+	 */
 	#[Depends('testTheRendererReportsAnInvalidDocumentAndTheStatusRouteSaysSo')]
 	public function testTheRendererReportsInfrastructureFailureAndTheRequestGoesBackToPending(): void
 	{
@@ -1493,6 +1715,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertTrue($status['json']['retryable']);
 	}
 
+	/**
+	 * Reporting a failure on, or reading the status of, a render request id that does not exist is refused with not_found.
+	 */
 	#[Depends('testTheRendererCredentialIsItsOwnTypeAndIsRefusedOnWorkerRoutes')]
 	public function testAnUnknownRenderRequestIsRefused(): void
 	{
@@ -1501,6 +1726,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::AssertRefusal(self::Send('GET', '/api/labels/renders/999999', null, self::$adminKey), 422, 'render_request_id', 'not_found');
 	}
 
+	/**
+	 * The renderer can fetch a stored asset as raw PNG bytes with an image/png content type, and an unknown asset id answers 404.
+	 */
 	#[Depends('testAdminStoresAnImageAssetAndItAppearsInTheList')]
 	#[Depends('testTheRendererCredentialIsItsOwnTypeAndIsRefusedOnWorkerRoutes')]
 	public function testTheRendererFetchesAssetBytesAndGetsA404ForOneThatIsNotStored(): void
@@ -1517,6 +1745,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::AssertRefusal($missing, 404, 'asset_id', 'not_found');
 	}
 
+	/**
+	 * While no attempt carries the artifact, even the owning worker is refused its bytes, and the renderer key is refused with 401.
+	 */
 	#[Depends('testTheRendererClaimsRendersAndAttachesAnArtifactToTheWaitingJob')]
 	public function testAnArtifactIsReachableByItsOwnerAndNotByADisinterestedWorker(): void
 	{
@@ -1529,6 +1760,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(401, self::Send('GET', '/api/labels/artifacts/' . self::$locationArtifactId . '/bytes', null, self::$rendererKey)['status']);
 	}
 
+	/**
+	 * An administrator can fetch an artifact's preview PNG, a non-administrator gets 403 and an unknown artifact is refused with not_found.
+	 */
 	#[Depends('testTheRendererClaimsRendersAndAttachesAnArtifactToTheWaitingJob')]
 	public function testThePreviewImageRouteServesThePngToAnAdministratorAndNobodyElse(): void
 	{
@@ -1547,6 +1781,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// Declared on the test above as well: that one asserts the artifact is unreachable while
 	// no attempt carries it, which is only true until this claim creates the attempt.
+	/**
+	 * The worker claims exactly the one job that has an artifact attached; the claim carries the manifest but not the bytes, and creates the attempt.
+	 */
 	#[Depends('testTheRendererClaimsRendersAndAttachesAnArtifactToTheWaitingJob')]
 	#[Depends('testAnArtifactIsReachableByItsOwnerAndNotByADisinterestedWorker')]
 	public function testTheWorkerClaimsTheJobWhoseArtifactIsReady(): void
@@ -1565,6 +1802,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::$attemptId = (int)$claim['attempt']['id'];
 	}
 
+	/**
+	 * Once it has claimed the job, the worker can fetch the artifact as raw PNG bytes.
+	 */
 	#[Depends('testTheWorkerClaimsTheJobWhoseArtifactIsReady')]
 	public function testTheClaimingWorkerCanNowFetchTheArtifactBytes(): void
 	{
@@ -1576,6 +1816,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame('image/png', array_change_key_case($response['headers'])['content-type'] ?? null, 'and is declared as the image/png the document names');
 	}
 
+	/**
+	 * A different worker's key gets 403 on the heartbeat, sent, evidence and result routes of the attempt, and nothing is written on it.
+	 */
 	#[Depends('testTheWorkerClaimsTheJobWhoseArtifactIsReady')]
 	#[Depends('testAPairedWorkerPairsOverThePublicRouteExactlyOnce')]
 	public function testAnotherWorkersAttemptIsForbiddenOnEveryAttemptRoute(): void
@@ -1594,6 +1837,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 			'a forbidden report writes nothing on the attempt');
 	}
 
+	/**
+	 * A heartbeat is counted, and reporting that the bytes were sent sets the timestamp once; reporting it again returns the same timestamp.
+	 */
 	#[Depends('testTheWorkerClaimsTheJobWhoseArtifactIsReady')]
 	public function testTheWorkerHeartbeatsAndReportsTheBytesSent(): void
 	{
@@ -1609,6 +1855,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($sent['json']['bytes_sent_at'], $again['json']['bytes_sent_at'], 'reporting the send twice is idempotent');
 	}
 
+	/**
+	 * Evidence with a missing submission id or an unknown evidence type is refused with 422, and submitting the same submission id twice yields one observation.
+	 */
 	#[Depends('testTheWorkerHeartbeatsAndReportsTheBytesSent')]
 	public function testEvidenceIsValidatedAndDeduplicated(): void
 	{
@@ -1633,6 +1882,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame((int)$first['json']['id'], (int)$second['json']['id'], 'the same submission id is one observation');
 	}
 
+	/**
+	 * A worker can report status for its own printer; another worker gets 403 and a device_state of the wrong type is refused with 422.
+	 */
 	#[Depends('testTheWorkerHeartbeatsAndReportsTheBytesSent')]
 	#[Depends('testAPairedWorkerPairsOverThePublicRouteExactlyOnce')]
 	public function testThePrinterStatusRouteRefusesAPrinterThisWorkerDoesNotHold(): void
@@ -1649,6 +1901,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::AssertRefusal($wrongType, 422, 'device_state', 'value_out_of_range');
 	}
 
+	/**
+	 * A result outcome other than printed or failed, or a result missing outcome or detail, is refused with 422 and the attempt row does not change.
+	 */
 	#[Depends('testEvidenceIsValidatedAndDeduplicated')]
 	public function testAResultOutcomeIsPrintedOrFailedAndNothingElse(): void
 	{
@@ -1677,6 +1932,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// Reporting the outcome ends the attempt, so the two tests that read it while it is live
 	// - the foreign worker's refusal, and the owner's fetch of the bytes - are declared here.
+	/**
+	 * Reporting a printed outcome on the attempt marks the print job printed and delivers its outbox row.
+	 */
 	#[Depends('testAResultOutcomeIsPrintedOrFailedAndNothingElse')]
 	#[Depends('testAnotherWorkersAttemptIsForbiddenOnEveryAttemptRoute')]
 	#[Depends('testTheClaimingWorkerCanNowFetchTheArtifactBytes')]
@@ -1694,6 +1952,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertNotNull(self::Row('SELECT delivered_at FROM outbox WHERE id = ?', [(int)$job['outbox_id']])['delivered_at']);
 	}
 
+	/**
+	 * Reporting a failed outcome after a printed one is refused with conflicting_report and the stored outcome stays printed.
+	 */
 	#[Depends('testTheWorkerReportsAPrintAndTheJobIsCompleted')]
 	public function testAConflictingSecondResultIsRefused(): void
 	{
@@ -1704,6 +1965,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame('printed', self::Row('SELECT reported_outcome FROM print_attempts WHERE id = ?', [self::$attemptId])['reported_outcome']);
 	}
 
+	/**
+	 * A heartbeat on an attempt whose result was already reported is refused with lease_ended.
+	 */
 	#[Depends('testTheWorkerReportsAPrintAndTheJobIsCompleted')]
 	public function testAHeartbeatAfterTheLeaseEndedIsRefused(): void
 	{
@@ -1713,6 +1977,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// ============================================================ reprint, cancel, monitor
 
+	/**
+	 * A reprint of a printed job queues a new job for the same label that reuses the stored artifact and records the source job.
+	 */
 	#[Depends('testTheWorkerReportsAPrintAndTheJobIsCompleted')]
 	public function testAReprintReplaysTheStoredBytesOfTheSameLabel(): void
 	{
@@ -1730,6 +1997,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['print_requests'] + 1, self::Counts()['print_requests']);
 	}
 
+	/**
+	 * Reprinting a job that never got an artifact is refused with no_artifact and creates no job.
+	 */
 	#[Depends('testAReprintReplaysTheStoredBytesOfTheSameLabel')]
 	public function testAReprintOfAJobThatNeverHadAnArtifactIsRefused(): void
 	{
@@ -1740,12 +2010,18 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['print_jobs'], self::Counts()['print_jobs']);
 	}
 
+	/**
+	 * Reprinting a job id that does not exist is refused with not_found.
+	 */
 	#[Depends('testAReprintReplaysTheStoredBytesOfTheSameLabel')]
 	public function testAReprintOfAnUnknownJobIsRefused(): void
 	{
 		self::AssertRefusal(self::Send('POST', '/api/labels/jobs/999999/reprint', [], self::$operatorKey), 422, 'job_id', 'not_found');
 	}
 
+	/**
+	 * A reprint by a caller without master-data-edit gets 403 and creates no job.
+	 */
 	#[Depends('testAReprintReplaysTheStoredBytesOfTheSameLabel')]
 	public function testAReprintRefusesACallerWithoutMasterDataEdit(): void
 	{
@@ -1756,6 +2032,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['print_jobs'], self::Counts()['print_jobs']);
 	}
 
+	/**
+	 * Cancelling an unclaimed job answers 200 with state cancelled, records the reason and dead-letters its outbox row; cancelling again is not an error.
+	 */
 	#[Depends('testPrintingEachKindCreatesTheLabelAndTheOutboxEventTogether')]
 	public function testCancellingAnUnclaimedJobDeadLettersItsOutboxRow(): void
 	{
@@ -1778,6 +2057,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(200, $again['status'], 'cancelling twice is not an error');
 	}
 
+	/**
+	 * Cancelling a job that was already attempted is refused with 409 already_claimed and the job stays uncancelled.
+	 */
 	#[Depends('testTheWorkerReportsAPrintAndTheJobIsCompleted')]
 	public function testCancellingAJobThatHasAlreadyBeenAttemptedIsAConflict(): void
 	{
@@ -1788,6 +2070,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 			'a refused cancellation does not record a print that physically happened as never having happened');
 	}
 
+	/**
+	 * Cancelling a job id that does not exist is refused with not_found.
+	 */
 	#[Depends('testCancellingAnUnclaimedJobDeadLettersItsOutboxRow')]
 	public function testCancellingAnUnknownJobIsRefused(): void
 	{
@@ -1796,6 +2081,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// The three states this view is read for are each put there by a different test: the
 	// cancellation, the printed outcome, and the name the printer was given.
+	/**
+	 * The job list reports the printed job as reported with its printer's current name and shows the cancelled job as cancelled; a non-administrator gets 403.
+	 */
 	#[Depends('testCancellingAnUnclaimedJobDeadLettersItsOutboxRow')]
 	#[Depends('testTheWorkerReportsAPrintAndTheJobIsCompleted')]
 	#[Depends('testPrinterUpdateRenamesTheSameRow')]
@@ -1821,6 +2109,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(403, self::Send('GET', '/api/labels/jobs', null, self::$operatorKey)['status']);
 	}
 
+	/**
+	 * Authorizing a further attempt on a job that already printed is refused with already_completed.
+	 */
 	#[Depends('testTheJobMonitorReportsEveryJobWithItsPrinterAndState')]
 	public function testAuthorizingAnotherAttemptRefusesWhenTheJobAlreadySucceeded(): void
 	{
@@ -1830,6 +2121,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::AssertRefusal($response, 422, 'attempt_id', 'already_completed');
 	}
 
+	/**
+	 * Authorizing an attempt with an attempt id of 0, or none, is refused with 422.
+	 */
 	#[Depends('testTheJobMonitorReportsEveryJobWithItsPrinterAndState')]
 	public function testAuthorizingAnotherAttemptNeedsAPositiveAttemptIdentifier(): void
 	{
@@ -1839,6 +2133,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 			422, 'attempt_id', 'value_out_of_range');
 	}
 
+	/**
+	 * Authorizing an attempt on a job that has no current attempt is refused with not_current.
+	 */
 	#[Depends('testTheJobMonitorReportsEveryJobWithItsPrinterAndState')]
 	public function testAuthorizingAnotherAttemptOnAJobWithNoCurrentAttemptIsRefused(): void
 	{
@@ -1854,6 +2151,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 	// of the production renders the print tests left pending. Every test that needs one of
 	// those - the claim, and the two that report on a claimed request - runs first, so the
 	// whole preview chain is declared on the last of them.
+	/**
+	 * A sample preview is marked as a sample with the preview_sample purpose, and promoting its rendered artifact to a print is refused with not_promotable.
+	 */
 	#[Depends('testSavingAndPublishingADraftProducesADefaultVersion')]
 	#[Depends('testAdminCreatesAPrinter')]
 	#[Depends('testTheRendererClaimsRendersAndAttachesAnArtifactToTheWaitingJob')]
@@ -1875,6 +2175,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::AssertRefusal($promote, 422, 'artifact_id', 'not_promotable');
 	}
 
+	/**
+	 * A draft preview stores a snapshot of the draft document and uses the preview_draft purpose; its artifact cannot be promoted.
+	 */
 	#[Depends('testASamplePreviewInventsItsValuesAndCannotBePromoted')]
 	public function testADraftPreviewPinsTheDocumentItWasAskedAbout(): void
 	{
@@ -1893,6 +2196,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::AssertRefusal($promote, 422, 'artifact_id', 'not_promotable');
 	}
 
+	/**
+	 * A live preview of a labelled target can be promoted, which queues a promote_preview job for the target's existing label uid and writes one job and one outbox event.
+	 */
 	#[Depends('testPrintingEachKindCreatesTheLabelAndTheOutboxEventTogether')]
 	#[Depends('testADraftPreviewPinsTheDocumentItWasAskedAbout')]
 	public function testALivePreviewOfALabelledTargetCanBePromotedToAPrint(): void
@@ -1919,6 +2225,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame($before['print_requests'] + 1, self::Counts()['print_requests']);
 	}
 
+	/**
+	 * A live preview of a target that has no label is rendered as a sample and the response says so.
+	 */
 	#[Depends('testALivePreviewOfALabelledTargetCanBePromotedToAPrint')]
 	public function testALivePreviewOfAnUnlabelledTargetFallsBackToASample(): void
 	{
@@ -1931,6 +2240,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame('preview_sample', $response['json']['purpose']);
 	}
 
+	/**
+	 * A preview without a usable printer is refused with inactive_printer, and a non-administrator gets 403.
+	 */
 	#[Depends('testASamplePreviewInventsItsValuesAndCannotBePromoted')]
 	public function testAPreviewNeedsAResolvablePrinter(): void
 	{
@@ -1941,6 +2253,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(403, self::Send('POST', "/api/labels/templates/$templateId/preview", ['kind' => 'sample', 'printer_id' => self::$printerId], self::$operatorKey)['status']);
 	}
 
+	/**
+	 * Promoting an artifact without master-data-edit gets 403 and creates no job.
+	 */
 	#[Depends('testALivePreviewOfALabelledTargetCanBePromotedToAPrint')]
 	public function testPromotionRefusesACallerWithoutMasterDataEdit(): void
 	{
@@ -2137,6 +2452,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// ============================================================ resolution
 
+	/**
+	 * Resolving a live label's uid returns status resolved with its kind and the name of its own target.
+	 */
 	#[Depends('testPrintingEachKindCreatesTheLabelAndTheOutboxEventTogether')]
 	public function testResolvingALiveLabelNamesItsKindAndTarget(): void
 	{
@@ -2151,6 +2469,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertNotSame('Labelapi other shelf', $response['json']['target']['name'], 'the label names its own target');
 	}
 
+	/**
+	 * Lower-case, look-alike character (I, O) and vctl:-prefixed forms of a uid all resolve to the stored uid.
+	 */
 	#[Depends('testResolvingALiveLabelNamesItsKindAndTarget')]
 	public function testACanonicalizedVariantResolvesToTheSameLabel(): void
 	{
@@ -2169,6 +2490,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Payloads of the wrong length or with characters outside the uid alphabet answer status unknown without a lookup.
+	 */
 	#[Depends('testResolvingALiveLabelNamesItsKindAndTarget')]
 	public function testAMalformedPayloadIsRefusedRatherThanLookedUp(): void
 	{
@@ -2182,6 +2506,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * A well-formed uid that no label carries answers status unknown.
+	 */
 	#[Depends('testResolvingALiveLabelNamesItsKindAndTarget')]
 	public function testAnUnknownUidIsDistinctFromAResolvedOne(): void
 	{
@@ -2193,6 +2520,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// The battery fixture does not survive this test, so the two tests that print one are
 	// declared here rather than left to the order of the file.
+	/**
+	 * After its target is deleted, the label resolves as retired with a retirement time and a snapshot of the deleted row, and names no target.
+	 */
 	#[Depends('testResolvingALiveLabelNamesItsKindAndTarget')]
 	#[Depends('testAnIdempotencyKeyReplaysTheFirstJobAndRefusesAChangedRequest')]
 	#[Depends('testAMalformedIdempotencyKeyIsRefused')]
@@ -2213,6 +2543,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertArrayNotHasKey('target', $response['json'], 'a retired label has no live target to name');
 	}
 
+	/**
+	 * A caller lacking the read grant of the label's kind gets status unknown, not a refusal, so the route cannot be used to test whether a uid exists; with the grant it resolves.
+	 */
 	#[Depends('testResolvingALiveLabelNamesItsKindAndTarget')]
 	public function testACallerWhoMayNotReadThatKindIsNotToldTheLabelExists(): void
 	{
@@ -2242,6 +2575,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// ============================================================ grocycode
 
+	/**
+	 * Grocycode strings given to the label resolve route answer status unknown.
+	 */
 	#[Depends('testResolvingALiveLabelNamesItsKindAndTarget')]
 	public function testTheLabelNamespaceNeitherParsesNorEmitsAGrocycode(): void
 	{
@@ -2254,6 +2590,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * No label route response body and no queued print_requested payload contains a grcy: payload; the payloads carry vctl uids.
+	 */
 	#[Depends('testPrintingEachKindCreatesTheLabelAndTheOutboxEventTogether')]
 	public function testNoLabelResponseEverCarriesAGrocycodePayload(): void
 	{
@@ -2285,6 +2624,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * The stock barcode route still accepts a grocycode and returns the product it encodes.
+	 */
 	public function testAGrocycodeIsStillAcceptedWhereItIsDocumentedToBe(): void
 	{
 		// `grcy:*` is parsed indefinitely: the stock barcode routes that accepted one before
@@ -2300,6 +2642,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// ============================================================ context
 
+	/**
+	 * The location context route returns the location's id, name and import epoch.
+	 */
 	public function testTheLocationContextRouteCarriesTheEpochAPrintHasToQuote(): void
 	{
 		$response = self::Send('GET', '/api/labels/locations/' . self::$targets['location'] . '/context', null, self::$operatorKey);
@@ -2310,6 +2655,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(0, (int)$response['json']['import_epoch']);
 	}
 
+	/**
+	 * The context route returns id, a recognisable name and import epoch for product, stock entry, recipe and chore.
+	 */
 	public function testTheContextRouteAnswersForEveryKindItAccepts(): void
 	{
 		$expected = [
@@ -2330,6 +2678,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * A context read for a location or stock entry that does not exist answers 404 naming the kind.
+	 */
 	public function testAContextReadOfAMissingRowIsNotFound(): void
 	{
 		$location = self::Send('GET', '/api/labels/locations/999999/context', null, self::$operatorKey);
@@ -2341,6 +2692,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame('Stock entry not found', $stock['json']['error_message'], 'the refusal names the kind that was asked for');
 	}
 
+	/**
+	 * A context read needs the read grant of the kind named in the path: stock view reads a product but not a recipe or chore, and chores view reads a chore but not a location.
+	 */
 	public function testAContextReadTakesTheDomainGrantOfTheKindItNames(): void
 	{
 		self::Grant(self::OPERATOR_USER, [User::PERMISSION_STOCK_VIEW]);
@@ -2356,6 +2710,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// ============================================================ teardown paths
 
+	/**
+	 * Deleting a printer removes it and marks its queued job dead_lettered with the outbox row dead-lettered; deleting it again reports deleted false.
+	 */
 	#[Depends('testTheJobMonitorReportsEveryJobWithItsPrinterAndState')]
 	public function testDeletingAPrinterRetiresItsQueuedWorkVisibly(): void
 	{
@@ -2424,6 +2781,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// The same for the paired worker: deactivating it revokes `$pairedKey`, so the three
 	// tests that authenticate with it are declared rather than merely written above.
+	/**
+	 * Deactivating the paired worker makes its previously valid key answer 401 on a worker route.
+	 */
 	#[Depends('testRevokingAWorkerCredentialRefusesTheKeyAndKeepsThePrinterAssignment')]
 	#[Depends('testRotationRefusesAMalformedRequestIdentifier')]
 	#[Depends('testAnotherWorkersAttemptIsForbiddenOnEveryAttemptRoute')]
@@ -2439,6 +2799,9 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(401, self::Send('POST', '/api/labels/printers/' . self::$printerId . '/status', ['device_state' => 'idle'], self::$pairedKey)['status']);
 	}
 
+	/**
+	 * Issuing a credential for an inactive worker is refused with inactive_worker.
+	 */
 	#[Depends('testDeactivatingAWorkerRevokesItsSessionsToo')]
 	public function testAnInactiveWorkerCannotBeIssuedAFreshCredential(): void
 	{

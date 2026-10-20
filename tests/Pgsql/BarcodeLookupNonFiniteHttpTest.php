@@ -28,6 +28,10 @@ class BarcodeLookupNonFiniteHttpTest extends PgsqlSchemaTestCase
 	private static int $quPurchase = 0;
 	private static int $quStock = 0;
 
+	/**
+	 * Creates an ADMIN user with an API key and picks the first active location and two active
+	 * quantity units for the generated plugin to use.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -146,6 +150,10 @@ PLUGIN);
 		];
 	}
 
+	/**
+	 * With add=true, a plugin output holding a non-finite or otherwise unusable value answers 400
+	 * with the expected message and writes no product, barcode or conversion row.
+	 */
 	#[Depends('testTheSubprocessCanReadStock')]
 	#[DataProvider('refusedOutputProvider')]
 	public function testAddingAProductWhoseSourceOutputIsUnusableIsRefusedWith400AndWritesNothing(string $overrideFields, string $expectedMessage, string $barcode): void
@@ -197,6 +205,10 @@ PLUGIN);
 		}
 	}
 
+	/**
+	 * The subprocess API key can read stock and get 200, so later failures are not an
+	 * authentication problem.
+	 */
 	public function testTheSubprocessCanReadStock(): void
 	{
 		$probe = self::send('/api/stock', 'DoesNotMatterForThisRequest');

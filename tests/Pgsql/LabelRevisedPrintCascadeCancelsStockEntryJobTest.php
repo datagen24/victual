@@ -51,11 +51,17 @@ use Victual\Tests\Support\Subprocess;
  */
 class LabelRevisedPrintCascadeCancelsStockEntryJobTest extends PgsqlSchemaTestCase
 {
+	/**
+	 * Reads the Brother QL driver definition fixture.
+	 */
 	private static function driverDefinition(): array
 	{
 		return json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/.devtools/labels/fixtures/brother-ql.json'), true, 512, JSON_THROW_ON_ERROR);
 	}
 
+	/**
+	 * Builds the environment for a child PHP process: the inherited scalars plus the test schema and database connection settings.
+	 */
 	private static function subprocessEnv(): array
 	{
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');

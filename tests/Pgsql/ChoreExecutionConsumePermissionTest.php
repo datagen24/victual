@@ -41,6 +41,10 @@ class ChoreExecutionConsumePermissionTest extends PgsqlSchemaTestCase
 	/** @var array<string,string> plaintext API keys by role name */
 	private static array $keys = [];
 
+	/**
+	 * Creates a location, the ambient caller 9000 with no permissions, and three API users:
+	 * CHORE_TRACK_EXECUTION only, that plus STOCK_CONSUME, and STOCK_CONSUME only.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -89,6 +93,7 @@ class ChoreExecutionConsumePermissionTest extends PgsqlSchemaTestCase
 	// Helpers (mirroring ChoreExecutionStockUndoTest.php's own)
 	// ------------------------------------------------------------------------------
 
+	/** Inserts a default-type API key valid for 30 days for the user and returns the plain key. */
 	private static function issueKey(int $userId): string
 	{
 		$plaintext = bin2hex(random_bytes(25));
@@ -98,6 +103,7 @@ class ChoreExecutionConsumePermissionTest extends PgsqlSchemaTestCase
 		return $plaintext;
 	}
 
+	/** Inserts one row into $table from the column map and returns its id. */
 	private static function insertRow(string $table, array $columns): int
 	{
 		$names = implode(', ', array_keys($columns));
@@ -108,6 +114,10 @@ class ChoreExecutionConsumePermissionTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/**
+	 * Inserts a product in the fixture location with quantity unit 2 for purchase, stock, consume
+	 * and price, and returns its id.
+	 */
 	private static function insertProduct(string $name): int
 	{
 		return self::insertRow('products', [
@@ -120,6 +130,10 @@ class ChoreExecutionConsumePermissionTest extends PgsqlSchemaTestCase
 		]);
 	}
 
+	/**
+	 * Inserts a manually-scheduled chore with the given name, overridden or extended by $columns,
+	 * and returns its id.
+	 */
 	private static function insertChore(string $name, array $columns = []): int
 	{
 		return self::insertRow('chores', array_merge([
@@ -128,11 +142,13 @@ class ChoreExecutionConsumePermissionTest extends PgsqlSchemaTestCase
 		], $columns));
 	}
 
+	/** Purchases $amount of the product with a 2035-06-30 due date. */
 	private static function stockUp(int $productId, float $amount): void
 	{
 		self::$stock->AddProduct($productId, $amount, '2035-06-30', StockService::TRANSACTION_TYPE_PURCHASE, '2026-04-01', 1.0);
 	}
 
+	/** The total amount in stock for the product. */
 	private static function stockAmount(int $productId): float
 	{
 		$statement = self::$db->prepare('SELECT COALESCE(SUM(amount), 0) FROM stock WHERE product_id = ?');
@@ -141,6 +157,7 @@ class ChoreExecutionConsumePermissionTest extends PgsqlSchemaTestCase
 		return (float)$statement->fetchColumn();
 	}
 
+	/** The number of chores_log rows for the chore. */
 	private static function choresLogCountForChore(int $choreId): int
 	{
 		$statement = self::$db->prepare('SELECT COUNT(*) FROM chores_log WHERE chore_id = ?');
@@ -149,11 +166,16 @@ class ChoreExecutionConsumePermissionTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/** The highest stock_log id, or 0 when the table is empty. */
 	private static function highestStockLogId(): int
 	{
 		return (int)self::$db->query('SELECT COALESCE(MAX(id), 0) FROM stock_log')->fetchColumn();
 	}
 
+	/**
+	 * The product_id, amount and transaction_type of the stock_log rows with an id above $afterId,
+	 * in id order.
+	 */
 	private static function stockLogSince(int $afterId): array
 	{
 		$statement = self::$db->prepare('SELECT product_id, amount, transaction_type FROM stock_log WHERE id > ? ORDER BY id');
@@ -212,6 +234,10 @@ class ChoreExecutionConsumePermissionTest extends PgsqlSchemaTestCase
 	// A chore that consumes a product: CHORE_TRACK_EXECUTION alone is not enough
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * A user with only CHORE_TRACK_EXECUTION is refused 403 when executing a chore that consumes a
+	 * product, and no chores_log or stock_log row is written and the stock is untouched.
+	 */
 	public function testTrackOnlyCannotExecuteAConsumingChore(): void
 	{
 		$product = self::insertProduct('Chore Consume Permission Product A');
@@ -234,6 +260,10 @@ class ChoreExecutionConsumePermissionTest extends PgsqlSchemaTestCase
 		self::assertSame([], self::stockLogSince($watermark), 'No stock_log row was written on refusal');
 	}
 
+	/**
+	 * A user with only STOCK_CONSUME is refused 403 when executing a chore, and nothing is logged
+	 * or consumed.
+	 */
 	public function testStockConsumeAloneCannotExecuteAChore(): void
 	{
 		$product = self::insertProduct('Chore Consume Permission Product B');
@@ -256,6 +286,10 @@ class ChoreExecutionConsumePermissionTest extends PgsqlSchemaTestCase
 		self::assertSame([], self::stockLogSince($watermark), 'No stock_log row was written on refusal');
 	}
 
+	/**
+	 * A user with CHORE_TRACK_EXECUTION and STOCK_CONSUME can execute a consuming chore: one
+	 * chores_log row is written and the product is consumed with one stock_log booking.
+	 */
 	public function testTrackExecutionAndStockConsumeCanExecuteAConsumingChore(): void
 	{
 		$product = self::insertProduct('Chore Consume Permission Product C');
@@ -289,6 +323,10 @@ class ChoreExecutionConsumePermissionTest extends PgsqlSchemaTestCase
 	// A chore that consumes nothing still needs only CHORE_TRACK_EXECUTION
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * A user with only CHORE_TRACK_EXECUTION can execute a chore that consumes nothing, and one
+	 * chores_log row is written.
+	 */
 	public function testTrackOnlyCanExecuteAChoreThatConsumesNothing(): void
 	{
 		$choreId = self::insertChore('Chore Consume Permission Chore D');
@@ -299,6 +337,10 @@ class ChoreExecutionConsumePermissionTest extends PgsqlSchemaTestCase
 		self::assertSame(1, self::choresLogCountForChore($choreId), 'One chores_log row was written');
 	}
 
+	/**
+	 * A chore with consume_product_on_execution set but no product consumes nothing, so
+	 * CHORE_TRACK_EXECUTION alone is enough to execute it.
+	 */
 	public function testTrackOnlyCanExecuteAChoreConfiguredToConsumeButWithNoProduct(): void
 	{
 		// consume_product_on_execution = 1 with no product_id: TrackChore()'s own guard
@@ -320,6 +362,10 @@ class ChoreExecutionConsumePermissionTest extends PgsqlSchemaTestCase
 	// STOCK_EDIT check.
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * ChoresService::TrackChore() called directly by a caller without STOCK_CONSUME throws an
+	 * exception naming STOCK_CONSUME for a consuming chore, and logs and consumes nothing.
+	 */
 	public function testDirectServiceCallWithNoRequestFailsClosedForAConsumingChore(): void
 	{
 		$product = self::insertProduct('Chore Consume Permission Direct Product');
@@ -361,6 +407,10 @@ class ChoreExecutionConsumePermissionTest extends PgsqlSchemaTestCase
 	// not granted here. Every other test in this class uses an HTTP-level user instead so as
 	// not to disturb the no-permissions fixture the negative case above depends on; this grant
 	// runs last (declaration order), after that case has already run.
+	/**
+	 * With STOCK_CONSUME granted to the ambient caller, ChoresService::TrackChore() called directly
+	 * executes the consuming chore and consumes the product.
+	 */
 	public function testDirectServiceCallWithStockConsumeGrantedSucceeds(): void
 	{
 		self::$db->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT 9000, id FROM permission_hierarchy WHERE name = 'STOCK_CONSUME' ON CONFLICT DO NOTHING");

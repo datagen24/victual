@@ -75,6 +75,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	/** The API key the subprocess-driven scenarios at the bottom of this class act with. */
 	private static string $apiKey = '';
 
+	/**
+	 * Builds the DI container and the StockApiController the tests call directly, and inserts the
+	 * in-
+	 * process caller (id 9000).
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -92,6 +97,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	// Helpers
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Builds a PSR-7 request for the stock controller: the HTTP method, an optional parsed JSON
+	 * body
+	 * (sent with a JSON content type) and an optional query string.
+	 */
 	private static function request(string $method = 'GET', $body = null, array $query = [])
 	{
 		$uri = 'http://localhost/api' . (empty($query) ? '' : ('?' . http_build_query($query)));
@@ -105,6 +115,9 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		return $request;
 	}
 
+	/**
+	 * Replaces the in-process caller's permissions and roles with exactly the named permissions.
+	 */
 	private static function grant(array $names): void
 	{
 		self::$db->exec('DELETE FROM user_permissions WHERE user_id = 9000; DELETE FROM user_roles WHERE user_id = 9000');
@@ -172,6 +185,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		return $decoded;
 	}
 
+	/**
+	 * Returns the total amount of the product currently held in the stock table, 0 when there is
+	 * none.
+	 */
 	private static function stockAmount(int $productId): float
 	{
 		$statement = self::$db->prepare('SELECT COALESCE(SUM(amount), 0) FROM stock WHERE product_id = ?');
@@ -179,6 +196,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		return (float)$statement->fetchColumn();
 	}
 
+	/**
+	 * Inserts a product at the pantry with quantity unit 2 for the purchase, stock, consume and
+	 * price
+	 * units, with $columns overriding any default, and returns its id.
+	 */
 	private static function insertProduct(string $name, array $columns = []): int
 	{
 		$columns = array_merge([
@@ -198,6 +220,7 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/** Inserts one row built from the column map and returns the new id. */
 	private static function insertRow(string $table, array $columns): int
 	{
 		$names = implode(', ', array_keys($columns));
@@ -212,6 +235,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	// Fixture graph
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Grants the stock permissions and creates the locations, quantity units, shopping locations,
+	 * product groups, shopping list, products, unit conversions and barcodes the other tests use,
+	 * booking no stock.
+	 */
 	public function testCreatesFixtures(): void
 	{
 		self::grantStockAndList();
@@ -272,6 +300,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	// Purchases: POST /api/stock/products/{productId}/add
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * A purchase body naming every optional field is accepted and writes one stock_log row and one
+	 * stock entry carrying the amount, price, dates, location, shop and note.
+	 */
 	#[Depends('testCreatesFixtures')]
 	public function testPurchaseCarriesEveryOptionalBodyFieldOntoTheLedger(): void
 	{
@@ -407,6 +439,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertSame($expected, $rows[0]['best_before_date'], 'default_best_before_days = 20 books twenty days out');
 	}
 
+	/**
+	 * A purchase with a zero, negative or missing amount is refused with 400 and leaves the ledger
+	 * untouched.
+	 */
 	#[Depends('testPurchaseCarriesEveryOptionalBodyFieldOntoTheLedger')]
 	public function testPurchaseRefusesInvalidQuantitiesAndWritesNothing(): void
 	{
@@ -426,6 +462,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * A purchase against a product id that does not exist, or against an inactive product, is
+	 * refused
+	 * with 400 and writes nothing.
+	 */
 	#[Depends('testPurchaseCarriesEveryOptionalBodyFieldOntoTheLedger')]
 	public function testPurchaseRefusesMissingProduct(): void
 	{
@@ -488,6 +529,9 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * A purchase that declares itself a consume booking is refused with 400 and writes nothing.
+	 */
 	#[Depends('testPurchaseCarriesEveryOptionalBodyFieldOntoTheLedger')]
 	public function testPurchaseRefusesATransactionTypeThatIsNotAnAddition(): void
 	{
@@ -502,6 +546,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	// Consume: POST /api/stock/products/{productId}/consume
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * A consume naming a stock entry, location and recipe books a negative, spoiled row for that
+	 * entry
+	 * only, taking one unit from the pantry entry and leaving the freezer entry alone.
+	 */
 	#[Depends('testPurchaseCarriesEveryOptionalBodyFieldOntoTheLedger')]
 	public function testConsumeTakesOnlyTheNamedEntryAtTheNamedLocation(): void
 	{
@@ -552,6 +601,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertSame(4.0, $byLocation[self::$ids['freezer']], 'The entry at the other location was not touched');
 	}
 
+	/**
+	 * A consume of zero, a negative, a non-numeric or a missing amount is refused with 400 and
+	 * leaves
+	 * the ledger untouched.
+	 */
 	#[Depends('testConsumeTakesOnlyTheNamedEntryAtTheNamedLocation')]
 	public function testConsumeRefusesInvalidQuantitiesAndWritesNothing(): void
 	{
@@ -571,6 +625,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * Consuming more than is in stock, or anything from a product with no stock, is refused with
+	 * 400
+	 * and writes nothing.
+	 */
 	#[Depends('testConsumeTakesOnlyTheNamedEntryAtTheNamedLocation')]
 	public function testConsumeRefusesMoreThanIsInStockAndWritesNothing(): void
 	{
@@ -590,6 +649,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * A consume naming a product, location or transaction type that does not exist is refused with
+	 * 400
+	 * and writes nothing.
+	 */
 	#[Depends('testConsumeTakesOnlyTheNamedEntryAtTheNamedLocation')]
 	public function testConsumeRefusesMissingEntities(): void
 	{
@@ -637,6 +701,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	// Inventory corrections: POST /api/stock/products/{productId}/inventory
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * An inventory count above the recorded amount books only the difference as an inventory
+	 * correction, with the supplied optional fields, and a count below it books the reduction; the
+	 * stock ends at the counted amount each time.
+	 */
 	#[Depends('testConsumeTakesOnlyTheNamedEntryAtTheNamedLocation')]
 	public function testInventorySetsStockToTheGivenAbsoluteAmountInBothDirections(): void
 	{
@@ -674,6 +743,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertSame($before, self::stockAmount(self::$ids['staple']), 'Stock is back at the counted amount');
 	}
 
+	/**
+	 * An inventory count equal to the recorded amount, a body with no new_amount, or a product that
+	 * does not exist is refused with 400 and writes nothing.
+	 */
 	#[Depends('testInventorySetsStockToTheGivenAbsoluteAmountInBothDirections')]
 	public function testInventoryRefusesANoOpAndMissingInput(): void
 	{
@@ -701,6 +774,13 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	// POST /api/stock/entry/{entryId}/measure
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Opening is refused with 400 and writes nothing for a missing product or amount, a product
+	 * whose
+	 * opening is disabled, more than the unopened stock, and a measurement that names no entry,
+	 * opens
+	 * more than one unit, or targets an entry holding less than one unit.
+	 */
 	#[Depends('testCreatesFixtures')]
 	public function testOpenRefusesMissingEntitiesAndImpossibleAmounts(): void
 	{
@@ -781,6 +861,12 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * Opening with a measurement that is zero, negative, non-numeric, in a non-numeric or non-
+	 * convertible unit, gross without a tare, or whose tare is not below the reading is refused
+	 * with
+	 * 400 and writes nothing.
+	 */
 	#[Depends('testOpenRefusesAMeasurementThatCannotDescribeOneContainer')]
 	public function testOpenRefusesAnIncoherentMeasurementReading(): void
 	{
@@ -864,6 +950,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertNull($other['opened_measured_at'], 'and no measurement time');
 	}
 
+	/**
+	 * Measuring an entry that does not exist, is neither open nor a single unit, or a body missing
+	 * amount, qu_id or the tare of a gross reading is refused with 400 and writes nothing.
+	 */
 	#[Depends('testOpenWithAGrossMeasurementStoresNetContentsAndWhenTheyWereMeasured')]
 	public function testMeasureRefusesEntriesThatAreNotOneOpenContainer(): void
 	{
@@ -910,6 +1000,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	// Transfers: POST /api/stock/products/{productId}/transfer
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * A transfer naming a stock entry books a leaving and an arriving row, moves the amount from
+	 * the
+	 * freezer to the pantry, and leaves the total stock unchanged.
+	 */
 	#[Depends('testCreatesFixtures')]
 	public function testTransferMovesOnlyTheNamedEntryBetweenLocations(): void
 	{
@@ -950,6 +1045,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertSame(3.0, (float)$atLocation->fetchColumn(), 'The source kept the rest');
 	}
 
+	/**
+	 * A transfer with no amount, source or destination location, or naming a product or location
+	 * that
+	 * does not exist, is refused with 400 and writes nothing.
+	 */
 	#[Depends('testTransferMovesOnlyTheNamedEntryBetweenLocations')]
 	public function testTransferRefusesMissingInputAndMissingEntities(): void
 	{
@@ -1095,6 +1195,12 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	// POST /api/stock/locations/by-label/{code}/weigh
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Weighing a vessel location subtracts its tare from the gross reading, converts the net weight
+	 * to
+	 * the stock unit, and books the difference as an inventory correction so the entry holds the
+	 * weighed amount.
+	 */
 	#[Depends('testCreatesFixtures')]
 	public function testWeighingAVesselCorrectsItsOneEntryToTheNetReading(): void
 	{
@@ -1121,6 +1227,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertSame(1.0, self::stockAmount(self::$ids['bulk']), 'The entry now holds the weighed net contents in the stock unit');
 	}
 
+	/**
+	 * A weigh request with no gross amount, for a location that does not exist, or in a unit other
+	 * than the vessel's tare unit is refused with 400 and writes nothing.
+	 */
 	#[Depends('testWeighingAVesselCorrectsItsOneEntryToTheNetReading')]
 	public function testWeighingRefusesMissingInputAndUnknownVessels(): void
 	{
@@ -1213,6 +1323,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertSame(0.5, self::stockAmount($product), '500 g gross at zero tare is 0.5 kg net');
 	}
 
+	/**
+	 * Weighing by a scanned label payload corrects the vessel the label was issued for, while a
+	 * payload that maps to nothing is refused with 400.
+	 */
 	#[Depends('testWeighingAVesselCorrectsItsOneEntryToTheNetReading')]
 	public function testWeighingByLabelResolvesTheVesselAndRefusesAnUnknownCode(): void
 	{
@@ -1243,6 +1357,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	// Undo and merge
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Undoing, or reading, a booking id or transaction id that does not exist is refused with 400
+	 * and
+	 * writes nothing.
+	 */
 	#[Depends('testCreatesFixtures')]
 	public function testUndoRefusesBookingsAndTransactionsThatDoNotExist(): void
 	{
@@ -1271,6 +1390,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * Grants the merge permission for this test only, runs the merge refusal checks, and restores
+	 * the
+	 * default grants afterwards.
+	 */
 	#[Depends('testCreatesFixtures')]
 	public function testMergeRefusesUnusableProductPairs(): void
 	{
@@ -1293,6 +1417,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Asserts that a merge is refused with 400, leaving the ledger untouched, for a non-integer id,
+	 * a
+	 * product that does not exist on either side, and a product merged into itself.
+	 */
 	private function expectMergeRefusals(): void
 	{
 		$this->expectRefusalWithUntouchedLedger(
@@ -1324,6 +1453,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	// Barcodes: the by-barcode booking variants and the unresolved cases
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Looking up product details by a barcode that no product carries, one that maps to an inactive
+	 * product, or a Grocycode that is not a product is refused with 400; a barcode a product does
+	 * carry resolves to that product.
+	 */
 	#[Depends('testCreatesFixtures')]
 	public function testProductDetailsByBarcodeRefusesBarcodesThatResolveToNothing(): void
 	{
@@ -1501,6 +1635,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertSame(self::$ids['pantry'], (int)$withSubLocations[0]['location_id']);
 	}
 
+	/**
+	 * The due_soon_days query parameter sets the volatile stock horizon: a product due in three
+	 * days
+	 * is absent with a one day horizon and listed with a ten day one.
+	 */
 	#[Depends('testCreatesFixtures')]
 	public function testVolatileStockDueSoonHorizonIsTheQueryParameter(): void
 	{
@@ -1528,6 +1667,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertContains(self::$ids['due_soon'], array_map('intval', array_column($wide['due_products'], 'product_id')), 'A ten day horizon does');
 	}
 
+	/**
+	 * The price history of a purchased product is returned and non-empty, and one for a product id
+	 * that does not exist is refused with 400.
+	 */
 	#[Depends('testPurchaseCarriesEveryOptionalBodyFieldOntoTheLedger')]
 	public function testPriceHistoryReadsPurchasesAndRefusesAnUnknownProduct(): void
 	{
@@ -1549,6 +1692,13 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	// Editing a single entry: PUT /api/stock/entry/{entryId}
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Editing a stock entry to open writes old and new edit rows, stamps today as the opened date
+	 * and
+	 * stores the edited price and note; an unknown entry id or a body with no amount is refused
+	 * with
+	 * 400.
+	 */
 	#[Depends('testCreatesFixtures')]
 	public function testEditingAnEntryOpenFlagStampsTheOpenedDateAndRefusesUnknownEntries(): void
 	{
@@ -1611,6 +1761,12 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	// Shopping list writes
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Adding a product to a named shopping list inserts an entry with the given unit, note and
+	 * list,
+	 * and adding the same product again raises that entry's amount instead of creating a second
+	 * one.
+	 */
 	#[Depends('testCreatesFixtures')]
 	public function testShoppingListAddProductInsertsThenAccumulates(): void
 	{
@@ -1648,6 +1804,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertSame(1, (int)self::$db->query('SELECT COUNT(*) FROM shopping_list')->fetchColumn(), 'and does not create a second one');
 	}
 
+	/**
+	 * Adding to the shopping list with no product id, to a list that does not exist, or a product
+	 * that
+	 * does not exist is refused with 400 and adds no row.
+	 */
 	#[Depends('testShoppingListAddProductInsertsThenAccumulates')]
 	public function testShoppingListAddProductRefusesMissingEntities(): void
 	{
@@ -1722,6 +1883,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * Clearing a list with done_only removes just the done item, and clearing it without that flag
+	 * empties the list.
+	 */
 	#[Depends('testShoppingListRemoveProductDecrementsThenDeletes')]
 	public function testShoppingListClearRemovesDoneItemsOnlyWhenAsked(): void
 	{
@@ -1878,6 +2043,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertSame(4.0, self::stockAmount(self::$ids['spend_b']) + self::stockAmount(self::$ids['spend_c']) - 1.0 + 2.0, 'The spendings fixture is stocked');
 	}
 
+	/**
+	 * The spendings report grouped by product sums amount times price for the pinned month, leaves
+	 * out
+	 * self-production bookings, and names each product's group (null for a product in none).
+	 */
 	#[Depends('testCreatesSpendingsFixture')]
 	public function testSpendingsByProductSumsAmountTimesPriceAndExcludesSelfProduction(): void
 	{
@@ -1898,6 +2068,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertNull($byProduct['Coverage Spend C']->group_id, 'A product in no group carries no group id');
 	}
 
+	/**
+	 * The spendings report grouped by product group sums each group's products (with products in no
+	 * group under the null group), and grouped by store sums purchases per shop.
+	 */
 	#[Depends('testCreatesSpendingsFixture')]
 	public function testSpendingsGroupedByProductGroupAndByStore(): void
 	{
@@ -1912,6 +2086,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertCount(2, $byStore, 'and no third store appears');
 	}
 
+	/**
+	 * The group argument narrows the by-product spendings report to one group id, to products in no
+	 * group for 'ungrouped', or applies no filter for 'all'.
+	 */
 	#[Depends('testCreatesSpendingsFixture')]
 	public function testSpendingsProductGroupFilterNarrowsTheProductReport(): void
 	{
@@ -1925,6 +2103,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertCount(3, $all, '"all" applies no group filter');
 	}
 
+	/**
+	 * An unknown grouping is treated as grouping by product, and a range with a missing or non-ISO
+	 * bound falls back to the current month instead of the whole history.
+	 */
 	#[Depends('testCreatesSpendingsFixture')]
 	public function testSpendingsFallsBackForAnUnknownGroupingAndAnIncompleteRange(): void
 	{
@@ -1941,6 +2123,7 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** A month in which nothing was bought yields an empty report under every grouping. */
 	#[Depends('testCreatesSpendingsFixture')]
 	public function testSpendingsOfAMonthWithNoPurchasesIsEmpty(): void
 	{
@@ -1971,6 +2154,12 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	// leaf except the one the route names.
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * With every other stock permission granted, each booking route, the price read and the related
+	 * edit routes refuse with 403 a caller who lacks that route's own permission leaf, and answer
+	 * once
+	 * the leaf is granted back.
+	 */
 	#[Depends('testCreatesFixtures')]
 	public function testEveryBookingRouteRefusesTheCallerWithoutItsOwnLeaf(): void
 	{
@@ -2026,6 +2215,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * The current stock, volatile stock, product details, product entries and single booking reads
+	 * refuse with 403 a caller without STOCK_VIEW.
+	 */
 	#[Depends('testCreatesFixtures')]
 	public function testStockReadsRefuseACallerWithoutStockView(): void
 	{
@@ -2054,6 +2247,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	// Undoing bookings: what each transaction type puts back
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Undoing a transfer transaction removes the destination row, restores the units at the source,
+	 * creates or destroys no stock, and marks both halves of the transfer undone.
+	 */
 	#[Depends('testCreatesFixtures')]
 	public function testUndoingATransferPutsTheStockBackWhereItCameFrom(): void
 	{
@@ -2092,6 +2289,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertSame(0, (int)$stillOpen->fetchColumn(), 'Both halves of the transfer are marked undone, not just one');
 	}
 
+	/**
+	 * Undoing an edit transaction restores the entry's amount, due date, price, location, sealed
+	 * state, opened date and note to their values before the edit.
+	 */
 	#[Depends('testCreatesFixtures')]
 	public function testUndoingAStockEditRestoresTheEntryAsItWas(): void
 	{
@@ -2139,6 +2340,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertSame('before the edit', $entry['note'], 'and the note');
 	}
 
+	/**
+	 * Undoing a re-measurement of an open jar restores every measurement column to the reading
+	 * taken
+	 * at opening.
+	 */
 	#[Depends('testOpenWithAGrossMeasurementStoresNetContentsAndWhenTheyWereMeasured')]
 	public function testUndoingAMeasurementRestoresThePreviousReading(): void
 	{
@@ -2634,6 +2840,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		StockLineage::AssertHolds(self::$db, self::$ids['undo_ambiguous_split']);
 	}
 
+	/**
+	 * Undoing an inventory correction that raised stock from zero removes the added units and marks
+	 * the booking undone rather than deleting it.
+	 */
 	#[Depends('testCreatesFixtures')]
 	public function testUndoingAnUpwardInventoryCorrectionRemovesWhatItAdded(): void
 	{
@@ -2661,6 +2871,13 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	// Product group tree reads
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * The product group listing returns groups in pre-order with name-sorted siblings, a slash-
+	 * joined
+	 * path and a level for each, includes inactive groups unless only active ones are requested,
+	 * and
+	 * lists each group's ancestors starting with itself.
+	 */
 	#[Depends('testCreatesFixtures')]
 	public function testProductGroupsAreReturnedInTreeOrderWithTheirPaths(): void
 	{
@@ -2705,6 +2922,12 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	// The printable shopping list (thermal printer output)
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * The printable shopping list gives one line per row, pads the amount column to a common width,
+	 * uses the plural unit name above one and the singular at one, appends the note in brackets,
+	 * and
+	 * prints the note alone for a row with no product; an unknown list is refused.
+	 */
 	#[Depends('testCreatesFixtures')]
 	public function testPrintableShoppingListRendersAmountsUnitsNotesAndFreeTextRows(): void
 	{
@@ -2865,6 +3088,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertSame(-2.0, (float)$booking->fetchColumn(), 'The booking is against the sub product, in the sub product unit');
 	}
 
+	/**
+	 * Opening one parent unit with substitution allowed opens two units of the sub product via its
+	 * conversion, opens none of the parent's own stock, and changes no amounts.
+	 */
 	#[Depends('testCreatesFixtures')]
 	public function testOpeningAParentProductMaySubstituteASubProductThroughItsConversion(): void
 	{
@@ -3067,6 +3294,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	// - its default location - because that is the stock this read has to find. Nothing in
 	// this class consumes that product, so the pantry is still not empty however the rest of
 	// the class is ordered.
+	/**
+	 * The stock entries at a real location are returned, while a location id that does not exist is
+	 * refused with 400 and nothing is written.
+	 */
 	#[Depends('testPurchasePerUnitLabelTypeWritesOneStockEntryPerUnit')]
 	public function testLocationStockEntriesRefusesALocationThatDoesNotExist(): void
 	{
@@ -3464,6 +3695,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		return $result;
 	}
 
+	/**
+	 * Creates an ADMIN user with a default API key for the requests sent to a separate PHP process,
+	 * and checks that the key can read stock.
+	 */
 	#[Depends('testCreatesFixtures')]
 	public function testCreatesTheSubprocessApiKey(): void
 	{
@@ -3519,6 +3754,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertSame($before, self::ledger(), 'None of the eight refusals wrote anything');
 	}
 
+	/**
+	 * The external barcode lookup answers 400 when the plugin setting is empty or names a plugin
+	 * that
+	 * is not installed.
+	 */
 	#[Depends('testCreatesTheSubprocessApiKey')]
 	public function testExternalBarcodeLookupRefusesWhenNoUsablePluginIsConfigured(): void
 	{
@@ -3545,6 +3785,12 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('was not found', $missing['body']);
 	}
 
+	/**
+	 * With the demo plugin, an unknown barcode answers 200 with null, a plugin error answers 400
+	 * with
+	 * its message, and a found product is returned without being created unless add=true, which
+	 * creates the product and its barcode.
+	 */
 	#[Depends('testCreatesTheSubprocessApiKey')]
 	public function testExternalBarcodeLookupReturnsAndOptionallyCreatesTheFoundProduct(): void
 	{
@@ -3995,11 +4241,13 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		return self::$lookupKeys[$label];
 	}
 
+	/** Returns an API key for a user holding only MASTER_DATA_ADD and STOCK_VIEW. */
 	private static function addOnlyKey(): string
 	{
 		return self::lookupKey('add-only', 9510, ['MASTER_DATA_ADD', 'STOCK_VIEW']);
 	}
 
+	/** Returns an API key for a user holding only STOCK_VIEW. */
 	private static function viewOnlyKey(): string
 	{
 		return self::lookupKey('view-only', 9511, ['STOCK_VIEW']);
@@ -4053,6 +4301,7 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		return $new;
 	}
 
+	/** Returns the id of the product with the given name, or null if there is none. */
 	private static function productIdByName(string $name): ?int
 	{
 		$statement = self::$db->prepare('SELECT id FROM products WHERE name = ?');
@@ -4062,6 +4311,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		return $id === false ? null : (int)$id;
 	}
 
+	/**
+	 * Returns the row counts of the products, product_barcodes and quantity_unit_conversions
+	 * tables.
+	 */
 	private static function counts(): array
 	{
 		return [
@@ -4071,6 +4324,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/**
+	 * A STOCK_VIEW holder can look a barcode up, but asking to add is refused with 403 naming
+	 * MASTER_DATA_ADD, and no product, barcode or conversion is written.
+	 */
 	#[Depends('testCreatesTheSubprocessApiKey')]
 	public function testALookupWithoutAddNeedsOnlyStockViewAndAddNeedsMasterDataAdd(): void
 	{
@@ -4099,6 +4356,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * An account with MASTER_DATA_ADD and STOCK_VIEW can create the product and its barcode from a
+	 * lookup, while MASTER_DATA_ADD without STOCK_VIEW is refused with 403.
+	 */
 	#[Depends('testCreatesTheSubprocessApiKey')]
 	public function testAnAddOnlyAccountCanCreateTheProductAndItsBarcodeFromALookup(): void
 	{
@@ -4185,6 +4446,12 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * When a global conversion already covers the purchase and stock units, adding a looked-up
+	 * product
+	 * creates one product-specific row at the plugin's factor and leaves the global conversion and
+	 * other products' conversions unchanged.
+	 */
 	#[Depends('testCreatesTheSubprocessApiKey')]
 	public function testAGlobalConversionCoveringThePairGetsOneProductSpecificRowAndStaysUnchanged(): void
 	{
@@ -4218,6 +4485,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * A looked-up product with distinct consume and price units gets conversions to the stock unit
+	 * at
+	 * factor 1 for those two, while the purchase conversion carries the plugin factor.
+	 */
 	#[Depends('testCreatesTheSubprocessApiKey')]
 	public function testConsumeAndPriceConversionsOfTheNewProductStayAtFactorOne(): void
 	{
@@ -4359,6 +4631,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 
 	private const PICTURE_GIF = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
+	/**
+	 * Returns the stored product picture's bytes by name from the files table or the storage
+	 * directory, depending on the backend, or null if it is absent.
+	 */
 	private static function pictureBytes(string $backend, string $name): ?string
 	{
 		if ($backend === 'database')
@@ -4380,6 +4656,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		return is_file($path) ? file_get_contents($path) : null;
 	}
 
+	/**
+	 * Stores the bytes as a product picture of that name in the files table or the storage
+	 * directory,
+	 * depending on the backend.
+	 */
 	private static function putPicture(string $backend, string $name, string $bytes): void
 	{
 		if ($backend === 'database')
@@ -4398,6 +4679,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		file_put_contents($directory . '/' . $name, $bytes);
 	}
 
+	/**
+	 * Deletes the product picture of that name from the files table or the storage directory,
+	 * depending on the backend.
+	 */
 	private static function removePicture(string $backend, string $name): void
 	{
 		if ($backend === 'database')
@@ -4946,6 +5231,10 @@ PLUGIN);
 		);
 	}
 
+	/**
+	 * Adding the same looked-up product a second time is refused with 400 saying the name already
+	 * exists, and no duplicate product is created.
+	 */
 	#[Depends('testAUserPluginTakesPrecedenceAndItsInlineImageBecomesThePicture')]
 	public function testAddingALookedUpProductTwiceIsRefusedByName(): void
 	{
@@ -4968,6 +5257,10 @@ PLUGIN);
 		}
 	}
 
+	/**
+	 * A data: image URL that carries no data does not fail the add: the product is created with no
+	 * picture file name.
+	 */
 	#[Depends('testCreatesTheSubprocessApiKey')]
 	public function testAnUnusableInlineImageLeavesTheProductWithoutAPicture(): void
 	{

@@ -65,6 +65,11 @@ class RollbackChangeSignalsTest extends PgsqlSchemaTestCase
 	/** @var resource|null */
 	private static $brokerProcess = null;
 
+	/**
+	 * Creates the direct-call caller and the admin API user with a same-day-used API key, adds a
+	 * pantry location, prepares the scratch directory, and starts the stand-in MQTT broker
+	 * (stopping it again if startup fails).
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -114,6 +119,7 @@ class RollbackChangeSignalsTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Stops the stand-in broker before the schema is torn down. */
 	public static function tearDownAfterClass(): void
 	{
 		self::StopBroker();
@@ -121,6 +127,7 @@ class RollbackChangeSignalsTest extends PgsqlSchemaTestCase
 		parent::tearDownAfterClass();
 	}
 
+	/** Resets the database service's change-tracking state before each test. */
 	protected function setUp(): void
 	{
 		parent::setUp();
@@ -147,6 +154,7 @@ class RollbackChangeSignalsTest extends PgsqlSchemaTestCase
 	// Fixture helpers
 	// ------------------------------------------------------------------------------
 
+	/** Inserts one row built from the column map and returns the new id. */
 	private static function insertRow(string $table, array $columns): int
 	{
 		$names = implode(', ', array_keys($columns));
@@ -157,6 +165,10 @@ class RollbackChangeSignalsTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/**
+	 * Inserts a product at the pantry location with quantity unit 2 for every unit column, and
+	 * returns its id.
+	 */
 	private static function insertProduct(string $name): int
 	{
 		return self::insertRow('products', [
@@ -169,6 +181,10 @@ class RollbackChangeSignalsTest extends PgsqlSchemaTestCase
 		]);
 	}
 
+	/**
+	 * Inserts a manually scheduled chore that consumes the given amount of the product on
+	 * execution, and returns its id.
+	 */
 	private static function insertChore(int $productId, float $amount, string $name): int
 	{
 		return self::insertRow('chores', [
@@ -217,6 +233,10 @@ class RollbackChangeSignalsTest extends PgsqlSchemaTestCase
 	// for the same precedent of copying rather than editing another suite's test class)
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Binds a TCP socket to port 0 on 127.0.0.1 to learn a free port number, closes it, and returns
+	 * that port.
+	 */
 	private static function ReservePort(): int
 	{
 		$socket = stream_socket_server('tcp://127.0.0.1:0', $errorNumber, $errorMessage);

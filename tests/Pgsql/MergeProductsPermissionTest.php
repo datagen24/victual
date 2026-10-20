@@ -31,6 +31,10 @@ class MergeProductsPermissionTest extends PgsqlSchemaTestCase
 
 	private static int $locationId;
 
+	/**
+	 * Creates a location and three users, each with an API key: one holding the Adult role, one
+	 * with MASTER_DATA_EDIT only, and one with both STOCK_EDIT and MASTER_DATA_EDIT.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -106,6 +110,7 @@ class MergeProductsPermissionTest extends PgsqlSchemaTestCase
 		return $response;
 	}
 
+	/** Inserts one row into $table from the column map and returns the new id. */
 	private static function insertRow(string $table, array $columns): int
 	{
 		$names = implode(', ', array_keys($columns));
@@ -116,6 +121,10 @@ class MergeProductsPermissionTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/**
+	 * Inserts a product at the shared test location with the unit 2 for purchase, stock,
+	 * consume and price, and returns its id.
+	 */
 	private static function insertProduct(string $name): int
 	{
 		return self::insertRow('products', [
@@ -140,6 +149,10 @@ class MergeProductsPermissionTest extends PgsqlSchemaTestCase
 	// Tests
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Proves that a caller holding the Adult role is refused a product merge with 403 and a
+	 * missing MASTER_DATA_EDIT message, and both products remain.
+	 */
 	public function testTheAdultRoleCannotMergeProducts(): void
 	{
 		$keep = self::insertProduct('Merge Authz Keep (adult)');
@@ -152,6 +165,10 @@ class MergeProductsPermissionTest extends PgsqlSchemaTestCase
 		self::assertSame([$keep, $remove], self::existingProducts([$keep, $remove]), 'A refused merge leaves both products in place');
 	}
 
+	/**
+	 * Proves that MASTER_DATA_EDIT alone is refused a product merge with 403 and a missing
+	 * STOCK_EDIT message, and both products remain.
+	 */
 	public function testMasterDataEditWithoutStockEditCannotMergeProducts(): void
 	{
 		$keep = self::insertProduct('Merge Authz Keep (master data)');
@@ -164,6 +181,10 @@ class MergeProductsPermissionTest extends PgsqlSchemaTestCase
 		self::assertSame([$keep, $remove], self::existingProducts([$keep, $remove]), 'A refused merge leaves both products in place');
 	}
 
+	/**
+	 * Proves that a caller with both STOCK_EDIT and MASTER_DATA_EDIT merges two products,
+	 * getting 204 with the merged-away product deleted.
+	 */
 	public function testStockEditAndMasterDataEditTogetherMergeProducts(): void
 	{
 		$keep = self::insertProduct('Merge Authz Keep (both)');

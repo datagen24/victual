@@ -31,6 +31,9 @@ class ConsumptionRefillFixtureTest extends PgsqlSchemaTestCase
 	private static int $nextUser = 9701;
 	private static int $nextName = 0;
 
+	/**
+	 * Creates a quantity unit, a location and a product holding 10 units in stock for the fixtures to run against.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -59,6 +62,9 @@ class ConsumptionRefillFixtureTest extends PgsqlSchemaTestCase
 		return $cases;
 	}
 
+	/**
+	 * Every fixture file found is named in the fixtures README.
+	 */
 	public function testEveryFixtureIsListedInTheReadme(): void
 	{
 		$files = array_keys(self::fixtures());
@@ -71,6 +77,9 @@ class ConsumptionRefillFixtureTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Replays one fixture's steps through the API as the named users and checks each response status and body against what the fixture expects, saving values for later steps.
+	 */
 	#[DataProvider('fixtures')]
 	public function testFixtureReplaysAsDocumented(string $path): void
 	{
@@ -186,6 +195,9 @@ class ConsumptionRefillFixtureTest extends PgsqlSchemaTestCase
 		return preg_replace_callback('/\{\{([^{}]+)\}\}/', fn(array $found) => (string)$this->placeholder($found[1], $world), $value);
 	}
 
+	/**
+	 * Resolves a recipe, user or saved placeholder from the world to its id or saved value, and fails the test when it names nothing.
+	 */
 	private function placeholder(string $expression, array $world): mixed
 	{
 		if (preg_match('/^(recipe|user|saved)\.(.+)$/', $expression, $m) === 1)

@@ -38,6 +38,11 @@ class ConsumptionRefillDisclosureTest extends PgsqlSchemaTestCase
 	/** @var array<string,string> */
 	private static array $keys = [];
 
+	/**
+	 * Creates an owner, a reader and an administrator with API keys, a stocked product, and a
+	 * consumption recipe shared with the reader. The recipe carries refill fills, a voided
+	 * fill, settings, an order and an acknowledgement holding private text.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -77,6 +82,7 @@ class ConsumptionRefillDisclosureTest extends PgsqlSchemaTestCase
 		$refill->Acknowledge(self::$recipe . ':due:' . gmdate('Y-m-d', time() - 4 * 86400), self::OWNER);
 	}
 
+	/** Inserts a 30-day default API key for the user and returns its plaintext. */
 	private static function key(int $userId): string
 	{
 		$plaintext = bin2hex(random_bytes(25));
@@ -106,6 +112,10 @@ class ConsumptionRefillDisclosureTest extends PgsqlSchemaTestCase
 		return ['status' => $response['status'], 'body' => (string)$response['body']];
 	}
 
+	/**
+	 * Asserts that $text contains none of the private recipe name, note or void reason and no
+	 * refill table, column or field name; $where names the surface in the failure message.
+	 */
 	private static function assertNoRefillData(string $text, string $where): void
 	{
 		foreach ([self::$name, self::$note, self::$reason] as $private)
@@ -129,11 +139,16 @@ class ConsumptionRefillDisclosureTest extends PgsqlSchemaTestCase
 		self::assertSame(1, (int)self::$db->query('SELECT count(*) FROM consumption_refill_settings WHERE recipe_id = ' . self::$recipe)->fetchColumn());
 	}
 
+	/** Proves that the calendar service's events contain no refill data. */
 	public function testTheCalendarEventsCarryNoRefillData(): void
 	{
 		self::assertNoRefillData(json_encode(CalendarService::GetInstance()->GetEvents()), 'the calendar events');
 	}
 
+	/**
+	 * Proves that the iCal feed, read by the administrator and by the reader, is a valid
+	 * calendar and contains no refill data.
+	 */
 	public function testTheIcalFeedCarriesNoRefillData(): void
 	{
 		foreach (['admin', 'reader'] as $as)
@@ -145,6 +160,7 @@ class ConsumptionRefillDisclosureTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Proves that the MQTT state snapshot contains no refill data. */
 	public function testTheMqttStateSnapshotCarriesNoRefillData(): void
 	{
 		$snapshot = (new StateSnapshotAssembler())->Assemble();
@@ -152,6 +168,10 @@ class ConsumptionRefillDisclosureTest extends PgsqlSchemaTestCase
 		self::assertNoRefillData(json_encode($snapshot), 'the MQTT state snapshot');
 	}
 
+	/**
+	 * Proves that receiving and recording orders, changing settings, reading notices and
+	 * acknowledging a notice add no outbox row, and that the outbox holds no refill data.
+	 */
 	public function testRefillOperationsQueueNothingOnTheOutboxThatCarriesMqttAndInfluxDbEvents(): void
 	{
 		$before = (int)self::$db->query('SELECT count(*) FROM outbox')->fetchColumn();
@@ -169,6 +189,11 @@ class ConsumptionRefillDisclosureTest extends PgsqlSchemaTestCase
 		self::assertNoRefillData((string)self::$db->query("SELECT COALESCE(string_agg(row_to_json(o)::text, ''), '') FROM outbox o")->fetchColumn(), 'the outbox');
 	}
 
+	/**
+	 * Proves that a reader holding only STOCK_VIEW and CALENDAR_VIEW gets none of the private
+	 * refill text from the stock, object, calendar, config and settings routes, and that the
+	 * refill tables are not readable through the generic objects API.
+	 */
 	public function testAnOrdinaryStockReaderAndACalendarReaderSeeNoRefillDataOnTheRoutesThatShareStock(): void
 	{
 		foreach (['/api/stock', '/api/stock/volatile', '/api/objects/products', '/api/objects/locations', '/api/objects/stock_log', '/api/calendar/ical', '/api/system/config', '/api/user/settings'] as $path)
@@ -189,6 +214,10 @@ class ConsumptionRefillDisclosureTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Proves that an administrator who holds no share of the recipe gets refill lists without
+	 * refill data and a 404 for the recipe's refill route.
+	 */
 	public function testAnAdministratorWithNoShareGetsNoRefillDataFromTheRefillRoutes(): void
 	{
 		foreach (['/api/refills', '/api/refills/notices'] as $path)

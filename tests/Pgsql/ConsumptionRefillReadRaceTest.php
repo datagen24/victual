@@ -42,6 +42,7 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 	private static int $unit;
 	private static int $product;
 
+	/** Creates an owner and a reader with stock permissions, a second connection for the scripted revoke, and a product with ten units in stock. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -69,6 +70,7 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 		StockService::GetInstance()->AddProduct(self::$product, 10, '2999-12-31', StockService::TRANSACTION_TYPE_PURCHASE, '2026-01-01', null, $location);
 	}
 
+	/** Drops the second connection, then runs the parent teardown. */
 	public static function tearDownAfterClass(): void
 	{
 		self::$other = null;
@@ -104,6 +106,7 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 		return $process;
 	}
 
+	/** Waits for a helper subprocess to exit and returns its decoded JSON output, failing if it printed none. */
 	private function finish(Subprocess $process): array
 	{
 		$finished = Subprocess::Completed($process->finish());
@@ -180,6 +183,7 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 		return array_map(fn(array $row) => (int)$row['recipe_id'], $result[$key]);
 	}
 
+	/** A ListRefills read paused while the share is revoked and a fill is recorded omits that recipe, does not disclose its name or the new fill, and keeps the result envelope. */
 	public function testAListRefillsPausedAcrossARevokeReturnsNothingOfThatRecipe(): void
 	{
 		[$recipe, $name] = self::fixture();
@@ -194,6 +198,7 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 		self::assertSame(['as_of', 'as_of_source', 'refills'], array_keys($result['result']), 'the envelope is unchanged');
 	}
 
+	/** A Notices read paused while the share is revoked raises no notice for that recipe even though the new fill leaves it due. */
 	public function testNoticesPausedAcrossARevokeRaiseNothingForThatRecipe(): void
 	{
 		[$recipe] = self::fixture();
@@ -206,6 +211,7 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 		self::assertSame(['as_of', 'as_of_source', 'notices'], array_keys($result['result']), 'the envelope is unchanged');
 	}
 
+	/** A ListRefills read paused while a fill and an order are committed reports the new fill and the open order together. */
 	public function testAListRefillsPausedAcrossAnOrderAndFillReadsOneCompleteState(): void
 	{
 		[$recipe] = self::fixture();
@@ -224,6 +230,7 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 		self::assertSame('2026-02-27', $state[0]['open_order']['ordered_on'], 'the order recorded in the same transaction is seen with the fill');
 	}
 
+	/** A Notices read paused while a fill that clears the due date is committed raises no notice for the recipe. */
 	public function testNoticesPausedAcrossAFillThatClearsTheDueDateRaiseNothing(): void
 	{
 		[$recipe] = self::fixture();
@@ -244,6 +251,7 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 		self::fixture();
 		$refusing = new class extends ConsumptionRecipeService
 		{
+			/** Always throws a 403 permission_missing ConsumptionException, standing in for a lock check that refuses. */
 			public function AuthoriseRefill(int $recipeId, int $userId, ?string $right, bool $forUpdate): array
 			{
 				throw new ConsumptionException(403, 'permission_missing', 'Permission missing: STOCK_VIEW');
@@ -275,6 +283,7 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** A revoke started while a ListRefills read holds the recipe lock waits for it; both then complete, the read still lists the recipe and the share is gone. */
 	public function testARevokeWaitsForAListRefillsThatHoldsTheRecipeLock(): void
 	{
 		[$recipe] = self::fixture();

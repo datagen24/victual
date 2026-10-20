@@ -29,6 +29,7 @@ class ConsumptionRefillApiTest extends PgsqlSchemaTestCase
 	private static int $location;
 	private static int $product;
 
+	/** Creates five users (owner, editor, reader, stranger, nobody) with their grants and API keys, a read-only key for the owner, and a product with 30 units in stock. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -58,6 +59,7 @@ class ConsumptionRefillApiTest extends PgsqlSchemaTestCase
 		StockService::GetInstance()->AddProduct(self::$product, 30, '2999-12-31', StockService::TRANSACTION_TYPE_PURCHASE, '2026-01-01', null, self::$location);
 	}
 
+	/** Inserts an API key for the user, read-only or not, and returns its plaintext. */
 	private static function key(int $userId, int $readOnly): string
 	{
 		$plaintext = bin2hex(random_bytes(25));
@@ -103,6 +105,7 @@ class ConsumptionRefillApiTest extends PgsqlSchemaTestCase
 		return $response;
 	}
 
+	/** Creates a one-line consumption recipe as the given user over HTTP, shares it with the editor (edit right) and the reader, and returns its id. */
 	private static function recipe(string $as = 'owner'): int
 	{
 		$response = self::send('POST', '/api/consumption/recipes', $as, ['name' => 'RFAPI recipe', 'lines' => [['product_id' => self::$product, 'amount' => 1, 'qu_id' => self::$unit]]]);
@@ -117,6 +120,7 @@ class ConsumptionRefillApiTest extends PgsqlSchemaTestCase
 		return $id;
 	}
 
+	/** Records a refill fill on the recipe over HTTP, expects 201 and returns the refill state from the response body. */
 	private static function fill(int $id, string $date = '2026-01-01', ?int $days = 90, string $as = 'owner'): array
 	{
 		$response = self::send('POST', "/api/consumption/recipes/$id/refill/fills?as_of=2026-03-01", $as, ['filled_on' => $date, 'supplied_days' => $days]);
@@ -125,6 +129,11 @@ class ConsumptionRefillApiTest extends PgsqlSchemaTestCase
 		return $response['body'];
 	}
 
+	/**
+	 * Lists every refill route as [method, path, body] for the given recipe and order ids.
+	 *
+	 * @return list<array{0: string, 1: string, 2: ?array}>
+	 */
 	private function allRoutes(int $recipe = 1, int $other = 1): array
 	{
 		return [
@@ -141,6 +150,7 @@ class ConsumptionRefillApiTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/** Every refill route answers 401 with no key and 403 for an account holding no permissions. */
 	public function testAnUnauthenticatedCallIsRefusedAndAnAccountWithNoGrantsGets403OnEveryRoute(): void
 	{
 		foreach ($this->allRoutes() as [$method, $path, $body])
@@ -150,6 +160,7 @@ class ConsumptionRefillApiTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** On every recipe route a recipe the caller cannot see and a nonexistent one give the same 404 not_found response, and the refused requests write nothing. */
 	public function testAHiddenRecipeAndAMissingOneAnswerTheSameOnEveryRecipeRoute(): void
 	{
 		$id = self::recipe();
@@ -177,6 +188,7 @@ class ConsumptionRefillApiTest extends PgsqlSchemaTestCase
 		self::assertSame('open', self::$db->query("SELECT state FROM consumption_refill_orders WHERE recipe_id = $id")->fetchColumn());
 	}
 
+	/** Walks the refill lifecycle over HTTP (empty state, fill, settings, order, receive, void, cancel) and checks status codes, key order, date and instant formats and integer types in each response. */
 	public function testTheWorkflowOverHttpWithTheWireFormatsAClientDecodes(): void
 	{
 		$id = self::recipe();
@@ -230,6 +242,7 @@ class ConsumptionRefillApiTest extends PgsqlSchemaTestCase
 		self::assertSame([200, 'cancelled'], [$cancelled['status'], $cancelled['body']['orders'][0]['state']]);
 	}
 
+	/** Checks the shapes of the refill list and notices, that acknowledging a notice is idempotent and per user, and the 400 and 404 answers for bad or unreachable notice keys. */
 	public function testListsNoticesAndAcknowledgementOverHttp(): void
 	{
 		$id = self::recipe();
@@ -265,6 +278,7 @@ class ConsumptionRefillApiTest extends PgsqlSchemaTestCase
 		self::assertSame(404, self::send('POST', '/api/refills/notices/ack', 'owner', ['notice_key' => '987654:due:2026-03-18'])['status']);
 	}
 
+	/** A read share reads but cannot write (403 right_missing), an edit share writes, and each invalid input is refused with its documented error code without recording a fill. */
 	public function testStatusCodesForRightsValidationAndConflicts(): void
 	{
 		$id = self::recipe();
@@ -302,6 +316,7 @@ class ConsumptionRefillApiTest extends PgsqlSchemaTestCase
 		self::assertCount(2, self::send('GET', "/api/consumption/recipes/$id/refill", 'owner')['body']['fills'], 'no refused request recorded a fill');
 	}
 
+	/** A JSON list or form body is refused with 400 invalid_request, an integer supplied_days is accepted, and a fractional one is refused with 422. */
 	public function testTheBodyMustBeAJsonObjectAndNumbersStayNumbers(): void
 	{
 		$id = self::recipe();
@@ -318,6 +333,7 @@ class ConsumptionRefillApiTest extends PgsqlSchemaTestCase
 		self::assertSame(422, $float['status'], 'a JSON number with a fraction part is not an integer');
 	}
 
+	/** A note and a void reason containing markup and control characters are returned unchanged in a response typed application/json. */
 	public function testAHostileNoteAndReasonComeBackAsInertJsonText(): void
 	{
 		$id = self::recipe();
@@ -332,6 +348,7 @@ class ConsumptionRefillApiTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('application/json', implode(',', $types), 'the answer is typed JSON, so no browser renders the stored text as markup');
 	}
 
+	/** A read-only key can read the refill state and notices, gets 403 on every write route, and records no fill. */
 	public function testAReadOnlyKeyReadsAndCannotWrite(): void
 	{
 		$id = self::recipe();
@@ -350,6 +367,7 @@ class ConsumptionRefillApiTest extends PgsqlSchemaTestCase
 		self::assertSame(1, (int)self::$db->query("SELECT count(*) FROM consumption_refill_fills WHERE recipe_id = $id")->fetchColumn());
 	}
 
+	/** The refill_warning_lead_days user setting rejects values outside 0 to 60 with 422 and stores nothing; valid values change only that user's lead, and deleting the setting restores the default of 7. */
 	public function testTheWarningLeadSettingIsRefusedOutsideZeroToSixtyAndMovesTheLead(): void
 	{
 		$id = self::recipe();
@@ -374,6 +392,7 @@ class ConsumptionRefillApiTest extends PgsqlSchemaTestCase
 		self::assertSame(7, self::send('GET', '/api/user/settings/refill_warning_lead_days', 'owner')['body']['value'], 'the configured default is listed');
 	}
 
+	/** Out-of-range ids give 404, unknown body fields and malformed as_of values give 422, none of them record anything, and a zero-padded notice key is acknowledged under its canonical form. */
 	public function testPathIdsBodyFieldsAndAsOfThatNameNothingAreRefusedInsteadOfBeingDropped(): void
 	{
 		$id = self::recipe();
@@ -404,6 +423,7 @@ class ConsumptionRefillApiTest extends PgsqlSchemaTestCase
 		self::assertSame("$id:due:2026-03-18", $ack['body']['notice_key'], 'the answer is the canonical key');
 	}
 
+	/** Without as_of the server uses the current UTC date and reports as_of_source server_utc on the state, list and notices responses. */
 	public function testWithoutAsOfTheUtcDateIsUsedAndSaid(): void
 	{
 		$id = self::recipe();

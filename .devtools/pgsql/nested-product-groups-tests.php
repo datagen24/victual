@@ -72,6 +72,9 @@ $container->set('UrlManager', new Victual\Helpers\UrlManager(''));
 $checks = 0;
 $failures = 0;
 
+/**
+ * Records one assertion: counts it and prints ok when the condition holds, otherwise counts a failure and prints FAIL with the message.
+ */
 function check(bool $ok, string $message): void
 {
 	global $checks, $failures;
@@ -90,6 +93,9 @@ function check(bool $ok, string $message): void
 
 // The Content-Type matters: BaseApiController::GetParsedAndFilteredRequestBody() rejects a
 // write without it before it ever looks at the body.
+/**
+ * Builds a PSR-7 request for /api with a JSON Content-Type and the given parsed body.
+ */
 function request(string $method = 'GET', $body = null)
 {
 	return (new ServerRequestFactory())->createServerRequest($method, 'http://localhost/api')
@@ -121,6 +127,9 @@ function refusal(string $sql, array $parameters = []): ?string
 	}
 }
 
+/**
+ * Inserts a product group under the given parent, or at the root when none, and returns its id.
+ */
 function MakeGroup(string $name, ?int $parentId = null, int $active = 1): int
 {
 	global $pdo;
@@ -131,6 +140,9 @@ function MakeGroup(string $name, ?int $parentId = null, int $active = 1): int
 	return intval($statement->fetchColumn());
 }
 
+/**
+ * Inserts a product in the given product group with fixed location and unit defaults and returns its id.
+ */
 function MakeProduct(string $name, ?int $groupId): int
 {
 	global $pdo;
@@ -144,6 +156,9 @@ function MakeProduct(string $name, ?int $groupId): int
 	return intval($statement->fetchColumn());
 }
 
+/**
+ * Gives the acting user (id 9600) exactly the named role, or no role when null, after clearing its direct permissions and roles.
+ */
 function ActAs(?string $roleCode): void
 {
 	global $pdo;

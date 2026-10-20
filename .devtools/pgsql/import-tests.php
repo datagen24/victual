@@ -47,11 +47,13 @@ $max = DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MAX;
 $failures = 0;
 $scratch = sys_get_temp_dir() . '/victual-import-tests-' . getmypid();
 
+/** Prints one passing check line. */
 function Ok(string $label, string $detail): void
 {
 	printf("  ok     %-46s %s\n", $label, $detail);
 }
 
+/** Counts a failure and prints one failing check line. */
 function Fail(string $label, string $detail): void
 {
 	global $failures;
@@ -60,6 +62,7 @@ function Fail(string $label, string $detail): void
 	printf("  FAIL   %-46s %s\n", $label, $detail);
 }
 
+/** Reports a check as Ok() when the condition holds and as Fail() with the expected and actual values when it does not. */
 function Check(string $label, bool $condition, string $expected, string $actual): void
 {
 	$condition ? Ok($label, $actual) : Fail($label, 'expected ' . $expected . ', got ' . $actual);
@@ -175,6 +178,7 @@ function FixtureClaiming(string $fixture, int $version, string $scratch): string
 	return $path;
 }
 
+/** Opens a PDO connection to the named database from the PG* environment, with exceptions on errors and empty strings kept as they are. */
 function Target(string $dbName): \PDO
 {
 	$dsn = 'pgsql:host=' . getenv('PGHOST') . ';port=' . getenv('PGPORT') . ';dbname=' . $dbName;
@@ -185,6 +189,7 @@ function Target(string $dbName): \PDO
 	return $pdo;
 }
 
+/** Runs the query and returns the first column of its first row. */
 function Scalar(\PDO $pdo, string $sql)
 {
 	return $pdo->query($sql)->fetchColumn();
@@ -217,6 +222,7 @@ function TargetState(\PDO $pdo): array
 	return $state;
 }
 
+/** Deletes a file, or a directory and everything under it. */
 function RemoveTree(string $path): void
 {
 	if (!is_dir($path))

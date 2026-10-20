@@ -26,6 +26,10 @@ $inventory = $root . '/.devtools/coverage/inventory.php';
 $checks = 0;
 $failures = 0;
 
+/**
+ * Records one expectation: counts it and prints an "ok" line when $ok is true, otherwise counts
+ * a failure and prints a "FAIL" line.
+ */
 function check(bool $ok, string $message): void
 {
 	global $checks, $failures;
@@ -69,6 +73,10 @@ function run(array $arguments, array $environment): array
 	return [$finished['exit'], $finished['stdout'], $finished['stderr']];
 }
 
+/**
+ * Returns the coverage files in $directory whose names start with $label, or an empty array
+ * when there are none.
+ */
 function labelled(string $directory, string $label): array
 {
 	return glob(rtrim($directory, '/') . '/' . $label . '.*.cov') ?: [];

@@ -37,6 +37,7 @@ class AdminPasswordResetSessionRevocationTest extends PgsqlSchemaTestCase
 	private const TARGET_PASSWORD = 'a571 original password';
 	private const NEW_PASSWORD = 'a571 administrator-reset password';
 
+	/** Inserts the target user, with a hashed original password, whose password the tests reset. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -97,6 +98,7 @@ class AdminPasswordResetSessionRevocationTest extends PgsqlSchemaTestCase
 		return $key;
 	}
 
+	/** Returns how many rows the sessions table holds for the given user id. */
 	private static function sessionCountFor(int $userId): int
 	{
 		$statement = self::$db->prepare('SELECT count(*) FROM sessions WHERE user_id = ?');

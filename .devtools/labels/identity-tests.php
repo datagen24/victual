@@ -41,6 +41,10 @@ function LatestMigrationNumber(): int
 	return $highest;
 }
 
+/**
+ * Opens a PostgreSQL connection from LABEL_TEST_DSN with an 8 second statement timeout and the
+ * search path set to $schema.
+ */
 function Connect(string $schema): PDO
 {
 	$db = new PDO(getenv('LABEL_TEST_DSN'), getenv('PGUSER'), getenv('PGPASSWORD'), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
@@ -49,6 +53,10 @@ function Connect(string $schema): PDO
 	return $db;
 }
 
+/**
+ * Runs DatabaseImporter into $db from a small in-memory SQLite source (migration 265, an empty
+ * stock table and one location named 'Replacement').
+ */
 function Import(PDO $db, ?callable $progress = null, bool $force = true): void
 {
 	$source = new PDO('sqlite::memory:');
@@ -89,6 +97,7 @@ if (($argv[1] ?? '') === 'child')
 }
 
 $checks = 0;
+/** Counts a passed check, or throws a RuntimeException with $message when $ok is false. */
 function Check(bool $ok, string $message): void
 {
 	global $checks;
@@ -96,6 +105,10 @@ function Check(bool $ok, string $message): void
 	$checks++;
 }
 
+/**
+ * Runs $work and requires it to throw an exception whose message contains $message; throws if it
+ * does not throw or the message differs.
+ */
 function Refused(callable $work, string $message): void
 {
 	try { $work(); } catch (Throwable $e)
@@ -106,6 +119,10 @@ function Refused(callable $work, string $message): void
 	throw new RuntimeException('Expected refusal: ' . $message);
 }
 
+/**
+ * Starts a child process for the operation on the schema and waits up to 5 seconds until it is
+ * blocked on the wait event, then returns it; throws if it never blocks.
+ */
 function Child(PDO $db, string $schema, string $operation, string $event = 'advisory'): \Victual\Tests\Support\Subprocess
 {
 	$process = \Victual\Tests\Support\Subprocess::start([PHP_BINARY, __FILE__, 'child', $schema, $operation]);
@@ -120,6 +137,10 @@ function Child(PDO $db, string $schema, string $operation, string $event = 'advi
 	throw new RuntimeException('Concurrent operation did not block on the shared lock');
 }
 
+/**
+ * Waits for the child process, checks it exited cleanly with no timeout and no stderr, and returns
+ * its stdout.
+ */
 function Finish(\Victual\Tests\Support\Subprocess $child): string
 {
 	$finished = $child->finish();
@@ -246,7 +267,12 @@ try
 	$collision = new class($db, $uid) extends Identity
 	{
 		private int $calls = 0;
+		/** Takes the connection and the uid that the first NewUid() call should return. */
 		public function __construct(PDO $db, private string $duplicate) { parent::__construct($db); }
+		/**
+		 * Returns the fixed duplicate uid on the first call and a generated uid after that, to
+		 * force one collision.
+		 */
 		protected function NewUid(): string { return $this->calls++ === 0 ? $this->duplicate : parent::NewUid(); }
 	};
 	$db->beginTransaction(); $newUid = $collision->IssueLocation(1, 2); $db->commit();

@@ -85,6 +85,9 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 		['GRANT SELECT, UPDATE ON %SCHEMA%.system_db_changed_time TO %ROLE%', 'system_db_changed_time'],
 	];
 
+	/**
+	 * Builds the DI container and StockApiController, creates the admin caller and the first location.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -103,6 +106,9 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 		self::$locationA = (int)$location->fetchColumn();
 	}
 
+	/**
+	 * Builds a PSR-7 request for /api, with the body parsed and a JSON Content-Type when one is given.
+	 */
 	private static function request(string $method = 'GET', $body = null)
 	{
 		$request = (new ServerRequestFactory())->createServerRequest($method, 'http://localhost/api');
@@ -114,6 +120,9 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 		return $request;
 	}
 
+	/**
+	 * Inserts a product in the first location with quantity unit 2 throughout and returns its id.
+	 */
 	private static function insertProduct(string $name): int
 	{
 		$statement = self::$db->prepare('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price) VALUES (?, ?, 2, 2, 2, 2) RETURNING id');
@@ -162,6 +171,9 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 		return $product;
 	}
 
+	/**
+	 * Returns the current value of the database changed-time row.
+	 */
 	private static function changedTime(): string
 	{
 		return (string)self::$db->query('SELECT changed_time FROM system_db_changed_time WHERE id = 1')->fetchColumn();
@@ -252,6 +264,9 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * A real merge runs to completion under a role holding the full documented grant list, the backfill and pool fallback both run, and the shutdown flush advances the changed time.
+	 */
 	public function testTheCorrectedDocumentedGrantListSufficesForARealMerge(): void
 	{
 		[$success, $error, $product, $flushSucceeded, $flushError] = self::runUnderRole([]);
@@ -272,6 +287,9 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 		self::assertTrue($flushSucceeded, 'The real command\'s shutdown handler flushes the deferred changed-time write under this same role - DatabaseService swallows a failure there (exit 0, no visible error), so this asserts the value actually advanced, not merely that nothing threw: ' . ($flushError ?? '(no exception, but changed_time did not advance)'));
 	}
 
+	/**
+	 * Omitting any one grant from the documented list makes the merge or the shutdown changed-time flush fail.
+	 */
 	#[DataProvider('grantLabels')]
 	public function testRemovingAnySingleGrantFailsTheRun(string $label): void
 	{
@@ -280,6 +298,9 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 		self::assertTrue($success === false || $flushSucceeded === false, "Omitting the '$label' grant must fail the run OR the shutdown changed-time flush - every grant on the documented list is load-bearing, not merely harmless (merge error: " . ($error ?? 'none') . '; flush error: ' . ($flushError ?? 'none') . ')');
 	}
 
+	/**
+	 * Data provider: the label of each grant in GRANTS, one per case.
+	 */
 	public static function grantLabels(): array
 	{
 		return array_map(fn($grant) => [$grant[1]], self::GRANTS);
@@ -351,6 +372,9 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 		self::assertSame($before, $after->fetchAll(PDO::FETCH_ASSOC), 'A refusal must leave stock byte-for-byte unchanged - it must never compact product 0, a truncated-prefix product, or (worse) every product instead');
 	}
 
+	/**
+	 * Data provider: invalid --product-id argument sets, each with text the refusal message must contain.
+	 */
 	public static function rejectedArgumentSets(): array
 	{
 		return [

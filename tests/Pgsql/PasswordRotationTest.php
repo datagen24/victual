@@ -70,6 +70,9 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 	private const FORCED_ROTATION_STILL_REFUSES_DIFFERENT_FIELDS = 9723;
 	private const SESSION_BINDING_OTHER_USER = 9724;
 
+	/**
+	 * Creates one user per scenario in this class, each with a hashed password, the must-change-password flag where the scenario needs it, an ADMIN role where it needs that, and live sessions for the tests to revoke or spare.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -221,18 +224,27 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		self::createSession('rotation-session-binding-other-user-session', self::SESSION_BINDING_OTHER_USER);
 	}
 
+	/**
+	 * Inserts a user with an Argon2id hash of the password and the must_change_password flag set as given.
+	 */
 	private static function createUser(int $id, string $username, string $password, bool $mustChangePassword = false): void
 	{
 		$statement = self::$db->prepare('INSERT INTO users(id, username, password, must_change_password) VALUES (?, ?, ?, ?)');
 		$statement->execute([$id, $username, password_hash($password, PASSWORD_ARGON2ID), $mustChangePassword ? 1 : 0]);
 	}
 
+	/**
+	 * Gives the user the ADMIN role.
+	 */
 	private static function grantAdmin(int $userId): void
 	{
 		$statement = self::$db->prepare('INSERT INTO user_roles(user_id, role_id) SELECT ?, id FROM roles WHERE code = ?');
 		$statement->execute([$userId, 'ADMIN']);
 	}
 
+	/**
+	 * Inserts a session for the user that expires in one day.
+	 */
 	private static function createSession(string $sessionKey, int $userId): void
 	{
 		$statement = self::$db->prepare("INSERT INTO sessions(session_key, user_id, expires) VALUES (?, ?, now() + interval '1 day')");
@@ -350,6 +362,9 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		return '';
 	}
 
+	/**
+	 * Returns whether a session with the given key still exists.
+	 */
 	private static function sessionExists(string $sessionKey): bool
 	{
 		$statement = self::$db->prepare('SELECT count(*) FROM sessions WHERE session_key = ?');
@@ -370,6 +385,9 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		return $keys[0];
 	}
 
+	/**
+	 * Returns the stored password hash of the user.
+	 */
 	private static function storedPasswordHash(int $userId): string
 	{
 		$statement = self::$db->prepare('SELECT password FROM users WHERE id = ?');
@@ -378,6 +396,9 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		return (string)$statement->fetchColumn();
 	}
 
+	/**
+	 * Returns the user's must_change_password flag as stored.
+	 */
 	private static function flag(int $userId): int
 	{
 		$statement = self::$db->prepare('SELECT must_change_password FROM users WHERE id = ?');
@@ -457,6 +478,9 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Returns the stored username of the user.
+	 */
 	private static function storedUsername(int $userId): string
 	{
 		$statement = self::$db->prepare('SELECT username FROM users WHERE id = ?');
@@ -465,6 +489,9 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		return (string)$statement->fetchColumn();
 	}
 
+	/**
+	 * Returns the stored first name of the user, or null when there is none.
+	 */
 	private static function storedFirstName(int $userId): ?string
 	{
 		$statement = self::$db->prepare('SELECT first_name FROM users WHERE id = ?');
@@ -474,6 +501,9 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		return $value === false ? null : $value;
 	}
 
+	/**
+	 * Returns the stored picture file name of the user, or null when there is none.
+	 */
 	private static function storedPictureFileName(int $userId): ?string
 	{
 		$statement = self::$db->prepare('SELECT picture_file_name FROM users WHERE id = ?');
@@ -483,6 +513,9 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		return $value === false ? null : $value;
 	}
 
+	/**
+	 * Returns the number of API keys the user holds.
+	 */
 	private static function apiKeyCount(int $userId): int
 	{
 		$statement = self::$db->prepare('SELECT count(*) FROM api_keys WHERE user_id = ?');
@@ -491,6 +524,9 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/**
+	 * Returns the number of recorded login attempts for the username.
+	 */
 	private static function loginAttemptCount(string $username): int
 	{
 		$statement = self::$db->prepare('SELECT count(*) FROM login_attempts WHERE username = ?');
@@ -620,6 +656,9 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		self::assertSame(0, self::sessionCountFor(self::SELF_ROTATE_NO_SESSION), 'nothing was minted either - there was no browser session to replace');
 	}
 
+	/**
+	 * Returns the number of sessions the user holds.
+	 */
 	private static function sessionCountFor(int $userId): int
 	{
 		$statement = self::$db->prepare('SELECT count(*) FROM sessions WHERE user_id = ?');
@@ -1517,6 +1556,9 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		});
 	}
 
+	/**
+	 * With authentication disabled, the user create page and the user edit page render no password, current password, confirmation or change-password controls.
+	 */
 	public function testDisableAuthPagesRenderNoPasswordFieldInEitherCreateOrEditMode(): void
 	{
 		self::withDisableAuthDefaultGrantedAdmin(function () {

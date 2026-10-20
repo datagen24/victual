@@ -31,6 +31,7 @@ class ReverseProxyAutoProvisionPasswordTest extends PgsqlSchemaTestCase
 {
 	private static PDO $db;
 
+	/** Opens the test database connection. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();

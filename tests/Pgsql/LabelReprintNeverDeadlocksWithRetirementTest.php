@@ -54,11 +54,17 @@ use Victual\Tests\Support\Subprocess;
  */
 class LabelReprintNeverDeadlocksWithRetirementTest extends PgsqlSchemaTestCase
 {
+	/**
+	 * Decodes the Brother QL driver definition fixture.
+	 *
+	 * @return array<string, mixed>
+	 */
 	private static function driverDefinition(): array
 	{
 		return json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/.devtools/labels/fixtures/brother-ql.json'), true, 512, JSON_THROW_ON_ERROR);
 	}
 
+	/** Registers the Brother QL driver on a new label worker, saves a TCP printer for it and returns the printer id. */
 	private static function newPrinter(): int
 	{
 		$db = self::Pdo();
@@ -98,6 +104,11 @@ class LabelReprintNeverDeadlocksWithRetirementTest extends PgsqlSchemaTestCase
 		return $template;
 	}
 
+	/**
+	 * Builds the environment for a helper subprocess: the inherited scalar server and environment values plus the schema, database, data path and PG connection settings.
+	 *
+	 * @return array<string, mixed>
+	 */
 	private static function subprocessEnv(): array
 	{
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');

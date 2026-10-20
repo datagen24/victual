@@ -38,6 +38,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 	private static string $adminKey;
 	private static string $stockEditOnlyKey;
 
+	/**
+	 * Creates the caller user, two locations, and two API users: one with ADMIN and one with only
+	 * STOCK_EDIT.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -56,6 +60,7 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 
 	// --- fixtures ------------------------------------------------------------------------
 
+	/** Inserts one row into $table from the column map and returns its id. */
 	private static function insertRow(string $table, array $columns): int
 	{
 		$names = implode(', ', array_keys($columns));
@@ -65,6 +70,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/**
+	 * Creates a user with the named permissions and a 30-day default API key, and returns the plain
+	 * key.
+	 */
 	private static function apiUser(int $id, string $name, array $permissions): string
 	{
 		self::$db->exec("INSERT INTO users(id, username, password) VALUES ($id, '$name', 'fixture')");
@@ -79,6 +88,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		return $key;
 	}
 
+	/**
+	 * Creates a product in the default location, with a random suffix on the name, and returns its
+	 * id.
+	 */
 	private static function product(string $name): int
 	{
 		return self::insertRow('products', [
@@ -116,6 +129,7 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** The current label import epoch, from label_current_import_epoch(). */
 	private static function epoch(): int
 	{
 		return (int)self::$db->query('SELECT label_current_import_epoch()')->fetchColumn();
@@ -130,6 +144,7 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		return [$transactionId, array_map('intval', $bookings)];
 	}
 
+	/** The labels row with the given uid. */
 	private static function labelRow(string $uid): array
 	{
 		return self::$db->query('SELECT * FROM labels WHERE uid = ' . self::$db->quote($uid))->fetch(PDO::FETCH_ASSOC);
@@ -141,6 +156,7 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		return self::$db->query('SELECT * FROM stock_label_retirements WHERE label_uid = ' . self::$db->quote($uid) . ' ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
 	}
 
+	/** The newest stock_label_retirements event of the label; fails the test if there is none. */
 	private static function lastEvent(string $uid): array
 	{
 		$events = self::events($uid);
@@ -148,11 +164,16 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		return end($events);
 	}
 
+	/** The stock row with the given id, or false when it does not exist. */
 	private static function stockRow(int $id): array|false
 	{
 		return self::$db->query("SELECT * FROM stock WHERE id = $id")->fetch(PDO::FETCH_ASSOC);
 	}
 
+	/**
+	 * Resolves a scanned `vctl:` uid through LabelIdentityService, with stock reading allowed or
+	 * not as $mayReadStock says.
+	 */
 	private static function scan(string $uid, bool $mayReadStock = true): array
 	{
 		return (new LabelIdentityService(self::$db))->Resolve('vctl:' . $uid, static fn (string $kind): bool => $mayReadStock);
@@ -186,6 +207,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Runs one API request in a separate PHP process against the test schema, authenticated with
+	 * $apiKey, and returns the decoded response (status, headers, body) plus the process's stderr.
+	 */
 	private static function http(string $method, string $path, string $apiKey): array
 	{
 		$spec = ['method' => $method, 'path' => $path, 'headers' => ['VICTUAL-API-KEY' => $apiKey]];
@@ -210,6 +235,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		return $result;
 	}
 
+	/**
+	 * The value of the Victual-Label-Revival response header, joined with commas, or null when the
+	 * response has none.
+	 */
 	private static function revivalHeader(array $response): ?string
 	{
 		foreach ($response['headers'] ?? [] as $name => $values)
@@ -235,6 +264,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 
 	// --- E1: full consumption and undo inside the window ---------------------------------
 
+	/**
+	 * Consuming a labelled row whole retires the label and records a pending event; undoing the
+	 * booking inside the window brings the label back on the original row.
+	 */
 	public function testE1UndoInsideTheWindowRevivesTheLabelOnTheOriginalRow(): void
 	{
 		$product = self::product('E1');
@@ -334,6 +367,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 
 	// --- E2: several rows in one consumption, mixed outcomes ----------------------------
 
+	/**
+	 * Undoing a transaction that consumed two labelled rows revives each label on its own row, with
+	 * one event and booking per row.
+	 */
 	public function testE2OneTransactionRevivesEachLabelOnItsOwnRow(): void
 	{
 		$product = self::product('E2');
@@ -355,6 +392,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		self::assertSame(3.0, (float)self::stockRow($second)['amount']);
 	}
 
+	/**
+	 * When one label's window has lapsed, undoing the transaction reports one restored and one
+	 * retired, and only the expired label stays retired.
+	 */
 	public function testMixedOutcomesAreCountedSeparately(): void
 	{
 		$product = self::product('Mixed');
@@ -384,11 +425,13 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		$now = (string)self::$db->query("SELECT (revivable_until + interval '$offset')::TEXT FROM stock_label_retirements WHERE id = $eventId")->fetchColumn();
 		return new class(self::$db, $now) extends StockLabelRevivalService
 		{
+			/** Takes the fixed timestamp the service will treat as the current time. */
 			public function __construct(\PDO $db, private string $now)
 			{
 				parent::__construct($db);
 			}
 
+			/** Returns the fixed timestamp instead of the database clock. */
 			protected function Clock(): string
 			{
 				return $this->now;
@@ -404,6 +447,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		$statement->execute([$row, $log['product_id'], -$log['amount'], $log['stock_id'], $log['location_id'], $log['best_before_date'], $log['purchased_date']]);
 	}
 
+	/**
+	 * A revival one microsecond before the deadline succeeds, and one exactly at the deadline
+	 * declines as expired and leaves the label retired.
+	 */
 	public function testE3TheDeadlineIsExclusive(): void
 	{
 		[, $row, $uid, , $booking] = self::consumedLabelledRow('E3');
@@ -425,6 +472,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		self::assertNull(self::lastEvent($uid)['outcome'], 'Both probes rolled back');
 	}
 
+	/**
+	 * An undo forty days after the retirement still restores the stock, but the label stays retired
+	 * and the event is recorded as declined for expiry.
+	 */
 	public function testE4AnUndoFortyDaysLaterSucceedsAndLeavesTheLabelRetired(): void
 	{
 		[, $row, $uid, , $booking] = self::consumedLabelledRow('E4');
@@ -442,6 +493,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 
 	// --- E5, E6: row ids and imports -------------------------------------------------------
 
+	/**
+	 * When the original row id is held by an unrelated row, the stock returns under a new id, the
+	 * label stays retired with reason id_changed, and the other row is untouched.
+	 */
 	public function testE5ARowRestoredUnderANewIdLeavesTheLabelRetired(): void
 	{
 		[$product, $row, $uid, , $booking] = self::consumedLabelledRow('E5');
@@ -460,6 +515,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 			'The unrelated row gains no label');
 	}
 
+	/**
+	 * After the import epoch advances, an undo does not attempt revival: the event from the earlier
+	 * epoch is left pending and the label stays retired.
+	 */
 	public function testE6AnEventOfAnEarlierImportEpochNeverMatches(): void
 	{
 		[, $row, $uid, , $booking] = self::consumedLabelledRow('E6');
@@ -485,6 +544,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 
 	// --- E7, E8, E10: a labelled target, repeated cycles, partial consumption -------------
 
+	/**
+	 * If another live label already names the restored row id, the revival declines with
+	 * target_labelled and that label is not changed.
+	 */
 	public function testE7ALiveLabelOnTheRestoredIdDeclinesAndIsUntouched(): void
 	{
 		[, $row, $uid, , $booking] = self::consumedLabelledRow('E7');
@@ -500,6 +563,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		self::assertSame($row, (int)self::labelRow($other)['target_id']);
 	}
 
+	/**
+	 * Consuming and undoing the same labelled row twice revives it both times and writes exactly
+	 * two events, each with its own booking and a later retirement time.
+	 */
 	public function testE8RepeatedCyclesWriteOneEventPerRetirement(): void
 	{
 		$product = self::product('E8');
@@ -519,6 +586,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		self::assertNull(self::labelRow($uid)['retired_at']);
 	}
 
+	/**
+	 * A partial consumption retires no label and writes no event, and its undo revives nothing and
+	 * adds a separate stock row.
+	 */
 	public function testE10APartialConsumptionRetiresNothingAndRevivesNothing(): void
 	{
 		$product = self::product('E10');
@@ -534,6 +605,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 
 	// --- E9, E11, E16: legacy and unproven retirements ------------------------------------
 
+	/**
+	 * Undoing a purchase booking deletes the labelled row without a consumption context, so the
+	 * event is unproven, declined and has no booking.
+	 */
 	public function testE11AnUndoOfAPurchaseRecordsAnUnprovenEvent(): void
 	{
 		$product = self::product('E11');
@@ -548,6 +623,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		self::assertNull($event['booking_id']);
 	}
 
+	/**
+	 * Deleting the product, or deleting the stock row directly, retires the label with an event
+	 * whose cause is unproven.
+	 */
 	public function testE16ProductDeletionAndADirectDeleteRecordUnprovenEvents(): void
 	{
 		$product = self::product('E16 product deletion');
@@ -562,6 +641,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		self::assertSame('unproven', self::lastEvent($uid)['cause']);
 	}
 
+	/**
+	 * A retirement context left over for a different booking does not prove a later delete in the
+	 * same transaction: that delete is recorded as unproven.
+	 */
 	public function testE16AStaleContextInTheSameTransactionIsUnproven(): void
 	{
 		[, , $consumedUid, , $booking] = self::consumedLabelledRow('E16 stale');
@@ -581,6 +664,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 
 	// --- E12: a booking that no longer matches its event ----------------------------------
 
+	/**
+	 * If a stock-unit rescale changed the booking amount, the undo restores the amount the booking
+	 * says but the revival declines as mismatch and the label stays retired.
+	 */
 	public function testE12ARescaledBookingDeclinesAsMismatch(): void
 	{
 		[, $row, $uid, , $booking] = self::consumedLabelledRow('E12');
@@ -597,6 +684,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 
 	// --- E13, E14: rollback and refusal ---------------------------------------------------
 
+	/**
+	 * A failure after the revival step rolls back stock, bookings, labels and events to their prior
+	 * state, and a retry then revives the label.
+	 */
 	public function testE13ARollbackAfterTheRevivalLeavesEverythingAsItWasAndARetryRevives(): void
 	{
 		[, $row, $uid, , $booking] = self::consumedLabelledRow('E13');
@@ -621,6 +712,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		self::assertSame($row, (int)self::labelRow($uid)['target_id']);
 	}
 
+	/**
+	 * An undo refused because the row's location was deleted raises an exception and leaves stock,
+	 * bookings, labels and events as they were.
+	 */
 	public function testE14ARefusedUndoChangesNothing(): void
 	{
 		$product = self::product('E14');
@@ -646,6 +741,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 
 	// --- Section 12a: the notice over HTTP --------------------------------------------------
 
+	/**
+	 * Undoing a booking over HTTP answers 204 with a Victual-Label-Revival header of 'restored=1,
+	 * retired=0', keeps the JSON null body, and revives the label.
+	 */
 	public function testTheBookingUndoReportsARevivalInTheHeaderAndKeepsTheBody(): void
 	{
 		[, , $uid, , $booking] = self::consumedLabelledRow('Header booking');
@@ -658,6 +757,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		self::assertNull(self::labelRow($uid)['retired_at']);
 	}
 
+	/**
+	 * Undoing a transaction over HTTP where one label's window has lapsed reports 'restored=1,
+	 * retired=1' in the header.
+	 */
 	public function testTheTransactionUndoReportsAMixedResult(): void
 	{
 		$product = self::product('Header mixed');
@@ -674,6 +777,7 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		self::assertSame('restored=1, retired=1', self::revivalHeader($response));
 	}
 
+	/** An undo over HTTP of a booking with no label answers 204 without the revival header. */
 	public function testAnUndoThatTouchesNoLabelAnswersExactlyAsBefore(): void
 	{
 		$product = self::product('Header none');
@@ -686,6 +790,7 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		self::assertNull(self::revivalHeader($response), 'No label affected: no header');
 	}
 
+	/** A refused undo answers 400 without the revival header and leaves the label's event pending. */
 	public function testARefusedUndoNeverReportsARevival(): void
 	{
 		$product = self::product('Header refused');
@@ -702,6 +807,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		self::assertNull(self::lastEvent($uid)['outcome'], 'The event is still pending');
 	}
 
+	/**
+	 * Undoing a chore execution that consumed a labelled row answers 204 with 'restored=1,
+	 * retired=0' and revives the label on its row.
+	 */
 	public function testAChoreExecutionUndoReportsTheRevivalOfItsStockUndo(): void
 	{
 		$product = self::product('Chore');
@@ -721,6 +830,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 
 	// --- Section 8: permissions -------------------------------------------------------------
 
+	/**
+	 * A caller with only STOCK_EDIT can undo and revive, and the header holds two counts and no
+	 * label uid.
+	 */
 	public function testStockEditAloneRevivesAndTheNoticeCarriesOnlyCounts(): void
 	{
 		[, $row, $uid, , $booking] = self::consumedLabelledRow('Permission');
@@ -741,6 +854,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		self::assertSame($row, (int)self::labelRow($uid)['target_id']);
 	}
 
+	/**
+	 * After a revival, a scan by a caller without stock view resolves as unknown, both through the
+	 * service and through the resolve endpoint.
+	 */
 	public function testACallerWithoutStockViewStillScansTheRevivedLabelAsUnknown(): void
 	{
 		[, , $uid, , $booking] = self::consumedLabelledRow('Scan permission');
@@ -752,6 +869,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		self::assertSame(['status' => 'unknown'], json_decode($response['body'], true), 'STOCK_EDIT without STOCK_VIEW cannot read the revived label');
 	}
 
+	/**
+	 * stock_label_retirements appears in no exposed entity list, path or route, the generic entity
+	 * API refuses it, and the document declares the revival header on the three undo routes.
+	 */
 	public function testNoEndpointReturnsARetirementEvent(): void
 	{
 		$spec = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), true, 512, JSON_THROW_ON_ERROR);
@@ -779,12 +900,17 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		return ['reads' => (int)($row['reads'] ?? 0), 'inserts' => (int)($row['inserts'] ?? 0)];
 	}
 
+	/** Whether this connection currently holds the label import advisory lock. */
 	private static function holdsImportLock(): bool
 	{
 		return (bool)self::$db->query("SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid()
 			AND classid = 0 AND objid = " . LabelIdentityService::IMPORT_LOCK . ' AND objsubid = 1')->fetchColumn();
 	}
 
+	/**
+	 * Undoing a booking with no label costs one read of the event table and does not take the
+	 * import lock.
+	 */
 	public function testAnUndoWithNoLabelAddsOneReadAndTakesNoImportLock(): void
 	{
 		$product = self::product('Hot path undo');
@@ -802,6 +928,7 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		self::assertFalse($importLock, 'No import lock without a pending event');
 	}
 
+	/** Undoing a two-booking transaction reads the event table once for all its bookings. */
 	public function testATransactionUndoProbesAllItsBookingsInOneRead(): void
 	{
 		$product = self::product('Hot path transaction');
@@ -819,6 +946,7 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		self::assertSame(1, $reads);
 	}
 
+	/** Undoing a booking that has a pending retirement event takes the label import lock. */
 	public function testAnUndoWithAPendingEventTakesTheImportLock(): void
 	{
 		[, , , , $booking] = self::consumedLabelledRow('Hot path lock');
@@ -832,6 +960,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 		self::assertTrue($importLock);
 	}
 
+	/**
+	 * Consuming an unlabelled product sets the retirement context and revival window settings but
+	 * writes no event.
+	 */
 	public function testAConsumptionWithNoLabelSetsTheContextAndWritesNoEvent(): void
 	{
 		$product = self::product('Hot path consume');
@@ -857,6 +989,10 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 
 	// --- Prerequisite 12: the ADR-0036 interface ----------------------------------------
 
+	/**
+	 * Undoing a whole-row consumption adds one new stock row with the booking's amount and merges
+	 * nothing into the surviving row.
+	 */
 	public function testAWholeRowUndoInsertsOneUnmergedRowHoldingTheBookingsAmount(): void
 	{
 		$product = self::product('ADR-0036 interface');

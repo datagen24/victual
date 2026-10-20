@@ -61,6 +61,9 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 	/** Fixture ids shared by setUp, filled by testCreatesFixtures(). */
 	private static array $ids = [];
 
+	/**
+	 * Creates the in-process admin caller and an admin API user with a key for the subprocess cases, and obtains the chores, recipes and stock services.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -91,6 +94,9 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 	// Helpers (mirrors tests/Pgsql/RecipeOperationsTest.php, the suite's existing test)
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Inserts one row built from the column map and returns its generated id.
+	 */
 	private static function insertRow(string $table, array $columns): int
 	{
 		$names = implode(', ', array_keys($columns));
@@ -101,6 +107,9 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/**
+	 * Inserts a product in the pantry location with quantity unit 2 throughout, with the given columns overriding the defaults, and returns its id.
+	 */
 	private static function insertProduct(string $name, array $columns = []): int
 	{
 		return self::insertRow('products', array_merge([
@@ -128,6 +137,9 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 		return $recipeId;
 	}
 
+	/**
+	 * Adds a recipe ingredient line in quantity unit 2 and returns its id.
+	 */
 	private static function addIngredient(int $recipeId, int $productId, float $amount): int
 	{
 		return self::insertRow('recipes_pos', [
@@ -144,6 +156,9 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 		self::$stock->AddProduct($productId, $amount, '2035-06-30', StockService::TRANSACTION_TYPE_PURCHASE, '2026-04-01', 1.0);
 	}
 
+	/**
+	 * Returns the total amount of the product currently in stock.
+	 */
 	private static function stockAmount(int $productId): float
 	{
 		$statement = self::$db->prepare('SELECT COALESCE(SUM(amount), 0) FROM stock WHERE product_id = ?');
@@ -152,6 +167,9 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 		return (float)$statement->fetchColumn();
 	}
 
+	/**
+	 * Returns the highest stock_log id, or 0 when the log is empty.
+	 */
 	private static function highestStockLogId(): int
 	{
 		return (int)self::$db->query('SELECT COALESCE(MAX(id), 0) FROM stock_log')->fetchColumn();
@@ -166,6 +184,9 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 		return $statement->fetchAll(PDO::FETCH_ASSOC);
 	}
 
+	/**
+	 * Returns the number of chores_log rows for the chore.
+	 */
 	private static function choreLogCount(int $choreId): int
 	{
 		$statement = self::$db->prepare('SELECT COUNT(*) FROM chores_log WHERE chore_id = ?');
@@ -174,6 +195,9 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/**
+	 * Returns the number of rows in the outbox table.
+	 */
 	private static function outboxCount(): int
 	{
 		return (int)self::$db->query('SELECT COUNT(*) FROM outbox')->fetchColumn();
@@ -231,6 +255,9 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 	// Fixture graph
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Creates the pantry location the other tests use; the other tests rely on it having run first.
+	 */
 	public function testCreatesFixtures(): void
 	{
 		self::$ids['pantry'] = self::insertRow('locations', ['name' => 'Composed Atomicity Pantry']);

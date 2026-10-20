@@ -27,6 +27,7 @@ class ViewCorrectionsHttpTest extends PgsqlSchemaTestCase
 	private const SESSION_KEY = 'view-corrections-session';
 	private const USER_ID = 9700;
 
+	/** Creates an ADMIN user with an API key and a session row, which the request helper uses to reach the real middleware stack. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();

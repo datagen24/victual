@@ -38,6 +38,7 @@ class StockEntryEditLostUpdateTest extends PgsqlSchemaTestCase
 	private static int $locationAId;
 	private static int $locationBId;
 
+	/** Creates an ADMIN user with an API key and two locations. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -65,6 +66,10 @@ class StockEntryEditLostUpdateTest extends PgsqlSchemaTestCase
 	// duplicated here rather than shared; see that file's class docblock for the pattern).
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Inserts a product and one stock row of amount 2 in the first location, and returns [product
+	 * id, stock row id].
+	 */
 	private static function insertProductAndStock(): array
 	{
 		$productStatement = self::$db->prepare(
@@ -83,6 +88,7 @@ class StockEntryEditLostUpdateTest extends PgsqlSchemaTestCase
 		return [$productId, $stockId];
 	}
 
+	/** The stock row with the given id; fails the test if it does not exist. */
 	private static function stockRow(int $entryId): array
 	{
 		$statement = self::$db->prepare('SELECT * FROM stock WHERE id = ?');

@@ -60,6 +60,10 @@ class GenericWriteAtomicityTest extends PgsqlSchemaTestCase
 	private const HTTP_USER_ID = 9701;
 	private static string $apiKey = '';
 
+	/**
+	 * Resets the service singleton cache, builds the generic controller, and creates the in-process
+	 * caller (id 9000) plus the HTTP caller with its API key.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -103,6 +107,7 @@ class GenericWriteAtomicityTest extends PgsqlSchemaTestCase
 	// Helpers
 	// ------------------------------------------------------------------------------
 
+	/** Replaces the in-process caller's permissions and roles with exactly the named permissions. */
 	private static function grant(array $names): void
 	{
 		self::$db->exec('DELETE FROM user_permissions WHERE user_id = 9000; DELETE FROM user_roles WHERE user_id = 9000');
@@ -121,6 +126,7 @@ class GenericWriteAtomicityTest extends PgsqlSchemaTestCase
 		return $request->withParsedBody($body)->withHeader('Content-Type', 'application/json');
 	}
 
+	/** Inserts one row built from the column map and returns the new id. */
 	private static function insertRow(string $table, array $columns): int
 	{
 		$names = implode(', ', array_keys($columns));
@@ -131,6 +137,7 @@ class GenericWriteAtomicityTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/** Returns the id of the first storage class that treats its contents as frozen. */
 	private static function freezerStorageClassId(): int
 	{
 		return (int)self::$db->query('SELECT id FROM storage_classes WHERE treats_as_freezer = 1 ORDER BY sort_order LIMIT 1')->fetchColumn();
@@ -143,6 +150,7 @@ class GenericWriteAtomicityTest extends PgsqlSchemaTestCase
 		UsersService::GetInstance()->SetUserSetting(9000, 'shopping_list_auto_add_below_min_stock_amount_list_id', 999999);
 	}
 
+	/** Turns the below-minimum-stock shopping-list auto-add setting off for the in-process caller. */
 	private static function disableAutoAdd(): void
 	{
 		UsersService::GetInstance()->SetUserSetting(9000, 'shopping_list_auto_add_below_min_stock_amount', '0');

@@ -32,6 +32,7 @@ class ConsumptionEventFixtureTest extends PgsqlSchemaTestCase
 	private static int $nextName = 0;
 	private bool $descendingTransactionProducts = false;
 
+	/** Opens the connection, adds the caller user and creates the quantity unit that every fixture world uses. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -56,6 +57,7 @@ class ConsumptionEventFixtureTest extends PgsqlSchemaTestCase
 		return $cases;
 	}
 
+	/** Checks that at least one fixture file exists and that each file name appears in the fixtures README. */
 	public function testEveryFixtureIsListedInTheReadme(): void
 	{
 		$files = array_keys(self::fixtures());
@@ -68,6 +70,7 @@ class ConsumptionEventFixtureTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Replays the partial-undo fixture with the transaction-products responses re-sorted by descending product_id, to prove the outcome does not depend on their order. */
 	public function testPartialUndoWithDescendingTransactionProducts(): void
 	{
 		$this->descendingTransactionProducts = true;
@@ -81,6 +84,7 @@ class ConsumptionEventFixtureTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Checks the fixture has its required keys, builds its world and replays each step against the expectations the fixture documents. */
 	#[DataProvider('fixtures')]
 	public function testFixtureReplaysAsDocumented(string $path): void
 	{
@@ -233,6 +237,7 @@ class ConsumptionEventFixtureTest extends PgsqlSchemaTestCase
 		return $world;
 	}
 
+	/** Returns the summed stock amount of a product, optionally limited to one location. */
 	private static function onHand(int $product, ?int $location = null): float
 	{
 		return (float)self::$db->query("SELECT COALESCE(sum(amount), 0) FROM stock WHERE product_id = $product" . ($location === null ? '' : " AND location_id = $location"))->fetchColumn();
@@ -272,6 +277,7 @@ class ConsumptionEventFixtureTest extends PgsqlSchemaTestCase
 		return preg_replace_callback('/\{\{([^{}]+)\}\}/', fn(array $found) => (string)$this->placeholder($found[1], $world), $value);
 	}
 
+	/** Resolves one placeholder expression against the world: product, location, username or saved-entry names, plus the others it handles such as the unit. */
 	private function placeholder(string $expression, array $world): mixed
 	{
 		if (preg_match('/^(product|location|user|username|saved)\.(.+)$/', $expression, $m) === 1)

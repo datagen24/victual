@@ -36,6 +36,10 @@ class LabelResolveSchemaTest extends PgsqlSchemaTestCase
 	private static array $targets = [];
 	private static array $retireTargets = [];
 
+	/**
+	 * Creates an admin user and an operator user with its API key, then seeds the live and the
+	 * retire-able label targets.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -54,6 +58,7 @@ class LabelResolveSchemaTest extends PgsqlSchemaTestCase
 		self::SeedRetireTargets();
 	}
 
+	/** Replaces the user's permissions with exactly the named permissions. */
 	private static function Grant(int $userId, array $permissions): void
 	{
 		self::$db->exec('DELETE FROM user_permissions WHERE user_id = ' . $userId);
@@ -65,6 +70,7 @@ class LabelResolveSchemaTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Inserts a default-type API key for the user and returns the plaintext key. */
 	private static function IssueUserKey(int $userId): string
 	{
 		$key = bin2hex(random_bytes(25));
@@ -74,6 +80,10 @@ class LabelResolveSchemaTest extends PgsqlSchemaTestCase
 		return $key;
 	}
 
+	/**
+	 * Inserts one location, product, stock entry, recipe, chore and battery and records their ids
+	 * in self::$targets.
+	 */
 	private static function SeedTargets(): void
 	{
 		$db = self::$db;
@@ -313,6 +323,10 @@ class LabelResolveSchemaTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Issues a label uid for the target inside a transaction, using the current label import epoch,
+	 * and returns the uid.
+	 */
 	private function IssueLabel(string $kind, int $targetId): string
 	{
 		self::$db->beginTransaction();
@@ -335,6 +349,10 @@ class LabelResolveSchemaTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * GETs /api/labels/resolve/{uid} as the operator in a separate PHP process and returns the
+	 * decoded helper result with the response body decoded under 'body'.
+	 */
 	private function ResolveLabel(string $uid): array
 	{
 		$spec = ['method' => 'GET', 'path' => '/api/labels/resolve/' . $uid];

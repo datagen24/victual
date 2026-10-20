@@ -35,6 +35,10 @@ class ProductReferenceIntegrityTest extends PgsqlSchemaTestCase
 	private static int $locationId;
 	private static int $quId;
 
+	/**
+	 * Creates the caller user with MASTER_DATA_EDIT, issues it a default API key, and inserts the
+	 * shared location and quantity unit the tests reference.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -62,6 +66,7 @@ class ProductReferenceIntegrityTest extends PgsqlSchemaTestCase
 	// Helpers
 	// ------------------------------------------------------------------------------
 
+	/** Inserts one row built from the column map and returns the new id. */
 	private static function insertRow(string $table, array $columns): int
 	{
 		$names = implode(', ', array_keys($columns));
@@ -72,6 +77,7 @@ class ProductReferenceIntegrityTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/** Returns whether a row with the given id is still present in the table. */
 	private static function rowExists(string $table, int $id): bool
 	{
 		$statement = self::$db->prepare("SELECT count(*) FROM $table WHERE id = ?");

@@ -32,6 +32,11 @@ class ConsumptionRecipeRaceTest extends PgsqlSchemaTestCase
 	private static int $location;
 	private static int $seed;
 
+	/**
+	 * Fixes the race-schedule seed (from CONSUMPTION_RACE_SEED or random), creates the owner,
+	 * member and third users with stock permissions, and inserts the shared quantity unit and
+	 * location.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -52,6 +57,10 @@ class ConsumptionRecipeRaceTest extends PgsqlSchemaTestCase
 		self::$location = (int)self::$db->query("INSERT INTO locations (name) VALUES ('Race organizer') RETURNING id")->fetchColumn();
 	}
 
+	/**
+	 * Inserts a product in the shared unit and location, purchases the given amount of it into
+	 * stock, and returns its id.
+	 */
 	private static function product(float $onHand): int
 	{
 		$statement = self::$db->prepare('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price) VALUES (?, ?, ?, ?, ?, ?) RETURNING id');
@@ -122,6 +131,10 @@ class ConsumptionRecipeRaceTest extends PgsqlSchemaTestCase
 		return $results;
 	}
 
+	/**
+	 * Fails if any raced call reports a PostgreSQL deadlock (SQLSTATE 40P01 or a message containing
+	 * 'deadlock'), naming the seed.
+	 */
 	private function assertNoDeadlock(array ...$results): void
 	{
 		foreach ($results as $result)
@@ -131,6 +144,10 @@ class ConsumptionRecipeRaceTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * A member's consume racing the owner's revoke of the share either books exactly one unit or is
+	 * refused with 404 not_found and books nothing; the revoke always succeeds.
+	 */
 	public function testConsumeAgainstRevokeEndsInExactlyOneOfTwoOutcomes(): void
 	{
 		$consumedFirst = 0;
@@ -163,6 +180,10 @@ class ConsumptionRecipeRaceTest extends PgsqlSchemaTestCase
 		fwrite(STDERR, "consume vs revoke: $consumedFirst consumed first, $refused refused (seed " . self::$seed . ")\n");
 	}
 
+	/**
+	 * Two simultaneous UpdateRecipe calls, one by the owner and one by an editing member, both
+	 * complete without a deadlock and leave one of the two names and a single line.
+	 */
 	public function testTwoEditorsSerialiseInsteadOfDeadlocking(): void
 	{
 		for ($round = 0; $round < self::ROUNDS; $round++)
@@ -178,6 +199,10 @@ class ConsumptionRecipeRaceTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Two simultaneous SetShare calls for the same user both succeed without tripping the unique
+	 * key and leave exactly one share row.
+	 */
 	public function testTwoGrantsToTheSameUserLeaveOneRow(): void
 	{
 		for ($round = 0; $round < self::ROUNDS; $round++)
@@ -191,6 +216,10 @@ class ConsumptionRecipeRaceTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Two simultaneous consumes with the same request id book one unit, one of them is reported as
+	 * the replay, and both return the same transaction id.
+	 */
 	public function testTheSameRequestIdBooksOnceWhateverTheOrder(): void
 	{
 		for ($round = 0; $round < self::ROUNDS; $round++)
@@ -206,6 +235,10 @@ class ConsumptionRecipeRaceTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * A consume racing a transfer of recipe ownership succeeds whichever runs first, as does the
+	 * transfer, and exactly one unit is booked.
+	 */
 	public function testTransferAgainstConsumeNeverFailsTheConsume(): void
 	{
 		for ($round = 0; $round < self::ROUNDS; $round++)
