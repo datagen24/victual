@@ -30,8 +30,8 @@
    "size": "M",
    "fit": "Compatible removal of unreachable code, or a comment that keeps it as a deliberate guard.",
    "classification": "record correction / cleanup",
-   "next_action": "Maintainer accepts or rejects ADR-0051 (Proposed) in a lifecycle-only PR; then one PR removes the webhook residue it lists. The other #252 items follow the review comment, in a separate PR.",
-   "pr": "https://github.com/datagen24/victual/pull/1022"
+   "next_action": "Merge PR #1024, the webhook residue cleanup (ADR-0051 decision 2). Then one PR for the remaining review-comment items: the SystemController fallback and render dispatch arms, plus the ConfigurationValidator guard once the maintainer rules on it.",
+   "pr": "https://github.com/datagen24/victual/pull/1024"
   },
   {
    "number": 904,
@@ -199,10 +199,10 @@
   }
  ],
  "observation": {
-  "observed_at": "2026-10-20T13:47:21Z",
+  "observed_at": "2026-10-20T14:17:06Z",
   "source": "GitHub REST API via gh",
-  "evidence_directory": "evidence/refresh-2026-10-20T134721Z",
-  "master_sha": "0e3a15ffbfbe75855b13b84de72ceef0229cf9d6",
+  "evidence_directory": "evidence/refresh-2026-10-20T141706Z",
+  "master_sha": "05c8ca687c328450b8573796729e085cc3ae97e8",
   "latest_release": "v0.5.0",
   "latest_release_published_at": "2026-10-19T12:28:41Z",
   "open_issues": 23,
@@ -407,6 +407,16 @@
    "at": "2026-10-20",
    "action": "Opened #1021 in 0.6.0: decide ADR-0049 part 2",
    "url": "https://github.com/datagen24/victual/issues/1021"
+  },
+  {
+   "at": "2026-10-20",
+   "action": "Opened PR #1023, accepting ADR-0051",
+   "url": "https://github.com/datagen24/victual/pull/1023"
+  },
+  {
+   "at": "2026-10-20",
+   "action": "Opened PR #1024, removing the webhook residue ADR-0051 lists",
+   "url": "https://github.com/datagen24/victual/pull/1024"
   }
  ]
 }
