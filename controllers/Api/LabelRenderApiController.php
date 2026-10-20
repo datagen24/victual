@@ -22,6 +22,11 @@ use Slim\Routing\RouteContext;
  */
 class LabelRenderApiController extends BaseApiController
 {
+    /**
+     * Serves the four render-worker routes: claim, result, invalid and failed. It checks the
+     * worker's authorization for the route, runs it in one request transaction, and answers a
+     * LabelValidationException with 422.
+     */
     public function Dispatch(Request $request, Response $response, array $args)
     {
         return $this->HandleApiCall($response, function () use ($request, $response, $args) {
@@ -35,34 +40,44 @@ class LabelRenderApiController extends BaseApiController
             }
 
             try {
-                // A claim is the renderer polling; only a request's outcome is a change.
-                $changesData = $route !== 'labels-render-claim';
-                return $this->InRequestTransaction($request, function () use ($db, $response, $route, $args, $body, $worker) {
-                    $authorization = new \Victual\Services\Labels\LabelWorkerAuthorization($db);
-                    $target = match ($route) {
-                        'labels-artifact-bytes' => (int)$args['artifactId'],
-                        default => null,
+                // A claim is usually an empty renderer poll, but its maintenance tick can
+                // expire requests, exhaust leases, or collect artifacts and dead-letter jobs.
+                // Report those changes without advancing the signal for a no-op poll.
+                $claimChanged = false;
+                $changesData = $route !== 'labels-render-claim'
+                    ? true
+                    : static function (mixed $_result) use (&$claimChanged): bool {
+                        return $claimChanged;
                     };
-                    $authorization->Authorize($route, $worker, $target);
+                return $this->InRequestTransaction($request, function () use ($db, $response, $route, $args, $body, $worker, &$claimChanged) {
+                    $authorization = new \Victual\Services\Labels\LabelWorkerAuthorization($db);
+                    // Only the four render routes reach Dispatch(); the two byte routes are
+                    // registered to Bytes(), so no route here carries a target id.
+                    $authorization->Authorize($route, $worker, null);
 
                     $requests = new RenderRequestService($db);
                     $result = match ($route) {
-                        'labels-render-claim' => $requests->Claim() ?? ['render_request_id' => null],
+                        'labels-render-claim' => $this->Claim($requests, $claimChanged),
                         'labels-render-result' => $this->Result($db, (int)$args['requestId'], $body),
                         'labels-render-invalid' => $requests->RecordInvalid((int)$args['requestId'], (string)($body['generation_token'] ?? ''), (string)($body['code'] ?? 'UNSPECIFIED'), $body['element'] ?? null, (string)($body['detail'] ?? '')),
                         'labels-render-failed' => $requests->RecordFailure((int)$args['requestId'], (string)($body['generation_token'] ?? ''), (string)($body['detail'] ?? '')),
                         default => throw new \LogicException('Unknown render route'),
                     };
 
-                    if ($route === 'labels-artifact-bytes' || $route === 'labels-asset-bytes') {
-                        return $result;
-                    }
                     return $this->ApiResponse($response, $result);
                 }, $changesData);
             } catch (LabelValidationException $error) {
                 return $this->ApiResponse($response->withStatus(422), ['field' => $error->field, 'code' => $error->errorCode, 'error_message' => $error->getMessage()]);
             }
         });
+    }
+
+    /** Preserve the wire response while carrying the claim tick's change state internally. */
+    private function Claim(RenderRequestService $requests, bool &$changed): array
+    {
+        $claim = $requests->ClaimWithStatus();
+        $changed = $claim['changed'];
+        return $claim['request'] ?? ['render_request_id' => null];
     }
 
     /**

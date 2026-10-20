@@ -6,6 +6,10 @@ class PrintAttemptService extends LabelService
 {
     public const LEASE_SECONDS = 60;
     public const HARD_LEASE_SECONDS = 300;
+    /**
+     * Takes the soft lease a heartbeat renews and the hard deadline no heartbeat extends,
+     * refusing a hard deadline shorter than the lease.
+     */
     public function __construct(\PDO $db, private int $leaseSeconds = self::LEASE_SECONDS, private int $hardSeconds = self::HARD_LEASE_SECONDS)
     {
         parent::__construct($db);
@@ -27,10 +31,18 @@ class PrintAttemptService extends LabelService
     {
         return $job['artifact_id'] !== null && $job['cancelled_at'] === null;
     }
+    /**
+     * The row lock Claim() takes on candidate jobs, so concurrent workers skip each other's
+     * rows instead of waiting on them.
+     */
     protected function LockClause(): string
     {
         return ' FOR UPDATE OF j SKIP LOCKED';
     }
+    /**
+     * Ends a job's attempt whose lease has expired as `uncertain`, and dead-letters the job if
+     * its printer was deleted while the lease ran.
+     */
     public function Reap(int $jobId): void
     {
         $this->Transaction();
@@ -43,6 +55,11 @@ class PrintAttemptService extends LabelService
             $this->DeadLetterIfPrinterGone($jobId);
         }
     }
+    /**
+     * Leases up to $limit claimable jobs for the worker's printers and returns each attempt
+     * with its payload, resolved printer and artifact manifest. Jobs the claim cannot serve are
+     * dead-lettered on the way (ADR-0049 part 1, causes 1 and 2).
+     */
     public function Claim(int $workerId, int $limit = 1): array
     {
         $this->Transaction();
@@ -54,12 +71,12 @@ class PrintAttemptService extends LabelService
         // Retirement is excluded from the candidate set here, in SQL, rather than checked per
         // row after fetching: a page of retired jobs ahead of an eligible one must not be able
         // to fill the LIMIT below and crowd it out. "Retirement stops new claims" (plan 27
-        // verification 10) is all this checks for - ADR-0019 dead-letters an unclaimed job only
-        // for a payload no version can read or a deleted printer, never for merely being
-        // unclaimed, so a retired label's job is left exactly as queued as it was. (A job whose
-        // render request ended invalid or terminally failed is dead-lettered too, but by
-        // RenderRequestService when the request ends, not here: such a job has no artifact and
-        // is never a candidate.)
+        // verification 10) is all this checks for. ADR-0049 part 1 lists the dead-letter causes:
+        // an unreadable payload and a printer Resolve() refuses (both below, at claim time), a
+        // deleted printer, and a render request that ended without an artifact. None of them is
+        // being unclaimed, so a retired label's job is left exactly as queued as it was. (The
+        // render-request cause is applied by RenderRequestService when the request ends, not
+        // here: such a job has no artifact and is never a candidate.)
         //
         // ADR-0037 section 9: a stock-entry label can turn live again when an undo revives it.
         // A job that existed when the label retired (id at or below the event's jobs_through_id)
@@ -123,6 +140,9 @@ class PrintAttemptService extends LabelService
         }
         return $claimed;
     }
+    /**
+     * Marks the job dead-lettered and records $error as the outbox row's last_error.
+     */
     private function DeadLetter(array $job, string $error): void
     {
         $this->Query("UPDATE print_jobs SET outcome='dead_lettered',outcome_at=CURRENT_TIMESTAMP WHERE id=?", [$job['id']]);
@@ -146,6 +166,10 @@ class PrintAttemptService extends LabelService
             $this->DeadLetter($job, 'Printer deleted');
         }
     }
+    /**
+     * Locks the job behind an attempt the worker owns, reaps an expired lease on it, and returns
+     * the attempt with its job's current attempt and outcome. Refuses another worker's attempt.
+     */
     private function Owned(int $workerId, int $attemptId): array
     {
         $this->Transaction();
@@ -156,6 +180,9 @@ class PrintAttemptService extends LabelService
         $this->Reap((int)$job);
         return $this->Query('SELECT a.*,j.current_attempt_id,j.outcome AS job_outcome FROM print_attempts a JOIN print_jobs j ON j.id=a.job_id WHERE a.id=?', [$attemptId])->fetch(\PDO::FETCH_ASSOC);
     }
+    /**
+     * Extends a live current attempt's lease, never past its hard deadline.
+     */
     public function Heartbeat(int $workerId, int $attemptId): array
     {
         $a = $this->Owned($workerId, $attemptId);
@@ -164,6 +191,10 @@ class PrintAttemptService extends LabelService
         }
         return $this->Query('UPDATE print_attempts SET heartbeats=heartbeats+1,lease_expires_at=LEAST(lease_hard_deadline,CURRENT_TIMESTAMP+make_interval(secs=>?)) WHERE id=? RETURNING *', [$this->leaseSeconds,$attemptId])->fetch(\PDO::FETCH_ASSOC);
     }
+    /**
+     * Records that the worker sent the bytes, and completes the job as `sent` when the printer
+     * acknowledges on send.
+     */
     public function Sent(int $workerId, int $attemptId): array
     {
         $a = $this->Owned($workerId, $attemptId);
@@ -173,6 +204,10 @@ class PrintAttemptService extends LabelService
         }
         return $this->Query('SELECT * FROM print_attempts WHERE id=?', [$attemptId])->fetch(\PDO::FETCH_ASSOC);
     }
+    /**
+     * Records the worker's printed or failed report for an attempt. A repeated identical report is
+     * idempotent; a different one is refused.
+     */
     public function Result(int $workerId, int $attemptId, string $outcome, array $detail): array
     {
         if (!in_array($outcome, ['printed','failed'], true)) {
@@ -198,6 +233,10 @@ class PrintAttemptService extends LabelService
         }
         return $this->Query('SELECT * FROM print_attempts WHERE id=?', [$attemptId])->fetch(\PDO::FETCH_ASSOC);
     }
+    /**
+     * Ends the attempt with $outcome, sets it as the job's outcome, and marks the outbox row
+     * delivered.
+     */
     private function Complete(array $a, string $outcome): void
     {
         $this->Query('UPDATE print_attempts SET ended_at=CURRENT_TIMESTAMP,outcome=? WHERE id=?', [$outcome,$a['id']]);

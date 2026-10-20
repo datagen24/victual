@@ -1,16 +1,17 @@
 # ADR-0048: A userfile is readable only by callers every owning record admits
 
-- **Status:** Proposed
+- **Status:** Accepted, 2026-10-18
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-13, against `master` at `33fbec60`. Design record only: it changes
   no code and reserves no migration number. The maintainer's decisions F1 to F5 and F3′ on
-  [issue 905](https://github.com/datagen24/victual/issues/905) are the source of every
-  decision item below.
+  [issue 905](https://github.com/datagen24/victual/issues/905), and the view-owner decision
+  of 2026-10-13 recorded in decision item 8, are the source of every decision item below.
 - **Referenced by:** [issue 905](https://github.com/datagen24/victual/issues/905),
-  [issue 920](https://github.com/datagen24/victual/issues/920), and the draft implementation
-  in [PR 919](https://github.com/datagen24/victual/pull/919).
-- **Relationship:** would partly supersede accepted
+  [issue 920](https://github.com/datagen24/victual/issues/920), the implementation
+  in [PR 919](https://github.com/datagen24/victual/pull/919), and
+  [issue 991](https://github.com/datagen24/victual/issues/991) (accepted residual).
+- **Relationship:** partly supersedes accepted
   [ADR-0035](0035-batteries-equipment-calendar-and-custom-entities-require-view-permissions.md):
   only the sentence in its 2026-10-13 amendment that leaves the `userfiles` file group
   "deliberately left open for now" and defers to issue 905. Every other part of ADR-0035 is
@@ -45,7 +46,8 @@ derivative has its own stored name and no reference of its own.
 
 ## Decision (proposed)
 
-Each item quotes the maintainer's wording from issue 905, 2026-10-13.
+Each item quotes the maintainer's wording from issue 905, 2026-10-13. Item 8 quotes the
+maintainer's answer on PR 919, recorded in a comment on issue 905 the same day.
 
 ### 1. Every owning record must admit the caller
 
@@ -111,25 +113,101 @@ denied the request.
 
 Source, F2: "Authorize the original file before reading or creating a picture derivative."
 
-### 7. Writes are out of scope, and the read rule alone does not close the disclosure
+### 7. Items 1 to 6 are a read rule, and alone they do not close the disclosure
 
-This record does not change who can write userfield values or upload files. Writes stay at
-the group-level `MASTER_DATA_EDIT` check. Owner-based write authorization is tracked
-separately in [issue 920](https://github.com/datagen24/victual/issues/920).
+Items 1 to 6 decide who may read a userfile. On their own they do not change who can
+write userfield values or upload files: those writes stayed at the group-level
+`MASTER_DATA_EDIT` check. Item 9 adds owner-based write authorization
+([issue 920](https://github.com/datagen24/victual/issues/920)).
 
-That leaves a demonstrated bypass. A `MASTER_DATA_EDIT` holder can clear the value that
-references a protected file, or delete the owning record. The file then follows only its
-remaining owners, so the read widens to whoever those owners admit. The read rule alone
+That left a demonstrated bypass. A `MASTER_DATA_EDIT` holder could clear the value that
+references a protected file, or delete the owning record. The file then followed only its
+remaining owners, so the read widened to whoever those owners admit. The read rule alone
 therefore does not close the issue 905 disclosure.
 
 Source, F5: "Keep the read fix bounded and file owner-based write authorization separately.
 Check whether the existing write paths can bypass the new read rule." The maintainer
 recorded on 2026-10-13 that the deferral of F5 is not acceptance of this bypass.
 
+Item 9 closes this bypass for writes.
+
+### 8. A view row is resolved by the view's key and admits what the view admits
+
+A userfile reference may name a row of one of the read-only views that
+`EntityReadPolicy` covers, because any exposed entity view can carry userfields. The owner
+is looked up in the view by the same key `GetObject` uses: `id` (the decision also names
+`stock_id` for `stock`, a table already keyed that way). The view's `EntityReadPolicy` permission decides whether the caller is admitted.
+
+A view row that no longer exists makes the reference unresolved. The file then follows the
+orphan rule in item 3 and is readable by ADMIN only. The `label_*` and `print_*` entities
+other than `label_printer_status` (looked up by `printer_id`) are not looked up, so they
+are unresolved too. All of them, `label_printer_status` included, have the
+`EntityReadPolicy` permission `ADMIN`, so the outcome is the same as their policy gives.
+
+Source, maintainer decision of 2026-10-13. It answers a question raised during review of PR 919.
+The answer is recorded in
+[a comment on issue 905](https://github.com/datagen24/victual/issues/905#issuecomment-6153663817):
+"**resolve via the view key** — look the owner up in the view by the same key GetObject
+uses (`id`; `stock_id` for `stock`) and apply the view's `EntityReadPolicy` permission. A
+view row that no longer exists makes the reference unresolved, so ADMIN only."
+
+### 9. A write that changes a file's owners needs read permission on every owner it had
+
+A write that removes, replaces or adds a reference to a userfile is refused with the same
+`USERFILE_OWNER_READ` refusal as a read, unless the caller may read every record that
+referenced the file before the write. The caller must also hold the write's existing
+permission. Those writes are:
+
+- clearing or changing a userfield value;
+- deleting a product, battery, chore or userfield definition, whose values cascade;
+- merging away a product or chore;
+- changing a userfield definition.
+
+The check compares the file's owners before and after the write, in the write's own
+transaction, so a cascade counts whichever path caused it. A refusal rolls the write back.
+
+The same rule covers the bytes. Deleting a referenced userfile, or uploading under a name
+that some record references, needs read permission on every owner. The check runs before
+the name is looked up, so the refusal does not say whether the file exists. A file that
+nothing references keeps the group-level `MASTER_DATA_EDIT` right. The browser deletes a
+replaced file after saving the value that no longer names it, and uploads a new one after
+saving the value that does.
+
+A name in the form of a picture derivative is refused at upload in every group, and as a
+file or image userfield value. Only `FilesService` makes such names.
+
+Source, D3 (2026-10-15): "Require existing operation rights and read authorization for every
+current owner, checked atomically with the mutation."
+
+**Not covered.** A caller who may make the write can attach a file that nothing references.
+That is how an upload is attached, and nothing records whether an unreferenced file was
+uploaded a moment ago or left behind by an earlier owner. An upload under an existing
+unreferenced name still answers 400, so it tells the caller that the name exists.
+
+**Accepted residual, 2026-10-19.** The maintainer accepted this signal on
+[issue 991](https://github.com/datagen24/victual/issues/991). It is not a change to any
+decision item. The signal is limited in four ways:
+
+- Only a caller who holds the group's write right can make the upload, so only that caller
+  learns anything.
+- The caller learns only that the name is taken. An unreferenced file is an orphan under
+  item 3, so its bytes remain readable by `ADMIN` only, and nothing names its earlier owner.
+- Other routes give no answer. Deleting an unreferenced name answers 204 whether or not a
+  file has it, and a refused read answers the same whether or not the name exists (see
+  "Refusals are indistinguishable" below).
+- The browser names each upload with two `Math.random()` draws in base 36 before the
+  extension. A caller must therefore already know the name, or guess one that an API
+  client chose predictably.
+
+A uniform answer would need an upload to replace an orphan, or names scoped to the
+uploader. The first lets one caller replace bytes it could not read. The second is a schema
+change, which a patch release does not carry.
+
 ## Consequences
 
 **Compatibility.** A caller who could read a userfile before can now receive a 403. Items 1
-to 6 authorize this wire change, and it needs a line in the unreleased changelog. Upstream
+to 6 and 8 authorize this wire change for reads. Item 9 adds 403s to the write paths it
+covers. Both need a line in the unreleased changelog. Upstream
 Grocy serves userfiles openly, so the fork diverges from it here and the parity suite is
 expected to report the difference.
 
@@ -142,9 +220,15 @@ base64 spellings cannot be prefiltered in SQL, so the scan runs in PHP. The vali
 PR 919 measured about 8.7 ms per request at 5,020 values and about 36 ms at 25,020 values
 (in-process, 20 cached thumbnails). No index is decided.
 
-**Owner types.** The implementation resolves owners from an explicit table of entities. A
-reference to an entity outside that table is unresolved, so the file is ADMIN only.
-`roles` resolves through its own read policy.
+**Owner types.** The implementation resolves owners from an explicit table of entities
+and, under item 8, twelve views. A reference to an entity outside both lists is
+unresolved, so the file is ADMIN only. `roles` resolves through its own read policy.
+
+**Degenerate view ids.** Seven of the twelve views do not expose a unique row id. Six
+select the constant `1 AS id`, `quantity_unit_conversions_resolved` selects -1 or 1, and
+`product_barcodes_view` combines barcode and product ids. For these views the check in
+PR 919 amounts to "the caller holds the view's permission and the view has a row with that
+id". It does not tie the reference to one underlying record.
 
 **Alternatives ruled out.** A blanket `MASTER_DATA_EDIT` or `ADMIN` gate on the whole group
 breaks pages that render images for `STOCK_VIEW` holders. Treating orphans as readable
@@ -152,21 +236,19 @@ because deleting them is a lesser right was rejected in F1.
 
 ## Open questions
 
-1. **Write authorization (issue 920).** The write rule that closes the bypass in decision
-   item 7 is undecided. Until it lands, the disclosure issue 905 describes is only partly
-   fixed.
-2. **Entities with a read policy but no owner lookup.** Draft PR 919 treats such an owner
-   as unresolved, so its files are ADMIN only. That is an implementation choice awaiting
-   review, not a maintainer decision. Denying everyone is the alternative.
-3. **Views that may carry userfields.** PR 919 makes files owned through these views ADMIN
-   only. Whether each view should instead admit the permission its page requires is a
-   maintainer decision.
-4. **An index on the owner lookup.** The measurements under Consequences give no threshold.
+1. **Entities with a read policy but no owner lookup.** With item 8 in place, only the
+   `label_*` and `print_*` entities other than `label_printer_status` are in this group.
+   PR 919 treats such an owner as unresolved, so its files are ADMIN only, which equals
+   their own `EntityReadPolicy` permission. This is an implementation fact, not a maintainer decision. Denying everyone
+   is the alternative.
+2. **An index on the owner lookup.** The measurements under Consequences give no threshold.
    Decide on an index only if a larger install shows the per-request scan matters.
 
 ## Implementation
 
-[PR 919](https://github.com/datagen24/victual/pull/919) (draft) implements items 1 to 6.
+[PR 919](https://github.com/datagen24/victual/pull/919) implements items 1 to 6 and 8.
+The pull request for [issue 920](https://github.com/datagen24/victual/issues/920)
+implements item 9.
 Implementing this record does not accept it. Acceptance is a separate pull request that
 changes only the status line, the index row, a forward pointer on ADR-0035 and this
 record's reference to it.

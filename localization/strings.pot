@@ -2061,9 +2061,6 @@ msgstr ""
 msgid "DD"
 msgstr ""
 
-msgid "Print on label printer"
-msgstr ""
-
 msgid "Default stock entry label"
 msgstr ""
 
@@ -2077,13 +2074,6 @@ msgid "Single label"
 msgstr ""
 
 msgid "Label per unit"
-msgstr ""
-
-msgid "Error while executing WebHook"
-msgstr ""
-
-# Example: Print *Product* Grocycode on label printer
-msgid "Print %s Grocycode on label printer"
 msgstr ""
 
 msgid "Open stock entry label in new window"
@@ -2495,6 +2485,12 @@ msgid "By default the stock overview page lists all products which are currently
 msgstr ""
 
 msgid "No price information is available for at least one ingredient"
+msgstr ""
+
+msgid "No price information is available for at least one stock entry; this is the value of the others"
+msgstr ""
+
+msgid "No price information is available for this product"
 msgstr ""
 
 msgid "For ingredients that are only partially in stock, the in stock amount will be consumed."

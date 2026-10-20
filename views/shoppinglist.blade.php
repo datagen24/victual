@@ -99,7 +99,7 @@
 			class="border-top border-bottom my-2 py-1">
 			<div id="table-filter-row"
 				data-status-filter="belowminstockamount"
-				class="collapse normal-message status-filter-message responsive-button @if(!VICTUAL_FEATURE_FLAG_STOCK) d-none @else d-md-inline-block @endif"><span class="d-block d-md-none">{{count($missingProducts)}} <i class="fa-solid fa-exclamation-circle"></i></span><span class="d-none d-md-block">{{ $__n(count($missingProducts), '%s product is below defined min. stock amount', '%s products are below defined min. stock amount') }}</span></div>
+				class="collapse normal-message status-filter-message responsive-button @if(!VICTUAL_FEATURE_FLAG_STOCK || !$shortfallsVisible) d-none @else d-md-inline-block @endif">@if($shortfallsVisible)<span class="d-block d-md-none">{{count($missingProducts)}} <i class="fa-solid fa-exclamation-circle"></i></span><span class="d-none d-md-block">{{ $__n(count($missingProducts), '%s product is below defined min. stock amount', '%s products are below defined min. stock amount') }}</span>@endif</div>
 			<div id="related-links"
 				class="float-right mt-1 collapse d-md-block">
 				<a class="btn btn-primary responsive-button btn-sm mb-1 show-as-dialog-link d-none d-md-inline-block"
@@ -130,7 +130,7 @@
 						<a id="add-all-items-to-stock-button"
 							class="dropdown-item"
 							href="#">{{ $__t('Add all list items to stock') }}</a>
-						@if(!boolval($userSettings['shopping_list_auto_add_below_min_stock_amount']))
+						@if(!boolval($userSettings['shopping_list_auto_add_below_min_stock_amount']) && $shortfallsVisible)
 						<a id="add-products-below-min-stock-amount"
 							class="dropdown-item"
 							href="#">{{ $__t('Add products that are below defined min. stock amount') }}</a>
@@ -167,8 +167,10 @@
 			<select class="custom-control custom-select"
 				id="status-filter">
 				<option value="all">{{ $__t('All') }}</option>
+				@if($shortfallsVisible)
 				<option class="@if(!VICTUAL_FEATURE_FLAG_STOCK) d-none @endif"
 					value="belowminstockamount">{{ $__t('Below min. stock amount') }}</option>
+				@endif
 				<option value="xxDONExx">{{ $__t('Only done items') }}</option>
 				<option value="xxUNDONExx">{{ $__t('Only undone items') }}</option>
 			</select>

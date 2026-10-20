@@ -2221,9 +2221,6 @@ msgstr ""
 msgid "DD"
 msgstr "EXP"
 
-msgid "Print on label printer"
-msgstr "Natisni na tiskalniku nalepk"
-
 msgid "Default stock entry label"
 msgstr "Privzeta nalepka vnosa zaloge"
 
@@ -2238,13 +2235,6 @@ msgstr "Posamezna nalepka"
 
 msgid "Label per unit"
 msgstr "Nalepka na enoto"
-
-msgid "Error while executing WebHook"
-msgstr "Napaka pri izvajanju WebHook-a"
-
-# Example: Print *Product* Grocycode on label printer
-msgid "Print %s Grocycode on label printer"
-msgstr "Natisni %s grocycode na tiskalniku nalepk"
 
 msgid "Open stock entry label in new window"
 msgstr "Odpri nalepko vnosa zaloge v novem oknu"

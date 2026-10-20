@@ -6,26 +6,26 @@ user-entered consumption recipe with access restricted to its owner and specific
 authorized members. Dosing schedules, adherence tracking and dose reminders are outside
 Victual's scope.
 
-**Status:** in progress for v0.5.0; product scope decided and design records accepted
-2026-10-09. Implemented: private consumption recipes and manual consumption (issue 698, merged),
-the external-event schema, service, API and reconciliation inbox (issue 700, merged), and the
-organizer inventory workflow's test evidence (issue 699, merged in pull requests 738 and 744).
-Issues 698 to 700 are closed. Refill tracking (issue 701) merged in pull requests 748, 749 and 751, and
-its read-authorization fix in pull request 755. Native acceptance (issue 702) was accepted on simulator
-evidence on 2026-10-11 (see its Executed section). Not complete: integrated verification (issue 703).
+**Status:** landed 2026-10-19, released in v0.5.0.
+Issues 698 to 702 and 742 are closed. Private consumption recipes and manual consumption (issue 698),
+the external-event schema, service, API and reconciliation inbox (issue 700) and the organizer
+inventory workflow (issue 699) merged first. Refill tracking (issue 701) merged in pull requests 748,
+749 and 751, and its read-authorization fix in pull request 755. Native acceptance (issue 702) was
+accepted on simulator evidence on 2026-10-11. Integrated verification (issue 703) is recorded in
+[release 0.5.0](../../releases/0.5.0.md).
 
-**Release target:** v0.5.0. [Release 0.4.0](../releases/0.4.0.md) ships issues 698 to 701. The maintainer clarified this scope on 2026-10-09. The target
+**Release target:** v0.5.0. [Release 0.4.0](../../releases/0.4.0.md) ships issues 698 to 701. The maintainer clarified this scope on 2026-10-09. The target
 is a schedule; the release record and signed tag follow verified implementation under
-[the release procedure](../releases/README.md).
+[the release procedure](../../releases/README.md).
 
 **v0.5.0 boundary, set by the maintainer on 2026-10-12.** Required for v0.5.0:
 
 - this plan's implemented work (issues 698 to 702);
-- [ADR-0043](../adr/0043-creating-shared-master-data-is-a-right-below-master-data-edit.md) and
+- [ADR-0043](../../adr/0043-creating-shared-master-data-is-a-right-below-master-data-edit.md) and
   issue 742, a `MASTER_DATA_ADD` right below `MASTER_DATA_EDIT`;
-- [ADR-0045](../adr/0045-an-unknown-stock-value-is-distinguishable-from-a-known-zero.md) and
+- [ADR-0045](../../adr/0045-an-unknown-stock-value-is-distinguishable-from-a-known-zero.md) and
   issue 774, unknown prices distinguished from a known zero;
-- [ADR-0046](../adr/0046-stock-bookings-accept-an-optional-idempotency-key.md) and issue 775,
+- [ADR-0046](../../adr/0046-stock-bookings-accept-an-optional-idempotency-key.md) and issue 775,
   idempotency keys on stock bookings;
 - fixes for issues 782 (product merge needs `STOCK_EDIT` and `MASTER_DATA_EDIT`) and 785 (a
   booking route refuses a caller without `STOCK_VIEW` before it books);
@@ -38,29 +38,29 @@ disposition. The OpenAPI audit in issue 796 is not a release gate as a whole: v0
 accurate contracts for the operations it changes or depends on. Each ADR is accepted in its own
 bookkeeping pull request once its prerequisites are met.
 
-**Dependencies:** [14](landed/14-contract-and-regression-scaffolding.md),
-[19](19-rbac.md), [23](landed/23-storage-classes.md), and the existing label subsystem
-([25](25-label-infrastructure.md), [27](landed/27-label-templates-and-rendering.md),
-[32](landed/32-label-kinds.md)). These capabilities are implemented. Apple Health access
+**Dependencies:** [14](14-contract-and-regression-scaffolding.md),
+[19](../19-rbac.md), [23](23-storage-classes.md), and the existing label subsystem
+([25](../25-label-infrastructure.md), [27](27-label-templates-and-rendering.md),
+[32](32-label-kinds.md)). These capabilities are implemented. Apple Health access
 belongs to the native clients in `victual-kit`; Victual owns the receiving API.
 
-**Decisions in force:** [ADR-0011](../adr/0011-label-namespace.md) for labels,
-[ADR-0014](../adr/0014-administering-a-user-is-a-subset-question.md) and
-[ADR-0018](../adr/0018-role-grants-and-domain-reads.md) for authorization,
-[ADR-0032](../adr/0032-stock-amounts-compare-within-one-tolerance.md) for quantities,
-and [ADR-0036](../adr/0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md)
-for booking lineage. [ADR-0012](../adr/0012-observations-are-proposals.md) applies if a
+**Decisions in force:** [ADR-0011](../../adr/0011-label-namespace.md) for labels,
+[ADR-0014](../../adr/0014-administering-a-user-is-a-subset-question.md) and
+[ADR-0018](../../adr/0018-role-grants-and-domain-reads.md) for authorization,
+[ADR-0032](../../adr/0032-stock-amounts-compare-within-one-tolerance.md) for quantities,
+and [ADR-0036](../../adr/0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md)
+for booking lineage. [ADR-0012](../../adr/0012-observations-are-proposals.md) applies if a
 client proposes an inferred booking.
 
-**Design records, all decided 2026-10-09:** [ADR-0015](../adr/0015-medication-records-never-advises.md)
+**Design records, all decided 2026-10-09:** [ADR-0015](../../adr/0015-medication-records-never-advises.md)
 (Accepted) sets the boundary for inventory and refill notices; its UI-wording prerequisite binds the
-implementing pull requests. [ADR-0016](../adr/0016-schedule-expansion-in-the-application.md)
+implementing pull requests. [ADR-0016](../../adr/0016-schedule-expansion-in-the-application.md)
 (Rejected) had no consumer in this scope.
-[ADR-0040](../adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md) (Accepted)
+[ADR-0040](../../adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md) (Accepted)
 records the scoped-sharing design.
-[ADR-0041](../adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md)
+[ADR-0041](../../adr/0041-consumption-events-have-a-source-identity-and-explicit-reconciliation.md)
 (Accepted) records the external-event and reconciliation design.
-[ADR-0042](../adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md)
+[ADR-0042](../../adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md)
 (Accepted) records the refill rules and notice design.
 
 ## Current behavior
@@ -230,10 +230,11 @@ constrained to the old two-migration design.
 The design records are decided: ADR-0015 revised and accepted, ADR-0016 rejected, and ADR-0040,
 ADR-0041 and ADR-0042 accepted, each in its own bookkeeping pull request. ADR-0040 leaves
 ADR-0014 and ADR-0018 unamended. The evidence is in `.devtools/adr0040/`, `.devtools/adr0041/` and
-`.devtools/adr0042/`. Implementation is tracked by issues 698 to 703. Issues 698 to 700 have
-merged. The implementation of issue 701 merged on 2026-10-10 in pull requests 748, 749 and 751, and
-the issue stays open (see its Executed section). The maintainer accepted issue 702 on simulator
-evidence on 2026-10-11. Issue 703 has not started.
+`.devtools/adr0042/`.
+
+Implementation is tracked by issues 698 to 703. Issues 698 to 702 are closed; 701, 702 and 742
+closed on 2026-10-19 after the gate M1 reconciliation. Issue 703's verification is in its Executed
+section.
 
 The API contract is developed in this repository. Native HealthKit implementation and
 platform-specific notices belong to `victual-kit`. Server verification can use representative
@@ -242,12 +243,12 @@ The release record must distinguish those outcomes. On 2026-10-11 the maintainer
 victual-kit client running in the iOS Simulator against a cluster-hosted server meets this gate for
 issue 702; a physical device is not required. Behaviour of a real Health store is a stated limitation.
 
-[Migrations/RESERVATIONS.md](../../migrations/RESERVATIONS.md) claims 0305 to 0307 for this plan.
+[Migrations/RESERVATIONS.md](../../../migrations/RESERVATIONS.md) claims 0305 to 0307 for this plan.
 As of 2026-10-10, 0305 (private consumption recipes, shares, events), 0306 (source mappings and
 the external-source columns) and 0307 (refill history, rules, orders and acknowledgements) are on
 disk in `master`. An earlier reconciliation on 2026-10-09 gave refill 0306; issue 700's schema took
 that slot, and refill yielded to 0307. The number can still move:
-[ADR-0039](../adr/0039-the-mcp-sidecar-reads-its-configuration-from-victual.md) implementation
+[ADR-0039](../../adr/0039-the-mcp-sidecar-reads-its-configuration-from-victual.md) implementation
 may claim a lower slot first. Re-read the table, claim the lowest free slot before writing a
 file, and write PostgreSQL-only migrations.
 
@@ -279,7 +280,7 @@ answers from the maintainer's inventory scope decision on 2026-10-09.
 
 1. **Should storage classes be their own plan?**
 
-   > **Response:** Yes. Extracted as [23](landed/23-storage-classes.md), now landed.
+   > **Response:** Yes. Extracted as [23](23-storage-classes.md), now landed.
 
 2. **Where do medication lot numbers live?**
 
@@ -338,7 +339,7 @@ answers from the maintainer's inventory scope decision on 2026-10-09.
     > **Response, maintainer, 2026-10-09:** Specifically authorized members may access them.
     > The grant authority, individual action rights and account-administration interaction
     > remain technical design gates for a new ADR. Do not introduce an unchecked grant path.
-    > [ADR-0040](../adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md)
+    > [ADR-0040](../../adr/0040-consumption-recipes-are-private-rows-with-scoped-shares.md)
     > (Accepted 2026-10-09) answers these as a design. The maintainer kept ADR-0014's
     > administrator behavior and chose deletion of private recipes with their owner.
 
@@ -374,7 +375,7 @@ answers from the maintainer's inventory scope decision on 2026-10-09.
     Victual must expose the state through its API; native delivery belongs to `victual-kit`.
     The exact lead and server-side delivery surface remain open.
 
-    > **Design, 2026-10-09:** [ADR-0042](../adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md)
+    > **Design, 2026-10-09:** [ADR-0042](../../adr/0042-refill-dates-are-calendar-dates-derived-from-recorded-fills.md)
     > (Accepted 2026-10-09) records a seven-day lead as a per-user setting with a per-prescription
     > override, calendar dates in the server zone with a client `as_of`, no server push, and
     > acknowledged notice keys.
@@ -475,7 +476,7 @@ the wrong order to undo bookings drawn from one purchase (ADR-0036), so a client
 history in occurrence order ends with `undo_refused` for all but the last-booked event. ADR-0041
 row 7 ("create then delete leaves one deduction") holds only when the two events draw on
 different purchases. Both are documented in the
-[operator page](../manual/operator/external-consumption.md) and pinned by fixtures.
+[operator page](../../manual/operator/external-consumption.md) and pinned by fixtures.
 
 > **Response, maintainer, 2026-10-10:** For bulk void, keep the ADR order and leave an event
 > that cannot be undone in `needs_review`. Accepted: the optional `qu_id`, the extra fields on
@@ -772,7 +773,7 @@ disposable on-cluster database. Issue 702's criteria 1 and 6 name a real device;
 that requirement.
 
 **Evidence** (victual-kit `main` at `055553e`, read 2026-10-11; reconciliation in
-[`.devtools/plan22/NATIVE-ACCEPTANCE.md`](../../.devtools/plan22/NATIVE-ACCEPTANCE.md)):
+[`.devtools/plan22/NATIVE-ACCEPTANCE.md`](../../../.devtools/plan22/NATIVE-ACCEPTANCE.md)):
 
 - UI round 1 on an iOS 27.0 simulator with administrator, Adult and Child keys, and the macOS manual
   test with the same three roles (victual-kit `docs/acceptance/ui-round-1-phone.md`,
@@ -785,6 +786,36 @@ that requirement.
 
 **Limitations for the release record.** No real Health store was observed, so identifier changes on
 edit and delete, late delivery and background delivery are known from Apple's documentation and the
-client's design, not from observation. The victual-kit acceptance matrix still names a client commit
-(`743ab1f`) that no longer resolves after a rebase and predates the v0.4.0 spec pin.
+client's design, not from observation.
 
+**Client commit, 2026-10-19.** The victual-kit matrix first named client commit `743ab1f`, which no
+longer resolves after a rebase. It is now recorded at victual-kit `e837335`, the merge that moved the
+client to the v0.4.4 contract, with `swift test` passing in CI run 39060910056 and every cited test
+present at that commit. With the client from the same pull request, a live run against a 0.4.3
+instance, whose document differs from 0.4.4 only in `info.version`, passed the client calls and 28 of
+28 consumption fixtures (victual-kit `docs/acceptance/live-server-replay.md`).
+
+The client follows released server versions only, because its evidence needs a live server running
+the release. It is not moved to an unreleased contract, which is why #891 was closed as not planned.
+
+### Issue 703: integrated verification for v0.5.0
+
+Prepared on 2026-10-19 against `master` at `56abf0a0`. The release record,
+[0.5.0](../../releases/0.5.0.md), holds the full verification table; this section records what it
+means for this plan.
+
+- **Linked work.** Issues 698 to 702 and 742 are closed, as is every item of the v0.5.0 boundary
+  above: 774, 775, 782, 783, 785, 787 and 788. Gate M1 reconciled issues 701, 702 and 742; each
+  closing comment carries its evidence. Issue 702's housekeeping item, the client commit in the
+  victual-kit matrix, was resolved by victual-kit pull request 44 and pull request 1003 here.
+  Issue 891 was closed as not planned: the client follows released server versions only.
+- **Upgrade.** A populated v0.4.4 database upgraded through migrations 0313 to 0318, and a second
+  run changed nothing. A database holding a NaN price was refused by migration 0313 and left
+  unchanged. See the [rehearsal record](../../releases/0.5.0-upgrade-rehearsal.md).
+- **Suite, coverage, contract and migration checks** run in the `tests` workflow on the release
+  pull request. Images and the chart are built, booted and published by `release.yml` on the
+  signed tag. The release record states each result.
+- **Unmet gates, stated.** Native evidence is simulator evidence, as decided on 2026-10-11. No real
+  Health store was observed. Creating a conversion still needs `MASTER_DATA_EDIT` (ADR-0043).
+- **Landing.** The `v0.5.0` tag was published on 2026-10-19, and this file moved to `landed/` in a
+  pull request of its own.

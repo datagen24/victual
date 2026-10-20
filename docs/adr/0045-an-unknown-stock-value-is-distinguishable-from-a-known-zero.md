@@ -1,9 +1,6 @@
 # ADR-0045: An unknown stock value or price is distinguishable from a known zero
 
-- **Status:** **Proposed.** Nothing here constrains work until the maintainer accepts it in a
-  separate pull request. The record presents options and a recommendation. The maintainer
-  confirmed zero, null and omission semantics on 2026-10-11. Option B, parent-only values, last-known-price fallback and client coordination
-  are confirmed. Open questions 8 to 13 were answered on 2026-10-12.
+- **Status:** Accepted, 2026-10-18
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-11, against `master` at `d4960138`. Design work only: it changes no
@@ -972,3 +969,46 @@ its pull request:
   also shows that a blank purchase price is sent as `null`.
 - Influx, option A only: A publisher test shows that an unknown value is not
   published as `0.0`.
+
+## Implementation
+
+Two pull requests for [issue 774](https://github.com/datagen24/victual/issues/774) implement
+this record:
+
+1. Migration `0315.pgsql.sql` implements gate 1 option (a) with no change to any response.
+   It adds `legacy_zero_price` on `stock` and `stock_log` with both constraints, and marks
+   every pre-existing price of `0` (open question 9). `mark_legacy_zero_prices()` writes the
+   counts to `price_interpretation_reports`, and the importer calls the same function
+   (open questions 6, 8 and 11, with `--legacy-zero-prices=known`). `stock_next_use` and its
+   triggers carry the marker, and `stock_splits` groups by it. The marker is copied by every
+   `StockService` path gate 1 lists, and `FieldPolicy` keeps it off the wire (open question 10).
+2. Migration `0316.pgsql.sql` implements the readers:
+   - `stock_current.value_incomplete`, carried by the stock overview's view.
+   - The rewritten price history, average, last, current and recipe-cost views (D1 to D4).
+   - The rebuilt price caches.
+   - The flags' `permission_fields` rows.
+
+   The application side of part 2:
+   - The flags reach `GET /api/stock`, the volatile lists and both product details routes as
+     `value_incomplete` and `stock_value_incomplete`, redacted with their values (gate 5).
+   - `FieldPolicy` sends a marked price as `null` (open question 10).
+   - The P2 write paths book `null` for a price nobody entered: a blank or untracked purchase
+     price in the web UI, an inventory correction or weighing with no known last price, and a
+     self-production from a recipe with incomplete costs.
+   - The stock overview and the product card mark an incomplete value.
+   - The tests are `StockPriceSemanticsTest`, pgTAP `039-price-readers.sql` and the
+     `price-semantics.js` browser probe.
+
+A third pull request, for [issue 990](https://github.com/datagen24/victual/issues/990), covers
+the surfaces the first two left out:
+- Migration `0317.pgsql.sql` makes `uihelper_stock_entries` read a marked `0` as `NULL`. The
+  stock entries page then shows no price for an unknown price, both on load and after an edit.
+- The stock entry edit form renders a marked `0` blank. Saving keeps the marker, because the
+  form omits a price that is unchanged from the one it loaded.
+- The meal plan shows no cost for a product with no known price. It marks a recipe, day or
+  week cost that leaves an unknown price out.
+- The InfluxDB publisher writes no `price_paid` point for a marked `0`.
+- Weighing has its own test.
+
+[Pull request 992](https://github.com/datagen24/victual/pull/992) accepted this record on
+2026-10-18, separately from the implementation.

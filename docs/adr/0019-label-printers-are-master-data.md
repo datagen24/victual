@@ -20,6 +20,10 @@
 - **Amended 2026-10-12** by the maintainer, in [PR #881](https://github.com/datagen24/victual/pull/881):
   the closed set of reasons a print job is dead-lettered gains a third cause, a job whose
   render request ended `invalid`, terminally `failed` or expired. See *Offline behaviour*.
+- **Partly superseded 2026-10-20** by
+  [ADR-0049](0049-label-print-job-dead-letter-causes-as-the-code-applies-them.md) part 1:
+  only the closed list of dead-letter causes under *Offline behaviour*, including the
+  2026-10-12 amendment's place in it. Every other part of this record remains in force.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-06.
@@ -52,7 +56,7 @@
   supplying them.
 - **Would affect:** [06](../plans/06-location-barcodes.md),
   [17](../plans/17-ecosystem-clients.md), [20](../plans/20-container-infrastructure.md),
-  [22](../plans/22-medication-tracking.md).
+  [22](../plans/landed/22-medication-tracking.md).
 
 ## Context
 
@@ -80,7 +84,7 @@ edited through `Victual.EntityList` / `Victual.EntityForm`
 [ADR-0011](0011-label-namespace.md) was accepted 2026-09-04: label payloads are
 `vctl:<uid>`, printing becomes an outbox a drainer consumes, rendering leaves this
 repository, and the webhook is retired. Nothing of it is built.
-[Plan 22](../plans/22-medication-tracking.md) question 6 declined to own the machinery —
+[Plan 22](../plans/landed/22-medication-tracking.md) question 6 declined to own the machinery —
 its lean is that medication ships without labels rather than a medication plan quietly
 becoming the label subsystem's owner — so the `labels` table, the print event and the
 worker have no owning plan today.
@@ -860,6 +864,9 @@ days ago" and "reported healthy three seconds ago" must not render identically, 
   failure [ADR-0011](0011-label-namespace.md) fact 2 named — "a printer that is off for a
   day eats a day of labels" — which the outbox removes, and it is distinct from decision
   item 6's rule, which starts at the claim.
+  *This list is superseded by
+  [ADR-0049](0049-label-print-job-dead-letter-causes-as-the-code-applies-them.md) part 1
+  (2026-10-20), which states the causes the claim applies.*
   Dead-lettering stays for what 0259 defined it for, a payload no version can read, plus
   decision item 4's deleted-printer case, plus the third cause added by the amendment of
   2026-10-12 (below).
@@ -1262,7 +1269,9 @@ Full retirement of the webhook is the destination: every entity type prints thro
 path, `WebhookRunner` loses its last caller, and the four constants go. The steps have
 different prerequisites. *(Corrected by [ADR-0024](0024-the-fork-writes-its-own-clients.md),
 accepted 2026-09-15: plan 18's InfluxDB writer also calls `WebhookRunner`, so step 3 removes
-the label call sites and the class stays.)*
+the label call sites and the class stays.)* *(That correction is superseded by
+[ADR-0051](0051-webhookrunner-had-no-influxdb-caller-and-the-webhook-residue-goes.md), accepted 2026-10-20: the InfluxDB writer never called `WebhookRunner`,
+so the statement above stands.)*
 
 1. **Location labels first, in wave 3b.** [Plan 06](../plans/06-location-barcodes.md) is
    wave 3b in the [plans index](../plans/README.md) and locations have no `/printlabel`
@@ -1789,7 +1798,7 @@ The boundaries above are decided; these are the values inside them, and they bel
 implementation plan rather than to this record.
 
 1. **Which plan owns delivery.** No plan does today —
-   [22](../plans/22-medication-tracking.md) question 6 declined the label machinery and
+   [22](../plans/landed/22-medication-tracking.md) question 6 declined the label machinery and
    [06](../plans/06-location-barcodes.md) covers the locations half only. The verification
    these gates deliberately exclude has to land somewhere, and a plan is where.
 

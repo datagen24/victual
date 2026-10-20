@@ -837,7 +837,11 @@ class MergeProductsTest extends PgsqlSchemaTestCase
 		// Migration 0309 (issue #868) now refuses such a row with
 		// quantity_unit_conversions_factor_positive, so this test removes that constraint for
 		// its own duration to reach the PHP guard this test is about, and restores it afterwards.
+		// Migration 0318 (issue #952) refuses it in the conversion triggers as well, so the
+		// range rule is made permissive for the same duration and its definition put back.
 		self::$db->exec('ALTER TABLE quantity_unit_conversions DROP CONSTRAINT quantity_unit_conversions_factor_positive');
+		$rangeRule = self::$db->query("SELECT pg_get_functiondef('quantity_unit_conversion_factor_in_range(double precision)'::regprocedure)")->fetchColumn();
+		self::$db->exec("CREATE OR REPLACE FUNCTION quantity_unit_conversion_factor_in_range(f DOUBLE PRECISION) RETURNS BOOLEAN AS 'SELECT true' LANGUAGE sql IMMUTABLE");
 
 		try
 		{
@@ -849,6 +853,7 @@ class MergeProductsTest extends PgsqlSchemaTestCase
 		finally
 		{
 			self::$db->prepare('DELETE FROM quantity_unit_conversions WHERE product_id = ?')->execute([$remove]);
+			self::$db->exec($rangeRule);
 			self::$db->exec("ALTER TABLE quantity_unit_conversions ADD CONSTRAINT quantity_unit_conversions_factor_positive CHECK (factor > 0 AND factor < 'Infinity')");
 		}
 

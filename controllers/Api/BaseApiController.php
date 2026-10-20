@@ -24,6 +24,9 @@ use Slim\Exception\HttpSpecializedException;
  */
 class BaseApiController extends BaseController
 {
+	/** Fields whose numeric grammar must be checked before HTML purification. */
+	protected const NUMERIC_BODY_FIELDS = [];
+
 	const PATTERN_FIELD = '[A-Za-z_][A-Za-z0-9_]+';
 	const PATTERN_OPERATOR = '!?((>=)|(<=)|=|~|<|>|(§))';
 	const PATTERN_VALUE = '[A-Za-z\p{L}\p{M}0-9*_.$#^| -\\\]+';
@@ -124,6 +127,13 @@ class BaseApiController extends BaseController
 			return $errorMessage;
 		}
 
+		// Issue #952: the conversion range refusal (migration 0318) carries its own client text,
+		// whichever path rethrew the driver's message
+		if (string_starts_with($errorMessage, 'SQLSTATE[' . \Victual\Services\Database\ConversionChainRange::SQLSTATE . ']'))
+		{
+			return \Victual\Services\Database\ConversionChainRange::FromDriverText($errorMessage);
+		}
+
 		if (string_starts_with($errorMessage, 'SQLSTATE['))
 		{
 			return 'The database rejected this request - check that every value it carries suits the field it is for';
@@ -145,17 +155,22 @@ class BaseApiController extends BaseController
 	 *
 	 * Statements on the raw connection never reach LessQL's change-tracking callback, so a
 	 * request that commits and is not a read advances the changed time here. $changesData
-	 * overrides the method-based default for the one caller, the label worker, whose POST
-	 * routes include polling that is not a change to anything a person sees.
+	 * overrides the method-based default for callers whose POST routes include polling that is
+	 * not a change to anything a person sees. A predicate can decide from the committed work
+	 * whether a poll changed visible data.
 	 *
 	 * @return mixed Whatever $work returns
 	 */
-	protected function InRequestTransaction(Request $request, callable $work, ?bool $changesData = null)
+	protected function InRequestTransaction(Request $request, callable $work, bool|callable|null $changesData = null)
 	{
 		$database = DatabaseService::GetInstance();
 		$result = $database->InTransaction($work);
 
-		if ($changesData ?? !in_array($request->getMethod(), ['GET', 'HEAD', 'OPTIONS'], true))
+		$shouldMarkDataChanged = is_callable($changesData)
+			? $changesData($result)
+			: ($changesData ?? !in_array($request->getMethod(), ['GET', 'HEAD', 'OPTIONS'], true));
+
+		if ($shouldMarkDataChanged)
 		{
 			$database->MarkDbChanged();
 		}
@@ -227,9 +242,10 @@ class BaseApiController extends BaseController
 		}
 		catch (\PDOException $ex)
 		{
+			$finiteColumn = \Victual\Services\Database\FiniteNumberConstraint::ViolatedColumn($ex);
 			$message = \Victual\Services\Database\StockLocationConstraint::IsViolation($ex)
 				? 'Location does not exist'
-				: $ex->getMessage();
+				: ($finiteColumn !== null ? \Victual\Services\Database\FiniteNumberConstraint::Message($finiteColumn) : $ex->getMessage());
 			return $this->GenericErrorResponse($response, $message);
 		}
 		catch (\Exception $ex)
@@ -883,7 +899,7 @@ class BaseApiController extends BaseController
 	}
 
 	/**
-	 * Returns the parsed JSON request body with all scalar string values run through HTMLPurifier.
+	 * Returns the parsed JSON body after numeric input checks and HTML purification.
 	 * Throws a Slim HttpException (status 400) when the Content-Type is not application/json.
 	 *
 	 * @param string|null $entity Name of the entity the body is written to, when the caller
@@ -953,6 +969,21 @@ class BaseApiController extends BaseController
 
 		foreach ($requestBody as $key => &$value)
 		{
+			// Numeric fields are validated and passed on as the client sent them (#946, D4).
+			// Purifying first changed their meaning: "1\0" "2" became 12. A valid numeric
+			// string holds no markup, so skipping the purifier leaves nothing unescaped, and
+			// the field's own validator then sees the raw value - "\v2" is refused as an id
+			// exactly as " 2" is, rather than reaching it with the \v already stripped.
+			if (is_string($value) && $value !== '' && in_array($key, static::NUMERIC_BODY_FIELDS, true))
+			{
+				if (!is_numeric($value))
+				{
+					throw new HttpException($request, 'The ' . str_replace('_', ' ', $key) . ' must be a number', 400);
+				}
+
+				continue;
+			}
+
 			// HTMLPurifier removes boolean values (true/false) and arrays, so explicitly keep them
 			// Maybe also possible through HTMLPurifier config (http://htmlpurifier.org/live/configdoc/plain.html)
 			//

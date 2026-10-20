@@ -9,6 +9,10 @@ class DriverRegistryService extends LabelService
     public const AXES = ['model','media','resolution_x','resolution_y','color_mode'];
     public function Register(int $workerId, array $definitions): void
     {
+        // Before anything touches the database (#944): PostgreSQL refuses a NUL in jsonb
+        // with a generic error, and a NUL in a text column such as driver_id must never be
+        // stored altered without the worker knowing
+        $this->RefuseNulBytes($definitions, 'drivers');
         $this->Transaction();
         if (!$this->Query('SELECT id FROM label_workers WHERE id = ? AND active = 1 FOR UPDATE', [$workerId])->fetchColumn()) {
             $this->Refuse('worker', 'inactive_worker', 'Worker is inactive');
@@ -42,6 +46,27 @@ class DriverRegistryService extends LabelService
             $this->Query('INSERT INTO label_worker_capabilities(worker_id,driver_id,schema_version,artifact_forms,profile_contract_versions) VALUES (?,?,?,?::jsonb,?::jsonb)', [$workerId,$definition['driver_id'],$definition['schema_version'],$this->Json($definition['capability_document']['artifact_forms']),$this->Json($definition['profile_contract_versions'])]);
         }
         $this->Query('UPDATE label_workers SET last_registered_at=CURRENT_TIMESTAMP WHERE id=?', [$workerId]);
+    }
+    /**
+     * Refuses a NUL byte in any string of a registration, object keys included, naming the
+     * dotted path to it (drivers.0.capability_document.models.1).
+     */
+    private function RefuseNulBytes(mixed $value, string $path): void
+    {
+        if (is_string($value)) {
+            if (str_contains($value, "\0")) {
+                $this->Refuse($path, 'invalid_value', 'A registration string must not contain a NUL byte');
+            }
+            return;
+        }
+        if (is_array($value)) {
+            foreach ($value as $key => $item) {
+                if (is_string($key) && str_contains($key, "\0")) {
+                    $this->Refuse($path, 'invalid_value', 'A registration key must not contain a NUL byte');
+                }
+                $this->RefuseNulBytes($item, $path . '.' . $key);
+            }
+        }
     }
     public function ValidateDefinition(array $definition): void
     {

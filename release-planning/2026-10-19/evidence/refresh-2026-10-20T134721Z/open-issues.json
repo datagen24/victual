@@ -1,0 +1,355 @@
+[
+ {
+  "number": 1021,
+  "title": "Decide ADR-0049 part 2: when a label print job becomes unclaimable or dead-lettered",
+  "html_url": "https://github.com/datagen24/victual/issues/1021",
+  "state": "open",
+  "labels": [
+   {
+    "name": "documentation"
+   }
+  ],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-20T13:42:22Z"
+ },
+ {
+  "number": 1010,
+  "title": "Backup/restore drill against the v0.5.0 artifacts (release gate R5)",
+  "html_url": "https://github.com/datagen24/victual/issues/1010",
+  "state": "open",
+  "labels": [
+   {
+    "name": "documentation"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.1"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-20T13:14:08Z"
+ },
+ {
+  "number": 1007,
+  "title": "UI: group medication features in a Medication flyout and clarify labels",
+  "html_url": "https://github.com/datagen24/victual/issues/1007",
+  "state": "open",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-19T16:15:26Z"
+ },
+ {
+  "number": 948,
+  "title": "Feature Request: Label Designer Quality of life enhancements",
+  "html_url": "https://github.com/datagen24/victual/issues/948",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-19T16:15:26Z"
+ },
+ {
+  "number": 912,
+  "title": "Decide whether ApiResponse encodes with JSON_THROW_ON_ERROR (from #844)",
+  "html_url": "https://github.com/datagen24/victual/issues/912",
+  "state": "open",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-19T16:15:25Z"
+ },
+ {
+  "number": 909,
+  "title": "Battery and equipment rework: residual battery authorization findings",
+  "html_url": "https://github.com/datagen24/victual/issues/909",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "vNext"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-19T20:44:18Z"
+ },
+ {
+  "number": 904,
+  "title": "Subprocess test helpers read stdout before stderr and deadlock on more than 64 KB of stderr",
+  "html_url": "https://github.com/datagen24/victual/issues/904",
+  "state": "open",
+  "labels": [
+   {
+    "name": "bug"
+   },
+   {
+    "name": "Low"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.1"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-20T13:14:07Z"
+ },
+ {
+  "number": 796,
+  "title": "Audit and bring the REST API specification into full OpenAPI 3.2 compliance",
+  "html_url": "https://github.com/datagen24/victual/issues/796",
+  "state": "open",
+  "labels": [],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-15T15:30:49Z"
+ },
+ {
+  "number": 771,
+  "title": "Design: external identity provider (OIDC and SAML) with Authentik as the reference IdP",
+  "html_url": "https://github.com/datagen24/victual/issues/771",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-14T21:20:42Z"
+ },
+ {
+  "number": 770,
+  "title": "Design: OAuth 2.1 access tokens for API and MCP, replacing static API keys as the primary credential",
+  "html_url": "https://github.com/datagen24/victual/issues/770",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-14T21:20:41Z"
+ },
+ {
+  "number": 762,
+  "title": "Users: roles can't be set when creating a user, and the only entry point is an unlabeled lock icon",
+  "html_url": "https://github.com/datagen24/victual/issues/762",
+  "state": "open",
+  "labels": [
+   {
+    "name": "accessibility"
+   },
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-19T16:16:06Z"
+ },
+ {
+  "number": 737,
+  "title": "Consumption recipe sharing: answer a share request identically whether or not the user exists",
+  "html_url": "https://github.com/datagen24/victual/issues/737",
+  "state": "open",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-19T16:16:06Z"
+ },
+ {
+  "number": 655,
+  "title": "Implement Home Assistant add-on version upgrades independently of Grocy import",
+  "html_url": "https://github.com/datagen24/victual/issues/655",
+  "state": "open",
+  "labels": [],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-19T16:16:30Z"
+ },
+ {
+  "number": 654,
+  "title": "Feature Request: Target as Home Assistant Addon",
+  "html_url": "https://github.com/datagen24/victual/issues/654",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-19T16:16:30Z"
+ },
+ {
+  "number": 486,
+  "title": "Installation country setting (environment variable and onboarding)",
+  "html_url": "https://github.com/datagen24/victual/issues/486",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   },
+   {
+    "name": "php"
+   }
+  ],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-14T21:20:41Z"
+ },
+ {
+  "number": 484,
+  "title": "Planning: web setup flow — upload a grocy database and bring the app up",
+  "html_url": "https://github.com/datagen24/victual/issues/484",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   },
+   {
+    "name": "php"
+   }
+  ],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-14T21:20:40Z"
+ },
+ {
+  "number": 483,
+  "title": "Planning: canonical, symbology-tagged barcode storage and one inbound scan resolver",
+  "html_url": "https://github.com/datagen24/victual/issues/483",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   },
+   {
+    "name": "php"
+   }
+  ],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-14T21:20:39Z"
+ },
+ {
+  "number": 252,
+  "title": "Code that coverage proved nothing can reach",
+  "html_url": "https://github.com/datagen24/victual/issues/252",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.1"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-20T13:14:05Z"
+ },
+ {
+  "number": 139,
+  "title": "Plan 18 — run the Home Assistant verifications (2, the HA half of 4, and 8)",
+  "html_url": "https://github.com/datagen24/victual/issues/139",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": null,
+  "closed_at": null,
+  "updated_at": "2026-09-14T01:49:02Z"
+ },
+ {
+  "number": 133,
+  "title": "Plan 20 — pieces 2, 4, 5 and the credential split (piece 4 is also #93's last gate)",
+  "html_url": "https://github.com/datagen24/victual/issues/133",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": null,
+  "closed_at": null,
+  "updated_at": "2026-10-06T21:25:25Z"
+ },
+ {
+  "number": 93,
+  "title": "Verify K3S operation (label worker, SIGTERM on a cluster)",
+  "html_url": "https://github.com/datagen24/victual/issues/93",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": null,
+  "closed_at": null,
+  "updated_at": "2026-10-06T21:25:28Z"
+ },
+ {
+  "number": 86,
+  "title": "MCP sidecar: deployment, Inspector, real-client checks and two-replica soak",
+  "html_url": "https://github.com/datagen24/victual/issues/86",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": null,
+  "closed_at": null,
+  "updated_at": "2026-10-12T17:58:25Z"
+ },
+ {
+  "number": 80,
+  "title": "Wave 3b (deferred) — Plan 09: US barcode lookup sources",
+  "html_url": "https://github.com/datagen24/victual/issues/80",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": null,
+  "closed_at": null,
+  "updated_at": "2026-10-12T17:58:26Z"
+ }
+]

@@ -5,7 +5,20 @@ name: prose-baseline-prune
 # concurrent cleanup: the file is one sorted fingerprint per line, so two
 # branches deleting different nearby keys collide textually even though the
 # intended result is unambiguous. `audit.py --check` now reports stale entries
-# without failing, and this job removes them on master instead.
+# without failing, and this job removes them instead.
+#
+# master accepts changes only through a pull request, so the job cannot push the
+# pruned baseline there (#988). It force-pushes the result to the fixed branch
+# below, which only this job writes, and opens a pull request from it if none is
+# open. Each run rebuilds that branch from current master, so the open pull
+# request always holds exactly one up-to-date prune commit.
+#
+# Two consequences of authenticating with GITHUB_TOKEN:
+# - The repository setting "Allow GitHub Actions to create and approve pull
+#   requests" must be on, or `gh pr create` is refused.
+# - GitHub does not start workflows for events caused by GITHUB_TOKEN, so the
+#   required checks do not run on their own. Close and reopen the pull request
+#   to start them before merging.
 
 on:
   schedule:
@@ -14,6 +27,10 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
+
+env:
+  PRUNE_BRANCH: chore/vale-baseline-prune
 
 jobs:
   prune:
@@ -32,7 +49,9 @@ jobs:
         env:
           VALE: ${{ runner.temp }}/vale/vale
         run: python3 .devtools/vale/audit.py --check
-      - name: Commit if the baseline changed
+      - name: Open or update the prune pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if git diff --quiet -- .devtools/vale/baseline.json; then
             echo "No resolved entries to prune."
@@ -40,6 +59,15 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$PRUNE_BRANCH"
           git add .devtools/vale/baseline.json
           git commit -m "chore: prune resolved Vale baseline entries"
-          git push origin master
+          git push --force origin "$PRUNE_BRANCH"
+          open=$(gh pr list --head "$PRUNE_BRANCH" --base master --state open --json number --jq 'length')
+          if [ "$open" != "0" ]; then
+            echo "Updated the open prune pull request."
+            exit 0
+          fi
+          gh pr create --base master --head "$PRUNE_BRANCH" \
+            --title "chore: prune resolved Vale baseline entries" \
+            --body "Removes Vale baseline entries whose findings no longer exist. Opened by the scheduled \`prose-baseline-prune\` workflow, which rebuilds this branch from master on every run. Close and reopen this pull request to start the required checks: GitHub does not run workflows for pull requests opened with GITHUB_TOKEN."

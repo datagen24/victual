@@ -524,6 +524,7 @@ function RefreshProductRow(productId)
 				$('#product-' + productId + '-amount').text(result.stock_amount);
 				$('#product-' + productId + '-consume-all-button').attr('data-consume-amount', result.stock_amount);
 				$('#product-' + productId + '-value').text(result.stock_value);
+				$('#product-' + productId + '-value-incomplete').toggleClass('d-none', !result.stock_value_incomplete);
 				$('#product-' + productId + '-next-due-date').text(result.next_due_date);
 				$('#product-' + productId + '-next-due-date-timeago').attr('datetime', result.next_due_date);
 

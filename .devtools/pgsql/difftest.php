@@ -200,7 +200,9 @@ foreach ($views as $view)
 		{
 			$strip = function (&$row)
 			{
-				unset($row['opened_amount'], $row['opened_qu_id'], $row['opened_tare'], $row['opened_measured_at']);
+				// legacy_zero_price (migration 0315, ADR-0045 gate 1) the same way: PostgreSQL's
+				// stock_next_use re-expands s.* over it, and the SQLite fixture adds it
+				unset($row['opened_amount'], $row['opened_qu_id'], $row['opened_tare'], $row['opened_measured_at'], $row['legacy_zero_price']);
 			};
 			foreach ($a as &$row) $strip($row);
 			foreach ($b as &$row) $strip($row);
@@ -209,7 +211,8 @@ foreach ($views as $view)
 
 		if ($view === 'stock_current')
 		{
-			foreach ($b as &$row) unset($row['amount_measured']);
+			// value_incomplete (migration 0316, ADR-0045 gate 5) the same way: PostgreSQL only
+			foreach ($b as &$row) unset($row['amount_measured'], $row['value_incomplete']);
 			unset($row);
 		}
 
@@ -224,7 +227,7 @@ foreach ($views as $view)
 		{
 			foreach ($b as &$row)
 			{
-				unset($row['quick_refill_amount'], $row['default_refill_location_id_from'], $row['default_refill_location_id_to']);
+				unset($row['quick_refill_amount'], $row['default_refill_location_id_from'], $row['default_refill_location_id_to'], $row['value_incomplete']);
 			}
 			unset($row);
 		}

@@ -17,17 +17,20 @@ BASELINE = ROOT / '.devtools/vale/baseline.json'
 # These are source records or machine/agent inputs, not maintained documentation pages.
 EXCLUDED_PREFIXES = ('changelog/', 'memory/', '.agents/', '.claude/', '.work/',
                      '.devtools/adr00', 'docs/plans/.versions/', '.github/ISSUE_TEMPLATE/',
-                     '.devtools/vale/audits/', '.devtools/vale/fixtures/')
+                     '.devtools/vale/audits/', '.devtools/vale/fixtures/',
+                     'release-planning/2026-10-15/evidence/historical-')
 EXCLUDED_FILES = {'LICENSE.md', 'AGENTS.md', 'CLAUDE.md', '.github/PULL_REQUEST_TEMPLATE.md'}
 
 
 def in_scope(path: str) -> bool:
+    """Return whether a tracked path is a documentation page this audit covers."""
     return (path.endswith(('.md', '.markdown', '.mdown', '.markdn'))
             and path not in EXCLUDED_FILES
             and not path.startswith(EXCLUDED_PREFIXES))
 
 
 def discover() -> tuple[list[str], list[str]]:
+    """Return the tracked Markdown pages split into (in scope, excluded)."""
     raw = subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT)
     markdown = sorted(p for p in raw.decode().split('\0')
                       if p.endswith(('.md', '.markdown', '.mdown', '.markdn')))
@@ -50,16 +53,19 @@ def source_context(lines: list[str], line: int) -> str:
 
 
 def signature(path: str, alert: dict, context: str) -> str:
+    """Return the stable fingerprint of one finding: page, rule, severity, message, match and context."""
     payload = [path, alert['Check'], alert['Severity'], alert['Message'],
                ' '.join(alert['Match'].split()), context]
     return hashlib.sha256(json.dumps(payload, ensure_ascii=False).encode()).hexdigest()
 
 
 def fingerprints(report: dict) -> Counter:
+    """Count the fingerprints of every finding in a report."""
     return Counter(a['fingerprint'] for alerts in report['findings'].values() for a in alerts)
 
 
 def new_findings(report: dict, baseline: dict) -> list[tuple[str, dict]]:
+    """Return the findings the baseline does not allow, consuming one allowance per match."""
     allowance = Counter(baseline['fingerprints'])
     new = []
     for path, alerts in report['findings'].items():
@@ -73,16 +79,19 @@ def new_findings(report: dict, baseline: dict) -> list[tuple[str, dict]]:
 
 
 def stale_fingerprints(report: dict, baseline: dict) -> Counter:
+    """Count baseline allowances that no finding in the report uses any more."""
     return Counter(baseline['fingerprints']) - fingerprints(report)
 
 
 def rules_digest() -> str:
+    """Return a digest of .vale.ini and every style rule, so a baseline is tied to its rules."""
     paths = [ROOT / '.vale.ini', *sorted((ROOT / '.devtools/vale/styles').rglob('*.yml'))]
     data = b''.join(str(p.relative_to(ROOT)).encode() + b'\0' + p.read_bytes() for p in paths)
     return hashlib.sha256(data).hexdigest()
 
 
 def run_vale(paths: list[str], executable: str) -> dict:
+    """Run the pinned Vale over the pages and return the normalised report; raise ValueError on setup failures."""
     if not paths:
         raise ValueError('No documentation pages selected.')
     version = subprocess.check_output([executable, '--version'], text=True).strip()
@@ -116,6 +125,7 @@ def run_vale(paths: list[str], executable: str) -> dict:
 
 
 def main() -> int:
+    """Run the audit from the command line and return the process exit status."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('paths', nargs='*', help='Specific in-scope source pages; default: all tracked pages')
     parser.add_argument('--vale', default=os.environ.get('VALE', 'vale'))
@@ -163,9 +173,9 @@ def main() -> int:
                 # no longer exists, so it cannot hide a new one: an unrecognised fingerprint
                 # still fails above. Failing on staleness instead forced every page cleanup
                 # to edit .devtools/vale/baseline.json, which made that one file a conflict
-                # between every concurrent branch. The scheduled prune on master clears them.
+                # between every concurrent branch. The scheduled prune opens a pull request that clears them.
                 print(f'{sum(stale.values())} resolved or changed baseline entries are stale; '
-                      'the scheduled prune on master removes them. Not treated as a failure.')
+                      'the scheduled prune pull request removes them. Not treated as a failure.')
             return int(bool(added))
         return 0
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:

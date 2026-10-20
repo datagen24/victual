@@ -488,7 +488,7 @@ breaks something a request can reach:
 | `simplexml` | `POST` with `Content-Type: application/xml` → `500 Call to undefined function simplexml_load_string()` (Slim's body parser and slim/http, which declares the requirement) | kept |
 | `openssl` | `stream_socket_client("tls://…")` → `Unable to find the socket transport "tls"` — what `php-mqtt/client` uses when `MQTT_TLS` is set. The old comment's other two reasons (Guzzle, libpq) were wrong: libcurl and libpq bring their own OpenSSL | kept, comment corrected |
 | `dom` | Not walked-out; `HTMLPurifier_Lexer::create()` picks `DOMLex` when `DOMDocument` exists and `DirectLex` otherwise, on the boundary S29 is about | kept on source, **not measured** |
-| `curl` | Guzzle's four callers (barcode lookup, `StockService`, `WebhookRunner`, `InfluxEventWriter`) — outbound network, not exercised by a walk | kept on source, **not measured** |
+| `curl` | Guzzle's three callers (barcode lookup, `StockService`'s image fetch through the plugin's `Fetch()`, `InfluxEventWriter`; `WebhookRunner` was deleted 2026-09-23, [ADR-0051](../adr/0051-webhookrunner-had-no-influxdb-caller-and-the-webhook-residue-goes.md)) — outbound network, not exercised by a walk | kept on source, **not measured** |
 
 Loaded and not listed in `php.nix`: `Phar` and `xml`, compiled in by nixpkgs' configure flags
 (`--enable-phar`, `--enable-xml`). `Phar` has no caller in the tree. It was **not** trimmed:

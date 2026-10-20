@@ -1,6 +1,6 @@
 # ADR-0049: A label print job is dead-lettered for the causes the claim applies, and the unclaimable-versus-dead-lettered rules stay open
 
-- **Status:** Proposed
+- **Status:** Accepted, 2026-10-20 (part 1; part 2 decides nothing)
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-13, against `master` at `33fbec60`. Design record only: it changes
@@ -9,7 +9,7 @@
   [issue 900](https://github.com/datagen24/victual/issues/900) is the source of its shape.
 - **Referenced by:** [issue 900](https://github.com/datagen24/victual/issues/900). Accepting
   this record does not close that issue; the behaviour questions in part 2 are open.
-- **Relationship:** would partly supersede accepted
+- **Relationship:** partly supersedes accepted
   [ADR-0019](0019-label-printers-are-master-data.md): only the closed list of dead-letter
   causes under *Offline behaviour* (including its 2026-10-12 amendment), and the two
   sentences that contradict one another about a deactivated printer and worker (see

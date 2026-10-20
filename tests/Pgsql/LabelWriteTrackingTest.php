@@ -51,9 +51,9 @@ class LabelWriteTrackingTest extends PgsqlSchemaTestCase
 	}
 
 	/** @return array{status: int, body: string} */
-	private static function send(string $method, string $path, ?array $body = null): array
+	private static function send(string $method, string $path, ?array $body = null, ?string $credential = null): array
 	{
-		$spec = array_filter(['method' => $method, 'path' => $path, 'headers' => ['VICTUAL-API-KEY' => self::$key], 'body' => $body], fn ($v) => $v !== null);
+		$spec = array_filter(['method' => $method, 'path' => $path, 'headers' => ['VICTUAL-API-KEY' => $credential ?? self::$key], 'body' => $body], fn ($v) => $v !== null);
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
 		$env = array_merge($inherited, [
 			'RBAC_TEST_SCHEMA' => self::Schema(),
@@ -71,6 +71,7 @@ class LabelWriteTrackingTest extends PgsqlSchemaTestCase
 
 		$result = json_decode((string)$output, true);
 		self::assertIsArray($result, "the request helper printed no JSON for $method $path. stdout: $output\nstderr: $errors");
+		$result['json'] = json_decode($result['body'], true);
 
 		return $result;
 	}
@@ -116,5 +117,24 @@ class LabelWriteTrackingTest extends PgsqlSchemaTestCase
 		self::assertSame(422, $response['status'], $response['body']);
 		self::assertSame($before, (int)self::$db->query('SELECT count(*) FROM label_templates')->fetchColumn(), 'a refused write left a row behind');
 		self::assertSame(self::LONG_AGO, self::changedTime(), 'a rolled-back write moved the changed time');
+	}
+
+	public function testAnEmptyRendererClaimDoesNotAdvanceTheChangedTime(): void
+	{
+		$worker = self::send('POST', '/api/labels/workers', [
+			'name' => 'Idle renderer worker', 'configuration_mode' => 'declared', 'active' => 1,
+		]);
+		self::assertSame(200, $worker['status'], $worker['body']);
+		$workerId = (int)$worker['json']['id'];
+
+		$credential = self::send('POST', '/api/labels/workers/' . $workerId . '/renderer-credentials');
+		self::assertSame(200, $credential['status'], $credential['body']);
+
+		self::resetChangedTime();
+		$claim = self::send('POST', '/api/labels/render/claim', [], $credential['json']['credential']);
+
+		self::assertSame(200, $claim['status'], $claim['body']);
+		self::assertNull($claim['json']['render_request_id']);
+		self::assertSame(self::LONG_AGO, self::changedTime(), 'an empty, unchanged poll does not move the changed time');
 	}
 }

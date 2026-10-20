@@ -1,8 +1,6 @@
 # ADR-0046: Stock bookings accept an optional idempotency key
 
-- **Status:** **Proposed.** Nothing here constrains work until the maintainer accepts it in a
-  separate pull request. The maintainer confirmed retention, discovery and collision handling on
-  2026-10-11. Release scheduling remains open.
+- **Status:** Accepted, 2026-10-18
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-11, against `master` at `d4960138` and re-read at `3122b937`, which
@@ -683,3 +681,14 @@ the suite runs (`.devtools/pgsql/run-tests.sh`):
   equals the constant that sets `expires_at`.
 - A CORS preflight test, alongside the assertions in `tests/Pgsql/AuthStackTest.php` and
   `HttpBootTest.php`, showing `Idempotency-Key` allowed and `Idempotent-Replayed` exposed.
+
+## Implementation
+
+The pull request for [issue 775](https://github.com/datagen24/victual/issues/775) implements
+decisions 1 to 12 with migration `0314.pgsql.sql`: `stock_booking_idempotency_keys`, the
+`stock_log.transaction_id` index, `StockBookingIdempotencyService`,
+`StockApiController::HandleBookingCall()`, `StockService::NewTransactionId()` at the nine
+minting sites, the CORS and `GET /api/system/info` changes, and the tests under Verification
+(`tests/Pgsql/StockBookingIdempotencyTest.php`, `.devtools/pgtap/037-stock-booking-idempotency-keys.sql`,
+the contract snapshots and the CORS assertions). Implementing this record does not accept it.
+Acceptance is a separate pull request.

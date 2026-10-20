@@ -30,6 +30,7 @@ class ConsumptionEventFixtureTest extends PgsqlSchemaTestCase
 	private static int $unit;
 	private static int $nextUser = 9501;
 	private static int $nextName = 0;
+	private bool $descendingTransactionProducts = false;
 
 	public static function setUpBeforeClass(): void
 	{
@@ -67,6 +68,19 @@ class ConsumptionEventFixtureTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	public function testPartialUndoWithDescendingTransactionProducts(): void
+	{
+		$this->descendingTransactionProducts = true;
+		try
+		{
+			$this->testFixtureReplaysAsDocumented(self::DIRECTORY . '/11-partial-undo-of-a-two-line-recipe.json');
+		}
+		finally
+		{
+			$this->descendingTransactionProducts = false;
+		}
+	}
+
 	#[DataProvider('fixtures')]
 	public function testFixtureReplaysAsDocumented(string $path): void
 	{
@@ -89,6 +103,12 @@ class ConsumptionEventFixtureTest extends PgsqlSchemaTestCase
 			$requestPath = $this->resolve($step['request']['path'], $world);
 			$body = array_key_exists('body', $step['request']) ? $this->resolve($step['request']['body'], $world) : null;
 			$response = self::send($method, $requestPath, $world['users'][$actor]['key'], $body);
+			if ($this->descendingTransactionProducts && $method === 'GET' && str_starts_with($requestPath, '/api/stock/transactions/'))
+			{
+				// This endpoint promises the transaction's rows, with no ordering contract.
+				usort($response['body'], fn (array $a, array $b) => $b['product_id'] <=> $a['product_id']);
+			}
+
 			$where = "$label: $actor $method $requestPath" . ($body === null ? '' : ' ' . json_encode($body)) . ' -> ' . $response['status'] . ' ' . json_encode($response['body']);
 
 			$expect = $step['expect'];
@@ -128,8 +148,28 @@ class ConsumptionEventFixtureTest extends PgsqlSchemaTestCase
 
 			foreach ($step['save'] ?? [] as $saveAs => $dotted)
 			{
-				$value = self::dig($response['body'], $dotted, $present);
-				self::assertTrue($present, "$where\ncannot save '$saveAs': no '$dotted' in the response");
+				if (is_array($dotted))
+				{
+					$matches = $this->resolve($dotted['match'], $world, true);
+					$rows = array_values(array_filter($response['body'], function (array $row) use ($matches): bool
+					{
+						foreach ($matches as $field => $expected)
+						{
+							if (!array_key_exists($field, $row) || $row[$field] != $expected)
+							{
+								return false;
+							}
+						}
+						return true;
+					}));
+					self::assertCount(1, $rows, "$where: save '$saveAs' must match exactly one row");
+					$value = self::dig($rows[0], $dotted['field'], $present);
+				}
+				else
+				{
+					$value = self::dig($response['body'], $dotted, $present);
+				}
+				self::assertTrue($present, "$where\ncannot save '$saveAs' from the response");
 				$world['saved'][$saveAs] = $value;
 			}
 

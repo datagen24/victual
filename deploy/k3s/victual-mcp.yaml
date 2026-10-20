@@ -88,7 +88,7 @@ spec:
             sizeLimit: 16Mi
       containers:
         - name: mcp
-          image: ghcr.io/datagen24/victual-mcp:0.4.0
+          image: ghcr.io/datagen24/victual-mcp:0.5.0
           ports:
             - name: http
               containerPort: 3000

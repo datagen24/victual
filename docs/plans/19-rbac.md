@@ -730,7 +730,7 @@ topic, and has no Response yet. See Q5.
    scheduled, because (a) changes piece 1's size and its wave.
 
    **One read gate now exists outside this plan, decided 2026-09-04.**
-   [22](22-medication-tracking.md) Q5 ships subject-scoped visibility for regimens and
+   [22](landed/22-medication-tracking.md) Q5 ships subject-scoped visibility for regimens and
    administrations in `MedicationService`, rather than waiting for this plan. Waiting
    would hold half of 22 behind several waves, and the medication case is **row
    filtering** (an invisible subject is absent) rather than field redaction, so it does
@@ -776,7 +776,7 @@ topic, and has no Response yet. See Q5.
    >
    > Piece 2's redaction funnel is unchanged by this: it still removes keys from objects
    > the caller may see; refusing the object is now piece 1's job at the route.
-   > [22](22-medication-tracking.md)'s Q5 subject filter is consistent with this answer
+   > [22](landed/22-medication-tracking.md)'s Q5 subject filter is consistent with this answer
    > rather than an exception to it: a `*_VIEW` leaf says whether the caller may read the
    > domain at all, and 22's predicate says which rows within it — the leaf gates, the
    > domain filters, and neither replaces the other.

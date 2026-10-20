@@ -1,22 +1,29 @@
 # Plan 22 remaining work: coordination ledger
 
-Working record for the remaining work of [plan 22](../../docs/plans/22-medication-tracking.md)
+Working record for the remaining work of [plan 22](../../docs/plans/landed/22-medication-tracking.md)
 and the defects victual-kit testing found. The plan's Executed section and the plans index stay
 the authority on what shipped; this file tracks what is open, what each item waits on, and what
 evidence exists. Read against `master` at `d4960138` (merge of #707) on 2026-10-11. Research was
 read-only and static unless a row names a command that ran.
 
+**Closed out 2026-10-19.** Plan 22 is complete and released in
+[v0.5.0](../../docs/releases/0.5.0.md). The signed tag `v0.5.0` targets `555475ae`, the merge of PR
+1004, and the [release workflow](https://github.com/datagen24/victual/actions/runs/39250766266)
+published the images and the chart. PR 1005 recorded the publication evidence and moved the plan to
+`landed/`. Every ledger issue except 737 is closed, and the 0.5.0 milestone has no open issue. The
+client's move to the 0.5.0 contract is tracked in victual-kit issue 45.
+
 ## Ledger
 
 | Issue | Source | Current evidence | Remaining criteria | Depends on | Decision gate | Specification | Worker | Verification |
 |---|---|---|---|---|---|---|---|---|
-| [701](https://github.com/datagen24/victual/issues/701) refill | plan 22 | Merged in PRs 748, 749, 751, 755; criteria table and CI evidence in plan 22 Executed; maintainer approvals 2026-10-10 | None server-side. Native refill presentation is #702 | — | Maintainer closes the issue | Done (ADR-0042 plus approved deviations) | — | CI on PR heads recorded in plan 22; integrated run belongs to #703 |
-| [702](https://github.com/datagen24/victual/issues/702) native acceptance | plan 22 | Maintainer decision 2026-10-11: closed on the current simulator evidence; no physical phone. Simulator UI round 1 on iOS 27.0 with administrator, Adult and Child keys against a Talos-hosted Victual stack with a disposable on-cluster database; unit tests; v0.4.0 live fixture replay (28 of 28; fixtures 16 and 17 with two administrators) | Change the gate wording in plan 22 (this branch) and issue 702 (maintainer); victual-kit matrix re-pin (client housekeeping) | — | None remaining | [NATIVE-ACCEPTANCE.md](NATIVE-ACCEPTANCE.md) | — | Accepted by the maintainer; limitation for the release record: real Health store behaviour (identifier changes on edit and delete, late and background delivery) is not observed |
-| [703](https://github.com/datagen24/victual/issues/703) release | plan 22 | Baseline suite at `d4960138` (see [baseline](#baseline)) | Every criterion; upgrade rehearsal from 0.4.0; rest of 0.5.0 milestone | 702, 742, 772, 774, 775 dispositions | Maintainer: 0.5.0 scope | Not started; evidence collection only | coordinator | Baseline only |
-| [742](https://github.com/datagen24/victual/issues/742) master-data rights | victual-kit wizard | `.devtools/issue742/RESULTS.md` (93 probes, 2026-10-10; static completion merged in PR [780](https://github.com/datagen24/victual/pull/780)); Proposed ADR-0043, revised for evidence in PR 780 | Choose option A, B or C (see [742](#742-master-data-rights)); implement if A or B | ADR-0043 decision | D3 | Options below | — | Not run |
+| [701](https://github.com/datagen24/victual/issues/701) refill | plan 22 | Merged in PRs 748, 749, 751, 755; criteria table and CI evidence in plan 22 Executed; maintainer approvals 2026-10-10 | None | — | — | Done (ADR-0042 plus approved deviations) | — | **Closed 2026-10-19** after the gate M1 reconciliation |
+| [702](https://github.com/datagen24/victual/issues/702) native acceptance | plan 22 | Maintainer decision 2026-10-11: accepted on simulator evidence; no physical phone. The victual-kit matrix was re-pinned to client `e837335` and the v0.4.4 contract (victual-kit PR 44, PR 1003 here) | None | — | — | [NATIVE-ACCEPTANCE.md](NATIVE-ACCEPTANCE.md) | — | **Closed 2026-10-19**. Release limitation: real Health store behaviour (identifier changes on edit and delete, late and background delivery) is not observed |
+| [703](https://github.com/datagen24/victual/issues/703) release | plan 22 | Release PR 1004 and publication PR 1005; [tests workflow](https://github.com/datagen24/victual/actions/runs/39187337919) on PostgreSQL 16 and 15; [upgrade rehearsal](../../docs/releases/0.5.0-upgrade-rehearsal.md) from v0.4.4; [release workflow](https://github.com/datagen24/victual/actions/runs/39250766266) on the signed tag | None | — | — | [0.5.0 record](../../docs/releases/0.5.0.md) | coordinator | **Closed 2026-10-19**; v0.5.0 published |
+| [742](https://github.com/datagen24/victual/issues/742) master-data rights | victual-kit wizard | `.devtools/issue742/RESULTS.md` (93 probes, 2026-10-10); ADR-0043 accepted 2026-10-12 (PR 887), implemented in PRs 883 to 886 | None. Residual: creating a conversion still needs `MASTER_DATA_EDIT` | — | — | ADR-0043 | — | **Closed 2026-10-19** after the gate M1 reconciliation |
 | [772](https://github.com/datagen24/victual/issues/772) OpenAPI drift | victual-kit #24 | Closed by PR [791](https://github.com/datagen24/victual/pull/791), merged 2026-10-12: stock-route document and two `ContractTest` legs; `contract` and `wirecontract` passed on PostgreSQL 16 and 15.19 at `57f687e2` | Follow-up gaps in #787 | — | None | Done | implementation worker | Verified |
-| [774](https://github.com/datagen24/victual/issues/774) unknown price as 0 | victual-kit #29, #33 | Proposed ADR-0045, merged in PR [778](https://github.com/datagen24/victual/pull/778); P2 price semantics confirmed 2026-10-11 | Null versus zero per field; implementation | ADR-0045 decision; victual-kit coordination (ADR-0024) | D1a to D1e | ADR-0045 | — | Not run |
-| [775](https://github.com/datagen24/victual/issues/775) booking idempotency | victual-kit #35 | Proposed ADR-0046 merged in PR [779](https://github.com/datagen24/victual/pull/779) (reviewed; five should-fix items applied) | Implementation after acceptance; migration slot claimed then | ADR-0046 acceptance | D2a to D2c | ADR-0046 | — | Not run |
+| [774](https://github.com/datagen24/victual/issues/774) unknown price as 0 | victual-kit #29, #33 | ADR-0045 accepted 2026-10-18 (PR 992); implemented in PRs 984, 985, 996 and 997; migrations 0315 to 0317 | None server-side; client adoption is victual-kit issue 45 | — | — | ADR-0045 | — | **Closed 2026-10-18**; ships in v0.5.0 |
+| [775](https://github.com/datagen24/victual/issues/775) booking idempotency | victual-kit #35 | ADR-0046 accepted 2026-10-18 (PR 993); implemented in PR 980; migration 0314 | None server-side; client adoption is victual-kit issue 45 | — | — | ADR-0046 | — | **Closed 2026-10-18**; ships in v0.5.0 |
 | [737](https://github.com/datagen24/victual/issues/737) share enumeration | #698 review | Maintainer decision 2026-10-09: accepted for v0.5.0, fix wanted afterwards | All (post-v0.5.0) | — | None; disposition stands | Chosen fix in the issue | — | — |
 
 ## Findings and filed issues
@@ -26,14 +33,14 @@ release scope is decision D5.
 
 | Finding | Issue | Kind | Evidence | State |
 |---|---|---|---|---|
-| F1. Product merge deletes a product under `STOCK_EDIT`, which the Adult role holds | [782](https://github.com/datagen24/victual/issues/782) | authorization (ADR-0006) | Read from source: `StockApiController.php:1538`, `StockService::MergeProducts`; upstream `c9b5e144` | Needs an authorization decision (D6) |
+| F1. Product merge deletes a product under `STOCK_EDIT`, which the Adult role holds | [782](https://github.com/datagen24/victual/issues/782) | authorization (ADR-0006) | Read from source: `StockApiController.php:1538`, `StockService::MergeProducts`; upstream `c9b5e144` | Closed 2026-10-12: merge needs `STOCK_EDIT` and `MASTER_DATA_EDIT` (PR 833 and its follow-up) |
 | F2. `userpictures` writes are not scoped to the target user | sweep S6 | authorization | `FilesApiController.php:50` | Known; no new issue |
-| F3. Shopping-list containers use item permissions | [783](https://github.com/datagen24/victual/issues/783) | design question | `GenericEntityApiController` create, edit and delete gates | Needs a decision (D6) |
+| F3. Shopping-list containers use item permissions | [783](https://github.com/datagen24/victual/issues/783) | design question | `GenericEntityApiController` create, edit and delete gates | Closed 2026-10-12: item permissions kept and documented (PR 835) |
 | F4. Legacy import drops the three view leaves of migration 0299 | [784](https://github.com/datagen24/victual/issues/784) | defect | Reproduced: 12 failures in the `import` phase without the fix | Fixed by PR [789](https://github.com/datagen24/victual/pull/789), merged; issue closed |
-| F5. A booking commits, then answers 403 without `STOCK_VIEW` | [785](https://github.com/datagen24/victual/issues/785) | authorization | `StockApiController.php:1301` after the service commits | Needs an authorization decision (D6) |
+| F5. A booking commits, then answers 403 without `STOCK_VIEW` | [785](https://github.com/datagen24/victual/issues/785) | authorization | `StockApiController.php:1301` after the service commits | Closed 2026-10-12: permissions checked before any mutation (PR 834) |
 | F6. Stock add accepts JSON `true` as `transaction_type` | [786](https://github.com/datagen24/victual/issues/786) | defect | Reproduced: JSON `true` answered 200 and wrote `"1"` | Fixed by PR [792](https://github.com/datagen24/victual/pull/792), merged; issue closed |
-| #772 follow-up: inherited schema gaps and a key-coverage check | [787](https://github.com/datagen24/victual/issues/787) | documentation | Recorded keys in `contract-admin.json` | Ready to assign after #772 merges |
-| `quantity_factor` next to `qu_id` on a mapping is undefined | [788](https://github.com/datagen24/victual/issues/788) | documentation | victual-kit matrix difference 7 | Ready to assign |
+| #772 follow-up: inherited schema gaps and a key-coverage check | [787](https://github.com/datagen24/victual/issues/787) | documentation | Recorded keys in `contract-admin.json` | Closed 2026-10-12 by PR 797 |
+| `quantity_factor` next to `qu_id` on a mapping is undefined | [788](https://github.com/datagen24/victual/issues/788) | documentation | victual-kit matrix difference 7 | Closed 2026-10-12 by PR 810 |
 | Possible stale average-price cache after an insert | not filed | unverified | R2 research: `trg_stock_log_INS` only upserts | Needs a reproduction before filing |
 
 ## Merged pull requests
@@ -89,8 +96,8 @@ On 2026-10-12 the maintainer started a cleanup of `victual.openapi.json`, tracke
 
 | ID | Item | State | Blocks |
 |---|---|---|---|
-| A1 | Accept ADR-0043, ADR-0045 and ADR-0046 | Responses recorded; ADR-0043 boundaries and ADR-0046's up-front refusal being written into the records (2026-10-12). Acceptance is a bookkeeping PR per record, by the maintainer | #742, #774, #775 implementation |
-| F1 | #782 both-rights follow-up; #785 by-barcode wrappers check first | Implementation worker (2026-10-12) | v0.5.0 |
+| A1 | Accept ADR-0043, ADR-0045 and ADR-0046 | Done: ADR-0043 accepted 2026-10-12 (PR 887); ADR-0045 and ADR-0046 accepted 2026-10-18 (PRs 992 and 993) | — |
+| F1 | #782 both-rights follow-up; #785 by-barcode wrappers check first | Done: both issues closed 2026-10-12 | — |
 | N1 | `ConsumptionEventFixtureTest` fixture 11 step 5 failed once and passed on rerun; it reads two transaction rows in no guaranteed order | Not filed | — |
 | N2 | The chore merge item (`views/chores.blade.php:79`) lacks `permission-MASTER_DATA_EDIT` | Not filed | — |
 

@@ -13,6 +13,11 @@
   dissolves the gate [ADR-0019](0019-label-printers-are-master-data.md) decision item 7
   placed on its step 2, and corrects that record's statement that step 3 takes
   `WebhookRunner`'s last caller.
+- **Partly superseded 2026-10-20** by
+  [ADR-0051](0051-webhookrunner-had-no-influxdb-caller-and-the-webhook-residue-goes.md):
+  only the claim that `WebhookRunner` stays because plan 18's InfluxDB writer uses it, and
+  the correction this record placed on ADR-0019 decision item 7. The writer never called the
+  class. Every decision in this record remains in force.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-15.
@@ -129,7 +134,8 @@ converge.
   stays: plan 18's InfluxDB writer uses it, so ADR-0019's statement that step 3 takes
   "`WebhookRunner`'s last caller" was already overtaken when plan 18 landed. This record
   corrects it; the accepting pull request places a forward pointer beside that statement
-  as well as beside the step 2 gate.
+  as well as beside the step 2 gate. *(Superseded by [ADR-0051](0051-webhookrunner-had-no-influxdb-caller-and-the-webhook-residue-goes.md), accepted 2026-10-20: the
+  InfluxDB writer never called `WebhookRunner`, and ADR-0019's statement stands.)*
 - **The four `LABEL_PRINTER_*` settings** disappear from `config-dist.php`, the
   configuration reference and `/system/config`. `FEATURE_FLAG_LABEL_PRINTER` goes with them;
   `FEATURE_FLAG_LABELS` is the only label flag afterwards.

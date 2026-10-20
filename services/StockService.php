@@ -33,6 +33,12 @@ use Victual\Services\Storage\FileStorage;
  */
 class StockService extends BaseService
 {
+	/** Opaque booking identity, shared unchanged by nested service calls. */
+	public static function NewTransactionId(): string
+	{
+		return bin2hex(random_bytes(16));
+	}
+
 	/** Stock removal by consuming (eating/using/spoiling) - negative amount booking */
 	const TRANSACTION_TYPE_CONSUME = 'consume';
 
@@ -309,7 +315,7 @@ class StockService extends BaseService
 	 * @param float|null $price Price per stock quantity unit
 	 * @param int|null $locationId Destination location; null means the product's default location
 	 * @param int|null $shoppingLocationId Store where the product was bought
-	 * @param string|null $transactionId By-reference; generated via uniqid() when null, shared across all bookings of this call
+	 * @param string|null $transactionId By-reference; generated via NewTransactionId() when null, shared across all bookings of this call
 	 * @param int $stockLabelType 0 = no label, 1 = one label for the whole booking, 2 = one label (and stock entry) per unit
 	 * @param string|null $note Free text note stored on the stock entry and booking
 	 * @return string The transaction id of the booking(s)
@@ -392,7 +398,7 @@ class StockService extends BaseService
 		{
 			if ($transactionId === null)
 			{
-				$transactionId = uniqid();
+				$transactionId = StockService::NewTransactionId();
 			}
 
 			// The booking, the stock entry it describes, the label it may print and the
@@ -704,7 +710,7 @@ class StockService extends BaseService
 	 * @param string $specificStockEntryId 'default' consumes in default order; otherwise a stock_id restricting consumption to that single stock entry
 	 * @param int|null $recipeId When consuming due to a recipe, its id (stored in the bookings)
 	 * @param int|null $locationId When given, only stock at this location is consumed
-	 * @param string|null $transactionId By-reference; generated via uniqid() when null, shared across all bookings of this call
+	 * @param string|null $transactionId By-reference; generated via NewTransactionId() when null, shared across all bookings of this call
 	 * @param bool $allowSubproductSubstitution See above
 	 * @param bool $consumeExactAmount Retired with the product-level tare mechanism (ADR-0022); has no effect
 	 * @param string|null $usedDate Y-m-d date stored as used_date on every booking; today (server time zone) when null
@@ -745,7 +751,7 @@ class StockService extends BaseService
 		{
 			if ($transactionId === null)
 			{
-				$transactionId = uniqid();
+				$transactionId = StockService::NewTransactionId();
 			}
 
 			// One booking per touched stock entry, each paired with a delete or an amount
@@ -924,6 +930,7 @@ class StockService extends BaseService
 							'stock_row_id' => $stockEntry->id,
 							'transaction_type' => $transactionType,
 							'price' => $stockEntry->price,
+							'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 							'opened_date' => $stockEntry->opened_date,
 							'recipe_id' => $recipeId,
 							'transaction_id' => $transactionId,
@@ -983,6 +990,7 @@ class StockService extends BaseService
 							'stock_row_id' => $stockEntry->id,
 							'transaction_type' => $transactionType,
 							'price' => $stockEntry->price,
+							'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 							'opened_date' => $stockEntry->opened_date,
 							'recipe_id' => $recipeId,
 							'transaction_id' => $transactionId,
@@ -1083,7 +1091,7 @@ class StockService extends BaseService
 
 		$productId = $stockRow->product_id;
 		$correlationId = uniqid();
-		$transactionId = uniqid();
+		$transactionId = StockService::NewTransactionId();
 
 		// An eighth transactional entrypoint, added by plan 18's review rather than by
 		// plan 13, which wrapped the seven stock *booking* paths and left this one out.
@@ -1121,6 +1129,9 @@ class StockService extends BaseService
 			$bestBeforeDate = $bestBeforeDate === $keepStoredValue ? $stockRow->best_before_date : $bestBeforeDate;
 			$locationId = $locationId === $keepStoredValue ? $stockRow->location_id : $locationId;
 			$shoppingLocationId = $shoppingLocationId === $keepStoredValue ? $stockRow->shopping_location_id : $shoppingLocationId;
+			// A kept price keeps how it is read; a supplied one, 0 included, is a known price
+			// (ADR-0045 gate 1: legacy_zero_price follows the price it describes)
+			$legacyZeroPrice = $price === $keepStoredValue ? (int)($stockRow->legacy_zero_price ?? 0) : 0;
 			$price = $price === $keepStoredValue ? $stockRow->price : $price;
 			$open = $open === $keepStoredValue ? $stockRow->open : $open;
 			$purchasedDate = $purchasedDate === $keepStoredValue ? $stockRow->purchased_date : $purchasedDate;
@@ -1151,6 +1162,7 @@ class StockService extends BaseService
 				'stock_id' => $stockRow->stock_id,
 				'transaction_type' => self::TRANSACTION_TYPE_STOCK_EDIT_OLD,
 				'price' => $stockRow->price,
+				'legacy_zero_price' => (int)($stockRow->legacy_zero_price ?? 0),
 				'opened_date' => $stockRow->opened_date,
 				'location_id' => $stockRow->location_id,
 				'shopping_location_id' => $stockRow->shopping_location_id,
@@ -1176,6 +1188,7 @@ class StockService extends BaseService
 			$stockRow->update(array_merge([
 				'amount' => $amount,
 				'price' => $price,
+				'legacy_zero_price' => $legacyZeroPrice,
 				'best_before_date' => $bestBeforeDate,
 				'location_id' => $locationId,
 				'shopping_location_id' => $shoppingLocationId,
@@ -1193,6 +1206,7 @@ class StockService extends BaseService
 				'stock_id' => $stockRow->stock_id,
 				'transaction_type' => self::TRANSACTION_TYPE_STOCK_EDIT_NEW,
 				'price' => $price,
+				'legacy_zero_price' => $legacyZeroPrice,
 				'opened_date' => $stockRow->opened_date,
 				'location_id' => $locationId,
 				'shopping_location_id' => $shoppingLocationId,
@@ -1253,7 +1267,7 @@ class StockService extends BaseService
 
 		$productId = $stockRow->product_id;
 		$correlationId = uniqid();
-		$transactionId = uniqid();
+		$transactionId = StockService::NewTransactionId();
 
 		DatabaseService::GetInstance()->InTransaction(function () use (
 			$stockRowId, $productId, $correlationId, $transactionId, $measurement
@@ -1296,6 +1310,7 @@ class StockService extends BaseService
 				'stock_id' => $stockRow->stock_id,
 				'transaction_type' => self::TRANSACTION_TYPE_STOCK_MEASURED_OLD,
 				'price' => $stockRow->price,
+				'legacy_zero_price' => (int)($stockRow->legacy_zero_price ?? 0),
 				'opened_date' => $stockRow->opened_date,
 				'location_id' => $stockRow->location_id,
 				'shopping_location_id' => $stockRow->shopping_location_id,
@@ -1317,6 +1332,7 @@ class StockService extends BaseService
 				'stock_id' => $stockRow->stock_id,
 				'transaction_type' => self::TRANSACTION_TYPE_STOCK_MEASURED_NEW,
 				'price' => $stockRow->price,
+				'legacy_zero_price' => (int)($stockRow->legacy_zero_price ?? 0),
 				'opened_date' => $stockRow->opened_date,
 				'location_id' => $stockRow->location_id,
 				'shopping_location_id' => $stockRow->shopping_location_id,
@@ -1914,6 +1930,8 @@ class StockService extends BaseService
 			$stockCurrentRow->amount_opened_aggregated = 0;
 			$stockCurrentRow->is_aggregated_amount = 0;
 			$stockCurrentRow->amount_measured = 0;
+			// No stock, so nothing whose price could be unknown (ADR-0045 case c)
+			$stockCurrentRow->value_incomplete = 0;
 		}
 
 		$detailsRow = $this->DB->uihelper_product_details()->where('id', $productId)->fetch();
@@ -1944,6 +1962,9 @@ class StockService extends BaseService
 			'last_used' => $detailsRow->last_used_date,
 			'stock_amount' => $stockCurrentRow->amount,
 			'stock_value' => $stockCurrentRow->value,
+			// Read with ?? 0, as amount_measured is: the differential suite's rollback phase runs
+			// this against SQLite, whose stock_current has no such column
+			'stock_value_incomplete' => $stockCurrentRow->value_incomplete ?? 0,
 			'stock_amount_opened' => $stockCurrentRow->amount_opened,
 			'stock_amount_aggregated' => $stockCurrentRow->amount_aggregated,
 			'stock_amount_opened_aggregated' => $stockCurrentRow->amount_opened_aggregated,
@@ -2402,7 +2423,7 @@ class StockService extends BaseService
 	 * @param int $productId
 	 * @param float $amount Amount to open, in the product's stock quantity unit
 	 * @param string $specificStockEntryId 'default' opens in default order; otherwise a stock_id restricting opening to that single stock entry
-	 * @param string|null $transactionId By-reference; generated via uniqid() when null, shared across all bookings of this call
+	 * @param string|null $transactionId By-reference; generated via NewTransactionId() when null, shared across all bookings of this call
 	 * @param bool $allowSubproductSubstitution When true, unopened stock of resolved sub products may be opened
 	 * @param array|null $measurement See above
 	 * @return string The transaction id of the booking(s)
@@ -2438,7 +2459,7 @@ class StockService extends BaseService
 
 		if ($transactionId === null)
 		{
-			$transactionId = uniqid();
+			$transactionId = StockService::NewTransactionId();
 		}
 
 		// The booking and the stock entry it describes (and the split-off rest entry) have to
@@ -2617,6 +2638,7 @@ class StockService extends BaseService
 						'shopping_location_id' => $stockEntry->shopping_location_id,
 						'transaction_type' => self::TRANSACTION_TYPE_PRODUCT_OPENED,
 						'price' => $stockEntry->price,
+						'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 						'opened_date' => date('Y-m-d'),
 						'transaction_id' => $transactionId,
 						'user_id' => VICTUAL_USER_ID,
@@ -2661,6 +2683,7 @@ class StockService extends BaseService
 						'shopping_location_id' => $stockEntry->shopping_location_id,
 						'stock_id' => $restStockId,
 						'price' => $stockEntry->price,
+						'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 						'note' => $stockEntry->note
 					]);
 					$newStockRow->save();
@@ -2687,6 +2710,7 @@ class StockService extends BaseService
 						'shopping_location_id' => $stockEntry->shopping_location_id,
 						'transaction_type' => self::TRANSACTION_TYPE_PRODUCT_OPENED,
 						'price' => $stockEntry->price,
+						'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 						'opened_date' => date('Y-m-d'),
 						'transaction_id' => $transactionId,
 						'user_id' => VICTUAL_USER_ID,
@@ -2900,7 +2924,7 @@ class StockService extends BaseService
 	 * @param int $locationIdFrom Source location id
 	 * @param int $locationIdTo Destination location id
 	 * @param string $specificStockEntryId 'default' transfers in default order; otherwise a stock_id restricting the transfer to that single stock entry
-	 * @param string|null $transactionId By-reference; generated via uniqid() when null, shared across all bookings of this call
+	 * @param string|null $transactionId By-reference; generated via NewTransactionId() when null, shared across all bookings of this call
 	 * @return string The transaction id of the booking(s)
 	 * @throws \Exception When the product or a location does not exist, the product is tare weight handled
 	 *                    (not supported), or the amount exceeds the stock amount available within the
@@ -2943,7 +2967,7 @@ class StockService extends BaseService
 		// entry after the transfer has already moved the (untared) amount.
 		if ($transactionId === null)
 		{
-			$transactionId = uniqid();
+			$transactionId = StockService::NewTransactionId();
 		}
 
 		// Both bookings of an entry plus the stock row itself have to land together, or the
@@ -3062,6 +3086,7 @@ class StockService extends BaseService
 						'stock_row_id' => $stockEntry->id,
 						'transaction_type' => self::TRANSACTION_TYPE_TRANSFER_FROM,
 						'price' => $stockEntry->price,
+						'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 						'opened_date' => $stockEntry->opened_date,
 						'location_id' => $stockEntry->location_id,
 						'shopping_location_id' => $stockEntry->shopping_location_id,
@@ -3089,6 +3114,7 @@ class StockService extends BaseService
 						'stock_row_id' => $stockEntry->id,
 						'transaction_type' => self::TRANSACTION_TYPE_TRANSFER_TO,
 						'price' => $stockEntry->price,
+						'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 						'opened_date' => $stockEntry->opened_date,
 						'location_id' => $locationIdTo,
 						'shopping_location_id' => $stockEntry->shopping_location_id,
@@ -3151,6 +3177,7 @@ class StockService extends BaseService
 						'stock_row_id' => $stockEntry->id,
 						'transaction_type' => self::TRANSACTION_TYPE_TRANSFER_FROM,
 						'price' => $stockEntry->price,
+						'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 						'opened_date' => $stockEntry->opened_date,
 						'location_id' => $stockEntry->location_id,
 						'shopping_location_id' => $stockEntry->shopping_location_id,
@@ -3187,6 +3214,7 @@ class StockService extends BaseService
 						'purchased_date' => $stockEntry->purchased_date,
 						'stock_id' => $stockEntry->stock_id,
 						'price' => $stockEntry->price,
+						'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 						'location_id' => $locationIdTo,
 						'shopping_location_id' => $stockEntry->shopping_location_id,
 						'open' => $stockEntry->open,
@@ -3205,6 +3233,7 @@ class StockService extends BaseService
 						'stock_row_id' => $stockEntryNew->id,
 						'transaction_type' => self::TRANSACTION_TYPE_TRANSFER_TO,
 						'price' => $stockEntry->price,
+						'legacy_zero_price' => (int)($stockEntry->legacy_zero_price ?? 0),
 						'opened_date' => $stockEntry->opened_date,
 						'location_id' => $locationIdTo,
 						'shopping_location_id' => $stockEntry->shopping_location_id,
@@ -3482,6 +3511,7 @@ class StockService extends BaseService
 		}
 	}
 
+	/** Undoes one booking (and its correlated ones unless skipped) under the product lock; $outermost settles label revival. */
 	private function UndoBookingInTransaction($bookingId, $skipCorrelatedBookings, bool $outermost): void
 	{
 		// The whole thing - the "does it exist", "any subsequent booking depends on it" and
@@ -3701,6 +3731,7 @@ class StockService extends BaseService
 					'purchased_date' => $logRow->purchased_date,
 					'stock_id' => $logRow->stock_id,
 					'price' => $logRow->price,
+					'legacy_zero_price' => (int)($logRow->legacy_zero_price ?? 0),
 					'opened_date' => $logRow->opened_date,
 					'open' => $logRow->opened_date !== null, // The open flag itself is not logged, so it is derived from the logged opened date
 					'location_id' => $logRow->location_id,
@@ -4106,6 +4137,7 @@ class StockService extends BaseService
 							'purchased_date' => $logRow->purchased_date,
 							'stock_id' => $logRow->stock_id,
 							'price' => $logRow->price,
+							'legacy_zero_price' => (int)($logRow->legacy_zero_price ?? 0),
 							'location_id' => $logRow->location_id,
 							'opened_date' => $logRow->opened_date,
 							'open' => $logRow->opened_date !== null,
@@ -4323,6 +4355,7 @@ class StockService extends BaseService
 					'best_before_date' => $logRow->best_before_date,
 					'purchased_date' => $logRow->purchased_date,
 					'price' => $logRow->price,
+					'legacy_zero_price' => (int)($logRow->legacy_zero_price ?? 0),
 					'location_id' => $logRow->location_id,
 					// The OLD booking records shopping_location_id the same as every other
 					// edited column (see its own creation in EditStockEntry()), but this
@@ -4544,6 +4577,7 @@ class StockService extends BaseService
 				'purchased_date' => $template->purchased_date,
 				'stock_id' => $logRow->stock_id,
 				'price' => $template->price,
+				'legacy_zero_price' => (int)($template->legacy_zero_price ?? 0),
 				'open' => 0,
 				'location_id' => $template->location_id,
 				'shopping_location_id' => $template->shopping_location_id,
@@ -4647,6 +4681,7 @@ class StockService extends BaseService
 				'best_before_date' => $old->best_before_date,
 				'purchased_date' => $old->purchased_date,
 				'price' => $old->price,
+				'legacy_zero_price' => (int)($old->legacy_zero_price ?? 0),
 				'location_id' => $old->location_id,
 				'shopping_location_id' => $old->shopping_location_id,
 				'open' => $old->opened_date !== null,
@@ -4731,6 +4766,7 @@ class StockService extends BaseService
 			'purchased_date' => $booking->purchased_date,
 			'stock_id' => $booking->stock_id,
 			'price' => $booking->price,
+			'legacy_zero_price' => (int)($booking->legacy_zero_price ?? 0),
 			'location_id' => $booking->location_id,
 			'opened_date' => $booking->opened_date,
 			'open' => $booking->opened_date !== null,
@@ -4922,6 +4958,15 @@ class StockService extends BaseService
 			// overlapping product pair from deadlocking instead of simply queuing.
 			DatabaseService::GetInstance()->LockProductsStock([$productIdToKeep, $productIdToRemove]);
 
+			// Issue #930: the conversion check below and the merge it guards must read the same
+			// conversions, so no conversion may be written - inserted, edited or deleted, global
+			// rows included - until this merge commits. Taken after the product locks, so a path
+			// that holds a product lock and then writes a conversion queues behind the merge
+			// instead of deadlocking with it. The opposite order, a conversion write and then a
+			// product lock in one transaction, would deadlock; generic entity writes take no
+			// product lock, and no StockService booking path writes a conversion before its lock.
+			DatabaseService::GetInstance()->LockQuantityUnitConversionWrites();
+
 			$productToKeep = $this->DB->products($productIdToKeep);
 			$productToRemove = $this->DB->products($productIdToRemove);
 			$conversion = $this->DB->cache__quantity_unit_conversions_resolved()->where('product_id = :1 AND from_qu_id = :2 AND to_qu_id = :3', $productToRemove->id, $productToRemove->qu_id_stock, $productToKeep->qu_id_stock)->fetch();
@@ -4945,15 +4990,16 @@ class StockService extends BaseService
 			if ($factor <= 0)
 			{
 				// A non-positive factor would make "amount * factor" zero or negative and
-				// "price / factor" a division by zero or a negative price. Nothing in
-				// db/pgsql/baseline/01_tables.sql puts a CHECK on
-				// quantity_unit_conversions.factor, and cache__quantity_unit_conversions_resolved
-				// returns whatever is stored unfiltered - a NEGATIVE factor reaches this method
-				// (MergeProductsTest::testMergeRefusesWhenTheResolvedConversionFactorIsNotPositive
-				// stores one directly), though a factor of exactly 0 does not: inserting it
-				// makes quantity_unit_conversions_INS's own inverse-row computation,
-				// "1 / COALESCE(NEW.factor, 1)", raise a genuine division-by-zero (Postgres
-				// raises on this for float8 too, unlike raw IEEE 754) before the row commits.
+				// "price / factor" a division by zero or a negative price. Migration 0309 added
+				// quantity_unit_conversions_factor_positive (factor > 0 AND factor < 'Infinity'),
+				// so a stored conversion can no longer have one; this guard stays for the resolved
+				// factor, which is a product of stored ones read back from a TEXT cache column
+				// that nothing constrains (MergeProductsTest::testMergeRefusesWhenTheResolvedConversionFactorIsNotPositive
+				// drops the CHECK to store one directly). A factor of exactly 0 never got in
+				// even before that: inserting it makes quantity_unit_conversions_INS's own
+				// inverse-row computation, "1 / COALESCE(NEW.factor, 1)", raise a genuine
+				// division-by-zero (Postgres raises on this for float8 too, unlike raw IEEE 754)
+				// before the row commits.
 				// Refuse before any row is touched rather than let either arithmetic run.
 				throw new \Exception('Cannot merge: quantity unit conversion factor must be greater than zero');
 			}
@@ -4999,6 +5045,283 @@ class StockService extends BaseService
 				// itself, which the block below clears in this same merge, leaving room for
 				// exactly that repoint.
 				throw new \Exception('Cannot merge: $productIdToRemove has sub products, and $productIdToKeep already has an unrelated parent product (only one level of nesting is supported)');
+			}
+
+			// Issue #901 (maintainer decisions of 2026-10-13): refuse a merge that removes or changes any
+			// effective conversion an existing row relies on - for the removed product's rows, for the
+			// KEPT product's own rows, for barcodes of either product and for the children of either.
+			// The rows concerned carry their OWN unit (a consumption recipe line, a consumption mapping
+			// with a unit, a recipes_pos row that only checks a single unit, a barcode's package
+			// amount) and are converted at read time through the owning product's resolved
+			// conversions; the kept product's conversions are what they use after the merge. Per
+			// affected row and unit, take the factor the row's reader uses before and after the merge
+			// (the resolved conversion; where there is none, the reader's own fallback - 1.0 where it
+			// COALESCEs, "unreadable" where it fails or drops the row) and refuse iff
+			//   - the reader could read the row before and cannot after, or
+			//   - it reads it on both sides and
+			//       F_before * scale  !=  F_after_merge(unit -> kept stock unit)
+			//     under CompareAmounts, where scale is $factor for the removed product's rows and 1 for
+			//     the kept product's (own-unit amounts are not rescaled).
+			// A row that is unreadable before the merge never changes meaning by it (a child is the
+			// exception: see below). "Effective" is the resolved conversion (global fallbacks and
+			// transitive paths included); F_after_merge is read from the state the conversion
+			// dedupe-then-move below leaves behind, reproduced inside a savepoint and rolled back.
+			// A change of structure that leaves every effective factor equal is permitted.
+			// Classification of every column the merge repoints is in the pull request.
+			$fmt = fn(float $value): string => sprintf('%.12g', $value);
+
+			// Every cache row a reader might pick (the cache has no unique key and readers LIMIT 1
+			// without ordering) plus the view row, as floats; empty when there is no path at all.
+			$resolved = function (int $productId, int $toQuId, array $fromQuIds): array
+			{
+				$result = array_fill_keys($fromQuIds, []);
+				if ($fromQuIds === [])
+				{
+					return $result;
+				}
+
+				$pdo = DatabaseService::GetInstance()->GetDbConnectionRaw();
+				$in = implode(', ', array_map('intval', $fromQuIds));
+				foreach (['cache__quantity_unit_conversions_resolved', 'quantity_unit_conversions_resolved'] as $source)
+				{
+					$statement = $pdo->query('SELECT from_qu_id, factor FROM ' . $source . ' WHERE product_id = ' . $productId . ' AND to_qu_id = ' . $toQuId . ' AND from_qu_id IN (' . $in . ')');
+					foreach ($statement->fetchAll(\PDO::FETCH_NUM) as [$fromQuId, $factorText])
+					{
+						$result[(int)$fromQuId][] = (float)$factorText;
+					}
+				}
+
+				return $result;
+			};
+
+			$removedStockUnit = (int)$productToRemove->qu_id_stock;
+			$keptStockUnit = (int)$productToKeep->qu_id_stock;
+			$connection = DatabaseService::GetInstance()->GetDbConnectionRaw();
+
+			// One entry per (owner, row kind, unit), for the rows of the removed product AND of the kept
+			// one (the move below can give the kept product conversions that win over the ones its own
+			// rows relied on). A recipes_pos row with the single-unit flag is read by the views with
+			// COALESCE(qucr.factor, 1.0) (05_views_l3.sql :164, :174): a missing conversion reads as 1.0
+			// on either side. Consumption lines and mappings (422 at read time) and barcodes (the
+			// purchase screen offers only convertible units) are unreadable when there is none. For the
+			// removed product's lines and mappings the #848 refusal further down keeps its own message
+			// for a unit that does not reach the kept stock unit. A barcode's qu_id is never NULL
+			// (default_qu_INS/_UPD fill it with the stock unit).
+			$checks = [];
+			foreach ([[$productIdToRemove, true], [$productIdToKeep, false]] as [$ownerId, $ownedByRemoved])
+			{
+				$rowKinds = [
+					['recipe line', 'SELECT id, qu_id FROM consumption_recipe_lines WHERE product_id = ' . $ownerId, false, $ownedByRemoved],
+					['mapping', 'SELECT id, qu_id FROM consumption_mappings WHERE product_id = ' . $ownerId . ' AND qu_id IS NOT NULL', false, $ownedByRemoved],
+					['single-unit recipes_pos row', 'SELECT id, qu_id FROM recipes_pos WHERE product_id = ' . $ownerId . ' AND only_check_single_unit_in_stock = 1 AND qu_id IS NOT NULL', true, false],
+					['barcode', 'SELECT id, qu_id FROM product_barcodes WHERE product_id = ' . $ownerId . ' AND amount IS NOT NULL AND qu_id IS NOT NULL', false, false],
+				];
+				foreach ($rowKinds as [$kind, $sql, $missingReadsAsOne, $deferToExistingRefusal])
+				{
+					$idsByUnit = [];
+					foreach ($connection->query($sql)->fetchAll(\PDO::FETCH_NUM) as [$rowId, $quId])
+					{
+						$idsByUnit[(int)$quId][] = (int)$rowId;
+					}
+
+					foreach ($idsByUnit as $quId => $rowIds)
+					{
+						$checks[] = ['owner' => $ownerId, 'removed' => $ownedByRemoved, 'kind' => $kind, 'ids' => $rowIds, 'unit' => $quId, 'one' => $missingReadsAsOne, 'defer' => $deferToExistingRefusal, 'child' => false];
+					}
+				}
+			}
+
+			// A child is aggregated into its parent through the child's own conversion to the parent's
+			// stock unit. With none, stock_current (migration 0298) and the recipe cost and calorie views
+			// (migration 0300) count the child as nothing. The removed
+			// product's children are repointed to the kept product by the merge; the kept product's
+			// own children keep their parent. Rules (maintainer, #901): readable on both sides ->
+			// compare; readable before and not after, or not before and readable after -> refuse; none
+			// on either side -> allowed only when the merge's stock scale is 1 (CompareAmounts) and, for
+			// differing stock units, the kept product resolves a factor of 1 between them after the merge.
+			$childRows = $connection->query('SELECT id, qu_id_stock, parent_product_id FROM products WHERE parent_product_id IN (' . $productIdToRemove . ', ' . $productIdToKeep . ') AND id NOT IN (' . $productIdToRemove . ', ' . $productIdToKeep . ') ORDER BY id')->fetchAll(\PDO::FETCH_NUM);
+			foreach ($childRows as [$childId, $childStockUnit, $childParent])
+			{
+				$checks[] = ['owner' => (int)$childParent, 'removed' => (int)$childParent === $productIdToRemove, 'kind' => 'sub product', 'ids' => [(int)$childId], 'unit' => (int)$childStockUnit, 'one' => false, 'defer' => false, 'child' => true];
+			}
+
+			// Before the merge: the removed product's rows read through the removed product, the kept
+			// product's through the kept product; a child through its own conversion to its parent.
+			$unitsByReading = [];
+			foreach ($checks as $index => $check)
+			{
+				if ($check['child'])
+				{
+					$checks[$index]['before'] = $resolved($check['ids'][0], $check['removed'] ? $removedStockUnit : $keptStockUnit, [$check['unit']])[$check['unit']];
+					continue;
+				}
+
+				$unitsByReading[$check['removed'] ? 'removed' : 'kept'][$check['unit']] = true;
+			}
+			$removedBefore = $resolved($productIdToRemove, $removedStockUnit, array_keys($unitsByReading['removed'] ?? []));
+			$keptBefore = $resolved($productIdToKeep, $keptStockUnit, array_keys($unitsByReading['kept'] ?? []));
+
+			// The removed product's stock rows are rescaled by $factor, but the kept product keeps (or
+			// gains) whatever conversion between the two stock units survives the dedupe-then-move below,
+			// so the unit pair itself is compared too: the kept product's resolved factor now and in the
+			// proposed merged state. Without it a merge with no affected row would move 3 pieces at the
+			// removed product's 1 while the kept product says a piece is 2 each (#901).
+			$stockUnitsDiffer = $removedStockUnit !== $keptStockUnit;
+			$keptPairBefore = $stockUnitsDiffer ? $resolved($productIdToKeep, $keptStockUnit, [$removedStockUnit])[$removedStockUnit] : [];
+
+			// Nothing to compare when no affected row, no sub product and no stock-unit pair exists: skip the savepoint work.
+			$keptAfter = [];
+			if ($checks !== [] || $stockUnitsDiffer)
+			{
+				DatabaseService::GetInstance()->ExecuteDbStatement('SAVEPOINT merge_products_conversion_check');
+				try
+				{
+					// Exactly the conversion and parent statements the merge itself runs further down.
+					DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM quantity_unit_conversions quc_remove WHERE quc_remove.product_id = ' . $productIdToRemove . ' AND EXISTS (SELECT 1 FROM quantity_unit_conversions quc_keep WHERE quc_keep.product_id = ' . $productIdToKeep . ' AND quc_keep.from_qu_id = quc_remove.from_qu_id AND quc_keep.to_qu_id = quc_remove.to_qu_id)');
+					DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE quantity_unit_conversions SET product_id = ' . $productIdToKeep . ' WHERE product_id = ' . $productIdToRemove);
+					DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE products SET parent_product_id = NULL WHERE id = ' . $productIdToKeep . ' AND parent_product_id = ' . $productIdToRemove);
+					DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE products SET parent_product_id = ' . $productIdToKeep . ' WHERE parent_product_id = ' . $productIdToRemove);
+
+					$keptAfter = $resolved($productIdToKeep, $keptStockUnit, array_keys(($unitsByReading['removed'] ?? []) + ($unitsByReading['kept'] ?? []) + [$removedStockUnit => true]));
+					foreach ($checks as $index => $check)
+					{
+						if ($check['child'])
+						{
+							$checks[$index]['after'] = $resolved($check['ids'][0], $keptStockUnit, [$check['unit']])[$check['unit']];
+						}
+					}
+				}
+				finally
+				{
+					DatabaseService::GetInstance()->ExecuteDbStatement('ROLLBACK TO SAVEPOINT merge_products_conversion_check');
+					DatabaseService::GetInstance()->ExecuteDbStatement('RELEASE SAVEPOINT merge_products_conversion_check');
+				}
+			}
+
+			// Two factors agree when the row's factor before the merge, carried into the kept stock unit
+			// by $scale, equals the factor after it under the repository's amount rule (ADR-0032). That
+			// rule has an absolute floor, so two factors both below about 1e-8 always compare equal.
+			$agree = function (float $beforeFactor, float $afterFactor, float $scale): bool
+			{
+				$carried = $beforeFactor * $scale;
+
+				return is_finite($carried) && is_finite($afterFactor) && StockService::CompareAmounts($carried, $afterFactor) === 0;
+			};
+			$list = fn(array $factors): string => $factors === [] ? 'none' : implode(', ', array_map($fmt, $factors));
+			$refusal = fn(string $text): \Exception => new \Exception('Cannot merge product ' . $productIdToRemove . ' into product ' . $productIdToKeep . ': ' . $text);
+
+			if ($stockUnitsDiffer)
+			{
+				// Maintainer decision M (#901): refuse conflicting conversion factors before any mutation,
+				// comparing the effective conversions (global fallbacks included). The factor the stock is
+				// rescaled by must equal the kept product's resolved factor for the same pair before the
+				// merge (when it has one) and in the merged state (where it must have one).
+				$keptPairAfter = $keptAfter[$removedStockUnit] ?? [];
+				$pairAgrees = $keptPairAfter !== [];
+				foreach (array_merge($keptPairBefore, $keptPairAfter) as $keptPairFactor)
+				{
+					$pairAgrees = $pairAgrees && $agree((float)$factor, $keptPairFactor, 1.0);
+				}
+
+				if (!$pairAgrees)
+				{
+					throw $refusal('stock unit ' . $removedStockUnit . ' of product ' . $productIdToRemove . ' converts to stock unit ' . $keptStockUnit . ' of product ' . $productIdToKeep . ' at ' . $fmt((float)$factor) . ', but product ' . $productIdToKeep . ' converts it at ' . $list(array_values(array_unique($keptPairBefore))) . ' before the merge and at ' . $list(array_values(array_unique($keptPairAfter))) . ' after it, so the moved stock would mean a different quantity');
+				}
+			}
+
+			foreach ($checks as $check)
+			{
+				$scale =$check['removed'] ? (float)$factor : 1.0;
+				if ($check['child'])
+				{
+					$before = $check['before'];
+					$after = $check['after'];
+				}
+				else
+				{
+					$before = $check['removed'] ? $removedBefore[$check['unit']] : $keptBefore[$check['unit']];
+					$after = $keptAfter[$check['unit']];
+				}
+
+				if ($check['one'])
+				{
+					$before = $before === [] ? [1.0] : $before;
+					$after = $after === [] ? [1.0] : $after;
+				}
+
+				$who = ($check['child'] ? 'sub product ' . $check['ids'][0] . ' (stock unit ' . $check['unit'] . ') of product ' . $check['owner'] : $check['kind'] . ' ' . implode(', ', $check['ids']) . ' of product ' . $check['owner'] . ' (quantity unit ' . $check['unit'] . ')');
+
+				if ($check['child'] && $before === [] && $after === [])
+				{
+					// Allowed only when the scale is 1 under the tolerance (maintainer decisions, #901 and
+					// the ones on #921): a child with no conversion has the same (unconverted) contribution
+					// on both sides, so it is unaffected exactly when the parent's stock unit is the same
+					// unit relationship after the merge. That is the identical unit, or two units whose
+					// GOVERNING conversion is 1 both before and after: before, the removed product's
+					// resolved stock-unit pair ($conversion: its own row over a global one, in the
+					// removed -> kept direction); after, the kept product's resolved pair in the
+					// proposed merged state ($keptAfter: which rows survive the dedupe, the kept
+					// product's own row over a global one). A 1 on a row that does not govern - shadowed
+					// by precedence, deleted by the dedupe, or only in the inverse direction - does not
+					// count, and a missing conversion's fallback of 1 is never evidence of equivalence.
+					if (!$agree(1.0, 1.0, $scale))
+					{
+						throw $refusal($who . ' has no quantity unit conversion to its parent\'s stock unit before or after the merge, but the merge scales stock by ' . $fmt($scale) . ' so it would be counted differently');
+					}
+
+					if ($check['removed'] && $removedStockUnit !== $keptStockUnit)
+					{
+						// Evaluated against the proposed merged state: the kept product's own conversion
+						// between the two stock units can override the removed product's or a global one
+						// (the dedupe above drops the removed product's row for the same unit pair), so
+						// the factor 1 that passed the scale check may not be what the kept product says.
+						$keptFactors = $keptAfter[$removedStockUnit] ?? [];
+						$joined = $keptFactors !== [];
+						foreach ($keptFactors as $keptFactor)
+						{
+							$joined = $joined && $agree(1.0, $keptFactor, 1.0);
+						}
+
+						if (!$joined)
+						{
+							throw $refusal($who . ' has no quantity unit conversion to its parent\'s stock unit before or after the merge, and the stock units are not shown to be the same unit: stock unit ' . $removedStockUnit . ' of product ' . $productIdToRemove . ' converts to stock unit ' . $keptStockUnit . ' of product ' . $productIdToKeep . ' at ' . $fmt((float)$factor) . ' before the merge and at ' . $list($keptFactors) . ' after it');
+						}
+					}
+
+					continue;
+				}
+
+				if ($check['child'] && $before === [])
+				{
+					throw $refusal($who . ' has no quantity unit conversion to its parent\'s stock unit before the merge and would have one at ' . $list($after) . ' after it');
+				}
+
+				if ($before === [])
+				{
+					// Unreadable before the merge, so there is no meaning to carry over.
+					continue;
+				}
+
+				if ($after === [])
+				{
+					if ($check['defer'])
+					{
+						continue;
+					}
+
+					throw $refusal($who . ' has no quantity unit conversion to the stock unit of product ' . $productIdToKeep . ' after the merge; before it the conversion was ' . $list($before));
+				}
+
+				foreach ($before as $beforeFactor)
+				{
+					foreach ($after as $afterFactor)
+					{
+						if (!$agree($beforeFactor, $afterFactor, $scale))
+						{
+							throw $refusal($who . ' would mean a different quantity after the merge. Before it converts to its stock unit at ' . $fmt($beforeFactor) . ($check['removed'] ? ', which the merge carries into product ' . $productIdToKeep . '\'s stock unit at ' . $fmt($beforeFactor * $scale) . ' (stock scale ' . $fmt($scale) . ')' : '') . '; after it converts to product ' . $productIdToKeep . '\'s stock unit at ' . $fmt($afterFactor));
+						}
+					}
+				}
 			}
 
 			// ADR-0036 section 3: contributions and allocations are stock-unit amounts too and
@@ -5068,7 +5391,9 @@ class StockService extends BaseService
 			// price_factor is a unitless cost multiplier applied on top of amount * price in
 			// the recipe costs columns (db/pgsql/baseline/05_views_l3.sql), not a per-unit
 			// price itself, so only amount - the ingredient quantity - is converted.
-			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE recipes_pos SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
+			// A row with only_check_single_unit_in_stock = 1 holds its amount in its own qu_id (the views
+			// multiply by that unit's factor), so it is not a stock-unit amount and is not rescaled (#929).
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE recipes_pos SET product_id = ' . $productIdToKeep . ', amount = CASE WHEN only_check_single_unit_in_stock = 1 THEN amount ELSE amount * ' . $factor . ' END WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE recipes SET product_id = ' . $productIdToKeep . ' WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE meal_plan SET product_id = ' . $productIdToKeep . ', product_amount = product_amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE shopping_list SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);

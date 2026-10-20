@@ -3,6 +3,7 @@
 namespace Victual\Controllers\Api;
 
 use Victual\Controllers\Users\User;
+use Victual\Controllers\Users\UserfileOwnerPolicy;
 use Victual\Helpers\Grocycode;
 use Victual\Services\DatabaseService;
 use Victual\Services\FieldPolicy;
@@ -10,6 +11,8 @@ use Victual\Services\WireBooleans;
 use Victual\Services\Labels\LabelIdentityService;
 use Victual\Services\LocalizationService;
 use Victual\Services\StockService;
+use Victual\Services\StockBookingIdempotencyService;
+use Victual\Services\StockBookingIdempotencyException;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -22,6 +25,57 @@ use Psr\Http\Message\ServerRequestInterface as Request;
  */
 class StockApiController extends BaseApiController
 {
+	protected const NUMERIC_BODY_FIELDS = ['amount', 'price', 'new_amount', 'gross_amount', 'product_amount', 'product_id', 'recipe_id', 'location_id', 'location_id_from', 'location_id_to', 'qu_id', 'list_id', 'shopping_location_id', 'stock_label_type'];
+
+	/** Permissions are checked by each base handler before this helper sees a key. */
+	private function HandleBookingCall(Request $request, Response $response, array $args, string $operation, callable $book): Response
+	{
+		return $this->HandleApiCall($response, function () use ($request, $response, $args, $operation, $book)
+		{
+			if (!$request->hasHeader('Idempotency-Key'))
+			{
+				$args['transactionId'] = $book();
+				return $this->StockTransactions($request, $response, $args);
+			}
+
+			try
+			{
+				$service = new StockBookingIdempotencyService(DatabaseService::GetInstance()->GetDbConnectionRaw());
+				$userId = (int)VICTUAL_USER_ID;
+				$key = $request->getHeaderLine('Idempotency-Key');
+				$payload = ['operation' => $operation, 'product_id' => (int)$args['productId'],
+					'body' => $this->GetParsedAndFilteredRequestBody($request)];
+				// Keys nobody retries expire without ever being looked up again; a bounded
+				// purge here keeps the table at the retention window (#980 review)
+				$service->PurgeExpired();
+				$result = DatabaseService::GetInstance()->InTransaction(function () use ($service, $userId, $operation, $key, $payload, $book)
+				{
+					$result = $service->Begin($userId, $operation, $key, $payload);
+					if (!$result['replay'])
+					{
+						$result['transaction_id'] = $book();
+						$service->Record($userId, $operation, $key, $result['transaction_id']);
+					}
+					return $result;
+				});
+			}
+			catch (StockBookingIdempotencyException $error)
+			{
+				return $this->ApiResponse($response->withStatus($error->Status), ['error_message' => $error->getMessage(), 'code' => $error->ErrorCode]);
+			}
+
+			$args['transactionId'] = $result['transaction_id'];
+			if ($result['replay'])
+			{
+				$args['replayUserId'] = $userId;
+			}
+			$resultResponse = $this->StockTransactions($request, $response, $args);
+			return $resultResponse->getStatusCode() < 300
+				? $resultResponse->withHeader('Idempotent-Replayed', $result['replay'] ? 'true' : 'false')
+				: $resultResponse;
+		});
+	}
+
 	/**
 	 * Refuses a non-numeric body field before it reaches a service method's float/int
 	 * parameter: passing it through unchecked would raise a TypeError there, and
@@ -34,6 +88,16 @@ class StockApiController extends BaseApiController
 		if (!is_numeric($requestBody[$field]))
 		{
 			throw new \Exception('The ' . str_replace('_', ' ', $field) . ' must be a number');
+		}
+	}
+
+	/** Refuses invalid supplied shopping amounts and product ids before any mutation. */
+	private function RequirePositiveNumericField(array $requestBody, string $field): void
+	{
+		$this->RequireNumericAmount($requestBody, $field);
+		if (!is_finite((float)$requestBody[$field]) || (float)$requestBody[$field] <= 0)
+		{
+			throw new \Exception('The ' . str_replace('_', ' ', $field) . ' must be finite and positive');
 		}
 	}
 
@@ -164,12 +228,15 @@ class StockApiController extends BaseApiController
 	/**
 	 * POST /api/stock/shoppinglist/add-missing-products - adds all products below their
 	 * minimum stock amount to the shopping list given by the numeric body field list_id
-	 * (default 1). Requires the SHOPPINGLIST_ITEMS_ADD permission (403 otherwise).
+	 * (default 1). Requires the SHOPPINGLIST_ITEMS_ADD permission, and STOCK_VIEW: the items
+	 * it adds are exactly which products are below their minimum, a stock fact a caller
+	 * without STOCK_VIEW may not learn (issue #933, ADR-0050). 403 otherwise.
 	 * Returns 204 on success or a 400 error response.
 	 */
 	public function AddMissingProductsToShoppingList(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_SHOPPINGLIST_ITEMS_ADD);
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 
 		return $this->HandleApiCall($response, function () use ($request, $response)
 		{
@@ -280,7 +347,7 @@ class StockApiController extends BaseApiController
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-		return $this->HandleApiCall($response, function () use ($args, $request, $requestBody, $response)
+		return $this->HandleBookingCall($request, $response, $args, 'purchase', function () use ($args, $request, $requestBody, $response)
 		{
 			if ($requestBody === null)
 			{
@@ -385,8 +452,7 @@ class StockApiController extends BaseApiController
 
 			$transactionId = StockService::GetInstance()->AddProduct($args['productId'], $requestBody['amount'], $bestBeforeDate, $transactionType, $purchasedDate, $price, $locationId, $shoppingLocationId, $unusedTransactionId, $stockLabelType, $note);
 
-			$args['transactionId'] = $transactionId;
-			return $this->StockTransactions($request, $response, $args);
+			return $transactionId;
 		});
 	}
 
@@ -446,13 +512,15 @@ class StockApiController extends BaseApiController
 				$listId = $this->RequirePositiveIntegerId($requestBody, 'list_id');
 			}
 
-			if (array_key_exists('product_amount', $requestBody) && !empty($requestBody['product_amount']) && is_numeric($requestBody['product_amount']))
+			if (array_key_exists('product_amount', $requestBody))
 			{
+				$this->RequirePositiveNumericField($requestBody, 'product_amount');
 				$amount = $requestBody['product_amount'];
 			}
 
-			if (array_key_exists('product_id', $requestBody) && !empty($requestBody['product_id']) && is_numeric($requestBody['product_id']))
+			if (array_key_exists('product_id', $requestBody))
 			{
+				$this->RequirePositiveNumericField($requestBody, 'product_id');
 				$productId = $requestBody['product_id'];
 			}
 
@@ -538,7 +606,7 @@ class StockApiController extends BaseApiController
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-		return $this->HandleApiCall($response, function () use ($args, $request, $requestBody, $response)
+		return $this->HandleBookingCall($request, $response, $args, 'consume', function () use ($args, $request, $requestBody, $response)
 		{
 			if ($requestBody === null)
 			{
@@ -589,9 +657,25 @@ class StockApiController extends BaseApiController
 			}
 
 			$recipeId = null;
-			if (array_key_exists('recipe_id', $requestBody) && is_numeric($requestBody['recipe_id']))
+			if (array_key_exists('recipe_id', $requestBody))
 			{
+				$this->RequireNumericAmount($requestBody, 'recipe_id');
+				if (!is_finite((float)$requestBody['recipe_id']))
+				{
+					throw new \Exception('The recipe id must be finite');
+				}
 				$recipeId = $requestBody['recipe_id'];
+
+				// Issue #987: an id that names no recipe was stored as sent, so zero, a negative
+				// number or a deleted recipe's id became stock_log.recipe_id, which has no
+				// foreign key. The raw value is looked up rather than a cast of it, so
+				// PostgreSQL's integer parser decides what is readable, exactly as it does for
+				// the stock_log insert. The accepted spellings stay unchanged, and an
+				// unreadable one still fails here, before anything is booked.
+				if ($this->DB->recipes()->where('id = :1', $recipeId)->fetch() === null)
+				{
+					throw new \Exception('Recipe does not exist');
+				}
 			}
 
 			$consumeExact = false;
@@ -613,8 +697,7 @@ class StockApiController extends BaseApiController
 
 			$transactionId = null;
 			$transactionId = StockService::GetInstance()->ConsumeProduct($args['productId'], $requestBody['amount'], $spoiled, $transactionType, $specificStockEntryId, $recipeId, $locationId, $transactionId, $allowSubproductSubstitution, $consumeExact);
-			$args['transactionId'] = $transactionId;
-			return $this->StockTransactions($request, $response, $args);
+			return $transactionId;
 		});
 	}
 
@@ -936,7 +1019,7 @@ class StockApiController extends BaseApiController
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-		return $this->HandleApiCall($response, function () use ($args, $request, $requestBody, $response)
+		return $this->HandleBookingCall($request, $response, $args, 'inventory', function () use ($args, $request, $requestBody, $response)
 		{
 			if ($requestBody === null)
 			{
@@ -1014,8 +1097,7 @@ class StockApiController extends BaseApiController
 			}
 
 			$transactionId = StockService::GetInstance()->InventoryProduct($args['productId'], $requestBody['new_amount'], $bestBeforeDate, $locationId, $price, $shoppingLocationId, $purchasedDate, $stockLabelType, $note);
-			$args['transactionId'] = $transactionId;
-			return $this->StockTransactions($request, $response, $args);
+			return $transactionId;
 		});
 	}
 
@@ -1060,7 +1142,7 @@ class StockApiController extends BaseApiController
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-		return $this->HandleApiCall($response, function () use ($args, $request, $requestBody, $response)
+		return $this->HandleBookingCall($request, $response, $args, 'open', function () use ($args, $request, $requestBody, $response)
 		{
 			if ($requestBody === null)
 			{
@@ -1111,8 +1193,7 @@ class StockApiController extends BaseApiController
 
 			$transactionId = null;
 			$transactionId = StockService::GetInstance()->OpenProduct($args['productId'], $requestBody['amount'], $specificStockEntryId, $transactionId, $allowSubproductSubstitution, $measurement);
-			$args['transactionId'] = $transactionId;
-			return $this->StockTransactions($request, $response, $args);
+			return $transactionId;
 		});
 	}
 
@@ -1288,13 +1369,15 @@ class StockApiController extends BaseApiController
 				$listId = $this->RequirePositiveIntegerId($requestBody, 'list_id');
 			}
 
-			if (array_key_exists('product_amount', $requestBody) && !empty($requestBody['product_amount']) && is_numeric($requestBody['product_amount']))
+			if (array_key_exists('product_amount', $requestBody))
 			{
+				$this->RequirePositiveNumericField($requestBody, 'product_amount');
 				$amount = $requestBody['product_amount'];
 			}
 
-			if (array_key_exists('product_id', $requestBody) && !empty($requestBody['product_id']) && is_numeric($requestBody['product_id']))
+			if (array_key_exists('product_id', $requestBody))
 			{
+				$this->RequirePositiveNumericField($requestBody, 'product_id');
 				$productId = $requestBody['product_id'];
 			}
 
@@ -1374,7 +1457,13 @@ class StockApiController extends BaseApiController
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
-			$transactionRows = $this->DB->stock_log()->where('transaction_id = :1', $args['transactionId'])->fetchAll();
+			$query = $this->DB->stock_log()->where('transaction_id = :1', $args['transactionId']);
+			if (isset($args['replayUserId']))
+			{
+				// The column-value form: a second ':1' placeholder would bind the transaction id again
+				$query = $query->where('user_id', (int)$args['replayUserId']);
+			}
+			$transactionRows = $query->fetchAll();
 			if (count($transactionRows) === 0)
 			{
 				throw new \Exception('No transaction was found by the given transaction id');
@@ -1403,7 +1492,7 @@ class StockApiController extends BaseApiController
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-		return $this->HandleApiCall($response, function () use ($args, $request, $requestBody, $response)
+		return $this->HandleBookingCall($request, $response, $args, 'transfer', function () use ($args, $request, $requestBody, $response)
 		{
 			if ($requestBody === null)
 			{
@@ -1439,8 +1528,7 @@ class StockApiController extends BaseApiController
 			}
 
 			$transactionId = StockService::GetInstance()->TransferProduct($args['productId'], $requestBody['amount'], $locationIdFrom, $locationIdTo, $specificStockEntryId);
-			$args['transactionId'] = $transactionId;
-			return $this->StockTransactions($request, $response, $args);
+			return $transactionId;
 		});
 	}
 
@@ -1635,14 +1723,15 @@ class StockApiController extends BaseApiController
 		User::CheckPermission($request, User::PERMISSION_STOCK_EDIT);
 		User::CheckPermission($request, User::PERMISSION_MASTER_DATA_EDIT);
 
-		return $this->HandleApiCall($response, function () use ($args, $response)
+		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
 			if (filter_var($args['productIdToKeep'], FILTER_VALIDATE_INT) === false || filter_var($args['productIdToRemove'], FILTER_VALIDATE_INT) === false)
 			{
 				throw new \Exception('Provided {productIdToKeep} or {productIdToRemove} is not a valid integer');
 			}
 
-			$this->ApiResponse($response, StockService::GetInstance()->MergeProducts($args['productIdToKeep'], $args['productIdToRemove']));
+			// The removed product is deleted, and its userfield values with it (#920)
+			$this->ApiResponse($response, UserfileOwnerPolicy::GuardOwnershipChange($request, fn () => StockService::GetInstance()->MergeProducts($args['productIdToKeep'], $args['productIdToRemove'])));
 			return $this->EmptyApiResponse($response);
 		});
 	}

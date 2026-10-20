@@ -5,10 +5,10 @@
   evidence (MCP spec section 10.1 and a test).
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
-- **Recorded:** 2026-09-04, alongside [plan 22](../plans/22-medication-tracking.md). The
+- **Recorded:** 2026-09-04, alongside [plan 22](../plans/landed/22-medication-tracking.md). The
   decision was made when the plan was drafted; this record is not a backfill. **Revised
   2026-10-09** for the inventory scope the maintainer set that day (see Context).
-- **Relationship:** constrains [22](../plans/22-medication-tracking.md) throughout, and
+- **Relationship:** constrains [22](../plans/landed/22-medication-tracking.md) throughout, and
   [23](../plans/landed/23-storage-classes.md) Q6 defers to it. Written with
   [ADR-0016](0016-schedule-expansion-in-the-application.md), whose subject has no consumer
   in the revised scope (see its Disposition). The scope it governs is described by
@@ -22,7 +22,7 @@
 
 ### Revision, 2026-10-09
 
-The maintainer narrowed [plan 22](../plans/22-medication-tracking.md) on 2026-10-09. It now
+The maintainer narrowed [plan 22](../plans/landed/22-medication-tracking.md) on 2026-10-09. It now
 covers medication and vitamin inventory, private consumption recipes, organizer locations,
 consumption entered by hand or sent by a client, and refill notices. The earlier proposal
 for per-person regimens, a dose scheduler, administrations, adherence and dose alerts is
@@ -31,7 +31,7 @@ sits where it does, and revises the decision to fit the new scope.
 
 ### Original context (2026-09-04)
 
-[Plan 22](../plans/22-medication-tracking.md) then put drug strength, route, dose, schedule and
+[Plan 22](../plans/landed/22-medication-tracking.md) then put drug strength, route, dose, schedule and
 per-person regimens into the database. Once a system holds those five things it is one small,
 useful feature away from clinical decision support, and it will be one small feature away
 permanently.
@@ -223,4 +223,4 @@ recorded here so the earlier numbering stays traceable.
   the boundary — the specific criteria are not restated here because this record does not turn
   on their detail: the decision is to stay well clear of the line rather than to sit near it.
 - Plan and tree facts as of the working copy of 2026-09-04; see
-  [22](../plans/22-medication-tracking.md).
+  [22](../plans/landed/22-medication-tracking.md).

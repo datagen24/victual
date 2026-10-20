@@ -707,7 +707,7 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 	public function testWhatIsServedInlineAndWhatIsHandedOverAsADownload(string $backend): void
 	{
 		self::Storage($backend, ['equipmentmanuals', 'userfiles']);
-		self::grant(['MASTER_DATA_EDIT', 'EQUIPMENT']);
+		self::grant(['ADMIN']); // ADMIN: an unreferenced userfile is ADMIN only (#905); the assertions below are about types and names
 
 		$this->expectStatus(fn () => self::$files->UploadFile(self::requestWithRawBody('PUT', self::$pdf), new Response(), ['group' => 'equipmentmanuals', 'fileName' => base64_encode('manual.pdf')]), 204, 'PDF accepted');
 		$pdfResponse = $this->expectStatus(fn () => self::$files->ServeFile(self::request(), new Response(), ['group' => 'equipmentmanuals', 'fileName' => base64_encode('manual.pdf')]), 200, 'PDF served');
@@ -765,7 +765,7 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 	public function testServedFilesMatchTheirDocumentedResponse(string $backend): void
 	{
 		self::Storage($backend, ['productpictures', 'equipmentmanuals', 'userfiles']);
-		self::grant(['MASTER_DATA_EDIT', 'STOCK_VIEW', 'EQUIPMENT']);
+		self::grant(['ADMIN']); // ADMIN: an unreferenced userfile is ADMIN only (#905); the assertions below are about types and names
 		$documented = self::DocumentedServeResponse();
 
 		$cases = [
@@ -873,7 +873,7 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 	public function testNonTextBytesRoundTripByteForByte(string $backend): void
 	{
 		self::Storage($backend, ['productpictures', 'equipmentmanuals', 'userfiles']);
-		self::grant(['MASTER_DATA_EDIT', 'STOCK_VIEW', 'EQUIPMENT']);
+		self::grant(['ADMIN']); // ADMIN: an unreferenced userfile is ADMIN only (#905); the assertions below are about types and names
 
 		$zipLike = "PK\x03\x04\xFF\x00\xFE\x80";
 		self::assertFalse(mb_check_encoding(self::$pdf, 'UTF-8'), 'the PDF fixture is not valid UTF-8');
@@ -899,7 +899,7 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 	public function testTheDownloadNameIsTheSecondEncodedName(): void
 	{
 		$storage = self::Storage('filesystem', ['userfiles']);
-		self::grant(['MASTER_DATA_EDIT']);
+		self::grant(['ADMIN']); // ADMIN: an unreferenced userfile is ADMIN only (#905); the assertions below are about types and names
 
 		$storage->Write('userfiles', 'stored-name.txt', 'contents');
 
@@ -1077,10 +1077,10 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 
 	/**
 	 * Reading a group the caller has no permission for is refused before the file is
-	 * looked up, and a group whose read policy is a decided null needs nothing beyond
-	 * being authenticated. The refusals themselves are RbacTest's
-	 * (testFileGroupReadPolicies); what is asserted here is that a permitted read serves
-	 * the actual bytes and a refused one serves none.
+	 * looked up. The refusals themselves are RbacTest's (testFileGroupReadPolicies); what is
+	 * asserted here is that a permitted read serves the actual bytes and a refused one serves
+	 * none. userfiles has no leaf of its own: an unreferenced file is ADMIN only (#905), and
+	 * the owner rule is UserfileOwnerReadTest's.
 	 */
 	public function testReadingAGroupWithoutItsPermissionServesNothing(): void
 	{
@@ -1091,14 +1091,16 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 		self::grant([]);
 		$this->expectStatus(fn () => self::$files->ServeFile(self::request(), new Response(), ['group' => 'recipepictures', 'fileName' => base64_encode('secret-recipe.png')]), 403, 'A stored file is still refused without RECIPES_VIEW');
 
-		// The negative control for the refusal above: the same caller, holding nothing,
-		// does get a group whose read policy is a decided "no further permission needed".
-		$open = $this->expectStatus(fn () => self::$files->ServeFile(self::request(), new Response(), ['group' => 'userfiles', 'fileName' => base64_encode('open-attachment.txt')]), 200, 'A group mapped to null is open to any authenticated caller');
-		self::assertSame('open', (string)$open->getBody());
+		// Was a 200 until #905: this group used to be open to any authenticated caller.
+		$this->expectStatus(fn () => self::$files->ServeFile(self::request(), new Response(), ['group' => 'userfiles', 'fileName' => base64_encode('open-attachment.txt')]), 403, 'An unreferenced userfile is refused to a caller holding nothing');
 
 		self::grant(['RECIPES_VIEW']);
 		$served = $this->expectStatus(fn () => self::$files->ServeFile(self::request(), new Response(), ['group' => 'recipepictures', 'fileName' => base64_encode('secret-recipe.png')]), 200, 'and is served with it');
 		self::assertSame(self::$png, (string)$served->getBody(), 'The permitted read is of the real bytes');
+
+		self::grant(['ADMIN']);
+		$open = $this->expectStatus(fn () => self::$files->ServeFile(self::request(), new Response(), ['group' => 'userfiles', 'fileName' => base64_encode('open-attachment.txt')]), 200, 'ADMIN reads the unreferenced userfile');
+		self::assertSame('open', (string)$open->getBody());
 	}
 
 	/**
@@ -1198,6 +1200,87 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 			self::assertSame(403, $refused['status'], "Another user's picture is refused on the $setting backend");
 			self::assertNull($refused['sha256'], 'and no bytes were served');
 		}
+	}
+
+	/**
+	 * The own-picture exception is for the caller's own avatar and never for a derivative
+	 * name: users.picture_file_name is caller-writable (USERS_EDIT_SELF), so a name that is
+	 * "<victim>__downscaledto32x32.png" must not be a way to a thumbnail of the victim's
+	 * picture, neither one cached already (#941) nor one created for the request.
+	 */
+	public function testTheOwnPictureExceptionNeverCreatesADerivativeForADerivativeName(): void
+	{
+		$force = json_encode(['force_serve_as' => 'picture', 'best_fit_height' => '32', 'best_fit_width' => '32']);
+		$derivative = 'ownpic-victim__downscaledto32x32.png';
+
+		self::$db->exec("INSERT INTO users(id, username, password, picture_file_name) VALUES (9110, 'ownpic-victim', 'fixture', 'ownpic-victim.png')");
+		self::$db->exec("INSERT INTO users(id, username, password, picture_file_name) VALUES (9111, 'ownpic-attacker', 'fixture', '$derivative')");
+
+		foreach (['filesystem', 'database'] as $setting)
+		{
+			self::Storage($setting, ['userpictures'])->Write('userpictures', 'ownpic-victim.png', self::MakePng(64, 64));
+
+			// (a) The victim has no derivative yet: the attacker's request creates nothing
+			$refused = self::runSubprocess($setting, ['SERVE', '9111', $derivative, $derivative, $force]);
+			self::assertSame(403, $refused['status'], "$setting: a derivative name is not an own picture, and nothing is created for it");
+			self::assertSame(['ownpic-victim.png'], self::DurableNames($setting, 'userpictures'), "$setting: nothing was stored under the victim's prefix");
+		}
+	}
+
+	public function testTheOwnPictureExceptionNeverServesACachedDerivativeOfSomeoneElsesPicture(): void
+	{
+		$force = json_encode(['force_serve_as' => 'picture', 'best_fit_height' => '32', 'best_fit_width' => '32']);
+		$derivative = 'ownpic2-victim__downscaledto32x32.png';
+
+		self::$db->exec("INSERT INTO users(id, username, password, picture_file_name) VALUES (9112, 'ownpic2-victim2', 'fixture', 'ownpic2-victim.png')");
+		self::$db->exec("INSERT INTO users(id, username, password, picture_file_name) VALUES (9113, 'ownpic-attacker2', 'fixture', '$derivative')");
+
+		foreach (['filesystem', 'database'] as $setting)
+		{
+			self::Storage($setting, ['userpictures'])->Write('userpictures', 'ownpic2-victim.png', self::MakePng(64, 64));
+
+			// (c) The caller's own avatar, with the same force option, is still served without USERS_READ
+			$own = self::runSubprocess($setting, ['SERVE', '9112', 'ownpic2-victim.png', 'ownpic2-victim.png', $force]);
+			self::assertSame(200, $own['status'], "$setting: the real avatar thumbnail is served");
+			self::assertContains($derivative, self::DurableNames($setting, 'userpictures'), "$setting: and that is what cached the derivative");
+
+			// (b) With the derivative cached by the victim's own request, it is still refused,
+			// with or without the force option (#941)
+			foreach ([$force, null] as $query)
+			{
+				$arguments = ['SERVE', '9113', $derivative, $derivative];
+				if ($query !== null)
+				{
+					$arguments[] = $query;
+				}
+				$cached = self::runSubprocess($setting, $arguments);
+				self::assertSame(403, $cached['status'], "$setting: the cached derivative is refused" . ($query === null ? ' without the option' : ' with it'));
+				self::assertNull($cached['sha256'], "$setting: and no bytes were served");
+			}
+		}
+	}
+
+	/**
+	 * A picture request that names a derivative is derived from the name as asked in every
+	 * group but userfiles, which reduces it to its root (UserfileOwnerPolicy). Master's
+	 * behaviour for the picture groups is kept.
+	 */
+	#[DataProvider('backends')]
+	public function testOnlyUserfilesDerivesFromTheRootOfADerivativeName(string $backend): void
+	{
+		self::Storage($backend, ['productpictures']);
+		self::grant(['ADMIN']);
+		$this->expectStatus(fn () => self::$files->UploadFile(self::requestWithRawBody('PUT', self::$png), new Response(), ['group' => 'productpictures', 'fileName' => base64_encode('pp.png')]), 204, 'upload');
+		$query = ['force_serve_as' => 'picture', 'best_fit_width' => '32'];
+		$this->expectStatus(fn () => self::$files->ServeFile(self::request('GET', $query), new Response(), ['group' => 'productpictures', 'fileName' => base64_encode('pp.png')]), 200, 'first thumbnail');
+		$d1 = 'pp__downscaledtoautox32.png';
+		self::assertContains($d1, self::DurableNames($backend, 'productpictures'));
+
+		self::grant([]);
+		$this->expectStatus(fn () => self::$files->ServeFile(self::request('GET', ['force_serve_as' => 'picture', 'best_fit_width' => '64']), new Response(), ['group' => 'productpictures', 'fileName' => base64_encode($d1)]), 403, 'refused without STOCK_VIEW');
+		self::grant(['STOCK_VIEW']);
+		$this->expectStatus(fn () => self::$files->ServeFile(self::request('GET', ['force_serve_as' => 'picture', 'best_fit_width' => '64']), new Response(), ['group' => 'productpictures', 'fileName' => base64_encode($d1)]), 200, 'served under STOCK_VIEW');
+		self::assertContains('pp__downscaledtoautox32__downscaledtoautox64.png', self::DurableNames($backend, 'productpictures'), 'derived from the name as asked, as before');
 	}
 
 	// -------------------------------------------------------------------------------

@@ -114,6 +114,9 @@ SELECT is(pg_temp.rebuilds() - (SELECT n FROM a34_before), 1::BIGINT,
 -- ------------------------------------------------------------------------------------
 
 ALTER TABLE quantity_unit_conversions DROP CONSTRAINT quantity_unit_conversions_factor_positive;
+-- Migration 0318 (issue #952) refuses the row in the conversion triggers too; the range rule is
+-- made permissive here, and the file's ROLLBACK restores it.
+CREATE OR REPLACE FUNCTION quantity_unit_conversion_factor_in_range(f DOUBLE PRECISION) RETURNS BOOLEAN AS 'SELECT true' LANGUAGE sql IMMUTABLE;
 INSERT INTO quantity_unit_conversions (from_qu_id, to_qu_id, factor, product_id)
 VALUES (pg_temp.qu('tablet'), pg_temp.qu('box'), -2, pg_temp.p('neg'));
 SELECT pg_temp.book('neg', 'purchase', 6, 'a34n1', 0::SMALLINT, 3);

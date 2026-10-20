@@ -136,7 +136,7 @@ class RecipesService extends BaseService
 			throw new \Exception('Recipe does not exist');
 		}
 
-		$transactionId = uniqid();
+		$transactionId = StockService::NewTransactionId();
 
 		// Only which products the recipe (and any recipe it nests - recipes_pos_resolved
 		// joins recipes_nestings_resolved, see db/pgsql/baseline/05_views_l3.sql) names is
@@ -267,7 +267,10 @@ class RecipesService extends BaseService
 				$product = $this->DB->products()->where('id = :1', $productId)->fetch();
 				$recipeResolvedRow = $this->DB->recipes_resolved()->where('recipe_id = :1', $recipeId)->fetch();
 				$dummyTransactionId = null;
-				StockService::GetInstance()->AddProduct($productId, $amount, null, StockService::TRANSACTION_TYPE_SELF_PRODUCTION, date('Y-m-d'), $recipeResolvedRow->costs_per_serving, null, null, $dummyTransactionId, $product->default_stock_label_type, $recipe->name);
+				// A recipe whose costs are incomplete has no known price per serving, so the produced
+				// entry is booked unpriced rather than at the known part (ADR-0045 P2)
+				$price = (int)$recipeResolvedRow->prices_incomplete === 1 ? null : $recipeResolvedRow->costs_per_serving;
+				StockService::GetInstance()->AddProduct($productId, $amount, null, StockService::TRANSACTION_TYPE_SELF_PRODUCTION, date('Y-m-d'), $price, null, null, $dummyTransactionId, $product->default_stock_label_type, $recipe->name);
 			}
 		});
 	}

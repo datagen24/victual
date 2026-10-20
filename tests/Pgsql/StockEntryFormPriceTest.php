@@ -98,11 +98,15 @@ class StockEntryFormPriceTest extends PgsqlSchemaTestCase
 	 */
 	private static int $zeroPriceStockEntryId = 0;
 
+	/** Issue #990: priced 0 and marked as never entered (legacy_zero_price = 1), as migration 0315 marks one. */
+	private static int $markedZeroStockEntryId = 0;
+
 	private static string $viewOnlySessionKey;
 	private static string $priceVisibleSessionKey;
 	private static string $viewEditSessionKey;
 	private static string $inheritedPriceVisibleSessionKey;
 
+	/** The fixture product, its stock entries (priced, 0 and marked 0) and the four callers with their sessions. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -140,6 +144,10 @@ class StockEntryFormPriceTest extends PgsqlSchemaTestCase
 		// Issue #545: priced at exactly 0, to catch empty()'s "0 is empty" confusion with NULL.
 		self::$zeroPriceStockEntryId = self::insertStockEntry('stockentryformprice-zero-fixture', self::STORE, 0);
 
+		// Issue #990: the same stored 0, read as unknown.
+		self::$markedZeroStockEntryId = self::insertStockEntry('stockentryformprice-marked-zero-fixture', self::STORE, 0);
+		self::$db->exec('UPDATE stock SET legacy_zero_price = 1 WHERE id = ' . self::$markedZeroStockEntryId);
+
 		self::createUser(self::VIEW_ONLY_USER_ID, 'stockentryformprice-view-only');
 		self::grant(self::VIEW_ONLY_USER_ID, 'STOCK_VIEW');
 		self::$viewOnlySessionKey = self::issueSession(self::VIEW_ONLY_USER_ID);
@@ -164,6 +172,7 @@ class StockEntryFormPriceTest extends PgsqlSchemaTestCase
 		self::$inheritedPriceVisibleSessionKey = self::issueSession(self::INHERITED_PRICE_VISIBLE_USER_ID);
 	}
 
+	/** Inserts one stock entry of the fixture product directly; returns its id. */
 	private static function insertStockEntry(string $stockId, ?int $shoppingLocationId, float $price): int
 	{
 		$statement = self::$db->prepare(
@@ -185,12 +194,23 @@ class StockEntryFormPriceTest extends PgsqlSchemaTestCase
 		return $id;
 	}
 
+	/** The stock entries page's price cell for $stockEntryId, from its span to the end of the cell. */
+	private static function priceCell(string $page, int $stockEntryId): string
+	{
+		$start = strpos($page, 'id="stock-' . $stockEntryId . '-price"');
+		self::assertNotFalse($start, "the stock entries page renders a price cell for entry $stockEntryId");
+
+		return substr($page, $start, strpos($page, '</td>', $start) - $start);
+	}
+
+	/** Creates a user row with a fixture password. */
 	private static function createUser(int $id, string $username): void
 	{
 		$statement = self::$db->prepare('INSERT INTO users(id, username, password) VALUES (?, ?, ?)');
 		$statement->execute([$id, $username, 'fixture']);
 	}
 
+	/** Grants $permissionName to $userId directly. */
 	private static function grant(int $userId, string $permissionName): void
 	{
 		$statement = self::$db->prepare(
@@ -486,5 +506,34 @@ class StockEntryFormPriceTest extends PgsqlSchemaTestCase
 		self::assertNotFalse($ledgerPrice, 'the edit left a stock-edit-new ledger row behind');
 		self::assertNotNull($ledgerPrice, 'the stock-edit-new ledger row also keeps the explicit 0 price, not NULL');
 		self::assertSame(0.0, (float)$ledgerPrice, 'the ledger price is exactly 0');
+	}
+
+	/**
+	 * Issue #990: a 0 marked as never entered is an unknown price, so the edit form renders it
+	 * blank, as it renders NULL; a known 0 still renders "0". Saving the blank form is safe
+	 * because stockentryform.js omits a price left as it was loaded.
+	 */
+	public function testTheFormRendersAMarkedZeroAsABlankPrice(): void
+	{
+		$marked = self::request('GET', '/stockentry/' . self::$markedZeroStockEntryId, self::$priceVisibleSessionKey);
+		self::assertSame(200, $marked['status'], $marked['body']);
+		self::assertMatchesRegularExpression('/<input[^>]*id="price"[^>]*value=""/', $marked['body'], 'a marked 0 renders as no price');
+
+		$known = self::request('GET', '/stockentry/' . self::$zeroPriceStockEntryId, self::$priceVisibleSessionKey);
+		self::assertMatchesRegularExpression('/<input[^>]*id="price"[^>]*value="0"/', $known['body'], 'a known 0 still renders as 0');
+	}
+
+	/**
+	 * Issue #990, migration 0317: the stock entries page shows no price for a marked 0 and
+	 * still shows a known 0. The marked entry's span is rendered empty, so an edit can fill it.
+	 */
+	public function testTheStockEntriesPageShowsNoPriceForAMarkedZero(): void
+	{
+		$page = self::request('GET', '/stockentries', self::$priceVisibleSessionKey);
+		self::assertSame(200, $page['status'], $page['body']);
+
+		self::assertStringNotContainsString('locale-number-currency', self::priceCell($page['body'], self::$markedZeroStockEntryId), 'a marked 0 is shown as no price');
+		self::assertStringContainsString('locale-number-currency', self::priceCell($page['body'], self::$zeroPriceStockEntryId), 'a known 0 is still a price');
+		self::assertNull(self::$db->query('SELECT price FROM uihelper_stock_entries WHERE id = ' . self::$markedZeroStockEntryId)->fetchColumn(), 'the view itself reads the marked 0 as NULL');
 	}
 }

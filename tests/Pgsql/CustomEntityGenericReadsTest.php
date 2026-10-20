@@ -13,9 +13,9 @@ use Victual\Tests\Support\Subprocess;
  * ADR-0035 gates the custom-entity pages on MASTER_DATA_EDIT; GET /api/objects/userobjects
  * returned the same rows to a caller holding no permission. The definitions (userentities,
  * userfields) stay open because ordinary pages need them to render user-field inputs.
- * The userfiles file group also stays open until #905: file and image user fields render
- * through /api/files/userfiles/ on pages that need only STOCK_VIEW or EQUIPMENT_VIEW, which
- * the last test guards against a blunt gate.
+ * The userfiles file group follows the records that reference a file (#905), not
+ * MASTER_DATA_EDIT: file and image user fields render through /api/files/userfiles/ on pages
+ * that need only STOCK_VIEW or EQUIPMENT_VIEW, which the last test guards against a blunt gate.
  *
  * Every request is its own process (request-subprocess-helper.php): the authentication
  * middleware define()s the acting user, and PHP cannot redefine a constant.
@@ -163,8 +163,8 @@ class CustomEntityGenericReadsTest extends PgsqlSchemaTestCase
 	{
 		// Guard for #905: ordinary pages (stock overview, product form) link file and image
 		// user fields to /api/files/userfiles/. Gating the group bluntly on MASTER_DATA_EDIT
-		// would break them for a STOCK_VIEW caller, so the group stays open until reads follow
-		// the owning record.
+		// would break them for a STOCK_VIEW caller, so a read follows the owning record's
+		// leaf instead (UserfileOwnerPolicy).
 		$fileName = base64_encode('manual.txt');
 		$upload = self::send('PUT', '/api/files/userfiles/' . $fileName, self::$keys['editor'], 'product manual bytes');
 		self::assertSame(204, $upload['status'], 'fixture upload: ' . json_encode($upload['body'] ?? null));

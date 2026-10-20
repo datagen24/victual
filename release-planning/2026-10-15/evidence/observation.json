@@ -1,0 +1,11 @@
+{
+  "observed_at": "2026-10-15T15:03:25.471201+00:00",
+  "local_sha": "b5532aafd7b91306f7e98dd3361ba82d1ebbe5da",
+  "remote_sha": "b5532aafd7b91306f7e98dd3361ba82d1ebbe5da",
+  "open_issues": 53,
+  "open_prs": 0,
+  "closed_items": 889,
+  "timebox_start": "2026-10-15T14:52:34Z",
+  "stop_new_research_at": "2026-10-15T16:16:34Z",
+  "deadline": "2026-10-15T16:52:34Z"
+}

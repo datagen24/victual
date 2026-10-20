@@ -24,6 +24,18 @@ class FieldPolicy extends BaseService
 	/** permission_fields.field value marking a whole-object gate rather than one field to strip. */
 	const WHOLE_OBJECT = '*';
 
+	/**
+	 * Columns that are never sent to anyone, whatever they hold: how the target reads a stored
+	 * value, not part of it. legacy_zero_price (migration 0315, ADR-0045 open question 10)
+	 * marks a stored price of 0 as unknown and stays internal on every entity that carries a
+	 * stock or stock_log row.
+	 */
+	const INTERNAL_FIELDS = [
+		'stock' => ['legacy_zero_price'],
+		'stock_log' => ['legacy_zero_price'],
+		'stock_next_use' => ['legacy_zero_price'],
+	];
+
 	/** @var array<string, object[]>|null permission_fields rows grouped by entity, cached for this request */
 	private static $RowsByEntity = null;
 
@@ -45,8 +57,9 @@ class FieldPolicy extends BaseService
 	}
 
 	/**
-	 * The field names of $entity the current user must not see: every permission_fields
-	 * row for the entity whose permission the current user does not (resolved) hold.
+	 * The field names of $entity the current user must not see: INTERNAL_FIELDS, and every
+	 * permission_fields row for the entity whose permission the current user does not
+	 * (resolved) hold.
 	 * Empty when the entity has no policy rows, or the user holds everything they list.
 	 * Never includes a WHOLE_OBJECT ('*') marker row - see WholeObjectPermission().
 	 *
@@ -54,7 +67,7 @@ class FieldPolicy extends BaseService
 	 */
 	public function RedactedFieldsFor(string $entity): array
 	{
-		$fields = [];
+		$fields = self::INTERNAL_FIELDS[$entity] ?? [];
 
 		foreach ($this->RowsByEntity()[$entity] ?? [] as $row)
 		{
@@ -109,6 +122,25 @@ class FieldPolicy extends BaseService
 		if ($row === null)
 		{
 			return $row;
+		}
+
+		// A marked price of 0 is an unknown price, and unknown is null on the wire (ADR-0045
+		// open question 10). Mapped before the marker itself is removed below, and before a
+		// caller without STOCK_PRICES_VIEW loses the price altogether.
+		if (isset(self::INTERNAL_FIELDS[$entity]))
+		{
+			$marked = is_array($row) || $row instanceof \ArrayAccess ? ($row['legacy_zero_price'] ?? 0) : ($row->legacy_zero_price ?? 0);
+			if ((int)$marked === 1)
+			{
+				if (is_array($row) || $row instanceof \ArrayAccess)
+				{
+					$row['price'] = null;
+				}
+				else
+				{
+					$row->price = null;
+				}
+			}
 		}
 
 		foreach ($this->RedactedFieldsFor($entity) as $field)

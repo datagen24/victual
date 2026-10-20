@@ -43,6 +43,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 	/** canStartWithout()'s answers, keyed by extension name: one probe per name per run. */
 	private static array $startableWithout = [];
 
+	/**
+	 * Boots the migrated schema, inserts the caller user (id 9000) the permission cases act as,
+	 * creates the scratch directory, and seeds the userfield and calendar fixtures.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -58,6 +62,9 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::seedCalendarFixtures();
 	}
 
+	/**
+	 * Deletes the scratch directory before the schema is torn down.
+	 */
 	public static function tearDownAfterClass(): void
 	{
 		self::RemoveRecursively(self::$scratch);
@@ -65,6 +72,11 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		parent::tearDownAfterClass();
 	}
 
+	/**
+	 * Deletes a directory and everything under it; a path that is not a directory is ignored.
+	 *
+	 * @param string $path The directory to remove
+	 */
 	private static function RemoveRecursively(string $path): void
 	{
 		if (!is_dir($path))
@@ -298,6 +310,12 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		return self::runHelper($spec, $settings);
 	}
 
+	/**
+	 * Asserts that the configuration validator accepts the given VICTUAL_* values.
+	 *
+	 * @param array $settings VICTUAL_* overrides, without the prefix
+	 * @param string $why What makes the configuration valid, used as the failure message
+	 */
 	private static function assertConfigurationAccepted(array $settings, string $why): void
 	{
 		$verdict = self::validateConfiguration($settings);
@@ -305,6 +323,16 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertTrue($verdict['ok'], "$why, but the validator refused it: " . ($verdict['message'] ?? ''));
 	}
 
+	/**
+	 * Asserts that the configuration validator throws EInvalidConfig for the given values and that
+	 * the message contains the expected text.
+	 *
+	 * @param array $settings VICTUAL_* overrides, without the prefix
+	 * @param string $expectedInMessage Text the refusal message has to contain
+	 * @param string $why Why the configuration is invalid, used as the failure message
+	 * @param array $userSettings Default user settings planted before config-dist.php runs
+	 * @param array $defines Constants defined in the subprocess after the settings are read
+	 */
 	private static function assertConfigurationRefused(array $settings, string $expectedInMessage, string $why, array $userSettings = [], array $defines = []): void
 	{
 		$verdict = self::validateConfiguration($settings, $userSettings, $defines);
@@ -334,6 +362,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertNull(FindObjectInArrayByPropertyValue([], 'id', 1), 'an empty collection matches nothing');
 	}
 
+	/**
+	 * Proves that FindAllObjectsInArrayByPropertyValue() filters by equality, '>' or '<', and
+	 * that an operator it does not name matches nothing.
+	 */
 	public function testFindAllObjectsInArrayByPropertyValueAppliesTheNamedComparison()
 	{
 		$rows = [
@@ -352,6 +384,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertSame([], FindAllObjectsInArrayByPropertyValue([], 'amount', 5));
 	}
 
+	/**
+	 * Proves that FindAllItemsInArrayByValue() filters plain values by equality, '>' or '<', and
+	 * that an operator it does not name matches nothing.
+	 */
 	public function testFindAllItemsInArrayByValueAppliesTheNamedComparison()
 	{
 		$items = [1, 5, 9];
@@ -363,6 +399,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertSame([], FindAllItemsInArrayByValue([], 5));
 	}
 
+	/**
+	 * Proves that SumArrayValue() adds a property across objects, converting strings and null,
+	 * and returns zero for an empty collection.
+	 */
 	public function testSumArrayValueAddsThePropertyAsAFloat()
 	{
 		$rows = [
@@ -375,6 +415,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertSame(0, SumArrayValue([], 'price'), 'an empty collection sums to zero');
 	}
 
+	/**
+	 * Proves that GetClassConstants() returns all constants of a class, or only those whose name
+	 * starts with the given prefix.
+	 */
 	public function testGetClassConstantsReturnsEverythingOrOnlyThePrefixedOnes()
 	{
 		$all = GetClassConstants(UserfieldsService::class);
@@ -389,6 +433,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertSame([], GetClassConstants(Grocycode::class, 'USERFIELD_TYPE_'));
 	}
 
+	/**
+	 * Proves that RandomString() returns the requested length from the given or default
+	 * alphanumeric alphabet, and that two draws differ.
+	 */
 	public function testRandomStringHasTheRequestedLengthAndUsesOnlyTheAllowedCharacters()
 	{
 		self::assertSame('', RandomString(0), 'zero characters is the empty string');
@@ -400,6 +448,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertNotSame(RandomString(32), RandomString(32));
 	}
 
+	/**
+	 * Proves that IsAssociativeArray() is false for empty arrays and lists keyed from zero in
+	 * order, and true for any other key layout.
+	 */
 	public function testIsAssociativeArrayDistinguishesAMapFromAList()
 	{
 		self::assertFalse(IsAssociativeArray([]), 'the empty array is a list');
@@ -429,6 +481,9 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertFalse(IsIsoDate('tomorrow'), 'a relative expression is not a date');
 	}
 
+	/**
+	 * Proves that BoolToString() renders 'true' and 'false' and BoolToInt() renders 1 and 0.
+	 */
 	public function testBoolToStringAndBoolToIntRenderBothValues()
 	{
 		self::assertSame('true', BoolToString(true));
@@ -437,6 +492,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertSame(0, BoolToInt(false));
 	}
 
+	/**
+	 * Proves that ExternalSettingValue() trims line breaks, turns 'true' and 'false' into booleans
+	 * regardless of case, and leaves any other text as a string.
+	 */
 	public function testExternalSettingValueTrimsLineBreaksAndReadsTheBooleanWords()
 	{
 		self::assertTrue(ExternalSettingValue('true'));
@@ -508,6 +567,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Proves that registering a default user setting twice keeps the first value, and that a
+	 * name nobody registered is absent from the registry.
+	 */
 	public function testDefaultUserSettingKeepsTheFirstRegistrationOfAName()
 	{
 		global $VICTUAL_DEFAULT_USER_SETTINGS;
@@ -524,6 +587,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		unset($VICTUAL_DEFAULT_USER_SETTINGS['helperunits_probe']);
 	}
 
+	/**
+	 * Proves that GetUserDisplayName() uses first and last name, then whichever one is set,
+	 * then the username.
+	 */
 	public function testGetUserDisplayNameFallsBackThroughTheNameFieldsToTheUsername()
 	{
 		self::assertSame('Ada Lovelace', GetUserDisplayName((object)['first_name' => 'Ada', 'last_name' => 'Lovelace', 'username' => 'ada']));
@@ -532,6 +599,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertSame('ada', GetUserDisplayName((object)['first_name' => null, 'last_name' => null, 'username' => 'ada']));
 	}
 
+	/**
+	 * Proves that IsValidFileName() accepts names with an extension and refuses path separators,
+	 * a missing extension, a semicolon, a null byte and the empty string.
+	 */
 	public function testIsValidFileNameRefusesPathSeparatorsAndNamesWithoutAnExtension()
 	{
 		self::assertTrue(IsValidFileName('picture.png'));
@@ -545,6 +616,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertFalse(IsValidFileName(''));
 	}
 
+	/**
+	 * Proves that IsJsonString() accepts a complete JSON document, including a bare literal,
+	 * and refuses malformed or empty input.
+	 */
 	public function testIsJsonStringAnswersForTheWholeDocument()
 	{
 		self::assertTrue(IsJsonString('{"a":1}'));
@@ -586,6 +661,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertFalse(IsIpInCidr('10.0.0.5', '10.0.0.0/-1'), 'and so is a negative one');
 	}
 
+	/**
+	 * Proves that IsIpInCidrList() matches an address against any entry of a comma separated list,
+	 * CIDR ranges and bare addresses alike, and that an empty list matches nothing.
+	 */
 	public function testIsIpInCidrListMatchesAnyEntryAndAnEmptyListMatchesNothing()
 	{
 		$list = '10.0.0.0/8, 192.168.1.5 , fd00::/8';
@@ -619,6 +698,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertFalse(IsSafeExternalUrl('ftp://example.test/file'));
 	}
 
+	/**
+	 * Proves that SafeExternalUrl() returns a safe URL unchanged, replaces an unsafe one with '#',
+	 * and returns an empty string for null.
+	 */
 	public function testSafeExternalUrlKeepsASafeUrlAndReplacesAnUnsafeOneWithAHash()
 	{
 		self::assertSame('https://example.test/page', SafeExternalUrl('https://example.test/page'));
@@ -627,6 +710,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertSame('', SafeExternalUrl(null), 'a null URL renders as an empty href, not as a hash');
 	}
 
+	/**
+	 * Proves that IsApiRoutePath() recognises paths under /api/ when the installation is at the
+	 * web root, and not other pages or the bare /api.
+	 */
 	public function testIsApiRoutePathAnswersForTheDefaultInstallationRoot()
 	{
 		self::assertSame('', VICTUAL_BASE_PATH, 'this process is booted at the installation root');
@@ -657,6 +744,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertFalse($answers['/victual/stockoverview'], 'and a page on the same installation is not');
 	}
 
+	/**
+	 * Proves that only the calendar iCal key is readable and shown in full, while user issued
+	 * and MCP keys are shown as a masked hint.
+	 */
 	public function testApiKeyIsReadableOnlyForKeysTheApplicationHasToBeAbleToHandBack()
 	{
 		$calendarKey = (object)['key_type' => ApiKeyService::API_KEY_TYPE_SPECIAL_PURPOSE_CALENDAR_ICAL, 'api_key' => 'plain-calendar-key', 'key_hint' => 'ykey'];
@@ -673,6 +764,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertSame('••••', ApiKeyDisplayValue($mcpKey), 'a key created before hints existed shows nothing');
 	}
 
+	/**
+	 * Proves string_starts_with() and string_ends_with() on matching, non-matching and empty
+	 * needles, and on a needle longer than the haystack.
+	 */
 	public function testStringStartsWithAndStringEndsWith()
 	{
 		self::assertTrue(string_starts_with('/api/stock', '/api/'));
@@ -685,6 +780,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertFalse(string_ends_with('png', 'picture.png'), 'a needle longer than the haystack does not match');
 	}
 
+	/**
+	 * Proves that require_frontend_packages() adds each package name to the global list once, even
+	 * when two calls name it, and restores the list afterwards.
+	 */
 	public function testRequireFrontendPackagesCollectsEachPackageOnce()
 	{
 		global $VICTUAL_REQUIRED_FRONTEND_PACKAGES;
@@ -702,6 +801,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		$VICTUAL_REQUIRED_FRONTEND_PACKAGES = $before;
 	}
 
+	/**
+	 * Proves that EmptyFolder() deletes nested files and directories, keeps the folder itself, and
+	 * is a no-op on an already empty folder.
+	 */
 	public function testEmptyFolderRemovesEverythingBelowItAndKeepsTheFolderItself()
 	{
 		$root = self::$scratch . '/emptyfolder';
@@ -781,6 +884,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertSame(['p', 'b', 'c', 'r'], Grocycode::$Items, 'ADR-0011: there is no fifth type');
 	}
 
+	/**
+	 * Proves that a Grocycode string with fields after the id exposes them through GetExtraData()
+	 * in their original order.
+	 */
 	public function testGrocycodeParsesTheExtraDataFieldsInOrder()
 	{
 		$stockEntry = new Grocycode('grcy:p:13:60bf8b5244b04');
@@ -793,6 +900,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertSame(['first', 'second', 'third'], $several->GetExtraData(), 'extra fields keep their order');
 	}
 
+	/**
+	 * Proves that Grocycode::Validate() and the constructor refuse strings without the grcy magic
+	 * or with an unknown type, each with the matching exception message.
+	 */
 	public function testGrocycodeRefusesWhatIsNotAGrocycode()
 	{
 		$refusals = [
@@ -841,6 +952,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		new Grocycode('grcy:p');
 	}
 
+	/**
+	 * Proves that the Grocycode constructor throws for an empty or oversized argument list, for
+	 * extra data that is not an array, and for an unknown type.
+	 */
 	public function testGrocycodeRefusesArgumentListsItHasNoOverloadFor()
 	{
 		$cases = [
@@ -921,6 +1036,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		CanonicalJson::Encode($deep);
 	}
 
+	/**
+	 * Proves that CanonicalJson::Encode() throws ECanonicalizationFailed naming the type for a
+	 * resource, while an encodable value in the same document is accepted.
+	 */
 	public function testCanonicalJsonRefusesAValueWithNoCanonicalForm()
 	{
 		$handle = fopen('php://memory', 'r');
@@ -1041,6 +1160,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertConfigurationAccepted([], 'config-dist.php ships a usable configuration');
 	}
 
+	/**
+	 * Proves that the validator accepts production, dev, demo and prerelease as MODE and refuses
+	 * any other value.
+	 */
 	public function testModeHasToBeOneOfTheFourTheApplicationKnows()
 	{
 		foreach (['production', 'dev', 'demo', 'prerelease'] as $mode)
@@ -1120,6 +1243,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertTrue($verdict['ok'], 'the harness dialect was refused: ' . ($verdict['message'] ?? ''));
 	}
 
+	/**
+	 * Proves that an empty DB_HOST, DB_NAME or DB_USER is refused, and that DB_SSLMODE accepts
+	 * empty or a valid libpq mode and refuses a truncated one.
+	 */
 	public function testPostgresqlNeedsItsConnectionSettingsAndAKnownSslMode()
 	{
 		self::assertConfigurationRefused([], 'DB_HOST, DB_NAME and DB_USER need to be set', 'an empty database name is refused', [], ['DB_NAME' => '']);
@@ -1165,6 +1292,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * Proves that FILE_STORAGE_MAX_SIZE_MB accepts positive numbers, including fractions, and
+	 * refuses zero, negative values and non-numeric text.
+	 */
 	public function testTheUploadSizeLimitHasToBeAPositiveNumberOfMegabytes()
 	{
 		self::assertConfigurationAccepted(['FILE_STORAGE_MAX_SIZE_MB' => '1'], 'one megabyte is a positive limit');
@@ -1189,12 +1320,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 			'requires FILE_STORAGE "database"',
 			'putting label artifacts on disk would reintroduce the persistent volume'
 		);
-		// FINDING: checkLabelSubsystem()'s demo/prerelease refusal
-		// (helpers/ConfigurationValidator.php:228-231) cannot be reached. It runs after
-		// checkFileStorage(), which already refuses FILE_STORAGE "database" in those modes,
-		// and the only way past this method's own first check is FILE_STORAGE "database".
-		// So a demo instance enabling labels is answered by whichever of the two applies,
-		// and never by the message written for it.
+		// checkLabelSubsystem() once had its own demo/prerelease refusal, which could not be
+		// reached: checkFileStorage() runs first and refuses FILE_STORAGE "database" in those
+		// modes, and the label check refuses every other storage. Issue 252 removed it. These
+		// two cases show a demo instance enabling labels is still refused, by those two checks.
 		self::assertConfigurationRefused(
 			['FEATURE_FLAG_LABELS' => 'true', 'FILE_STORAGE' => 'database', 'MODE' => 'demo'],
 			'not supported in "demo" mode',
@@ -1207,12 +1336,20 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * Proves that DEFAULT_LOCALE is accepted when a localization folder exists for it and refused
+	 * when it does not.
+	 */
 	public function testTheDefaultLocaleHasToExistInTheLocalizationFolder()
 	{
 		self::assertConfigurationAccepted(['DEFAULT_LOCALE' => 'de'], 'de ships with the application');
 		self::assertConfigurationRefused(['DEFAULT_LOCALE' => 'xx_XX'], 'Invalid locale "xx_XX"', 'a locale with no folder would leave the UI untranslated');
 	}
 
+	/**
+	 * Proves that CURRENCY accepts a three letter code and refuses codes of other lengths and the
+	 * numeric code.
+	 */
 	public function testCurrencyHasToBeAThreeLetterCode()
 	{
 		self::assertConfigurationAccepted(['CURRENCY' => 'EUR'], 'ISO 4217');
@@ -1221,6 +1358,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertConfigurationRefused(['CURRENCY' => '840'], 'ISO 4217', 'the numeric code is not the letter code');
 	}
 
+	/**
+	 * Proves that CALENDAR_FIRST_DAY_OF_WEEK accepts empty or 0 to 6, while
+	 * MEAL_PLAN_FIRST_DAY_OF_WEEK also accepts -1, and that values outside each range are refused.
+	 */
 	public function testTheTwoFirstDayOfWeekSettingsHaveDifferentRanges()
 	{
 		self::assertConfigurationAccepted(['CALENDAR_FIRST_DAY_OF_WEEK' => ''], 'empty means the locale decides');
@@ -1235,6 +1376,9 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertConfigurationRefused(['MEAL_PLAN_FIRST_DAY_OF_WEEK' => '7'], 'MEAL_PLAN_FIRST_DAY_OF_WEEK', 'nor above six');
 	}
 
+	/**
+	 * Proves that ENTRY_PAGE accepts a page on the allowed list and refuses one that is not on it.
+	 */
 	public function testTheEntryPageHasToBeAPageTheApplicationServes()
 	{
 		self::assertConfigurationAccepted(['ENTRY_PAGE' => 'mealplan'], 'the meal plan is an entry page');
@@ -1302,6 +1446,11 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * Proves that INFLUXDB_* settings are ignored while disabled, and when enabled require a URL,
+	 * an organisation (except for versions 1 and 3) and a bucket, a version of 1, 2 or 3, and a
+	 * timeout of at least 1.
+	 */
 	public function testInfluxDbIsOnlyValidatedWhenItIsTurnedOn()
 	{
 		self::assertConfigurationAccepted(['INFLUXDB_ENABLED' => 'false'], 'an unused metrics setting is not checked');
@@ -1413,6 +1562,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		return array_values(array_filter(explode("\n", trim($verdict['stderr'])), fn ($line) => $line !== ''));
 	}
 
+	/**
+	 * Proves that the stderr logger writes one line per record in the form
+	 * [ISO 8601 timestamp] LEVEL: message.
+	 */
 	public function testAStderrRecordCarriesItsTimestampLevelAndMessage()
 	{
 		$lines = self::logLines([['level' => 'error', 'message' => 'the thing broke']]);
@@ -1425,6 +1578,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * Proves that a non-empty context is appended to the line as JSON with slashes and non-ASCII
+	 * left unescaped, and that a missing or empty context appends nothing.
+	 */
 	public function testContextIsAppendedAsJsonOnTheSameLine()
 	{
 		$lines = self::logLines([
@@ -1439,6 +1596,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertStringEndsWith('WARNING: with empty context', $lines[2], 'an empty context is the same as none');
 	}
 
+	/**
+	 * Proves that the logger drops records below its minimum level, keeps the rest, and logs
+	 * everything when the default minimum is used.
+	 */
 	public function testRecordsBelowTheMinimumLevelAreDiscardedAndTheRestAreKept()
 	{
 		$records = [
@@ -1512,6 +1673,13 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 
 	// ========================================================= services/ApplicationService.php
 
+	/**
+	 * Builds a PSR-7 server request to http://localhost/api with the given method and headers.
+	 *
+	 * @param string $method The HTTP method
+	 * @param array $headers Header values keyed by header name
+	 * @return \Psr\Http\Message\ServerRequestInterface
+	 */
 	private static function request(string $method = 'GET', array $headers = [])
 	{
 		$request = (new ServerRequestFactory())->createServerRequest($method, 'http://localhost/api');
@@ -1524,6 +1692,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		return $request;
 	}
 
+	/**
+	 * Proves that GetChangelog() builds one item per changelog file except the template, takes
+	 * version and date from the file name, and orders items newest release first.
+	 */
 	public function testTheChangelogIsParsedFromItsFileNamesNewestReleaseFirst()
 	{
 		$changelog = ApplicationService::GetInstance()->GetChangelog();
@@ -1552,6 +1724,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertCount(count(glob(VICTUAL_ROOT_PATH . '/changelog/*.md')) - 1, $changelog['changelog_items'], 'every changelog file but the template is an item');
 	}
 
+	/**
+	 * Proves that GetInstalledVersion() returns the contents of version.json and returns the same
+	 * object on a second call.
+	 */
 	public function testTheInstalledVersionIsReadFromVersionJsonAndCachedPerInstance()
 	{
 		$service = ApplicationService::GetInstance();
@@ -1564,6 +1740,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertSame($version, $service->GetInstalledVersion(), 'the file is read once per instance');
 	}
 
+	/**
+	 * Proves that GetSystemInfo() reports the PHP version, the client from the User-Agent header,
+	 * the PostgreSQL version, the highest applied migration and the operating system.
+	 */
 	public function testSystemInfoReportsTheEngineActuallyServingTheInstallation()
 	{
 		$info = ApplicationService::GetInstance()->GetSystemInfo(self::request('GET', ['User-Agent' => 'HelperUnits/1.0']));
@@ -1581,6 +1761,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString(php_uname('s'), $info['os']);
 	}
 
+	/**
+	 * Proves that GetSystemInfo() reports the client as 'unknown' when called without a request or
+	 * with a request that has no User-Agent header.
+	 */
 	public function testSystemInfoAnswersUnknownForACallerThatNamedNoClient()
 	{
 		$withoutRequest = ApplicationService::GetInstance()->GetSystemInfo();
@@ -1670,6 +1854,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertNotSame('', ApplicationService::GetInstance()->GetSystemTime()['time_local_sqlite3']);
 	}
 
+	/**
+	 * Proves that GetSystemTime() with no offset returns the current timestamp, the configured
+	 * timezone, and local and UTC renderings of the same instant.
+	 */
 	public function testSystemTimeReportsTheSameInstantFromEveryPerspective()
 	{
 		$now = ApplicationService::GetInstance()->GetSystemTime();
@@ -1684,6 +1872,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertArrayHasKey('time_local_sqlite3', $now, 'ADR-0005: the key stays in the response');
 	}
 
+	/**
+	 * Proves that GetSystemTime() moves the reported time forward for a positive offset and back
+	 * for a negative one, in the timestamp and in both renderings.
+	 */
 	public function testSystemTimeShiftsByTheOffsetInBothDirections()
 	{
 		$base = ApplicationService::GetInstance()->GetSystemTime();
@@ -1701,6 +1893,11 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 
 	// ========================================================== services/UserfieldsService.php
 
+	/**
+	 * Returns the UserfieldsService instance under test.
+	 *
+	 * @return UserfieldsService
+	 */
 	private static function userfields(): UserfieldsService
 	{
 		return UserfieldsService::GetInstance();
@@ -1726,6 +1923,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 			. "(9603, 'HelperUnitsHalfWrittenProduct', 2, 2, 2)");
 	}
 
+	/**
+	 * Proves that GetEntities() lists exposed entities and users, adds a user entity under its
+	 * userentity- name once it is defined, and returns the list sorted.
+	 */
 	public function testTheEntityListIsTheExposedEntitiesPlusUserEntitiesPlusUsers()
 	{
 		$before = self::userfields()->GetEntities();
@@ -1745,6 +1946,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertSame($sorted, $after, 'the list is sorted');
 	}
 
+	/**
+	 * Proves that GetFields() returns an entity's fields ordered by sort number, GetAllFields() and
+	 * GetField() read definitions, and an unknown entity throws.
+	 */
 	public function testFieldsAreReadPerEntityAndAnUnknownEntityIsRefused()
 	{
 		self::assertSame([], self::userfields()->GetFields('batteries'), 'an entity the fixture defines no userfield for has none');
@@ -1766,6 +1971,9 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::userfields()->GetFields('userentity-there_is_no_such_entity');
 	}
 
+	/**
+	 * Proves that GetFieldTypes() returns exactly the fourteen USERFIELD_TYPE_ constants.
+	 */
 	public function testTheFieldTypeListIsTheSetTheUserInterfaceOffers()
 	{
 		$types = self::userfields()->GetFieldTypes();
@@ -1776,6 +1984,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertCount(14, $types, 'the fourteen USERFIELD_TYPE_ constants and nothing else');
 	}
 
+	/**
+	 * Proves that GetValues() returns null for unset fields, SetValues() stores one row per field
+	 * and object, a repeat write updates that row, and other objects are unaffected.
+	 */
 	public function testValuesAreNullUntilSomethingStoresThemAndThenReadBack()
 	{
 		$empty = self::userfields()->GetValues('products', 9600);
@@ -1798,6 +2010,9 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertSame('9', self::userfields()->GetValues('products', 9600)['helperunits_alpha']);
 	}
 
+	/**
+	 * Proves that GetValues() throws for an entity that does not exist or is not exposed.
+	 */
 	public function testReadingTheValuesOfAnUnknownEntityIsRefused()
 	{
 		$this->expectException(\Exception::class);
@@ -1806,6 +2021,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::userfields()->GetValues('userentity-there_is_no_such_entity', 1);
 	}
 
+	/**
+	 * Proves that GetAllValues() lists stored values for an entity, returns none for an entity
+	 * nobody has filled in, and throws for an unknown entity.
+	 */
 	public function testAllValuesOfAnEntityAreListedAndAnUnknownEntityIsRefused()
 	{
 		self::userfields()->SetValues('products', 9602, ['helperunits_alpha' => '11']);
@@ -1821,6 +2040,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::userfields()->GetAllValues('not-an-entity');
 	}
 
+	/**
+	 * Proves that SetValues() on an unknown entity throws and leaves the userfield_values row
+	 * count unchanged.
+	 */
 	public function testSettingValuesForAnUnknownEntityWritesNothing()
 	{
 		$before = (int)self::$db->query('SELECT count(*) FROM userfield_values')->fetchColumn();
@@ -1878,6 +2101,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 
 	// ======================================================== services/LocalizationService.php
 
+	/**
+	 * Proves that LocalizationService::GetInstance() returns one instance per locale and uses
+	 * VICTUAL_LOCALE when no locale is given.
+	 */
 	public function testTheLocaleInstanceIsSharedPerLocaleAndDefaultsToTheConfiguredOne()
 	{
 		$configured = LocalizationService::GetInstance();
@@ -1889,6 +2116,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertNotSame($configured, $german, 'and a different locale is a different instance');
 	}
 
+	/**
+	 * Proves that __t() returns the source string for an untranslated locale, fills %s placeholders
+	 * from a single value or an array, and returns the translation for a translated locale.
+	 */
 	public function testTranslationFallsBackToTheSourceStringAndFillsPlaceholders()
 	{
 		$english = LocalizationService::GetInstance('en');
@@ -1906,6 +2137,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertNotSame($german->__t('Stock overview'), $english->__t('Stock overview'), 'the negative control: the two locales do not agree');
 	}
 
+	/**
+	 * Proves that __n() picks the singular or plural form from the absolute value of the number,
+	 * and falls back to the singular when the plural form is empty.
+	 */
 	public function testPluralTranslationChoosesTheFormForTheNumber()
 	{
 		$english = LocalizationService::GetInstance('en');
@@ -1918,6 +2153,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertSame('2 day', $english->__n(2, '%s day', ''), 'an empty plural form falls back to the singular');
 	}
 
+	/**
+	 * Proves that GetPluralCount() and GetPluralDefinition() read the locale's Plural-Forms header,
+	 * and use two forms with '(n != 1)' when the header is absent.
+	 */
 	public function testThePluralHeaderIsReadFromTheLocaleAndDefaultsWhenItIsAbsent()
 	{
 		$english = LocalizationService::GetInstance('en');
@@ -1934,6 +2173,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertSame('0', $japanese->GetPluralDefinition());
 	}
 
+	/**
+	 * Proves that __n() with the quantity unit flag takes the plural form from the quantity_units
+	 * row's plural_forms, and that without the flag it returns the source strings.
+	 */
 	public function testQuantityUnitNamesAreTranslatedFromTheDatabaseRatherThanFromPoFiles()
 	{
 		// The translated forms live in the row, one per line, which is what makes this a
@@ -1952,6 +2195,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertSame('HelperUnitsJars', $service->__n(4, 'HelperUnitsJar', 'HelperUnitsJars', false));
 	}
 
+	/**
+	 * Proves that GetPoAsJsonString() and GetPoAsJsonStringQu() return valid JSON and are two
+	 * different translation sets.
+	 */
 	public function testTheTranslationsAreAlsoServedAsJsonForTheClientSide()
 	{
 		$service = LocalizationService::GetInstance('de');
@@ -2089,6 +2336,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertNotContains('Task due: CalendarTask', $titles);
 	}
 
+	/**
+	 * Proves that with STOCK_VIEW the calendar lists a stocked product's best before date as an all
+	 * day event linking to the stock overview, omits a product with no stock, and shows no tasks.
+	 */
 	public function testStockDueDatesBecomeAllDayEventsLinkedToTheStockOverview()
 	{
 		self::grant(['STOCK_VIEW']);
@@ -2107,6 +2358,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertNotContains('Task due: CalendarTask', $titles, 'and STOCK_VIEW alone does not reveal tasks');
 	}
 
+	/**
+	 * Proves that with TASKS_VIEW the calendar lists an open task's due date as an all day event
+	 * linking to the tasks page, and omits a completed task.
+	 */
 	public function testTaskDueDatesAppearForACallerWhoMaySeeTasks()
 	{
 		self::grant(['TASKS_VIEW']);
@@ -2122,6 +2377,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertNotContains('Task due: CalendarDoneTask', array_column($events, 'title'), 'a completed task is not still due');
 	}
 
+	/**
+	 * Proves that with CHORES_VIEW the calendar shows date-only chores as all day events, timed
+	 * chores as not all day, omits inactive chores, and names the assigned user in the title.
+	 */
 	public function testChoreEventsCarryTheirTrackingGranularityAndAssignment()
 	{
 		self::grant(['CHORES_VIEW']);
@@ -2149,6 +2408,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('(assigned to Calendar Caller)', $assigned['title'], 'the assignee is named in the title');
 	}
 
+	/**
+	 * Proves that with BATTERIES_VIEW the calendar lists a battery's charge cycle as a timed event
+	 * linking to the battery overview, including a battery that was never charged.
+	 */
 	public function testBatteryChargeCyclesAreTimedEventsLinkedToTheBatteryOverview()
 	{
 		self::grant(['BATTERIES_VIEW']);

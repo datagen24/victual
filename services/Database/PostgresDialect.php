@@ -359,6 +359,12 @@ class PostgresDialect extends DatabaseDialect
 		$pdo->prepare('SELECT pg_advisory_xact_lock(?, ?)')->execute([self::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $productId]);
 	}
 
+	/** @see DatabaseDialect::LockQuantityUnitConversionWrites() */
+	public function LockQuantityUnitConversionWrites(\PDO $pdo): void
+	{
+		$pdo->exec('LOCK TABLE quantity_unit_conversions IN SHARE MODE');
+	}
+
 	/** @see DatabaseDialect::GetRowClaimLockClause() */
 	public function GetRowClaimLockClause(): string
 	{

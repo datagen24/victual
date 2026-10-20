@@ -29,6 +29,46 @@ class FilesService extends BaseService
 	 */
 	const DOWNSCALED_INFIX = '__downscaledto';
 
+	/** What follows the infix: "<height|auto>x<width|auto>.<ext>". */
+	private const DERIVATIVE_PATTERN = '/^(.+)__downscaledto(?:\d+|auto)x(?:\d+|auto)\.([^.]+)\z/s';
+
+	/**
+	 * The name a downscaled copy of $fileName is cached under. null for either limit means
+	 * "no limit", written as 'auto'.
+	 */
+	public static function DerivativeName(string $fileName, ?int $bestFitHeight, ?int $bestFitWidth): string
+	{
+		return pathinfo($fileName, PATHINFO_FILENAME) . self::DOWNSCALED_INFIX . ($bestFitHeight ? $bestFitHeight : 'auto') . 'x' . ($bestFitWidth ? $bestFitWidth : 'auto') . '.' . pathinfo($fileName, PATHINFO_EXTENSION);
+	}
+
+	/**
+	 * $fileName followed by what it is a derivative of, one suffix at a time, root last. A
+	 * name that is not a derivative is a chain of one. A derivative can be created from a
+	 * stored name that is itself a derivative name (a value or an upload may name one), so
+	 * the whole chain is what an authorization decision has to look at.
+	 *
+	 * @return string[]
+	 */
+	public static function DerivativeChain(string $fileName): array
+	{
+		$chain = [$fileName];
+		while (preg_match(self::DERIVATIVE_PATTERN, $fileName, $match) === 1)
+		{
+			$fileName = $match[1] . '.' . $match[2];
+			$chain[] = $fileName;
+		}
+
+		return $chain;
+	}
+
+	/** The original that $fileName is, or is a (chain of) cached derivative(s) of. */
+	public static function RootOf(string $fileName): string
+	{
+		$chain = self::DerivativeChain($fileName);
+
+		return $chain[count($chain) - 1];
+	}
+
 	/**
 	 * Returns the name of a downscaled copy of the given image, created on first use and
 	 * cached alongside the original as "<name>__downscaledto<h>x<w>.<ext>".
@@ -47,10 +87,7 @@ class FilesService extends BaseService
 	{
 		$storage = FileStorage::GetInstance();
 
-		$fileNameWithoutExtension = pathinfo($fileName, PATHINFO_FILENAME);
-		$fileExtension = pathinfo($fileName, PATHINFO_EXTENSION);
-
-		$fileNameDownscaled = $fileNameWithoutExtension . self::DOWNSCALED_INFIX . ($bestFitHeight ? $bestFitHeight : 'auto') . 'x' . ($bestFitWidth ? $bestFitWidth : 'auto') . '.' . $fileExtension;
+		$fileNameDownscaled = self::DerivativeName($fileName, $bestFitHeight, $bestFitWidth);
 
 		try
 		{

@@ -94,6 +94,13 @@ jobs:
       - name: Check deploy/k3s is the chart's rendering
         run: python3 .devtools/ci/render_k3s.py --check
 
+      # ADR-0038 decision 4: one version. release.yml refuses a tag that disagrees with
+      # version.json, but only once the tag is pushed; this refuses a copy that disagrees
+      # (Chart.yaml, the OpenAPI info.version, the podman and Compose image tags, ...), a
+      # missing release record, and one still in its generated draft, on the pull request.
+      - name: Check every copy of the release version agrees
+        run: python3 .devtools/ci/release_version.py --check
+
       # There is no configured linter in this repository, so this is a syntax sweep
       # rather than a style check. It is cheap and it catches the parse error that
       # would otherwise fail every job below with a much less obvious message.
@@ -793,6 +800,13 @@ jobs:
         working-directory: .devtools/frontend
         run: node userform-password.js http://127.0.0.1:8085
 
+      # Issue #774. Whether the stock entry edit form sends back a price the user left alone
+      # is a browser-side question: the server keeps a legacy-zero marker only when the
+      # price is omitted, and PHPUnit never runs public/viewjs.
+      - name: Run stock entry price omission checks
+        working-directory: .devtools/frontend
+        run: node stockentry-price.js http://127.0.0.1:8085
+
       # Plan 03. The form field and the short-group list are both things the PHP phase
       # structurally cannot see: it asserts the column and the controller's row set, and this
       # asserts that a person can set the value and act on the result. A probe nothing runs is
@@ -1000,6 +1014,13 @@ jobs:
       - name: Run nullable integer form checks
         working-directory: .devtools/frontend
         run: node nullable-integer-forms.js http://127.0.0.1:8085
+
+      # Issue #774, ADR-0045 option B: the stock overview and the product card mark a stock
+      # value whose prices are partly unknown, and show a free product's last price of 0
+      # instead of hiding it. PHP never runs public/viewjs, so no PHPUnit phase can see that.
+      - name: Run price semantics checks
+        working-directory: .devtools/frontend
+        run: node price-semantics.js http://127.0.0.1:8085
 
       # The same shape again, outside any form: the /choresoverview reschedule modal's Save
       # handler sent the user picker's "" for rescheduled_next_execution_assigned_to_user_id

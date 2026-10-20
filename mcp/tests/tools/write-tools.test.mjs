@@ -23,6 +23,9 @@ function ctx(response) {
         posts.push({ path, body });
         return typeof response === "function" ? response(path, body) : response;
       },
+      async postWithStatus(path, credential, body) {
+        return { status: 200, body: await this.post(path, credential, body) };
+      },
     },
   };
 }
@@ -70,9 +73,12 @@ test("purchase_product maps due_date to best_before_date and omits unset optiona
   assert.equal(purchaseProduct.inputSchema.safeParse({ product_id: 4, amount: 1, due_date: "next week" }).success, false);
 });
 
-test("a booking answered without a transaction row is a victual_error, never success without an id", async () => {
-  await assert.rejects(run(consumeProduct, { product_id: 3, amount: 1 }, ctx([])), (e) => e instanceof VictualApiError && e.category === "victual_error");
-  await assert.rejects(run(purchaseProduct, { product_id: 3, amount: 1 }, ctx(undefined)), VictualApiError);
+test("a booking answered 2xx without a transaction row is outcome_unknown and keeps the status (#937)", async () => {
+  const unknown = (e) => e instanceof VictualApiError && e.category === "outcome_unknown" && e.victualStatus === 200 && /no transaction row/.test(e.message);
+  await assert.rejects(run(consumeProduct, { product_id: 3, amount: 1 }, ctx([])), unknown);
+  await assert.rejects(run(consumeProduct, { product_id: 3, amount: 1 }, ctx([{}])), unknown);
+  await assert.rejects(run(purchaseProduct, { product_id: 3, amount: 1 }, ctx(undefined)), unknown);
+  await assert.rejects(run(purchaseProduct, { product_id: 3, amount: 1 }, ctx([{ transaction_id: "" }])), unknown);
 });
 
 test("loadConfig accepts the write tools by name, and all-read does not include them", () => {

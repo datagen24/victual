@@ -59,5 +59,10 @@ INSERT INTO permission_fields (permission_name, entity, field) VALUES
 	('STOCK_PRICES_VIEW', 'product_details', 'avg_price'),
 	('STOCK_PRICES_VIEW', 'product_details', 'oldest_price'),
 	('STOCK_PRICES_VIEW', 'product_details', 'current_price'),
-	('STOCK_PRICES_VIEW', 'product_details', 'stock_value')
+	('STOCK_PRICES_VIEW', 'product_details', 'stock_value'),
+	-- ADR-0045 gate 5 (migration 0316): whether a value is complete says whether prices were
+	-- recorded, which is price information, so each flag is redacted with its value
+	('STOCK_PRICES_VIEW', 'stock_current', 'value_incomplete'),
+	('STOCK_PRICES_VIEW', 'product_details', 'stock_value_incomplete'),
+	('STOCK_PRICES_VIEW', 'uihelper_stock_current_overview', 'value_incomplete')
 ON CONFLICT (permission_name, entity, field) DO NOTHING;

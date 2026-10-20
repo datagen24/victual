@@ -2252,9 +2252,6 @@ msgstr ""
 msgid "DD"
 msgstr "DD"
 
-msgid "Print on label printer"
-msgstr "Etiket yazıcısında yazdır"
-
 msgid "Default stock entry label"
 msgstr "Varsayılan stok girişi etiketi"
 
@@ -2269,13 +2266,6 @@ msgstr "Tek etiket"
 
 msgid "Label per unit"
 msgstr "Birim başına etiket"
-
-msgid "Error while executing WebHook"
-msgstr "WebHook yürütülürken hata oluştu"
-
-# Example: Print *Product* Grocycode on label printer
-msgid "Print %s Grocycode on label printer"
-msgstr "Etiket yazıcısında %s Grocykodu'nu yazdırın"
 
 msgid "Open stock entry label in new window"
 msgstr "Stok giriş etiketini yeni pencerede aç"

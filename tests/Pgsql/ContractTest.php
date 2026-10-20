@@ -23,6 +23,7 @@ use Victual\Controllers\Api\TasksApiController;
 use Victual\Controllers\Api\UsersApiController;
 use Victual\Middleware\PathParameterMiddleware;
 use Victual\Tests\Support\JsonShape;
+use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 use Victual\Tests\Support\RouteInventory;
 
@@ -65,9 +66,8 @@ use Victual\Tests\Support\RouteInventory;
  *     TRANSACTION_TYPE_* constants, and the add/consume request enums are exactly what
  *     AddProduct()/ConsumeProduct() accept (issue #772).
  *  9d. testRecordedKeysAreDeclaredByTheirDocumentedSchemas(): every key a recorded Admin
- *     2xx body carries is a property its documented schema declares, for the schemas
- *     UNDECLARED_KEY_COVERED_SCHEMAS lists - which include every schema the stock routes
- *     reach (issue #787).
+ *     2xx body carries is a property its documented schema declares, for every reached
+ *     schema, including inline response objects (issues #787 and #893).
  *
  * The consumption recipe routes (ADR-0040) are invoked for the administrator, and only the list and
  * the by-id read are replayed for CHILD. A user with no share on a recipe gets 404 from every by-id
@@ -468,6 +468,7 @@ class ContractTest extends PgsqlSchemaTestCase
 		self::assertGreaterThan(0, self::$ids['product'], 'Fixture product created');
 	}
 
+	/** The stock endpoints answer the recorded contract, for unpriced and mixed products as well as priced ones. */
 	#[Depends('testCreatesMasterData')]
 	public function testStockOperations(): void
 	{
@@ -483,6 +484,19 @@ class ContractTest extends PgsqlSchemaTestCase
 		// 1460 days (not 1461) because the mean is then fractional, which is the `number` the
 		// golden files record and the truthful type for an average.
 		self::invokeAdmin('POST /api/stock/products/{productId}/add', fn() => $stock->AddProduct(self::request('POST', ['amount' => 10, 'price' => 2.5, 'best_before_date' => '2030-01-01', 'purchased_date' => '2026-01-02']), new Response(), ['productId' => $productId]));
+		// ADR-0045 (issue #774): an unpriced and a mixed product, so GET /api/stock records the
+		// shape of an unknown and a partial value as well as a known one. Booked directly, so no
+		// route of their own is recorded.
+		foreach (['Contract Product Unpriced' => [null], 'Contract Product Mixed' => [3.0, null]] as $name => $prices)
+		{
+			$statement = self::Pdo()->prepare('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock) VALUES (?, ?, 2, 2) RETURNING id');
+			$statement->execute([$name, self::$ids['location']]);
+			$extraProduct = (int)$statement->fetchColumn();
+			foreach ($prices as $price)
+			{
+				StockService::GetInstance()->AddProduct($extraProduct, 1, '2030-01-01', StockService::TRANSACTION_TYPE_PURCHASE, '2026-01-02', $price, self::$ids['location']);
+			}
+		}
 		self::invokeAdmin('GET /api/stock', fn() => $stock->CurrentStock(self::request(), new Response(), []));
 		// One unit due in two days, so GET /api/stock/volatile has a due_products row; see
 		// testCreatesMasterData(). Booked after GET /api/stock is recorded so that route's
@@ -727,6 +741,18 @@ class ContractTest extends PgsqlSchemaTestCase
 
 		self::invokeAdmin('GET /api/chores', fn() => $chores->Current(self::request(), new Response(), []));
 		self::invokeAdmin('GET /api/chores/{choreId}', fn() => $chores->ChoreDetails(self::request(), new Response(), ['choreId' => self::$ids['chore']]));
+
+		// Two completed gaps of 24 and 25 hours make the documented average a
+		// fractional JSON number. The standing chore above retains its original snapshot.
+		$fractional = self::invokeAdmin('POST /api/objects/{entity} (chores, fractional average)', fn() => $generic->AddObject(self::request('POST', ['name' => 'Contract Fractional Chore', 'period_type' => 'manually']), new Response(), ['entity' => 'chores']));
+		$fractionalId = (int)$fractional['created_object_id'];
+		$insertExecution = self::$db->prepare('INSERT INTO chores_log (chore_id, tracked_time, done_by_user_id) VALUES (?, ?, 9000)');
+		foreach (['2026-01-01 12:00:00', '2026-01-02 12:00:00', '2026-01-03 13:00:00'] as $trackedTime)
+		{
+			$insertExecution->execute([$fractionalId, $trackedTime]);
+		}
+		$details = self::invokeAdmin('GET /api/chores/{choreId} (fractional average)', fn() => $chores->ChoreDetails(self::request(), new Response(), ['choreId' => $fractionalId]));
+		self::assertSame(24.5, $details['average_execution_frequency_hours']);
 
 		$execution = self::invokeAdmin('POST /api/chores/{choreId}/execute', fn() => $chores->TrackChoreExecution(self::request('POST', []), new Response(), ['choreId' => self::$ids['chore']]));
 		self::$ids['chore_execution'] = (int)($execution['id'] ?? 0);
@@ -1467,10 +1493,17 @@ class ContractTest extends PgsqlSchemaTestCase
 	/** The schema victual.openapi.json documents for a recorded key's response, or null when it documents none. */
 	private static function documentedResponseSchema(array $spec, string $key, int $status): ?array
 	{
-		if (preg_match('/^GET \/api\/objects\/\{entity\}(\/\{objectId\})? \(([a-z_]+)\)$/', $key, $m) && isset(self::SWEEP_ENTITY_SCHEMAS[$m[2]]))
+		if (preg_match('/^GET \/api\/objects\/\{entity\}(\/\{objectId\})? \(([a-z_]+)\)$/', $key, $m))
 		{
-			$row = ['$ref' => '#/components/schemas/' . self::SWEEP_ENTITY_SCHEMAS[$m[2]]];
-			return $m[1] === '' ? ['type' => 'array', 'items' => $row] : $row;
+			$path = '/objects/{entity}' . $m[1];
+			$documented = $spec['paths'][$path]['get']['responses'][(string)$status]['content']['application/json']['schema'] ?? [];
+			$members = $m[1] === '' ? ($documented['items']['x-victual-entity-schemas'] ?? []) : ($documented['x-victual-entity-schemas'] ?? []);
+			$name = $members[$m[2]] ?? self::SWEEP_ENTITY_SCHEMAS[$m[2]] ?? null;
+			if ($name !== null)
+			{
+				$row = ['$ref' => '#/components/schemas/' . $name];
+				return $m[1] === '' ? ['type' => 'array', 'items' => $row] : $row;
+			}
 		}
 
 		// A key is "METHOD /api/path", optionally followed by " (what this call is for)".
@@ -1767,63 +1800,18 @@ class ContractTest extends PgsqlSchemaTestCase
 	}
 
 	// ------------------------------------------------------------------------------
-	// 9d. Issue #787: every key a recorded response carries is declared by its documented
+	// 9d. Issues #787 and #893: every key a recorded response carries is declared by its documented
 	//     schema. A generated client drops a key its schema does not declare, so a field
 	//     the server sends and the document omits is a field no client can read. Scoped
-	//     to the schemas below rather than to the whole document, with no allowlist of
-	//     keys: a schema is either listed, and then every key it is sent with must be
-	//     declared, or it is not checked at all.
+	//     to every reached schema, including inline response objects.
 	// ------------------------------------------------------------------------------
-
-	/**
-	 * The component schemas whose every recorded key is declared. Each was checked
-	 * against the columns or the code that fills it when it was listed, not only against
-	 * the recorded bodies. The first twelve are every schema the recorded 2xx bodies of
-	 * the /api/stock routes reach, which the test asserts;
-	 * RecipeFulfillmentResponse is the other schema issue #787 names.
-	 *
-	 * Not listed: the inline GET /system/info schema, which has no component name for this
-	 * walk to attribute its keys to. Adding a schema here is how its gaps become a failure.
-	 */
-	private const UNDECLARED_KEY_COVERED_SCHEMAS = [
-		'CurrentStockResponse',
-		'CurrentVolatilStockResponse',
-		'Location',
-		'Product',
-		'ProductBarcode',
-		'ProductDetailsResponse',
-		'ProductPriceHistory',
-		'ProductWithoutUserfields',
-		'QuantityUnit',
-		'StockEntry',
-		'StockLocation',
-		'StockLogEntry',
-		'RecipeFulfillmentResponse',
-		'Battery',
-		'Chore',
-		'ChoreDetailsResponse',
-		'ChoreLogEntry',
-		'CurrentBatteryResponse',
-		'CurrentChoreResponse',
-		'Role',
-		'ShoppingLocation',
-		'TaskCategory',
-		'BatteryChargeCycleEntry',
-		'BatteryDetailsResponse',
-	];
-
-	/** The schemas issue #787 names, which the covered list has to include. */
-	private const ISSUE_787_SCHEMAS = [
-		'Product', 'ProductWithoutUserfields', 'Location', 'QuantityUnit', 'ProductBarcode',
-		'ProductDetailsResponse', 'RecipeFulfillmentResponse',
-	];
 
 	/**
 	 * The schemas a value is checked against at one position: $schema itself, its allOf
 	 * members (recursively), and the one non-null oneOf/anyOf member the value can be
 	 * (for an object, by its `required` keys, as collectEnumValues() chooses). Each entry
 	 * is [resolved schema, component name or null]. $ambiguous is set when more than one
-	 * member could be chosen, so the caller can refuse to guess for a covered schema.
+	 * member could be chosen, so the caller can refuse to guess about its keys.
 	 *
 	 * @return array<int, array{0: array, 1: ?string}>
 	 */
@@ -1879,12 +1867,10 @@ class ContractTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * Walks a decoded body beside its documented schema. An object is checked when one of
-	 * the schemas it is matched against is covered, or, for an inline object with no
-	 * component name of its own, when the component it is nested in is covered ($context);
-	 * a key none of those schemas declares is a violation, unless one of them allows
-	 * additionalProperties. $reached records every component schema an object of this
-	 * body was matched against, so the test can show the covered list is not vacuous.
+	 * Walks a decoded body beside its documented schema. Every reached object is checked,
+	 * including an inline object with no component name. A key absent from its declared
+	 * properties is a violation unless the schema allows additionalProperties.
+	 * $reached records component schemas matched against recorded values.
 	 */
 	private static function collectUndeclaredKeys(array $spec, array $schema, $value, ?string $context, string $path, string $key, array &$reached, array &$violations, int $depth = 0): void
 	{
@@ -1902,10 +1888,10 @@ class ContractTest extends PgsqlSchemaTestCase
 			$reached[$name] = true;
 		}
 		$owners = $names === [] && $context !== null ? [$context] : $names;
-		$covered = array_values(array_intersect($owners, self::UNDECLARED_KEY_COVERED_SCHEMAS));
+		$owner = $owners === [] ? 'inline response' : implode('/', $owners);
 		$context = $names[0] ?? $context;
 
-		if ($covered !== [] && array_intersect($ambiguous, self::UNDECLARED_KEY_COVERED_SCHEMAS) !== [])
+		if ($ambiguous !== [])
 		{
 			$violations[] = "$key: $path matches more than one of " . json_encode(array_values(array_unique($ambiguous))) . ', so its keys cannot be attributed';
 			return;
@@ -1954,9 +1940,9 @@ class ContractTest extends PgsqlSchemaTestCase
 			{
 				self::collectUndeclaredKeys($spec, $declared[$property], $propertyValue, $context, "$path.$property", $key, $reached, $violations, $depth + 1);
 			}
-			elseif ($covered !== [] && !$open)
+			elseif (!$open)
 			{
-				$violations[] = "$key: " . implode('/', $covered) . ".$property is sent (at " . ltrim("$path.$property", '.') . ') but not declared';
+				$violations[] = "$key: $owner.$property is sent (at " . ltrim("$path.$property", '.') . ') but not declared';
 			}
 		}
 	}
@@ -1968,10 +1954,20 @@ class ContractTest extends PgsqlSchemaTestCase
 	#[Depends('testGenericEntitySweepAsAdmin')]
 	public function testRecordedKeysAreDeclaredByTheirDocumentedSchemas(): void
 	{
+		// This is a fixture-reachability guard, never a filter on the schemas checked.
+		// A vanished route or empty fixture must not quietly reduce the key check's scope.
+		$mustReach = [
+			'CurrentStockResponse', 'CurrentVolatilStockResponse', 'Location', 'Product',
+			'ProductBarcode', 'ProductDetailsResponse', 'ProductPriceHistory',
+			'ProductWithoutUserfields', 'QuantityUnit', 'StockEntry', 'StockLocation',
+			'StockLogEntry', 'RecipeFulfillmentResponse', 'Battery', 'Chore',
+			'ChoreDetailsResponse', 'ChoreLogEntry', 'CurrentBatteryResponse',
+			'CurrentChoreResponse', 'Role', 'ShoppingLocation', 'TaskCategory',
+			'BatteryChargeCycleEntry', 'BatteryDetailsResponse',
+		];
 		$spec = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), true);
 		$violations = [];
 		$reachedAnywhere = [];
-		$reachedByStock = [];
 		$walked = 0;
 
 		foreach (self::$adminBodies as $key => $body)
@@ -1992,10 +1988,6 @@ class ContractTest extends PgsqlSchemaTestCase
 			$reached = [];
 			self::collectUndeclaredKeys($spec, $schema, $body, null, '', $key, $reached, $violations);
 			$reachedAnywhere += $reached;
-			if (preg_match('/^[A-Z]+ \/api\/stock(\/| |$)/', $key) === 1)
-			{
-				$reachedByStock += $reached;
-			}
 		}
 
 		self::assertGreaterThan(120, $walked, 'Sanity: most recorded 2xx bodies should map to a documented response schema');
@@ -2004,15 +1996,10 @@ class ContractTest extends PgsqlSchemaTestCase
 		sort($violations);
 		self::assertSame([], $violations, "Recorded responses carry keys their documented schema does not declare:\n" . implode("\n", $violations));
 
-		// The scope is the stock routes and the schemas issue #787 names, at least.
-		$uncoveredStock = array_values(array_diff(array_keys($reachedByStock), self::UNDECLARED_KEY_COVERED_SCHEMAS));
-		sort($uncoveredStock);
-		self::assertSame([], $uncoveredStock, 'Schemas the stock routes reach that UNDECLARED_KEY_COVERED_SCHEMAS does not list');
-		self::assertSame([], array_values(array_diff(self::ISSUE_787_SCHEMAS, self::UNDECLARED_KEY_COVERED_SCHEMAS)), 'Schemas issue #787 names that UNDECLARED_KEY_COVERED_SCHEMAS does not list');
-
-		// And no listed schema passes only because nothing recorded reached it.
-		$unreached = array_values(array_diff(self::UNDECLARED_KEY_COVERED_SCHEMAS, array_keys($reachedAnywhere)));
-		self::assertSame([], $unreached, 'Covered schemas no recorded 2xx body reached, so the check above says nothing about them');
+		$missing = array_values(array_diff($mustReach, array_keys($reachedAnywhere)));
+		self::assertSame([], $missing, 'Required component schemas no recorded body reached');
+		self::assertNotEmpty(self::$adminBodies['GET /api/system/info'] ?? null, 'The inline system/info response was not recorded');
+		self::assertNotEmpty($spec['paths']['/system/info']['get']['responses']['200']['content']['application/json']['schema']['properties'] ?? null, 'The inline system/info response has no declared properties to check');
 	}
 
 	/**

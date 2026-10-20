@@ -28,13 +28,18 @@ goals.
 
 ## Current state
 
-**Latest release: [0.4.0](docs/releases/0.4.0.md), 2026-10-10**, tagged
-`v0.4.0`, with images on GHCR for amd64 and arm64 and a Helm chart
-(`oci://ghcr.io/datagen24/charts/victual`); the first release was
-[0.1.0-MVP](docs/releases/0.1.0-MVP.md) on 2026-09-19. The
+**Current version: [0.5.0](docs/releases/0.5.0.md), 2026-10-19**; release tag
+`v0.5.0`. A version is published once its signed tag's release workflow has run; the
+[GitHub releases](https://github.com/datagen24/victual/releases) list each published tag with
+its image and chart digests, and its release record says what was verified.
+
+Images and the Helm chart are published
+by the tag-triggered release workflow; changing the version here does not publish them.
+
+The first release was [0.1.0-MVP](docs/releases/0.1.0-MVP.md) on 2026-09-19. The
 version line stays at 0.x while the release soaks in the household it was built for; 1.0
 follows that, not a date. There is no release schedule, and a tag is placed only on a commit
-that was verified working. As of the release:
+that was verified working. The recorded deployment evidence is:
 
 - The Nix-built application serves under podman and on a kind cluster.
 - A location label has been printed and scanned back through the fork's own label subsystem.

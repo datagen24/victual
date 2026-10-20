@@ -2329,9 +2329,6 @@ msgstr ""
 msgid "DD"
 msgstr "Spotř. do:"
 
-msgid "Print on label printer"
-msgstr "Vytisknout na tiskárně nálepek"
-
 msgid "Default stock entry label"
 msgstr ""
 "Jak se změna množství produktu projeví v Seznamu zásob – výchozí nastavení"
@@ -2347,13 +2344,6 @@ msgstr "Všechna balení produktu budou jeden řádek, vytiskne se 1 nálepka"
 
 msgid "Label per unit"
 msgstr "Každé balení produktu bude mít svůj řádek a vytisknutou nálepku"
-
-msgid "Error while executing WebHook"
-msgstr "Chyba při spuštění WebHook"
-
-# Example: Print *Product* Grocycode on label printer
-msgid "Print %s Grocycode on label printer"
-msgstr "Vytisknout Grocycode pro %s"
 
 msgid "Open stock entry label in new window"
 msgstr "Otevřít nálepku s čárovým kódem v nové záložce"

@@ -2,8 +2,8 @@
 	"openapi": "3.2.0",
 	"info": {
 		"title": "Victual REST API",
-		"description": "Authentication uses one of the credentials below. Which one is accepted depends on the operation.<br><br>**API key.** Send an API key you manage [here](PlaceHolderManageApiKeysUrl) in the *VICTUAL-API-KEY* header. Add the optional *VICTUAL-API-KEY-TYPE* header to narrow which key types may match; it can only remove authority, never add it. A read-only key is limited to GET, HEAD and OPTIONS and gets **403** on anything else; it also gets **403** on three GET operations that write: GET /calendar/ical/sharing-link, GET /stock/barcodes/external-lookup/{barcode} and GET /print/shoppinglist/thermal. A general API key is never accepted in the query string; the calendar secret on GET /calendar/ical is the only query-string credential.<br><br>**Session cookie.** Requests from the frontend authenticate with the *victual_session* cookie. On API routes, a request authenticated by the session cookie other than GET, HEAD or OPTIONS is refused with **403** when its Origin header (or its Referer header, if there is no Origin) names another origin. A request with neither header is allowed. Requests authenticated by an API key rather than the session cookie are exempt.<br><br>**Calendar secret.** The calendar feed link carries a calendar key in the *secret* query parameter. It is accepted on GET /calendar/ical only. GET /calendar/ical/sharing-link does not accept it, and no other operation does.<br><br>**Label worker, verifier and renderer keys.** These use the same *VICTUAL-API-KEY* header but are accepted only on the label worker and renderer operations that name them. On those operations user API keys, session cookies and a disabled-authentication setup are refused with **401**. POST /labels/pair is public.<br><br>**Deployment modes.** These are not credentials. With reverse-proxy authentication the server takes the user's identity from a header set by the proxy. In dev, demo and prerelease modes, in an embedded install, and with authentication disabled, requests run as the default user without a credential, except on the label worker and renderer operations above.<br><br>**Dates and times.** Every instant this API stores or sends is RFC 3339 in UTC with exactly six fractional digits - `2026-10-04T18:30:00.000000Z` - typed *format: date-time* (ADR-0027 decision 2, issue #650). The fixed width is part of the contract: text order is chronological order, so two values may be compared as strings. The one exception is *time_local* on the system time endpoint, the same instant with the server's offset (`2026-10-04T14:30:00.000000-04:00`). Fields whose column is a SQL DATE are calendar dates, typed *format: date* and written `YYYY-MM-DD`; they are never converted between zones. Days the server computes - due today, overdue, expiring in N days - are days in the server's configured time zone. A value sent without an offset - to the three write fields *tracked_time* and *done_time*, to a generic entity write, or as a `query[]` comparison - is a wall clock in the server's configured zone: a repeated hour names the earlier instant, and a skipped hour is refused with **400**. Send an offset to name any instant unambiguously. These values were local wall clocks in the server's zone, `YYYY-MM-DD HH:MM:SS`, until migration 0301 converted them.",
-		"version": "0.4.0",
+		"description": "Authentication uses one of the credentials below. Which one is accepted depends on the operation.<br><br>**API key.** Send an API key you manage [here](PlaceHolderManageApiKeysUrl) in the *VICTUAL-API-KEY* header. Add the optional *VICTUAL-API-KEY-TYPE* header to narrow which key types may match; it can only remove authority, never add it. A read-only key is limited to GET, HEAD and OPTIONS and gets **403** on anything else; it also gets **403** on three GET operations that write: GET /calendar/ical/sharing-link, GET /stock/barcodes/external-lookup/{barcode} and GET /print/shoppinglist/thermal. A general API key is never accepted in the query string; the calendar secret on GET /calendar/ical is the only query-string credential.<br><br>**Session cookie.** Requests from the frontend authenticate with the *victual_session* cookie. On API routes, a request authenticated by the session cookie other than GET, HEAD or OPTIONS is refused with **403** when its Origin header (or its Referer header, if there is no Origin) names another origin. A request with neither header is allowed. Requests authenticated by an API key rather than the session cookie are exempt.<br><br>**Calendar secret.** The calendar feed link carries a calendar key in the *secret* query parameter. It is accepted on GET /calendar/ical only. GET /calendar/ical/sharing-link does not accept it, and no other operation does.<br><br>**Label worker, verifier and renderer keys.** These use the same *VICTUAL-API-KEY* header but are accepted only on the label worker and renderer operations that name them. On those operations user API keys, session cookies and a disabled-authentication setup are refused with **401**. POST /labels/pair is public.<br><br>**Deployment modes.** These are not credentials. With reverse-proxy authentication the server takes the user's identity from a header set by the proxy. In dev, demo and prerelease modes, in an embedded install, and with authentication disabled, requests run as the default user without a credential, except on the label worker and renderer operations above.<br><br>**Dates and times.** Every instant this API stores or sends is RFC 3339 in UTC with exactly six fractional digits - `2026-10-04T18:30:00.000000Z` - typed *format: date-time* (ADR-0027 decision 2, issue #650). The fixed width is part of the contract: text order is chronological order, so two values may be compared as strings. The one exception is *time_local* on the system time endpoint, the same instant with the server's offset (`2026-10-04T14:30:00.000000-04:00`). Fields whose column is a SQL DATE are calendar dates, typed *format: date* and written `YYYY-MM-DD`; they are never converted between zones. Days the server computes - due today, overdue, expiring in N days - are days in the server's configured time zone. A value sent without an offset - to the three write fields *tracked_time* and *done_time*, to a generic entity write, or as a `query[]` comparison - is a wall clock in the server's configured zone: a repeated hour names the earlier instant, and a skipped hour is refused with **400**. Send an offset to name any instant unambiguously. These values were local wall clocks in the server's zone, `YYYY-MM-DD HH:MM:SS`, until migration 0301 converted them.<br><br>**Routing failures.** A path that matches no API route answers 404, and an unsupported method on a matched path answers 405. These routing outcomes are not listed on individual operations. A missing domain resource still uses the 404 response documented on its operation.",
+		"version": "0.5.0",
 		"license": {
 			"name": "MIT (code originating from upstream grocy) AND BSD-3-Clause (Victual)",
 			"url": "https://github.com/datagen24/victual/blob/master/LICENSE.md"
@@ -282,6 +282,15 @@
 					"401": {
 						"$ref": "#/components/responses/Unauthorized",
 						"description": "Missing, invalid or expired API key"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -353,6 +362,12 @@
 					"404": {
 						"$ref": "#/components/responses/NotFound",
 						"description": "Location not found"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -440,6 +455,12 @@
 					"404": {
 						"$ref": "#/components/responses/NotFound",
 						"description": "Target not found"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -470,6 +491,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -522,6 +552,37 @@
 										"client": {
 											"type": "string",
 											"description": "The User-Agent header of this request, or \"unknown\" when it carried none."
+										},
+										"stock_booking_idempotency": {
+											"type": "object",
+											"required": [
+												"header",
+												"retention_seconds",
+												"operations"
+											],
+											"properties": {
+												"header": {
+													"type": "string",
+													"const": "Idempotency-Key"
+												},
+												"retention_seconds": {
+													"type": "integer",
+													"const": 604800
+												},
+												"operations": {
+													"type": "array",
+													"items": {
+														"type": "string",
+														"enum": [
+															"purchase",
+															"consume",
+															"transfer",
+															"open",
+															"inventory"
+														]
+													}
+												}
+											}
 										}
 									}
 								}
@@ -537,6 +598,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -567,6 +637,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -608,6 +687,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -653,6 +741,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -684,6 +781,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -729,6 +835,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -851,13 +966,22 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW, MEALPLAN_VIEW, BATTERIES_VIEW (batteries, battery_charge_cycles) or EQUIPMENT_VIEW (equipment) domain permission. Roles and the permission hierarchy require USERS_READ. Custom-entity rows (userobjects) require MASTER_DATA_EDIT."
 			},
 			"post": {
 				"summary": "Adds a single object of the given entity",
-				"description": "Creating products, product_barcodes, locations, quantity_units, product_groups or shopping_locations requires MASTER_DATA_ADD, which MASTER_DATA_EDIT and ADMIN also satisfy. Chores require CHORES and tasks require TASKS. Shopping lists, recipes, the meal plan and equipment require their own permissions. Every other entity, including quantity_unit_conversions, requires MASTER_DATA_EDIT, and userfields and userentities additionally require ADMIN. A 403 names the missing permission. Creating a product may also add below-minimum-stock products to the shopping list, but only when the caller holds SHOPPINGLIST_ITEMS_ADD; the product is created either way.",
+				"description": "Creating products, product_barcodes, locations, quantity_units, product_groups or shopping_locations requires MASTER_DATA_ADD, which MASTER_DATA_EDIT and ADMIN also satisfy. Chores require CHORES and tasks require TASKS. Shopping lists, recipes, the meal plan and equipment require their own permissions. Every other entity, including quantity_unit_conversions, requires MASTER_DATA_EDIT, and userfields and userentities additionally require ADMIN. A 403 names the missing permission. Creating a product may also add below-minimum-stock products to the shopping list, but only when the caller holds SHOPPINGLIST_ITEMS_ADD; the product is created either way. A number field given NaN or an infinity (the strings \"NaN\", \"Infinity\", \"-Infinity\" or \"inf\", or a JSON number outside the range of a double) is refused with 400 \"The <field> must be a finite number\" and nothing is written (issue #916).",
 				"tags": [
 					"Generic entity interactions"
 				],
@@ -929,6 +1053,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -1051,13 +1181,22 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW, MEALPLAN_VIEW, BATTERIES_VIEW (batteries, battery_charge_cycles) or EQUIPMENT_VIEW (equipment) domain permission. Roles and the permission hierarchy require USERS_READ. Custom-entity rows (userobjects) require MASTER_DATA_EDIT."
 			},
 			"put": {
 				"summary": "Edits the given object of the given entity",
-				"description": "Editing chores requires CHORES and editing tasks requires TASKS, whoever created the object. Editing any other entity, including the six that MASTER_DATA_ADD can create (products, product_barcodes, locations, quantity_units, product_groups, shopping_locations), requires MASTER_DATA_EDIT, except for entities with their own permission such as shopping lists, recipes, the meal plan and equipment. Editing userfields and userentities also requires ADMIN. MASTER_DATA_ADD alone does not allow editing.",
+				"description": "Editing chores requires CHORES and editing tasks requires TASKS, whoever created the object. Editing any other entity, including the six that MASTER_DATA_ADD can create (products, product_barcodes, locations, quantity_units, product_groups, shopping_locations), requires MASTER_DATA_EDIT, except for entities with their own permission such as shopping lists, recipes, the meal plan and equipment. Editing userfields and userentities also requires ADMIN. MASTER_DATA_ADD alone does not allow editing. A number field given NaN or an infinity (the strings \"NaN\", \"Infinity\", \"-Infinity\" or \"inf\", or a JSON number outside the range of a double) is refused with 400 \"The <field> must be a finite number\" and nothing is written (issue #916).",
 				"tags": [
 					"Generic entity interactions"
 				],
@@ -1135,12 +1274,18 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			},
 			"delete": {
 				"summary": "Deletes a single object of the given entity",
-				"description": "Deleting a location with child locations or any stock is refused with HTTP 400. Move or consume stock before deleting its location. Deleting any object still referenced by another object through an enforced foreign key - for example a product or a location named by a location's minimum stock, or a storage class or quantity unit set on a location - is refused the same way, leaving both objects unchanged.",
+				"description": "Deleting a location with child locations or any stock is refused with HTTP 400. Move or consume stock before deleting its location. Deleting any object still referenced by another object through an enforced foreign key - for example a product or a location named by a location's minimum stock, or a storage class or quantity unit set on a location - is refused the same way, leaving both objects unchanged. A write that changes which records reference a userfile also needs read permission on every record that referenced that file before the write, or it answers 403 \"Permission missing: USERFILE_OWNER_READ\" and changes nothing (issue #920). Deleting a product, battery, chore or userfield definition deletes its userfield values, so it is such a write.",
 				"tags": [
 					"Generic entity interactions"
 				],
@@ -1207,6 +1352,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -1268,6 +1419,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW, MEALPLAN_VIEW, BATTERIES_VIEW (batteries, battery_charge_cycles) or EQUIPMENT_VIEW (equipment) domain permission. Roles and the permission hierarchy require USERS_READ. Custom-entity rows (userobjects) and the field values of custom entities (userentity-*) require MASTER_DATA_EDIT."
@@ -1341,14 +1501,21 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
-				}
+				},
+				"description": "A write that changes which records reference a userfile also needs read permission on every record that referenced that file before the write, or it answers 403 \"Permission missing: USERFILE_OWNER_READ\" and changes nothing (issue #920). Clearing, replacing or adding a file value is such a write. A file or image value naming a resized copy (\"<name>__downscaledto<h>x<w>.<ext>\") is refused with 400."
 			}
 		},
 		"/files/{group}/{fileName}": {
 			"get": {
 				"summary": "Serves the given file",
-				"description": "With proper Content-Type header",
+				"description": "With proper Content-Type header. Each group needs the read permission of the records it belongs to: STOCK_VIEW for productpictures, RECIPES_VIEW for recipepictures, EQUIPMENT_VIEW for equipmentmanuals and USERS_READ for userpictures (a user may always read their own picture). A file in userfiles is readable only by a caller whom every record that references it admits, by the read permission that record requires; a file no record references, or one whose referencing record no longer exists, is readable by ADMIN only. The refusal is the same 403 in every case, so it does not reveal whether the file exists or what owns it.",
 				"tags": [
 					"Files"
 				],
@@ -1469,6 +1636,16 @@
 							}
 						}
 					},
+					"403": {
+						"description": "The caller lacks the read permission the group, or for userfiles the owning records, require",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					},
 					"404": {
 						"description": "The object named by the request does not exist",
 						"content": {
@@ -1478,12 +1655,18 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			},
 			"put": {
 				"summary": "Uploads a single file",
-				"description": "The file will be stored at /data/storage/{group}/{file_name} (you need to remember the group and file name to get or delete it again)",
+				"description": "The file will be stored at /data/storage/{group}/{file_name} (you need to remember the group and file name to get or delete it again). A name in the form of a resized picture (\"<name>__downscaledto<h>x<w>.<ext>\") is refused with 400 in every group. In the userfiles group, a name some record references needs read permission on every such record, or the upload answers 403 \"Permission missing: USERFILE_OWNER_READ\" whether or not the name exists (issue #920).",
 				"tags": [
 					"Files"
 				],
@@ -1557,6 +1740,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			},
@@ -1618,8 +1807,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
-				}
+				},
+				"description": "In the userfiles group, a file some record references needs read permission on every such record, or the delete answers 403 \"Permission missing: USERFILE_OWNER_READ\" and the file stays (issue #920). An unreferenced file keeps the group's write permission."
 			}
 		},
 		"/users": {
@@ -1685,6 +1881,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"description": "Requires USERS_READ. "
@@ -1738,6 +1940,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -1803,6 +2011,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"description": "Requires USERS_EDIT to edit another user, or USERS_EDIT_SELF to edit your own account - except a must_change_password-flagged account editing itself, which needs neither permission (issue #514): the flag alone authorizes it to change its own password, with the correct current_password, and nothing else in the same request. On this flagged path only, an omitted username, first_name, last_name or picture_file_name defaults to its stored value - the 403 refusal below is about a field that is present and different, not about which fields happen to be sent at all, so a request that sends only the new password and current_password (what this same route's own 403 body, when the flag is still set, recommends) is exactly as valid as one that resubmits every field unchanged. A flagged self-edit that sends no new password, or its current password again, is refused with 400 before anything else is checked. One that does send a new password but also sends a username, first_name, last_name or picture_file_name that differs from what is stored is refused with 403, the same answer a missing permission gets - this is an authorization refusal, not a data one, and applies whether or not a current password was also supplied.\n\nChanging your own password - flagged or not - additionally requires the current one, sent as current_password (or current_password_base64). A password change that succeeds revokes every other session already open on the account (issue #513): when the account being changed is also the acting one and was not flagged, the session that made the request is spared; when it was flagged, every session on the account is revoked, including the one that made the request, and a freshly minted session cookie replaces it."
@@ -1856,6 +2070,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -1921,6 +2141,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			},
@@ -1950,7 +2176,7 @@
 								"properties": {
 									"permission_id": {
 										"type": "integer",
-										"description": "The id of the permission to assign to the user. Absent or null is refused with 400 \"permission_id is required\""
+										"description": "The id of the permission to assign to the user. Absent or null is refused with 400 \"permission_id is required\". A JSON number, or a string of plain decimal digits, that names an existing permission. A string with a sign, a leading zero, an exponent, a fraction or surrounding whitespace (\"+2\", \"02\", \"1e3\", \"2.0\", \" 2\") answers 400 \"No permission with id ... exists\". A leading vertical tab or form feed is surrounding whitespace too and answers the same 400. A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									}
 								},
 								"required": [
@@ -1993,6 +2219,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			},
@@ -2069,6 +2301,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -2113,6 +2351,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -2154,6 +2401,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -2195,6 +2451,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -2246,6 +2511,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			},
@@ -2299,6 +2573,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			},
@@ -2341,6 +2624,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -2374,6 +2666,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -2426,6 +2727,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -2455,8 +2765,16 @@
 								"description": "amount is required. Every other property is optional: a property whose key is absent from the body keeps the entry's current value, resolved against the entry as it is at the moment of the edit rather than as it was when the request was formed. A property that is present must be readable as the type documented below, or as the additional numeric-string forms price and shopping_location_id's own descriptions name, or the request is refused with 400 and nothing about the entry changes. price, shopping_location_id and note additionally accept an explicit null to clear the field, since an absent key keeps it instead; price and shopping_location_id also accept \"\" for the same reason - for shopping_location_id this matches the web form's own \"no store\" option. best_before_date, location_id, purchased_date and open are not nullable.",
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The entry's new amount. A negative amount is refused; zero is unaffected by that check."
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The entry's new amount. A negative amount is refused; zero is unaffected by that check. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The amount must be a number\". A value that is negative or not finite answers 400 \"Stock amount must be finite and non-negative\"; zero is accepted. A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"best_before_date": {
 										"type": "string",
@@ -2469,13 +2787,17 @@
 												"type": "number"
 											},
 											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											},
+											{
 												"type": "null"
 											},
 											{
 												"const": ""
 											}
 										],
-										"description": "The price per stock quantity unit in configured currency. Omitted keeps the entry's current price; null or \"\" clears it. Also accepts any string PHP's is_numeric() reads, such as \"3\", \"2.50\", \"1e3\", \".5\" or one with leading/trailing whitespace - undocumented in the type above, matching this fork's own convention for the same field on POST /stock/products/{productId}/add and the other stock-booking routes, whose examples show it."
+										"description": "The price per stock quantity unit in configured currency. Omitted keeps the entry's current price; null or \"\" clears it. A string is read with PHP's is_numeric() (the grammar of the amount fields: \"3\", \"-2\", \"2.50\", \"1e3\", \".5\", \"5.\", with optional surrounding space, tab, newline, carriage return, vertical tab or form feed). Other strings, and a JSON number outside the range of a double, answer 400 \"The price must be a number\". A negative price is accepted and stored. A numeric string outside the range of a double (\"1e309\", 400 digits) passes that check and answers 400 \"The database rejected this request\". A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"open": {
 										"oneOf": [
@@ -2588,6 +2910,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -2618,8 +2946,16 @@
 								"type": "object",
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The reading, in qu_id. Net contents unless gross is true"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The reading, in qu_id. Net contents unless gross is true. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"2.5\", \".5\", \"5.\", \"1e3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. A string that is not numeric, zero, a negative value, a value outside the range of a double and a JSON number outside that range all answer 400 \"A measurement requires a positive amount\". A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"qu_id": {
 										"type": "integer",
@@ -2706,6 +3042,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -2748,6 +3090,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -2800,6 +3151,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -2876,6 +3236,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -2965,6 +3334,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -3021,6 +3399,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -3041,6 +3428,18 @@
 						"schema": {
 							"type": "integer"
 						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
+						}
 					}
 				],
 				"requestBody": {
@@ -3054,8 +3453,16 @@
 								],
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The amount to add"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The amount to add. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; zero answers 400 \"Amount can't be <= 0\". A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"best_before_date": {
 										"type": "string",
@@ -3066,8 +3473,22 @@
 										"$ref": "#/components/schemas/StockAddTransactionType"
 									},
 									"price": {
-										"type": "number",
-										"description": "The price per stock quantity unit in configured currency"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											},
+											{
+												"type": "null"
+											},
+											{
+												"const": ""
+											}
+										],
+										"description": "The price per stock quantity unit in configured currency. Absent, null or \"\" means no price. Also accepts a string PHP's is_numeric() reads (the grammar of the amount fields: \"3\", \"-2\", \"2.50\", \"1e3\", \".5\", \"5.\", with optional surrounding space, tab, newline, carriage return, vertical tab or form feed). Other strings, and a JSON number outside the range of a double, answer 400 \"The price must be a number\". A negative price is accepted and stored. A numeric string outside the range of a double (\"1e309\", 400 digits) passes that check and answers 400 \"The database rejected this request\". A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"location_id": {
 										"type": "integer",
@@ -3079,7 +3500,7 @@
 									},
 									"stock_label_type": {
 										"type": "integer",
-										"description": "`1` = No label, `2` = Single label, `3` = Label per unit"
+										"description": "`0` = No label, `1` = Single label, `2` = Label per unit (one stock entry and label per unit). A numeric string is read like the same number. An empty string is ignored and the default 0 is used; any other string that is not numeric (\"abc\") answers 400 \"The stock label type must be a number\". Every other numeric value, including `3`, books a single entry without a label; only `1` prints a label for a single entry. A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"note": {
 										"type": "string",
@@ -3106,6 +3527,18 @@
 									"items": {
 										"$ref": "#/components/schemas/StockLogEntry"
 									}
+								}
+							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
 								}
 							}
 						}
@@ -3139,6 +3572,38 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
+								}
+							}
+						}
 					}
 				}
 			}
@@ -3158,6 +3623,18 @@
 						"schema": {
 							"type": "integer"
 						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
+						}
 					}
 				],
 				"requestBody": {
@@ -3171,8 +3648,16 @@
 								],
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The amount to remove"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The amount to remove. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; zero answers 400 \"Amount must be greater than 1.0E-9\" and more than is in stock answers 400. A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"transaction_type": {
 										"$ref": "#/components/schemas/StockConsumeTransactionType"
@@ -3187,7 +3672,7 @@
 									},
 									"recipe_id": {
 										"type": "integer",
-										"description": "A valid recipe id for which this product was used (for statistical purposes only)"
+										"description": "Recipe attribution for statistical purposes. When supplied, it must name an existing recipe; any other id, including zero and negative numbers, returns 400 without consuming stock. When supplied, the value must be numeric and finite. A string must also be readable by PostgreSQL as an integer: an optional sign and digits with optional surrounding space, tab, newline or carriage return (\"2\", \"+2\", \" 2\", \"02\"). JSON numbers with integral values in the integer column range are accepted (1e3 is stored as 1000). Invalid supplied values return 400 without consuming stock. Numeric strings containing controls, character references or markup are refused before purification."
 									},
 									"location_id": {
 										"type": "integer",
@@ -3223,6 +3708,18 @@
 									}
 								}
 							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
+								}
+							}
 						}
 					},
 					"400": {
@@ -3254,6 +3751,38 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
+								}
+							}
+						}
 					}
 				}
 			}
@@ -3273,6 +3802,18 @@
 						"schema": {
 							"type": "integer"
 						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
+						}
 					}
 				],
 				"requestBody": {
@@ -3288,8 +3829,16 @@
 								],
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The amount to transfer - please note that when tare weight handling for the product is enabled, this needs to be the amount including the container weight (gross), the amount to be posted will be automatically calculated based on what is in stock and the defined tare weight"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The amount to transfer - please note that when tare weight handling for the product is enabled, this needs to be the amount including the container weight (gross), the amount to be posted will be automatically calculated based on what is in stock and the defined tare weight. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; zero answers 400 \"Amount must be greater than 1.0E-9\" and more than is in stock at the source location answers 400. A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"location_id_from": {
 										"type": "integer",
@@ -3325,6 +3874,18 @@
 									}
 								}
 							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
+								}
+							}
 						}
 					},
 					"400": {
@@ -3356,6 +3917,38 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
+								}
+							}
+						}
 					}
 				}
 			}
@@ -3375,6 +3968,18 @@
 						"schema": {
 							"type": "integer"
 						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
+						}
 					}
 				],
 				"requestBody": {
@@ -3388,8 +3993,16 @@
 								],
 								"properties": {
 									"new_amount": {
-										"type": "number",
-										"description": "The new current amount for the given product"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The new current amount for the given product. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The new amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; a value equal to the current stock answers 400 \"The new amount cannot equal the current stock amount\" and zero sets the stock to zero. A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"best_before_date": {
 										"type": "string",
@@ -3405,12 +4018,26 @@
 										"description": "If omitted, the default location of the product is used (only applies to added products)"
 									},
 									"price": {
-										"type": "number",
-										"description": "If omitted, the last price of the product is used (only applies to added products)"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											},
+											{
+												"type": "null"
+											},
+											{
+												"const": ""
+											}
+										],
+										"description": "If omitted, the last price of the product is used (only applies to added products). Null or \"\" is read as omitted. Also accepts a string PHP's is_numeric() reads (the grammar of the amount fields: \"3\", \"-2\", \"2.50\", \"1e3\", \".5\", \"5.\", with optional surrounding space, tab, newline, carriage return, vertical tab or form feed). Other strings, and a JSON number outside the range of a double, answer 400 \"The price must be a number\". A negative price is accepted and stored. A numeric string outside the range of a double (\"1e309\", 400 digits) passes that check and answers 400 \"The database rejected this request\". A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"stock_label_type": {
 										"type": "integer",
-										"description": "`1` = No label, `2` = Single label, `3` = Label per unit (only applies to added products)"
+										"description": "`0` = No label, `1` = Single label, `2` = Label per unit (one stock entry and label per unit; only applies to added products). A numeric string is read like the same number. An empty string is ignored and the default 0 is used; any other string that is not numeric (\"abc\") answers 400 \"The stock label type must be a number\". Every other numeric value, including `3`, books a single entry without a label; only `1` prints a label for a single entry. A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"note": {
 										"type": "string",
@@ -3431,6 +4058,18 @@
 									"items": {
 										"$ref": "#/components/schemas/StockLogEntry"
 									}
+								}
+							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
 								}
 							}
 						}
@@ -3464,6 +4103,38 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
+								}
+							}
+						}
 					}
 				}
 			}
@@ -3483,6 +4154,18 @@
 						"schema": {
 							"type": "integer"
 						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
+						}
 					}
 				],
 				"requestBody": {
@@ -3496,8 +4179,16 @@
 								],
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The amount to mark as opened"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The amount to mark as opened. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; zero answers 400 \"Amount must be greater than 1.0E-9\" and more than is unopened answers 400. A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"stock_entry_id": {
 										"type": "string",
@@ -3568,6 +4259,18 @@
 									}
 								}
 							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
+								}
+							}
 						}
 					},
 					"400": {
@@ -3596,6 +4299,38 @@
 							"application/json": {
 								"schema": {
 									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
 								}
 							}
 						}
@@ -3662,8 +4397,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
-				}
+				},
+				"description": "A write that changes which records reference a userfile also needs read permission on every record that referenced that file before the write, or it answers 403 \"Permission missing: USERFILE_OWNER_READ\" and changes nothing (issue #920). The removed product's userfield values are deleted with it."
 			}
 		},
 		"/stock/products/by-barcode/{barcode}": {
@@ -3713,6 +4455,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -3733,6 +4484,18 @@
 						"schema": {
 							"type": "string"
 						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
+						}
 					}
 				],
 				"requestBody": {
@@ -3746,8 +4509,16 @@
 								],
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The amount to add"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The amount to add. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; zero answers 400 \"Amount can't be <= 0\". A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"best_before_date": {
 										"type": "string",
@@ -3758,8 +4529,22 @@
 										"$ref": "#/components/schemas/StockAddTransactionType"
 									},
 									"price": {
-										"type": "number",
-										"description": "The price per stock quantity unit in configured currency"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											},
+											{
+												"type": "null"
+											},
+											{
+												"const": ""
+											}
+										],
+										"description": "The price per stock quantity unit in configured currency. Absent, null or \"\" means no price. Also accepts a string PHP's is_numeric() reads (the grammar of the amount fields: \"3\", \"-2\", \"2.50\", \"1e3\", \".5\", \"5.\", with optional surrounding space, tab, newline, carriage return, vertical tab or form feed). Other strings, and a JSON number outside the range of a double, answer 400 \"The price must be a number\". A negative price is accepted and stored. A numeric string outside the range of a double (\"1e309\", 400 digits) passes that check and answers 400 \"The database rejected this request\". A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"location_id": {
 										"type": "integer",
@@ -3788,6 +4573,18 @@
 									}
 								}
 							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
+								}
+							}
 						}
 					},
 					"400": {
@@ -3806,6 +4603,41 @@
 							"application/json": {
 								"schema": {
 									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
 								}
 							}
 						}
@@ -3828,6 +4660,18 @@
 						"schema": {
 							"type": "string"
 						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
+						}
 					}
 				],
 				"requestBody": {
@@ -3841,8 +4685,16 @@
 								],
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The amount to remove"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The amount to remove. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; zero answers 400 \"Amount must be greater than 1.0E-9\" and more than is in stock answers 400. A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"transaction_type": {
 										"$ref": "#/components/schemas/StockConsumeTransactionType"
@@ -3857,7 +4709,7 @@
 									},
 									"recipe_id": {
 										"type": "integer",
-										"description": "A valid recipe id for which this product was used (for statistical purposes only)"
+										"description": "Recipe attribution for statistical purposes. When supplied, it must name an existing recipe; any other id, including zero and negative numbers, returns 400 without consuming stock. When supplied, the value must be numeric and finite. A string must also be readable by PostgreSQL as an integer: an optional sign and digits with optional surrounding space, tab, newline or carriage return (\"2\", \"+2\", \" 2\", \"02\"). JSON numbers with integral values in the integer column range are accepted (1e3 is stored as 1000). Invalid supplied values return 400 without consuming stock. Numeric strings containing controls, character references or markup are refused before purification."
 									},
 									"location_id": {
 										"type": "integer",
@@ -3893,6 +4745,18 @@
 									}
 								}
 							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
+								}
+							}
 						}
 					},
 					"400": {
@@ -3911,6 +4775,41 @@
 							"application/json": {
 								"schema": {
 									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
 								}
 							}
 						}
@@ -3933,6 +4832,18 @@
 						"schema": {
 							"type": "string"
 						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
+						}
 					}
 				],
 				"requestBody": {
@@ -3948,8 +4859,16 @@
 								],
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The amount to transfer - please note that when tare weight handling for the product is enabled, this needs to be the amount including the container weight (gross), the amount to be posted will be automatically calculated based on what is in stock and the defined tare weight"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The amount to transfer - please note that when tare weight handling for the product is enabled, this needs to be the amount including the container weight (gross), the amount to be posted will be automatically calculated based on what is in stock and the defined tare weight. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; zero answers 400 \"Amount must be greater than 1.0E-9\" and more than is in stock at the source location answers 400. A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"location_id_from": {
 										"type": "integer",
@@ -3985,6 +4904,18 @@
 									}
 								}
 							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
+								}
+							}
 						}
 					},
 					"400": {
@@ -4003,6 +4934,41 @@
 							"application/json": {
 								"schema": {
 									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
 								}
 							}
 						}
@@ -4025,6 +4991,18 @@
 						"schema": {
 							"type": "string"
 						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
+						}
 					}
 				],
 				"requestBody": {
@@ -4038,8 +5016,16 @@
 								],
 								"properties": {
 									"new_amount": {
-										"type": "number",
-										"description": "The new current amount for the given product"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The new current amount for the given product. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The new amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; a value equal to the current stock answers 400 \"The new amount cannot equal the current stock amount\" and zero sets the stock to zero. A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"best_before_date": {
 										"type": "string",
@@ -4051,8 +5037,22 @@
 										"description": "If omitted, the default location of the product is used (only applies to added products)"
 									},
 									"price": {
-										"type": "number",
-										"description": "If omitted, the last price of the product is used (only applies to added products)"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											},
+											{
+												"type": "null"
+											},
+											{
+												"const": ""
+											}
+										],
+										"description": "If omitted, the last price of the product is used (only applies to added products). Null or \"\" is read as omitted. Also accepts a string PHP's is_numeric() reads (the grammar of the amount fields: \"3\", \"-2\", \"2.50\", \"1e3\", \".5\", \"5.\", with optional surrounding space, tab, newline, carriage return, vertical tab or form feed). Other strings, and a JSON number outside the range of a double, answer 400 \"The price must be a number\". A negative price is accepted and stored. A numeric string outside the range of a double (\"1e309\", 400 digits) passes that check and answers 400 \"The database rejected this request\". A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									}
 								}
 							}
@@ -4069,6 +5069,18 @@
 									"items": {
 										"$ref": "#/components/schemas/StockLogEntry"
 									}
+								}
+							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
 								}
 							}
 						}
@@ -4092,6 +5104,41 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
+								}
+							}
+						}
 					}
 				}
 			}
@@ -4111,6 +5158,18 @@
 						"schema": {
 							"type": "string"
 						}
+					},
+					{
+						"name": "Idempotency-Key",
+						"in": "header",
+						"required": false,
+						"description": "One cryptographically random key per intended booking. Discover support in /system/info before using it. Retry unchanged contents with this key for at most retention_seconds from first send; after that, resolve an unknown outcome through stock or journal reads. Transaction IDs are opaque strings. See docs/api/stock-booking-idempotency.md.",
+						"schema": {
+							"type": "string",
+							"minLength": 8,
+							"maxLength": 128,
+							"pattern": "^[A-Za-z0-9._:-]{8,128}$"
+						}
 					}
 				],
 				"requestBody": {
@@ -4124,8 +5183,16 @@
 								],
 								"properties": {
 									"amount": {
-										"type": "number",
-										"description": "The amount to mark as opened"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The amount to mark as opened. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The amount must be a number\". A value that is negative or not finite (for example \"1e309\" or a string of 400 digits) answers 400 \"Stock amount must be finite and non-negative\"; zero answers 400 \"Amount must be greater than 1.0E-9\" and more than is unopened answers 400. A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"stock_entry_id": {
 										"type": "string",
@@ -4196,6 +5263,18 @@
 									}
 								}
 							}
+						},
+						"headers": {
+							"Idempotent-Replayed": {
+								"description": "false when this key booked; true when replaying current rows. Absent for unkeyed requests and errors. Replayed rows can be undone or redacted. A replay with deleted ledger rows answers 400 and must never be retried with a new key.",
+								"schema": {
+									"type": "string",
+									"enum": [
+										"true",
+										"false"
+									]
+								}
+							}
 						}
 					},
 					"400": {
@@ -4214,6 +5293,41 @@
 							"application/json": {
 								"schema": {
 									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
+					},
+					"409": {
+						"description": "idempotency_conflict: same scoped key with different request contents; stop retries. idempotency_in_progress: retry later using the same key and unchanged contents. Neither response books.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"error_message",
+										"code"
+									],
+									"properties": {
+										"error_message": {
+											"type": "string"
+										},
+										"code": {
+											"type": "string",
+											"enum": [
+												"idempotency_conflict",
+												"idempotency_in_progress"
+											]
+										}
+									}
 								}
 							}
 						}
@@ -4283,6 +5397,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -4316,8 +5439,16 @@
 								],
 								"properties": {
 									"gross_amount": {
-										"type": "number",
-										"description": "The gross reading, in the location's own tare_qu_id; the server subtracts the location's tare_weight"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The gross reading, in the location's own tare_qu_id; the server subtracts the location's tare_weight. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The gross amount must be a number\". A string of 400 digits or \"1e309\" answers 400 \"Stock amounts must be finite\"; a reading below the location's tare weight answers 400. A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"gross_qu_id": {
 										"type": "integer",
@@ -4379,6 +5510,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"description": "Requires STOCK_EDIT. "
@@ -4412,8 +5549,16 @@
 								],
 								"properties": {
 									"gross_amount": {
-										"type": "number",
-										"description": "The gross reading, in the location's own tare_qu_id; the server subtracts the location's tare_weight"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "string",
+												"pattern": "^[ \\t\\n\\r\\x0B\\f]*[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?[ \\t\\n\\r\\x0B\\f]*$"
+											}
+										],
+										"description": "The gross reading, in the location's own tare_qu_id; the server subtracts the location's tare_weight. Also accepts a string PHP's is_numeric() reads: an optional sign, digits with an optional fraction or a fraction starting with a dot, and an optional exponent (\"2\", \"+2\", \"2.5\", \".5\", \"5.\", \"1e3\", \"1E-3\"), with optional leading and trailing space, tab, newline, carriage return, vertical tab or form feed. Other strings (\"\", \"abc\", \"0x1A\", \"1_000\", \"NaN\", \"INF\", \"2abc\", one with a no-break space), and a JSON number outside the range of a double, answer 400 \"The gross amount must be a number\". A string of 400 digits or \"1e309\" answers 400 \"Stock amounts must be finite\"; a reading below the location's tare weight answers 400. A numeric string is read as sent: it is not passed through the request body filter, so a string with a control character, a character reference or markup inside it (\"1\\u00002\", \"&#50;\", \"1<x>2\") is not numeric and answers 400 with nothing written (issue #946)."
 									},
 									"gross_qu_id": {
 										"type": "integer",
@@ -4475,6 +5620,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"description": "Requires STOCK_EDIT. "
@@ -4530,7 +5681,7 @@
 						}
 					},
 					"403": {
-						"description": "The authenticated user lacks a permission this operation requires",
+						"description": "The authenticated user lacks SHOPPINGLIST_ITEMS_ADD or STOCK_VIEW",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -4538,8 +5689,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
-				}
+				},
+				"description": "Requires SHOPPINGLIST_ITEMS_ADD and STOCK_VIEW. The items this adds are exactly the products below their minimum stock amount, which is stock information a caller without STOCK_VIEW may not read (issue #933, ADR-0050)."
 			}
 		},
 		"/stock/shoppinglist/add-overdue-products": {
@@ -4600,6 +5758,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -4662,6 +5826,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -4729,6 +5899,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -4752,7 +5928,7 @@
 								"properties": {
 									"product_id": {
 										"type": "integer",
-										"description": "A valid product id of the product to be added"
+										"description": "The product id, required and positive. A string must be readable by PostgreSQL as an integer (\"2\", \"+2\", \" 2\", \"02\"). JSON numbers with integral values inside the integer column range are accepted (1e3 is read as 1000). Invalid supplied values return 400 without changing the shopping list. Zero, negative ids, nonfinite values, markup, character references and embedded controls are refused. An unknown positive id is a no-op on remove; add requires an active product."
 									},
 									"qu_id": {
 										"type": "integer",
@@ -4764,7 +5940,7 @@
 									},
 									"product_amount": {
 										"type": "number",
-										"description": "The amount (related to the products stock QU) to add, when omitted, the default amount of 1 is used"
+										"description": "Amount in the product stock quantity unit. When omitted, defaults to 1. A supplied value must be numeric, finite and positive; otherwise the response is 400 and the shopping list is unchanged. Numeric strings accept signs, decimals, scientific notation and surrounding ASCII numeric whitespace. Markup, character references and embedded non-whitespace controls are refused before purification."
 									},
 									"note": {
 										"type": "string",
@@ -4814,6 +5990,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -4837,7 +6019,7 @@
 								"properties": {
 									"product_id": {
 										"type": "integer",
-										"description": "A valid product id of the item on the shopping list"
+										"description": "The product id, required and positive. A string must be readable by PostgreSQL as an integer (\"2\", \"+2\", \" 2\", \"02\"). JSON numbers with integral values inside the integer column range are accepted (1e3 is read as 1000). Invalid supplied values return 400 without changing the shopping list. Zero, negative ids, nonfinite values, markup, character references and embedded controls are refused. An unknown positive id is a no-op on remove; add requires an active product."
 									},
 									"list_id": {
 										"type": "integer",
@@ -4845,7 +6027,7 @@
 									},
 									"product_amount": {
 										"type": "number",
-										"description": "The amount of product units to remove, when omitted, the default amount of 1 is used"
+										"description": "Amount in the product stock quantity unit. When omitted, defaults to 1. A supplied value must be numeric, finite and positive; otherwise the response is 400 and the shopping list is unchanged. Numeric strings accept signs, decimals, scientific notation and surrounding ASCII numeric whitespace. Markup, character references and embedded non-whitespace controls are refused before purification."
 									}
 								},
 								"example": {
@@ -4890,6 +6072,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -4941,6 +6129,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -5007,6 +6204,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -5061,6 +6264,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
@@ -5127,6 +6339,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -5198,6 +6416,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"description": "Requires STOCK_VIEW. With add=true it also requires MASTER_DATA_ADD (403 otherwise); MASTER_DATA_EDIT is not required. A picture the plugin names is stored only when no file of that name exists; if one does, the product is created without a picture and the existing file is left unchanged. A read-only API key is refused on this operation whether or not add is set."
@@ -5266,6 +6490,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"description": "Requires RECIPES_VIEW to read the recipe and SHOPPINGLIST_ITEMS_ADD to add its missing ingredients to the shopping list."
@@ -5318,6 +6548,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires RECIPES_VIEW. "
@@ -5373,6 +6612,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"description": "Requires RECIPES_VIEW to read the recipe and STOCK_CONSUME to consume it. A recipe that produces a product, including through a meal-plan shadow's original recipe, also requires STOCK_PURCHASE."
@@ -5431,6 +6676,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires RECIPES_VIEW. "
@@ -5499,6 +6753,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"description": "Requires RECIPES to copy and RECIPES_VIEW to read the source recipe."
@@ -5547,6 +6807,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires CHORES_VIEW. "
@@ -5599,6 +6868,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires CHORES_VIEW. "
@@ -5631,7 +6909,7 @@
 									"tracked_time": {
 										"type": "string",
 										"pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])( ([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d|T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d+)?([Zz]|[+-]([01]\\d|2[0-3]):[0-5]\\d)?)?$",
-										"description": "The time the chore was executed. Omit the field to record the current time. When it is sent it must be one of: the RFC 3339-shaped `T` form with a `Z` or `\u00b1HH:MM` offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`), which names that instant; or a wall clock in the server's configured time zone - `YYYY-MM-DD HH:MM:SS`, `YYYY-MM-DDTHH:MM:SS`, or `YYYY-MM-DD` meaning midnight of that date. A wall clock the zone repeats when daylight saving ends names the **earlier** of its two instants (`2026-11-01 01:30:00` on America/New_York is `2026-11-01T05:30:00Z`); send the offset to mean the later one. A wall clock the zone skips when daylight saving begins is refused. A fractional part of any length is accepted and kept to the microsecond; later digits are dropped, not rounded. It is deliberately **not** exactly RFC 3339, in both directions: that grammar requires an offset, and it permits a leap second `:60`, which this refuses. **Any other value is refused with 400 naming the field**, and so are `null` and the empty string. The value is stored as an instant and sent back in the API's instant rendering (ADR-0027 decision 2, ADR-0028)."
+										"description": "The time the chore was executed. Omit the field to record the current time. When it is sent it must be one of: the RFC 3339-shaped `T` form with a `Z` or `±HH:MM` offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`), which names that instant; or a wall clock in the server's configured time zone - `YYYY-MM-DD HH:MM:SS`, `YYYY-MM-DDTHH:MM:SS`, or `YYYY-MM-DD` meaning midnight of that date. A wall clock the zone repeats when daylight saving ends names the **earlier** of its two instants (`2026-11-01 01:30:00` on America/New_York is `2026-11-01T05:30:00Z`); send the offset to mean the later one. A wall clock the zone skips when daylight saving begins is refused. A fractional part of any length is accepted and kept to the microsecond; later digits are dropped, not rounded. It is deliberately **not** exactly RFC 3339, in both directions: that grammar requires an offset, and it permits a leap second `:60`, which this refuses. **Any other value is refused with 400 naming the field**, and so are `null` and the empty string. The value is stored as an instant and sent back in the API's instant rendering (ADR-0027 decision 2, ADR-0028)."
 									},
 									"done_by": {
 										"type": "integer",
@@ -5687,6 +6965,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -5751,6 +7035,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -5813,6 +7103,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -5876,8 +7172,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
-				}
+				},
+				"description": "A write that changes which records reference a userfile also needs read permission on every record that referenced that file before the write, or it answers 403 \"Permission missing: USERFILE_OWNER_READ\" and changes nothing (issue #920). The removed chore's userfield values are deleted with it."
 			}
 		},
 		"/batteries": {
@@ -5923,6 +7226,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -5974,6 +7286,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -6005,7 +7326,7 @@
 									"tracked_time": {
 										"type": "string",
 										"pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])( ([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d|T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d+)?([Zz]|[+-]([01]\\d|2[0-3]):[0-5]\\d)?)?$",
-										"description": "The time the battery was charged. Omit the field to record the current time. When it is sent it must be one of: the RFC 3339-shaped `T` form with a `Z` or `\u00b1HH:MM` offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`), which names that instant; or a wall clock in the server's configured time zone - `YYYY-MM-DD HH:MM:SS`, `YYYY-MM-DDTHH:MM:SS`, or `YYYY-MM-DD` meaning midnight of that date. A wall clock the zone repeats when daylight saving ends names the **earlier** of its two instants (`2026-11-01 01:30:00` on America/New_York is `2026-11-01T05:30:00Z`); send the offset to mean the later one. A wall clock the zone skips when daylight saving begins is refused. A fractional part of any length is accepted and kept to the microsecond; later digits are dropped, not rounded. It is deliberately **not** exactly RFC 3339, in both directions: that grammar requires an offset, and it permits a leap second `:60`, which this refuses. **Any other value is refused with 400 naming the field**, and so are `null` and the empty string. The value is stored as an instant and sent back in the API's instant rendering (ADR-0027 decision 2, ADR-0028)."
+										"description": "The time the battery was charged. Omit the field to record the current time. When it is sent it must be one of: the RFC 3339-shaped `T` form with a `Z` or `±HH:MM` offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`), which names that instant; or a wall clock in the server's configured time zone - `YYYY-MM-DD HH:MM:SS`, `YYYY-MM-DDTHH:MM:SS`, or `YYYY-MM-DD` meaning midnight of that date. A wall clock the zone repeats when daylight saving ends names the **earlier** of its two instants (`2026-11-01 01:30:00` on America/New_York is `2026-11-01T05:30:00Z`); send the offset to mean the later one. A wall clock the zone skips when daylight saving begins is refused. A fractional part of any length is accepted and kept to the microsecond; later digits are dropped, not rounded. It is deliberately **not** exactly RFC 3339, in both directions: that grammar requires an offset, and it permits a leap second `:60`, which this refuses. **Any other value is refused with 400 naming the field**, and so are `null` and the empty string. The value is stored as an instant and sent back in the API's instant rendering (ADR-0027 decision 2, ADR-0028)."
 									}
 								}
 							}
@@ -6014,7 +7335,7 @@
 				},
 				"responses": {
 					"200": {
-						"description": "The operation was successful",
+						"description": "The charge cycle was tracked. A caller with BATTERIES_VIEW gets the new battery_charge_cycles row. A caller without it, such as a write-only charger integration, gets only `id`, the new cycle's id, which is what POST /batteries/charge-cycles/{chargeCycleId}/undo takes; reading the row needs BATTERIES_VIEW (ADR-0035, issue #908).",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -6052,6 +7373,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -6106,6 +7433,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -6153,6 +7486,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				},
 				"description": "Requires TASKS_VIEW. "
@@ -6185,7 +7527,7 @@
 									"done_time": {
 										"type": "string",
 										"pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])( ([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d|T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d+)?([Zz]|[+-]([01]\\d|2[0-3]):[0-5]\\d)?)?$",
-										"description": "The time the task was completed. Omit the field to record the current time. When it is sent it must be one of: the RFC 3339-shaped `T` form with a `Z` or `\u00b1HH:MM` offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`), which names that instant; or a wall clock in the server's configured time zone - `YYYY-MM-DD HH:MM:SS`, `YYYY-MM-DDTHH:MM:SS`, or `YYYY-MM-DD` meaning midnight of that date. A wall clock the zone repeats when daylight saving ends names the **earlier** of its two instants (`2026-11-01 01:30:00` on America/New_York is `2026-11-01T05:30:00Z`); send the offset to mean the later one. A wall clock the zone skips when daylight saving begins is refused. A fractional part of any length is accepted and kept to the microsecond; later digits are dropped, not rounded. It is deliberately **not** exactly RFC 3339, in both directions: that grammar requires an offset, and it permits a leap second `:60`, which this refuses. **Any other value is refused with 400 naming the field**, and so are `null` and the empty string. The value is stored as an instant and sent back in the API's instant rendering (ADR-0027 decision 2, ADR-0028)."
+										"description": "The time the task was completed. Omit the field to record the current time. When it is sent it must be one of: the RFC 3339-shaped `T` form with a `Z` or `±HH:MM` offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`), which names that instant; or a wall clock in the server's configured time zone - `YYYY-MM-DD HH:MM:SS`, `YYYY-MM-DDTHH:MM:SS`, or `YYYY-MM-DD` meaning midnight of that date. A wall clock the zone repeats when daylight saving ends names the **earlier** of its two instants (`2026-11-01 01:30:00` on America/New_York is `2026-11-01T05:30:00Z`); send the offset to mean the later one. A wall clock the zone skips when daylight saving begins is refused. A fractional part of any length is accepted and kept to the microsecond; later digits are dropped, not rounded. It is deliberately **not** exactly RFC 3339, in both directions: that grammar requires an offset, and it permits a leap second `:60`, which this refuses. **Any other value is refused with 400 naming the field**, and so are `null` and the empty string. The value is stored as an instant and sent back in the API's instant rendering (ADR-0027 decision 2, ADR-0028)."
 									}
 								}
 							}
@@ -6225,6 +7567,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -6279,6 +7627,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -6330,8 +7684,18 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
-				}
+				},
+				"description": "If an internal calendar event lacks the type or entity ID needed for a stable UID, the 500 error_message names the missing fields and nothing else. The event's title is written to the server log, never to the response. Access to this endpoint follows its documented credentials."
 			}
 		},
 		"/calendar/ical/sharing-link": {
@@ -6365,6 +7729,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -6442,6 +7815,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"description": "Requires SHOPPINGLIST_VIEW. "
@@ -6513,6 +7892,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			},
@@ -6586,6 +7971,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"requestBody": {
@@ -6685,6 +8076,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"requestBody": {
@@ -6777,6 +8174,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -6864,6 +8267,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			},
@@ -6931,6 +8340,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"requestBody": {
@@ -7032,6 +8447,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			},
@@ -7099,6 +8520,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"requestBody": {
@@ -7153,12 +8580,15 @@
 							}
 						}
 					},
-					"403": {
-						"description": "Not produced by this operation: pairing is unauthenticated and raises only 401 and 422; kept so the declared status set does not change"
-					},
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"security": [],
@@ -7210,12 +8640,15 @@
 						"$ref": "#/components/responses/RotateUnauthorized",
 						"description": "Invalid or expired credential"
 					},
-					"403": {
-						"description": "Not produced by this operation: a 403 `forbidden` refusal is raised only for attempt, printer and artifact ownership, and this operation raises none of those (rotation raises 401 and 422 only); kept so the declared status set does not change"
-					},
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"requestBody": {
@@ -7271,12 +8704,15 @@
 						"$ref": "#/components/responses/WorkerUnauthorized",
 						"description": "Invalid or expired credential"
 					},
-					"403": {
-						"description": "Not produced by this operation: a 403 `forbidden` refusal is raised only for attempt, printer and artifact ownership, and this operation raises none of those (it raises 401 and 422 only); kept so the declared status set does not change"
-					},
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
-						"description": "Refused request with field, code and error_message"
+						"description": "Refused request with field, code and error_message. A NUL byte in any string of the registration, object keys included, is refused with code invalid_value and the dotted path to it (drivers.0.capability_document.models.1) before anything is stored (issue #944)."
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"requestBody": {
@@ -7330,12 +8766,15 @@
 						"$ref": "#/components/responses/WorkerUnauthorized",
 						"description": "Invalid or expired credential"
 					},
-					"403": {
-						"description": "Not produced by this operation: a 403 `forbidden` refusal is raised only for attempt, printer and artifact ownership, and this operation raises none of those (it raises 401 and 422 only); kept so the declared status set does not change"
-					},
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"requestBody": {
@@ -7396,6 +8835,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -7460,6 +8905,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -7524,6 +8975,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -7606,6 +9063,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -7700,6 +9163,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -7768,6 +9237,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"requestBody": {
@@ -7815,6 +9290,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -7871,6 +9352,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -7919,6 +9406,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -7973,6 +9466,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"requestBody": {
@@ -8046,6 +9545,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -8130,6 +9635,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -8189,6 +9700,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -8246,6 +9763,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -8293,6 +9816,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -8330,6 +9859,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -8390,6 +9925,12 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "Refused request with field, code and error_message"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -8479,6 +10020,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -8538,6 +10088,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -8625,6 +10184,15 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -8700,6 +10268,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -8759,6 +10336,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -8818,6 +10404,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -8877,6 +10472,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -8906,6 +10510,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			},
@@ -8944,6 +10557,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -8988,6 +10610,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			},
@@ -9045,6 +10676,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9089,6 +10729,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9133,6 +10782,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9188,6 +10846,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9232,6 +10899,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9287,6 +10963,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9316,6 +11001,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			},
@@ -9354,6 +11048,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9417,6 +11120,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -9461,6 +11170,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9501,6 +11219,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -9567,6 +11291,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -9633,6 +11363,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -9699,6 +11435,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -9752,6 +11494,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -9794,6 +11542,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9838,6 +11595,15 @@
 					"422": {
 						"$ref": "#/components/responses/LabelRefused",
 						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
 					}
 				}
 			}
@@ -9870,6 +11636,12 @@
 					"403": {
 						"$ref": "#/components/responses/Forbidden",
 						"description": "Permission missing"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			},
@@ -9932,6 +11704,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -9975,6 +11753,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10045,6 +11829,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10089,6 +11879,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10188,6 +11984,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10244,6 +12046,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10307,6 +12115,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10371,6 +12185,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10441,6 +12261,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10513,6 +12339,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10565,6 +12397,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10653,6 +12491,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -10749,6 +12593,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -10806,6 +12656,12 @@
 					"403": {
 						"$ref": "#/components/responses/Forbidden",
 						"description": "Permission missing"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -10845,7 +12701,13 @@
 								"properties": {
 									"reason": {
 										"type": "string",
-										"enum": ["entered_in_error", "history_cleared", "medication_archived", "access_revoked", "unknown"]
+										"enum": [
+											"entered_in_error",
+											"history_cleared",
+											"medication_archived",
+											"access_revoked",
+											"unknown"
+										]
 									}
 								}
 							}
@@ -10891,6 +12753,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -11005,6 +12873,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -11084,6 +12958,12 @@
 					"403": {
 						"$ref": "#/components/responses/Forbidden",
 						"description": "Permission missing"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -11167,6 +13047,12 @@
 					"403": {
 						"$ref": "#/components/responses/Forbidden",
 						"description": "Permission missing"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -11199,6 +13085,12 @@
 					"403": {
 						"$ref": "#/components/responses/Forbidden",
 						"description": "Permission missing"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -11278,6 +13170,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -11335,6 +13233,12 @@
 					"403": {
 						"$ref": "#/components/responses/Forbidden",
 						"description": "Permission missing"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -11385,6 +13289,12 @@
 					"403": {
 						"$ref": "#/components/responses/Forbidden",
 						"description": "Permission missing"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -11464,6 +13374,12 @@
 					"403": {
 						"$ref": "#/components/responses/Forbidden",
 						"description": "Permission missing"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -11513,6 +13429,12 @@
 					"403": {
 						"$ref": "#/components/responses/Forbidden",
 						"description": "Permission missing"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"tags": [
@@ -11570,6 +13492,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -11658,6 +13586,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -11748,6 +13682,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -11848,6 +13788,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -11956,6 +13902,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -12056,6 +14008,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -12148,6 +14106,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -12228,6 +14192,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -12292,6 +14262,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				},
 				"parameters": [
@@ -12376,6 +14352,12 @@
 								}
 							}
 						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
 					}
 				}
 			}
@@ -13718,7 +15700,8 @@
 							"number",
 							"null"
 						],
-						"x-visibility": "STOCK_PRICES_VIEW"
+						"x-visibility": "STOCK_PRICES_VIEW",
+						"description": "The price per stock quantity unit. A price of 0 is a known zero (the entry was free); a price nobody recorded is unknown, which is null; and the field is absent for a caller without STOCK_PRICES_VIEW (ADR-0045)."
 					},
 					"open": {
 						"type": "integer"
@@ -13912,7 +15895,7 @@
 					},
 					"stock_value": {
 						"type": "number",
-						"description": "The value of the stock currently held: price times amount, summed over stock entries and rounded to two decimal places, an entry with no price counting as 0. For a parent product it is the parent's own entries only: its sub products' stock is not included, although `stock_amount_aggregated` counts it (migrations/0298.pgsql.sql). 0 when nothing is in stock",
+						"description": "The value of the stock currently held: price times amount, summed over the stock entries whose price is known and rounded to two decimal places. When any entry's price is unknown this is the known part only, and `stock_value_incomplete` is true. For a parent product it is the parent's own entries only: its sub products' stock is not included, although `amount_aggregated` counts it, so 0 for a parent with no stock of its own says nothing about its sub products' value (migrations/0298.pgsql.sql, 0316).",
 						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"next_due_date": {
@@ -13927,7 +15910,7 @@
 							"number",
 							"null"
 						],
-						"description": "The price of the last purchase of the corresponding product",
+						"description": "The price of the last purchase with a known price (purchase, inventory correction or self-production). 0 when that purchase was free; null when no purchase has a known price; absent for a caller without STOCK_PRICES_VIEW (ADR-0045).",
 						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"avg_price": {
@@ -13935,7 +15918,7 @@
 							"number",
 							"null"
 						],
-						"description": "The amount-weighted average price per stock unit over this product's purchase, inventory-correction and self-production bookings that are not undone and carry a price above 0 and an amount above 0, so a negative inventory correction is not counted. For an edited entry its newest stock-edit-new booking stands in for the original, weighted by the entry's edited origin amount. It includes bookings whose stock has since been consumed, so it is not the average of what is in stock now (products_average_price, db/pgsql/baseline/04_views_l1a.sql). Null when there is no such booking",
+						"description": "The amount-weighted average price per stock unit over this product's purchase, inventory-correction and self-production bookings that are not undone and carry a known price (0 included) and an amount above 0, so a negative inventory correction is not counted. For an edited entry its newest stock-edit-new booking stands in for the original, weighted by the entry's edited origin amount. It includes bookings whose stock has since been consumed, so it is not the average of what is in stock now (products_average_price, db/pgsql/baseline/04_views_l1a.sql). Null when there is no such booking. A price of 0 that was stored for a price never entered, before this release or in an imported database, is unknown and not counted (ADR-0045).",
 						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"current_price": {
@@ -13943,7 +15926,7 @@
 							"number",
 							"null"
 						],
-						"description": "The current price of the corresponding product, based on the stock entry to use next (defined by the default consume rule \"Opened first, then first due first, then first in first out\") or on the last price if the product is currently not in stock",
+						"description": "The current price of the corresponding product: the price of the stock entry to use next (defined by the default consume rule \"Opened first, then first due first, then first in first out\"), or the last known price (`last_price`) when the product is not in stock or that entry's price is unknown. 0 is a known zero; null when neither is known; absent for a caller without STOCK_PRICES_VIEW (ADR-0045).",
 						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"oldest_price": {
@@ -14030,6 +16013,11 @@
 							"null"
 						],
 						"description": "The product's default store (its shopping_location_id); null when it has none"
+					},
+					"stock_value_incomplete": {
+						"type": "boolean",
+						"description": "True when at least one of the product's own stock entries has no known price, so `stock_value` is the value of the others only. False when the product has no stock. Redacted together with `stock_value` for a caller without STOCK_PRICES_VIEW (ADR-0045 option B).",
+						"x-visibility": "STOCK_PRICES_VIEW"
 					}
 				},
 				"example": {
@@ -14388,7 +16376,7 @@
 					},
 					"average_execution_frequency_hours": {
 						"type": [
-							"integer",
+							"number",
 							"null"
 						],
 						"description": "Contains the average past execution frequency in hours or `null`, when the chore was never executed before"
@@ -15179,7 +17167,8 @@
 						"type": [
 							"string",
 							"null"
-						]
+						],
+						"description": "An opaque identifier shared by the bookings of one operation; compare it as a string and do not parse it. New ids are 32 lowercase hexadecimal characters (ADR-0046); ids stored before that change are 13, and both stay valid for reads and undo."
 					},
 					"transaction_type": {
 						"$ref": "#/components/schemas/StockTransactionType"
@@ -15189,7 +17178,7 @@
 							"number",
 							"null"
 						],
-						"description": "Null for a booking that carries no price, such as a consumption - a legitimate value, distinct from this field being absent for a caller without STOCK_PRICES_VIEW",
+						"description": "The price per stock quantity unit. Null for a booking that carries no price, such as a consumption of an unpriced entry, and for a price that was never recorded. A price of 0 is a known zero (the entry was free); a price nobody recorded is unknown, which is null; and the field is absent for a caller without STOCK_PRICES_VIEW (ADR-0045).",
 						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"note": {
@@ -15310,7 +17299,7 @@
 			},
 			"ApiError": {
 				"type": "object",
-				"description": "The error body of an answer that carries one message and no detail object: error_message is always present. The same shape as Error400, under a name that does not claim a status code - it is what a 401, a 403 and a 404 return too. It is not the body of every non-2xx answer: a label route that refuses a request with a named field answers LabelRefusal, a consumption service refusal answers ConsumptionError, and the 503 schema-version response is text/plain.",
+				"description": "The error body of an answer that carries one message and no detail object: error_message is always present. The same shape as Error400, under a name that does not claim a status code - it is what a 401, a 403, a 404 and a production 500 return too. It is not the body of every non-2xx answer: a label route that refuses a request with a named field answers LabelRefusal, a consumption service refusal answers ConsumptionError, and the 503 schema-version response is text/plain.",
 				"required": [
 					"error_message"
 				],
@@ -15387,7 +17376,8 @@
 				},
 				"example": {
 					"error_message": "The error message..."
-				}
+				},
+				"description": "Development-only API error body. Production 500 responses contain error_message alone, as ApiError; error_details is present only when development error details are enabled."
 			},
 			"CurrentStockResponse": {
 				"type": "object",
@@ -15409,7 +17399,7 @@
 					},
 					"value": {
 						"type": "number",
-						"description": "The value of the stock currently held: price times amount, summed over stock entries and rounded to two decimal places, an entry with no price counting as 0. For a parent product it is the parent's own entries only: its sub products' stock is not included, although `amount_aggregated` counts it (migrations/0298.pgsql.sql)",
+						"description": "The value of the stock currently held: price times amount, summed over the stock entries whose price is known and rounded to two decimal places. When any entry's price is unknown this is the known part only, and `value_incomplete` is true. For a parent product it is the parent's own entries only: its sub products' stock is not included, although `amount_aggregated` counts it, so 0 for a parent with no stock of its own says nothing about its sub products' value (migrations/0298.pgsql.sql, 0316).",
 						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"best_before_date": {
@@ -15434,6 +17424,11 @@
 					"due_type": {
 						"type": "integer",
 						"description": "The product's due type: 1 when its due date is a best-before date, 2 when it is an expiration date. `expired_products` on GET /stock/volatile lists due type 2 only"
+					},
+					"value_incomplete": {
+						"type": "boolean",
+						"description": "True when at least one of the product's own stock entries has no known price, so `value` is the value of the others only. Redacted together with `value` for a caller without STOCK_PRICES_VIEW (ADR-0045 option B).",
+						"x-visibility": "STOCK_PRICES_VIEW"
 					}
 				}
 			},
@@ -17521,7 +19516,7 @@
 				}
 			},
 			"Forbidden": {
-				"description": "The caller lacks a permission the route requires. The body is {\"error_message\": \"Permission missing: <PERMISSION>\"}. The middleware's own 403s (a read-only key on a write, a cross-origin request, a forced password change) share the ApiError shape.",
+				"description": "The caller lacks a permission the route requires, or authentication middleware refuses an otherwise authenticated request. A permission refusal uses {\"error_message\": \"Permission missing: <PERMISSION>\"}. Middleware 403s use the same ApiError shape for a read-only key on a write, a cross-origin session write, an untrusted reverse proxy, or an account pending a password change.",
 				"content": {
 					"application/json": {
 						"schema": {
@@ -17593,6 +19588,27 @@
 									"$ref": "#/components/schemas/ConsumptionError"
 								}
 							]
+						}
+					}
+				}
+			},
+			"ServerError": {
+				"description": "An uncaught server error in production. The body contains error_message; its text is not a stable client code. Development mode can add error_details with stack_trace, file and line.",
+				"content": {
+					"application/json": {
+						"schema": {
+							"$ref": "#/components/schemas/ApiError"
+						}
+					}
+				}
+			},
+			"SchemaUnavailable": {
+				"description": "The schema-version gate refused the request before routing or authentication because the database could not be queried or its applied migrations do not match this code. The UTF-8 plain-text body explains the mismatch or connection failure. Development mode can append the database driver message to a connection-failure body.",
+				"content": {
+					"text/plain": {
+						"schema": {
+							"type": "string",
+							"description": "Human-readable schema or database availability failure, beginning with Victual cannot serve requests."
 						}
 					}
 				}
@@ -17677,7 +19693,7 @@
 				"in": "query",
 				"name": "query[]",
 				"required": false,
-				"description": "An array of filter conditions, each of them is a string in the form of `<field><condition><value>` where<br>`<field>` is a valid field name<br>`<condition>` is a comparison operator, one of<br>&nbsp;&nbsp;`=` equal<br>&nbsp;&nbsp;`!=` not equal<br>&nbsp;&nbsp;`~` contains, case insensitive for ASCII<br>&nbsp;&nbsp;`!~` does not contain, case insensitive for ASCII<br>&nbsp;&nbsp;`<` less<br>&nbsp;&nbsp;`>` greater<br>&nbsp;&nbsp;`<=` less or equal<br>&nbsp;&nbsp;`>=` greater or equal<br>&nbsp;&nbsp;`\u00a7` regular expression, case sensitive<br>`<value>` is the value to search for<br><br>`~`, `!~` and `\u00a7` need a text field and are answered `400` on any other type, including timestamps - substring matching a timestamp would mean rendering it to a string, and the two storage engines do not render one the same way.<br><br>Case folding for `~`/`!~` is guaranteed for ASCII only. Beyond ASCII it depends on the storage engine: SQLite folds nothing outside A-Z, while PostgreSQL folds according to the database collation, so a pattern such as `\u00e6` may additionally match `\u00c6` there.<br><br>A field named in `query` or `order` that the entity does not have is answered `400`.",
+				"description": "An array of filter conditions, each of them is a string in the form of `<field><condition><value>` where<br>`<field>` is a valid field name<br>`<condition>` is a comparison operator, one of<br>&nbsp;&nbsp;`=` equal<br>&nbsp;&nbsp;`!=` not equal<br>&nbsp;&nbsp;`~` contains, case insensitive for ASCII<br>&nbsp;&nbsp;`!~` does not contain, case insensitive for ASCII<br>&nbsp;&nbsp;`<` less<br>&nbsp;&nbsp;`>` greater<br>&nbsp;&nbsp;`<=` less or equal<br>&nbsp;&nbsp;`>=` greater or equal<br>&nbsp;&nbsp;`§` regular expression, case sensitive<br>`<value>` is the value to search for<br><br>`~`, `!~` and `§` need a text field and are answered `400` on any other type, including timestamps - substring matching a timestamp would mean rendering it to a string, and the two storage engines do not render one the same way.<br><br>Case folding for `~`/`!~` is guaranteed for ASCII only. Beyond ASCII it depends on the storage engine: SQLite folds nothing outside A-Z, while PostgreSQL folds according to the database collation, so a pattern such as `æ` may additionally match `Æ` there.<br><br>A field named in `query` or `order` that the entity does not have is answered `400`.",
 				"schema": {
 					"type": "array",
 					"items": {

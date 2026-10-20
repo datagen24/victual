@@ -2330,9 +2330,6 @@ msgstr ""
 msgid "DD"
 msgstr "DD"
 
-msgid "Print on label printer"
-msgstr "Spausdinti ant etikečių spausdintuvo"
-
 msgid "Default stock entry label"
 msgstr "Numatytoji atsargų įvedimo etiketė"
 
@@ -2347,13 +2344,6 @@ msgstr "Viena etiketė"
 
 msgid "Label per unit"
 msgstr "Etiketė vienam vienetui"
-
-msgid "Error while executing WebHook"
-msgstr "Klaida vykdant WebHook"
-
-# Example: Print *Product* Grocycode on label printer
-msgid "Print %s Grocycode on label printer"
-msgstr "Spausdinkite Grocycode su etikečių spausdintuvo"
 
 msgid "Open stock entry label in new window"
 msgstr "Atidaryti atsargų įrašo etiketę naujame lange"

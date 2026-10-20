@@ -125,7 +125,11 @@ class DatabaseImporter
 	/**
 	 * Tables that belong to the target engine alone and have no counterpart in the source.
 	 */
-	const TARGET_ONLY_TABLES = ['user_settings_defaults', 'system_db_changed_time', 'roles', 'role_permissions', 'user_roles', 'permission_fields'];
+	const TARGET_ONLY_TABLES = ['user_settings_defaults', 'system_db_changed_time', 'roles', 'role_permissions', 'user_roles', 'permission_fields', 'price_interpretation_reports'];
+
+	/** How an imported price of 0 is read (ADR-0045 open questions 6 and 11). */
+	const LEGACY_ZERO_PRICES_UNKNOWN = 'unknown';
+	const LEGACY_ZERO_PRICES_KNOWN = 'known';
 
 	/**
 	 * Tables that exist on both sides but are deliberately not copied.
@@ -229,7 +233,8 @@ class DatabaseImporter
 	 *   recipes above and the users, which this import replaces, so they are cleared with them for
 	 *   the same reason.
 	 */
-	const DERIVED_STATE_TABLES = ['mqtt_product_entities', 'login_attempts', 'stock_entry_origins', 'stock_row_lots', 'stock_booking_lots', 'consumption_recipes', 'consumption_recipe_lines', 'consumption_recipe_shares', 'consumption_events', 'consumption_event_lines', 'consumption_mappings', 'consumption_refill_settings', 'consumption_refill_fills', 'consumption_refill_dates', 'consumption_refill_orders', 'consumption_refill_acks'];
+	const DERIVED_STATE_TABLES = ['mqtt_product_entities', 'login_attempts', 'stock_entry_origins', 'stock_row_lots', 'stock_booking_lots', 'consumption_recipes', 'consumption_recipe_lines', 'consumption_recipe_shares', 'consumption_events',
+		'stock_booking_idempotency_keys', 'consumption_event_lines', 'consumption_mappings', 'consumption_refill_settings', 'consumption_refill_fills', 'consumption_refill_dates', 'consumption_refill_orders', 'consumption_refill_acks'];
 
 	/**
 	 * The SQLite-dialect migration numbers above DatabaseMigrationService::BASELINE_MIGRATION_ID
@@ -307,6 +312,7 @@ class DatabaseImporter
 	private $Target;
 	private $TargetDialect;
 	private $Progress;
+	private string $LegacyZeroPrices = self::LEGACY_ZERO_PRICES_UNKNOWN;
 
 	/**
 	 * @param \PDO $source The SQLite database to copy from
@@ -322,6 +328,21 @@ class DatabaseImporter
 		$this->Progress = $progress ?? function ($message)
 		{
 		};
+	}
+
+	/**
+	 * Chooses how every imported price of 0 is read (ADR-0045 open question 11): as unknown,
+	 * the default, because the web UI stored 0 for a blank price, or as a known zero for a
+	 * source whose operator knows it recorded free items as 0. The choice covers every zero,
+	 * including those that were never entered, and the import report records it.
+	 */
+	public function SetLegacyZeroPrices(string $policy): void
+	{
+		if (!in_array($policy, [self::LEGACY_ZERO_PRICES_UNKNOWN, self::LEGACY_ZERO_PRICES_KNOWN], true))
+		{
+			throw new \InvalidArgumentException('legacy zero prices must be "unknown" or "known"');
+		}
+		$this->LegacyZeroPrices = $policy;
 	}
 
 	/**
@@ -488,6 +509,91 @@ class DatabaseImporter
 				. 'These rows are refused rather than clamped or dropped, so no value the source did not actually hold is invented. '
 				. 'Choose an explicit source repair and retry; --force does not bypass this check. '
 				. 'List all rows: ' . $listing . ';');
+		}
+	}
+
+	/**
+	 * The columns migration 0313 gives a `<table>_<column>_finite` CHECK (issue #916): every
+	 * double precision and numeric column of a base table that had no finite-number check
+	 * before. tests/Pgsql/FiniteNumericColumnsTest.php holds this list to the migration's.
+	 */
+	public const FINITE_NUMBER_COLUMNS = [
+		'cache__products_average_price' => ['price'],
+		'cache__products_last_purchased' => ['amount', 'price'],
+		'chores' => ['product_amount'],
+		'locations' => ['tare_weight'],
+		'meal_plan' => ['product_amount', 'recipe_servings'],
+		'print_evidence' => ['confidence'],
+		'product_barcodes' => ['amount', 'last_price'],
+		'product_groups' => ['min_stock_amount'],
+		'product_location_min_stock' => ['min_stock_amount'],
+		'products' => ['calories', 'min_stock_amount', 'quick_consume_amount', 'quick_open_amount', 'quick_refill_amount', 'tare_weight'],
+		'recipes' => ['base_servings', 'desired_servings'],
+		'recipes_nestings' => ['servings'],
+		'recipes_pos' => ['amount', 'price_factor'],
+		'shopping_list' => ['amount'],
+		'stock' => ['amount', 'opened_amount', 'opened_tare', 'price'],
+		'stock_label_retirements' => ['amount'],
+		'stock_log' => ['amount', 'opened_amount', 'opened_tare', 'price'],
+		'storage_classes' => ['max_temp_c', 'min_temp_c'],
+	];
+
+	/**
+	 * Migration 0313's finite-number CHECKs (issue #916) refuse NaN and ±Infinity in every
+	 * FINITE_NUMBER_COLUMNS column. Without this check a source holding one fails the COPY of
+	 * whichever batch contains it with a bare SQLSTATE 23514, naming neither the row nor the
+	 * cause. Same rule as AssertConversionFactors(): refuse before truncation and never repair,
+	 * so no value the source did not hold is invented. Every column is checked before refusing,
+	 * so one report names them all (as AssertProductReferences() does).
+	 *
+	 * The predicate is written for what SQLite holds. ±Infinity is a REAL beyond the largest
+	 * double; NaN is stored as NULL, and `<> itself` stays as the arm for an engine that keeps
+	 * it. A REAL column keeps text that does not look numeric as text, and PostgreSQL reads the
+	 * texts below as the special values, so those are refused too. Other text is left to the
+	 * COPY, as it was before. Values are cast to text in the sample so json_encode() cannot fail.
+	 *
+	 * Gated per table and column on both sides having them, as AssertConversionFactors() is.
+	 *
+	 * @param string[] $tables GetCommonTables()'s own list.
+	 */
+	private function AssertFiniteNumbers(array $tables): void
+	{
+		$total = 0;
+		$report = [];
+		foreach (self::FINITE_NUMBER_COLUMNS as $table => $columns)
+		{
+			if (!in_array($table, $tables, true))
+			{
+				continue;
+			}
+			$common = $this->GetCommonColumns($table);
+			$key = str_starts_with($table, 'cache__') ? 'product_id' : 'id';
+			foreach ($columns as $column)
+			{
+				if (!in_array($column, $common, true) || !in_array($key, $common, true))
+				{
+					continue;
+				}
+
+				$where = "(typeof($column) = 'real' AND ($column > 1.7976931348623157e308 OR $column < -1.7976931348623157e308 OR $column <> $column))"
+					. " OR (typeof($column) = 'text' AND lower(trim($column)) IN ('nan', '+nan', '-nan', 'inf', '+inf', '-inf', 'infinity', '+infinity', '-infinity'))";
+				$count = (int)$this->Source->query("SELECT COUNT(*) FROM $table WHERE $where")->fetchColumn();
+				if ($count > 0)
+				{
+					$listing = "SELECT $key, CAST($column AS TEXT) AS $column FROM $table WHERE $where ORDER BY $key";
+					$sample = $this->Source->query($listing . ' LIMIT 10')->fetchAll(\PDO::FETCH_ASSOC);
+					$total += $count;
+					$report[] = "$table.$column: $count row(s), sample " . json_encode($sample, JSON_INVALID_UTF8_SUBSTITUTE) . ', list all: ' . $listing . ';';
+				}
+			}
+		}
+
+		if ($total > 0)
+		{
+			throw new \RuntimeException('Import refused: ' . $total . ' source value(s) are NaN or infinite, which the target refuses outright '
+				. '(migration 0313, the <table>_<column>_finite constraints; issue #916). ' . implode(' ', $report) . ' '
+				. 'These rows are refused rather than clamped or dropped, so no value the source did not actually hold is invented. '
+				. 'Choose an explicit source repair and retry; --force does not bypass this check.');
 		}
 	}
 
@@ -753,6 +859,7 @@ class DatabaseImporter
 			. ' - dependent fields a trigger recomputes from this relationship (e.g. cumulated min_stock_amount) may have changed too');
 	}
 
+	/** Validates the source with every Assert*() check, then copies it into the target in one transaction. */
 	private function ImportSnapshot(bool $force, bool $applyRowMigrations): array
 	{
 		$tables = $this->GetCommonTables();
@@ -763,6 +870,7 @@ class DatabaseImporter
 		$this->AssertStockAmounts($tables);
 		$this->AssertConversionFactors($tables);
 		$this->AssertChoreConsumeFlags($tables);
+		$this->AssertFiniteNumbers($tables);
 		$this->AssertSourceTimestamps($tables);
 
 		$report = [];
@@ -868,8 +976,25 @@ class DatabaseImporter
 			$this->ClearOutbox();
 
 			$this->SetTriggersEnabled($tables, true);
+
+			// Verify while the replacement can still be rolled back. Resynchronizing
+			// identity sequences uses setval(), which is not rolled back by PostgreSQL,
+			// and the lineage backfill may consume sequence values. Both belong after
+			// verification so a mismatch also leaves ancillary state untouched.
+			$this->AssertRowCountsMatch($report);
+			$this->AssertValuesMatch($tables);
+
+			// Inside the copy transaction, so the import commits with every legacy zero read as
+			// chosen or not at all (ADR-0045 gate 1), and after verification, because the report
+			// row draws a sequence value a rollback does not return
+			if ($applyRowMigrations)
+			{
+				$this->MarkLegacyZeroPrices($tables);
+			}
+
 			$this->TargetDialect->ResyncGeneratedIdCounters($this->Target);
 			$this->RebuildStockLineage();
+			$this->Target->commit();
 		}
 		catch (\Throwable $ex)
 		{
@@ -880,13 +1005,6 @@ class DatabaseImporter
 
 			throw $ex;
 		}
-
-		$this->Target->commit();
-
-		// Generated id counters were resynchronized before releasing the import lock.
-
-		$this->AssertRowCountsMatch($report);
-		$this->AssertValuesMatch($tables);
 
 		// After the assertions, never before them. The copy's job is to be verbatim and
 		// AssertValuesMatch is what proves it was; rewriting rows mid-copy would make every
@@ -1179,7 +1297,11 @@ class DatabaseImporter
 		{
 			foreach ($columns as $column)
 			{
-				$values[] = $row[$column];
+				$value = $row[$column];
+				// A plain PDO target (including the differential suite) has no
+				// InstantStatement. Use the same serializer as application writes so
+				// PDO cannot round a SQLite REAL at PHP's default precision.
+				$values[] = is_float($value) ? RoundTripFloat::Format($value) : $value;
 			}
 		}
 
@@ -1249,12 +1371,44 @@ class DatabaseImporter
 	 */
 	private const TABLES_COPIED_FIRST = ['quantity_units'];
 
+	/** Returns $tables with TABLES_COPIED_FIRST moved to the front, keeping the rest in order. */
 	private function OrderTablesForCopy(array $tables): array
 	{
 		$first = array_values(array_intersect(self::TABLES_COPIED_FIRST, $tables));
 		$rest = array_values(array_diff($tables, self::TABLES_COPIED_FIRST));
 
 		return array_merge($first, $rest);
+	}
+
+	/**
+	 * Marks every imported row priced exactly 0 as an unknown price (legacy_zero_price = 1),
+	 * or leaves it a known zero under the "known" policy, without changing any stored price.
+	 * Both write a price_interpretation_reports row and a progress line, so the reading chosen
+	 * stays visible after the terminal is gone (ADR-0045 open question 8).
+	 *
+	 * @param string[] $tables The tables this import copied
+	 */
+	private function MarkLegacyZeroPrices(array $tables): void
+	{
+		if (!in_array('stock', $tables, true) && !in_array('stock_log', $tables, true))
+		{
+			return;
+		}
+
+		// The same function migration 0315 marked pre-existing zeros with. stock_log_UPD would
+		// rebuild a price cache per marked row; RebuildPriceCaches() rebuilds them all once
+		// after the commit. ALTER TABLE is transactional, so a failed import restores it.
+		$this->Target->exec('ALTER TABLE stock_log DISABLE TRIGGER stock_log_UPD');
+		$statement = $this->Target->prepare('SELECT stock_rows, stock_log_rows FROM mark_legacy_zero_prices(?, ?)');
+		$statement->execute(['import', $this->LegacyZeroPrices]);
+		$counts = $statement->fetch(\PDO::FETCH_ASSOC);
+		$this->Target->exec('ALTER TABLE stock_log ENABLE TRIGGER stock_log_UPD');
+
+		$reading = $this->LegacyZeroPrices === self::LEGACY_ZERO_PRICES_UNKNOWN ? 'read as unknown (imported legacy zero)' : 'read as known zeros (--legacy-zero-prices=known)';
+		foreach (['stock' => 'stock_rows', 'stock_log' => 'stock_log_rows'] as $table => $column)
+		{
+			($this->Progress)('  ' . str_pad($table, 12) . ' ' . (int)$counts[$column] . ' row(s) priced 0 ' . $reading . '; stored prices unchanged');
+		}
 	}
 
 	/**
@@ -1280,6 +1434,12 @@ class DatabaseImporter
 			// the five kinds that joined the label subsystem) must never be restored from
 			// foreign input.
 			$common = array_values(array_diff($common, ['import_epoch']));
+		}
+		if ($table === 'stock' || $table === 'stock_log')
+		{
+			// The reading of a stored price is the target's to decide (MarkLegacyZeroPrices()),
+			// never a source's to supply
+			$common = array_values(array_diff($common, ['legacy_zero_price']));
 		}
 
 		foreach (array_diff($sourceColumns, $targetColumns) as $column)

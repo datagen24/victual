@@ -4,6 +4,8 @@ namespace Victual\Controllers\Api;
 
 use Victual\Controllers\Users\PermissionMissingException;
 use Victual\Controllers\Users\User;
+use Victual\Controllers\Users\UserfileOwnerPolicy;
+use Victual\Services\DatabaseService;
 use Victual\Services\FilesService;
 use Victual\Services\Storage\FileStorage;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -51,6 +53,12 @@ class FilesApiController extends BaseApiController
 	];
 
 	/**
+	 * The GROUP_READ_PERMISSIONS value of a group with no leaf of its own, whose files are
+	 * readable by whoever UserfileOwnerPolicy says. Not a permission name.
+	 */
+	const OWNER_GOVERNED = 'OWNER_GOVERNED';
+
+	/**
 	 * Which permission lets a caller read a file from a group. Fail-closed: a group
 	 * missing from this table is refused rather than falling through to authentication
 	 * alone. Sweep finding S32 - before this table existed, ServeFile gated
@@ -58,12 +66,13 @@ class FilesApiController extends BaseApiController
 	 * other group, including one nobody had decided about yet, through to any
 	 * authenticated caller.
 	 *
-	 * null is a decided "no further permission needed", not an omission. 'userfiles' is
-	 * null because file and image user fields render through /api/files/userfiles/ on
-	 * pages gated only by STOCK_VIEW, EQUIPMENT_VIEW and the like; it stays open until
-	 * #905 makes a file follow the read leaf of the record that owns it. It is not tied
-	 * to EntityReadPolicy: 'userobjects' there requires MASTER_DATA_EDIT (#869), and
-	 * gating this group the same way would break those pages. equipmentmanuals maps to
+	 * null is a decided "no further permission needed"; no group is null at the moment.
+	 * 'userfiles' is OWNER_GOVERNED (#905): file and image user fields render through
+	 * /api/files/userfiles/ on pages gated by the read leaf of the record the field hangs
+	 * off, so a file follows the record(s) that reference it rather than a leaf of its own -
+	 * see UserfileOwnerPolicy for the rule. It is not tied to EntityReadPolicy as a whole:
+	 * 'userobjects' there requires MASTER_DATA_EDIT (#869), and gating this group the same
+	 * way would break the pages of every other owner. equipmentmanuals maps to
 	 * EQUIPMENT_VIEW, the leaf ADR-0035 requires for the equipment pages and APIs and EntityReadPolicy now requires for 'equipment'
 	 * (#847): a manual is equipment data and must not be readable by a caller who is
 	 * refused the equipment record. userpictures maps to USERS_READ for the same reason 'users' => USERS_READ
@@ -81,7 +90,7 @@ class FilesApiController extends BaseApiController
 		'productpictures' => User::PERMISSION_STOCK_VIEW,
 		'recipepictures' => User::PERMISSION_RECIPES_VIEW,
 		'equipmentmanuals' => User::PERMISSION_EQUIPMENT_VIEW,
-		'userfiles' => null,
+		'userfiles' => self::OWNER_GOVERNED,
 		'userpictures' => User::PERMISSION_USERS_READ
 	];
 
@@ -173,7 +182,7 @@ class FilesApiController extends BaseApiController
 	/**
 	 * Throws unless the caller may read a file from the given group. Fail-closed via
 	 * CheckGroupIsKnown; a mapped null permission is a decided "open to any
-	 * authenticated caller".
+	 * authenticated caller", and OWNER_GOVERNED defers to UserfileOwnerPolicy.
 	 *
 	 * $fileName carries the same own-picture exception CheckUserPictureDeletion
 	 * enforces on delete: every authenticated user's own avatar renders in the nav bar
@@ -196,7 +205,10 @@ class FilesApiController extends BaseApiController
 	{
 		$this->CheckGroupIsKnown($group);
 
+		// Never for a derivative name: the column is caller-writable, so "<victim>__downscaledto..."
+		// would otherwise be a way to a cached or freshly made thumbnail of the victim's picture
 		if ($group === 'userpictures' && $fileName !== null
+			&& !str_contains($fileName, FilesService::DOWNSCALED_INFIX)
 			&& defined('VICTUAL_USER_PICTURE_FILE_NAME') && $fileName === VICTUAL_USER_PICTURE_FILE_NAME)
 		{
 			$otherOwner = $this->DB->users()->where('picture_file_name = :1 AND id != :2', $fileName, (int)VICTUAL_USER_ID)->fetch();
@@ -208,7 +220,13 @@ class FilesApiController extends BaseApiController
 		}
 
 		$permission = self::GROUP_READ_PERMISSIONS[$group];
-		if ($permission !== null)
+		if ($permission === self::OWNER_GOVERNED)
+		{
+			// Decided before the file is looked up and before a derivative is made, from the
+			// original's name: a refused caller learns neither that it exists nor who owns it
+			UserfileOwnerPolicy::Check($request, (string)$fileName);
+		}
+		elseif ($permission !== null)
 		{
 			User::CheckPermission($request, $permission);
 		}
@@ -253,7 +271,21 @@ class FilesApiController extends BaseApiController
 				$this->CheckUserPictureDeletion($request, $fileName);
 			}
 
-			FilesService::GetInstance()->DeleteFile($args['group'], $fileName);
+			if ($args['group'] === 'userfiles')
+			{
+				// A referenced file needs every owner's read permission, or deleting it and
+				// uploading new bytes under the same name replaces a protected file (#920)
+				DatabaseService::GetInstance()->InTransaction(function () use ($request, $args, $fileName)
+				{
+					UserfileOwnerPolicy::LockOwnership();
+					UserfileOwnerPolicy::CheckByteMutation($request, $fileName);
+					FilesService::GetInstance()->DeleteFile($args['group'], $fileName);
+				});
+			}
+			else
+			{
+				FilesService::GetInstance()->DeleteFile($args['group'], $fileName);
+			}
 
 			return $this->EmptyApiResponse($response);
 		});
@@ -348,8 +380,30 @@ class FilesApiController extends BaseApiController
 			$fileName = $this->CheckFileName($args['fileName']);
 			$this->CheckFileExtension($args['group'], $fileName);
 
+			// A stored name in the derivative form is served as the cached resize of its
+			// original, so uploading one before the real resize exists replaced what the
+			// original's readers are shown (#920 addendum). Only FilesService makes them.
+			if (FilesService::RootOf($fileName) !== $fileName)
+			{
+				throw new EInvalidApiQuery('A file name cannot have the form of a resized picture');
+			}
+
 			$storage = FileStorage::GetInstance();
-			$storage->Create($args['group'], $fileName, $this->GetRequestBodyStream($request));
+			if ($args['group'] === 'userfiles')
+			{
+				// Authorized before the exclusive create can say whether the name exists, and
+				// under the ownership lock so no reference is attached in between (#920)
+				DatabaseService::GetInstance()->InTransaction(function () use ($request, $args, $fileName, $storage)
+				{
+					UserfileOwnerPolicy::LockOwnership();
+					UserfileOwnerPolicy::CheckByteMutation($request, $fileName);
+					$storage->Create($args['group'], $fileName, $this->GetRequestBodyStream($request));
+				});
+			}
+			else
+			{
+				$storage->Create($args['group'], $fileName, $this->GetRequestBodyStream($request));
+			}
 
 			// A name ending in .png that holds a script is the whole of the problem, so
 			// what was stored has to be what the extension said it was.
@@ -537,7 +591,14 @@ class FilesApiController extends BaseApiController
 				$bestFitWidth = $this->ClampBestFitSize($queryParams['best_fit_width']);
 			}
 
-			return FilesService::GetInstance()->DownscaleImage($group, $fileName, $bestFitHeight, $bestFitWidth);
+			// userfiles only: the owner rule reduces a derivative name to its root original, so a
+			// request naming one derives from the root and never makes a derivative of a
+			// derivative. Every other group derives from the name as asked, as it always did -
+			// reducing it there would let a name the caller wrote themselves (the own-picture
+			// exception) reach a thumbnail of somebody else's original.
+			$source = $group === 'userfiles' ? FilesService::RootOf($fileName) : $fileName;
+
+			return FilesService::GetInstance()->DownscaleImage($group, $source, $bestFitHeight, $bestFitWidth);
 		}
 
 		return $fileName;

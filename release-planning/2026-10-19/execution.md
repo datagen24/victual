@@ -1,0 +1,24 @@
+# 0.5.1 execution ledger
+
+Append one row per merged PR that changes a 0.5.1 issue, in the same PR. Record the merge
+commit after merge in a follow-up row, not by rewriting an earlier row. Planning decisions
+and GitHub writes live in [release-data.json](release-data.json).
+
+| Date | Issue | PR | Change | Validation | Docstring coverage of touched files |
+| --- | --- | --- | --- | --- | --- |
+| 2026-10-19 | None | Planning PR | Seeded the 0.5.1 dashboard; moved #909 to vNext, #252 to 0.5.1; opened #1010. | `render.py` rendered all three views. | `refresh.py` and `render.py` 100%; template script 100%. |
+| 2026-10-19 | #988 | [PR #1012](https://github.com/datagen24/victual/pull/1012) | Prune job opens or updates a pull request from chore/vale-baseline-prune instead of pushing to master. | actionlint clean; Vale tooling tests 29 OK with pinned Vale; ruff clean. | audit.py 10/10, test_staged.py 14/14. |
+| 2026-10-19 | #987 | [PR #1013](https://github.com/datagen24/victual/pull/1013) | Consume refuses a recipe_id that names no recipe with 400; accepted spellings unchanged. | pgsql phases wirecontract (177 OK) and openapidocument (15 OK); OpenAPI document check exit 0. | StockApiController.php 43/43, NumericStringAcceptanceTest.php 14/14. |
+| 2026-10-19 | #989 | [PR #1015](https://github.com/datagen24/victual/pull/1015) | Calendar 500 body is the fixed message; title, type and id are logged as JSON. | pgsql httpboot 129 OK; old controller fails the new test; openapidocument passed. | CalendarApiController.php 2/2, CalendarMalformedEventTest.php 4/4. |
+| 2026-10-19 | #991 | [PR #1016](https://github.com/datagen24/victual/pull/1016) | ADR-0048 item 9 records the name-existence signal as an accepted residual. | Vale check on the ADR: 0 new findings. | No functions touched. |
+| 2026-10-20 | #252, #900, #904, #1010 | Planning PR | Refreshed the dashboard; recorded decision P7 and new next actions; drafted the four planning comments in issue-responses-2026-10-20.md. | `refresh.py` then `render.py`. | No functions touched. |
+| 2026-10-20 | #900 | [PR #1019](https://github.com/datagen24/victual/pull/1019) | ADR-0049 part 1 accepted: status lines, index rows and forward pointers on ADR-0019 only. Recorded here because the lifecycle rule keeps the acceptance PR free of other edits. | Vale pre-commit: 0 new findings. | No functions touched. |
+| 2026-10-20 | None | [PR #1018](https://github.com/datagen24/victual/pull/1018) | Merged as `e8e721ee`: the 2026-10-20 planning refresh and decisions P7 and P8. | GitHub reports the PR merged. | No functions touched. |
+| 2026-10-20 | #900 | [PR #1019](https://github.com/datagen24/victual/pull/1019) | Merged as `a839ed9c`: ADR-0049 part 1 is accepted. | GitHub reports the PR merged. | No functions touched. |
+| 2026-10-20 | #900 | [PR #1020](https://github.com/datagen24/victual/pull/1020) | The Claim() comment in PrintAttemptService.php lists ADR-0049's four dead-letter causes; no behaviour change. | `php -l` under PHP 8.4: no syntax errors. | PrintAttemptService.php 12/12. |
+| 2026-10-20 | #900 | [PR #1020](https://github.com/datagen24/victual/pull/1020) | Merged as `0e3a15ff`; #900 closed. ADR-0049 part 2 moved to #1021 in 0.6.0. | GitHub reports the PR merged and #900 closed. | No functions touched. |
+| 2026-10-20 | #252 | [PR #1022](https://github.com/datagen24/victual/pull/1022) | Proposed ADR-0051: WebhookRunner never had an InfluxDB caller, superseding ADR-0024's claim; proposes removing the webhook residue. | `mkdocs.yml` nav entry added; Vale pre-commit. | No functions touched. |
+| 2026-10-20 | #252 | [PR #1022](https://github.com/datagen24/victual/pull/1022) | Merged as `fe5eb302`: ADR-0051 proposed. | GitHub reports the PR merged. | No functions touched. |
+| 2026-10-20 | #252 | [PR #1023](https://github.com/datagen24/victual/pull/1023) | Merged as `05c8ca68`: ADR-0051 accepted; forward pointers on ADR-0024 and ADR-0019. | GitHub reports the PR merged. | No functions touched. |
+| 2026-10-20 | #252 | [PR #1024](https://github.com/datagen24/victual/pull/1024) | Removes the webhook residue ADR-0051 lists: three unused catalogue strings in 33 files, one DatabaseService docstring, plan 20's curl row. | msgfmt --check-format on 33 catalogues, each exactly 3 entries fewer; `php -l` under PHP 8.4. | DatabaseService.php 26/27. |
+| 2026-10-20 | #252 | [PR #1025](https://github.com/datagen24/victual/pull/1025) | Removes the ConfigurationValidator demo/prerelease label refusal, the SystemController entry-page fallback and the LabelRenderApiController byte-route arms; stacked on #1024. | pgsql helperunits (101 OK, 2 environment skips), rootentry 8, householdpages 90, labelapi 178, labelservices 310, labeltracking 4, httpboot 129. | ConfigurationValidator.php 15/15, SystemController.php 5/5, LabelRenderApiController.php 4/4, HelperUnitsTest.php 113/113. |

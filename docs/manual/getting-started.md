@@ -114,6 +114,10 @@ still names `sqlite` is refused at startup, with the exact command that moves it
 Stop the application, and stop any label workers with it, before running the import. The
 import replaces the product, stock, and print-job data those workers act on, the same reason
 [Restoring](operator/backup-restore.md#restoring) gives for a restore.
+Keep the SQLite source and a PostgreSQL backup until the import completes and the application
+has been checked. A copy-verification mismatch rolls back the target replacement. A failure
+in later row cleanup or cache rebuilding can leave the imported target partly processed;
+restore the PostgreSQL backup before retrying in that case.
 
 ```
 php bin/victual-migrate                                    # create the schema in the empty PostgreSQL database
@@ -129,6 +133,14 @@ During the import — not during a migration, because the target is already migr
 rows arrive — it also runs the HTML sanitizer over the five rich-text columns and replaces
 any plaintext API key with its hash. Calendar sharing keys stay readable, as they do in an
 in-place grocy upgrade.
+
+A stock price of `0` is read as unknown after an import, not as free, because grocy's purchase
+page stores `0` when the price field is left blank. The stored prices are copied unchanged; the
+import says how many rows it read this way, and records it in the
+`price_interpretation_reports` table. If your source recorded free items as `0`, pass
+`--legacy-zero-prices=known`. That reads every `0` as free, including any price that was
+never entered. Upgrading an existing Victual database applies the same "unknown" reading to
+the zero prices it already holds.
 
 See [db/pgsql/README.md](../../db/pgsql/README.md)
 for the porting rules and the accepted behavioural differences between the two engines.

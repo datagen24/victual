@@ -148,6 +148,48 @@
             "tracked_count": "integer"
         }
     },
+    "GET /api/chores/{choreId} (fractional average)": {
+        "status": 200,
+        "shape": {
+            "average_execution_frequency_hours": "number",
+            "chore": {
+                "active": "integer",
+                "assignment_config": "null",
+                "assignment_type": "null",
+                "consume_product_on_execution": "integer",
+                "description": "null",
+                "id": "integer",
+                "import_epoch": "integer",
+                "name": "string",
+                "next_execution_assigned_to_user_id": "null",
+                "period_config": "null",
+                "period_days": "null",
+                "period_interval": "integer",
+                "period_type": "string",
+                "product_amount": "null",
+                "product_id": "null",
+                "rescheduled_date": "null",
+                "rescheduled_next_execution_assigned_to_user_id": "null",
+                "rollover": "boolean",
+                "row_created_timestamp": "string(date-time)",
+                "start_date": "string(date-time)",
+                "track_date_only": "boolean"
+            },
+            "last_done_by": {
+                "display_name": "string",
+                "first_name": "null",
+                "id": "integer",
+                "last_name": "null",
+                "picture_file_name": "null",
+                "row_created_timestamp": "string(date-time)",
+                "username": "string"
+            },
+            "last_tracked": "string(date-time)",
+            "next_estimated_execution_time": "null",
+            "next_execution_assigned_user": "null",
+            "tracked_count": "integer"
+        }
+    },
     "GET /api/consumption/capabilities": {
         "status": 200,
         "shape": {
@@ -698,7 +740,7 @@
                 "best_before_date": "string(date)",
                 "id": "integer",
                 "location_id": "integer",
-                "price": "integer|number",
+                "price": "integer|null|number",
                 "product_id": "integer",
                 "purchased_date": "string(date)",
                 "shopping_location_id": "null"
@@ -1501,7 +1543,7 @@
                     "default_refill_location_id_to": "null",
                     "default_shopping_list_id": "null",
                     "default_stock_label_type": "integer",
-                    "description": "string",
+                    "description": "null|string",
                     "disable_open": "integer",
                     "due_type": "integer",
                     "enable_tare_weight_handling": "integer",
@@ -1516,7 +1558,7 @@
                     "not_check_stock_fulfillment_for_recipes": "integer",
                     "parent_product_id": "null",
                     "picture_file_name": "null",
-                    "product_group_id": "integer",
+                    "product_group_id": "integer|null",
                     "qu_id_consume": "integer",
                     "qu_id_price": "integer",
                     "qu_id_purchase": "integer",
@@ -1531,7 +1573,8 @@
                     "treat_opened_as_out_of_stock": "integer"
                 },
                 "product_id": "integer",
-                "value": "integer"
+                "value": "integer",
+                "value_incomplete": "boolean"
             }
         ]
     },
@@ -1580,7 +1623,7 @@
             "opened_measured_at": "null",
             "opened_qu_id": "null",
             "opened_tare": "null",
-            "price": "integer",
+            "price": "null",
             "product_id": "integer",
             "purchased_date": "string(date)",
             "recipe_id": "null",
@@ -1636,7 +1679,7 @@
                 "opened_measured_at": "null",
                 "opened_qu_id": "null",
                 "opened_tare": "null",
-                "price": "number",
+                "price": "integer|null|number",
                 "product_id": "integer",
                 "purchased_date": "string(date)",
                 "row_created_timestamp": "string(date-time)",
@@ -1772,6 +1815,7 @@
             "stock_amount_opened": "integer",
             "stock_amount_opened_aggregated": "integer",
             "stock_value": "number",
+            "stock_value_incomplete": "boolean",
             "substitution_candidates": {
                 "__empty_list__": true
             }
@@ -1904,6 +1948,7 @@
             "stock_amount_opened": "integer",
             "stock_amount_opened_aggregated": "integer",
             "stock_value": "integer",
+            "stock_value_incomplete": "boolean",
             "substitution_candidates": {
                 "__empty_list__": true
             }
@@ -2048,7 +2093,8 @@
                         "treat_opened_as_out_of_stock": "integer"
                     },
                     "product_id": "integer",
-                    "value": "number"
+                    "value": "number",
+                    "value_incomplete": "boolean"
                 }
             ],
             "expired_products": {
@@ -2126,6 +2172,13 @@
             "os": "string",
             "php_version": "string",
             "sqlite_version": "string",
+            "stock_booking_idempotency": {
+                "header": "string",
+                "operations": [
+                    "string"
+                ],
+                "retention_seconds": "integer"
+            },
             "victual_version": {
                 "ReleaseDate": "string(date)",
                 "Version": "string"
@@ -3144,6 +3197,12 @@
         }
     },
     "POST /api/objects/{entity} (chores)": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "integer"
+        }
+    },
+    "POST /api/objects/{entity} (chores, fractional average)": {
         "status": 200,
         "shape": {
             "created_object_id": "integer"

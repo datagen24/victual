@@ -218,7 +218,9 @@ class LabelRenderLifecycleTest extends PgsqlSchemaTestCase
 		$broken = self::missingFontDraftRequest();
 		$valid = self::productionRequest();
 
-		$input = self::tx(static fn () => self::requests()->Claim());
+		$claim = self::tx(static fn () => self::requests()->ClaimWithStatus());
+		self::assertTrue($claim['changed'], 'Settling the invalid request and claiming the next one changes visible state');
+		$input = $claim['request'];
 		self::assertIsArray($input, 'The request behind the broken one is handed out');
 		self::assertSame((int)$valid['id'], $input['render_request_id'], 'The claim returns the valid request, not the broken one');
 
@@ -237,7 +239,9 @@ class LabelRenderLifecycleTest extends PgsqlSchemaTestCase
 
 		// Give the valid request up, then claim again: the invalid one is not seen again.
 		self::$db->exec("UPDATE label_render_requests SET state = 'failed' WHERE id = " . (int)$valid['id']);
-		self::assertNull(self::tx(static fn () => self::requests()->Claim()), 'Nothing is left to claim');
+		$empty = self::tx(static fn () => self::requests()->ClaimWithStatus());
+		self::assertNull($empty['request'], 'Nothing is left to claim');
+		self::assertFalse($empty['changed'], 'An empty claim tick with no maintenance work is a no-op');
 		$after = self::requestRow((int)$broken['id']);
 		self::assertSame('invalid', $after['state']);
 		self::assertSame(1, (int)$after['attempts'], 'The invalid request is not claimed a second time');
@@ -255,7 +259,9 @@ class LabelRenderLifecycleTest extends PgsqlSchemaTestCase
 		// Put the reaped request behind the broken one in the queue.
 		self::$db->exec("UPDATE label_render_requests SET attempts = " . RenderRequestService::MAX_ATTEMPTS . ' WHERE id = ' . (int)$crashed['id']);
 
-		self::assertNull(self::tx(static fn () => self::requests()->Claim()), 'The exhausted request fails in the reap and the broken one is settled');
+		$claim = self::tx(static fn () => self::requests()->ClaimWithStatus());
+		self::assertNull($claim['request'], 'The exhausted request fails in the reap and the broken one is settled');
+		self::assertTrue($claim['changed'], 'Reaping a lease and settling a request changes visible state');
 
 		$reaped = self::requestRow((int)$crashed['id']);
 		self::assertSame('failed', $reaped['state'], 'The reap was committed');
@@ -398,7 +404,9 @@ class LabelRenderLifecycleTest extends PgsqlSchemaTestCase
 		self::assertSame('pending', $status['json']['state']);
 		self::assertFalse($status['json']['retryable'], 'An expired request is not retryable even before it is collected');
 
-		self::assertNull(self::tx(static fn () => self::requests()->Claim()), 'An expired preview is not work');
+		$claim = self::tx(static fn () => self::requests()->ClaimWithStatus());
+		self::assertNull($claim['request'], 'An expired preview is not work');
+		self::assertTrue($claim['changed'], 'Expiring requests and collecting preview bytes changes visible state');
 
 		$row = self::requestRow((int)$neverRendered['id']);
 		self::assertSame('failed', $row['state']);
@@ -421,7 +429,9 @@ class LabelRenderLifecycleTest extends PgsqlSchemaTestCase
 		$request = self::previewRequest();
 		$artifact = \renderPending(self::$db);
 		self::assertSame((int)$request['id'], (int)$artifact['render_request_id']);
-		self::assertNull(self::tx(static fn () => self::requests()->Claim()));
+		$claim = self::tx(static fn () => self::requests()->ClaimWithStatus());
+		self::assertNull($claim['request']);
+		self::assertFalse($claim['changed'], 'An unexpired preview leaves an empty claim tick unchanged');
 		self::assertNull(self::$db->query('SELECT collected_at FROM label_artifacts WHERE id = ' . (int)$artifact['id'])->fetchColumn(), 'Negative control: a live preview is kept');
 	}
 }

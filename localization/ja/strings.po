@@ -2119,9 +2119,6 @@ msgstr "Grocycodeは、Grocyインスタンス内のこの%sへの一意の参�
 msgid "DD"
 msgstr "DD"
 
-msgid "Print on label printer"
-msgstr "ラベルプリンターで印刷"
-
 msgid "Default stock entry label"
 msgstr "既定のストックラベル"
 
@@ -2136,13 +2133,6 @@ msgstr "単一ラベル"
 
 msgid "Label per unit"
 msgstr "ユニット毎のラベル"
-
-msgid "Error while executing WebHook"
-msgstr "WebHook実行中にエラーが発生しました"
-
-# Example: Print *Product* Grocycode on label printer
-msgid "Print %s Grocycode on label printer"
-msgstr "ラベルプリンターで%sGrocycodeを印刷"
 
 msgid "Open stock entry label in new window"
 msgstr "ストックラベルを新しいウィンドウで開く"

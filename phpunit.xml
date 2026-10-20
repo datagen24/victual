@@ -69,11 +69,15 @@
 		<testsuite name="openapisecurity">
 			<file>tests/Pgsql/OpenApiSecurityContractTest.php</file>
 		</testsuite>
+		<testsuite name="bookingidempotency">
+			<file>tests/Pgsql/StockBookingIdempotencyTest.php</file>
+		</testsuite>
 		<testsuite name="wirecontract">
 			<file>tests/Pgsql/WireContractTest.php</file>
 			<file>tests/Pgsql/TimestampInstantTest.php</file>
 			<file>tests/Pgsql/StockEntryEditContractTest.php</file>
 			<file>tests/Pgsql/StockPurchaseInventoryInputTest.php</file>
+			<file>tests/Pgsql/NumericStringAcceptanceTest.php</file>
 		</testsuite>
 		<testsuite name="stockpages">
 			<file>tests/Pgsql/StockPagesTest.php</file>
@@ -81,6 +85,7 @@
 			<file>tests/Pgsql/MealPlanProductDetailsRedactionTest.php</file>
 			<file>tests/Pgsql/MealPlanStockStateTest.php</file>
 			<file>tests/Pgsql/ShoppingListUserfieldVisibilityTest.php</file>
+			<file>tests/Pgsql/ShoppingListShortfallVisibilityTest.php</file>
 		</testsuite>
 		<testsuite name="householdpages">
 			<file>tests/Pgsql/HouseholdPagesTest.php</file>
@@ -93,6 +98,7 @@
 			<file>tests/Pgsql/LabelResolveSchemaTest.php</file>
 			<file>tests/Pgsql/OpenApiErrorBodiesTest.php</file>
 			<file>tests/Pgsql/BatteryLabelViewPermissionTest.php</file>
+			<file>tests/Pgsql/LabelWorkerRoute403Test.php</file>
 		</testsuite>
 		<testsuite name="labelservices">
 			<file>tests/Pgsql/LabelServicesTest.php</file>
@@ -128,6 +134,7 @@
 		</testsuite>
 		<testsuite name="storagefiles">
 			<file>tests/Pgsql/StorageFilesTest.php</file>
+			<file>tests/Pgsql/UserfileOwnerReadTest.php</file>
 		</testsuite>
 		<testsuite name="stockcoverage">
 			<file>tests/Pgsql/StockCoverageTest.php</file>
@@ -145,7 +152,11 @@
 			<file>tests/Pgsql/CrossOperationLedgerInvariantTest.php</file>
 			<file>tests/Pgsql/MergeProductsConsumptionTest.php</file>
 			<file>tests/Pgsql/MergeProductsChoreLockOrderTest.php</file>
+			<file>tests/Pgsql/MergeProductsConversionConflictTest.php</file>
+			<file>tests/Pgsql/MergeProductsConversionLockTest.php</file>
 			<file>tests/Pgsql/BarcodeLookupNonFiniteHttpTest.php</file>
+			<file>tests/Pgsql/BarcodeLookupFactorNormalRangeTest.php</file>
+			<file>tests/Pgsql/ConversionChainRangeTest.php</file>
 		</testsuite>
 		<testsuite name="stockconcurrency">
 			<file>tests/Pgsql/StockConcurrencyTest.php</file>
@@ -170,6 +181,7 @@
 		<testsuite name="httpboot">
 			<file>tests/Pgsql/HttpBootTest.php</file>
 			<file>tests/Pgsql/CalendarIdentityTest.php</file>
+			<file>tests/Pgsql/CalendarMalformedEventTest.php</file>
 			<file>tests/Pgsql/ViewCorrectionsHttpTest.php</file>
 			<file>tests/Pgsql/ReferenceRefusalTest.php</file>
 			<file>tests/Pgsql/ApiInputShapesTest.php</file>
@@ -215,6 +227,10 @@
 			<file>tests/Pgsql/ImportConversionFactorTest.php</file>
 			<file>tests/Pgsql/ChoreConsumeFlagCheckTest.php</file>
 			<file>tests/Pgsql/ImportChoreConsumeFlagTest.php</file>
+			<file>tests/Pgsql/FiniteNumericColumnsTest.php</file>
+			<file>tests/Pgsql/ImportFiniteNumbersTest.php</file>
+			<file>tests/Pgsql/ImportLegacyZeroPricesTest.php</file>
+			<file>tests/Pgsql/StockPriceSemanticsTest.php</file>
 		</testsuite>
 		<testsuite name="chores">
 			<file>tests/Pgsql/ChoreExecutionStockUndoTest.php</file>
@@ -227,6 +243,7 @@
 			<file>tests/Pgsql/StockMaintenanceLineageConfinementKeptIdTest.php</file>
 			<file>tests/Pgsql/StockMaintenanceCommandPrivilegesTest.php</file>
 			<file>tests/Pgsql/StockLineageBackfillTest.php</file>
+			<file>tests/Pgsql/LegacyZeroPricePropagationTest.php</file>
 			<file>tests/Pgsql/StockLineageWorkedExamplesTest.php</file>
 		</testsuite>
 		<testsuite name="consumption">

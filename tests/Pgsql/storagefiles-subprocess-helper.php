@@ -79,7 +79,9 @@ else
 	$container->set('UrlManager', new Victual\Helpers\UrlManager(''));
 
 	$files = new FilesApiController($container);
-	$request = (new ServerRequestFactory())->createServerRequest('GET', 'http://localhost/api');
+	// An optional fifth argument is the query string as JSON, e.g. {"force_serve_as":"picture"}
+	$request = (new ServerRequestFactory())->createServerRequest('GET', 'http://localhost/api')
+		->withQueryParams(isset($argv[5]) ? json_decode($argv[5], true) : []);
 	$arguments = ['group' => 'userpictures', 'fileName' => base64_encode($argv[4])];
 
 	try

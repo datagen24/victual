@@ -158,6 +158,17 @@ and assigns/removes Child and Guest through the user permissions page while pres
 an overlapping direct grant. `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` optionally selects an
 installed Chromium executable. CI runs it in `frontend-security` after the S29 probe.
 
+## Stock entry price omission (issue #774)
+
+`node stockentry-price.js <url>` runs against a disposable demo instance. It purchases
+entries priced 0 and 2.5, saves the stock entry edit form, and intercepts the PUT to
+`/api/stock/entry/{id}`.
+
+A save that changes only the note must not send the price. The server keeps the
+`legacy_zero_price` marker only when the price is omitted, and the form shows a marked 0 as
+0. A save that changes the price, to 0 or from 0, must send it. CI runs it in
+`frontend-security` after the userform password check.
+
 ## Userform password checkbox (issue #549)
 
 `node userform-password.js <url>` runs against a disposable authenticated admin or demo

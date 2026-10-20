@@ -5,7 +5,7 @@
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-09, against `master` at `216af2b2`. Design work only: it changes no
   code, reserves no migration number, and amends no accepted record.
-- **Referenced by:** [plan 22](../plans/22-medication-tracking.md) (Q3, Q5, Q11) and
+- **Referenced by:** [plan 22](../plans/landed/22-medication-tracking.md) (Q3, Q5, Q11) and
   [issue 695](https://github.com/datagen24/victual/issues/695). Dependent implementation:
   [issue 698](https://github.com/datagen24/victual/issues/698).
 - **Relationship:** compatible with accepted
@@ -16,7 +16,7 @@
 
 ## Context
 
-[Plan 22](../plans/22-medication-tracking.md) adds a reusable consumption recipe: a list of
+[Plan 22](../plans/landed/22-medication-tracking.md) adds a reusable consumption recipe: a list of
 products and quantities that a person consumes together. A prescription is one such recipe.
 Its owner can let specifically named members read or use it. Belonging to the household
 grants no access.

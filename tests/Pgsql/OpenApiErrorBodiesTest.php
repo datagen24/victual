@@ -17,9 +17,9 @@ use Victual\Tests\Support\Subprocess;
  * things in place.
  *
  * The document check walks every 4xx and 5xx response in the document, follows a `$ref` to
- * components/responses, and requires a content entry with a schema. The one exception is
+ * components/responses, and requires a content entry with a schema. An exception would be
  * listed in ALLOWED_DESCRIPTION_ONLY, with the reason, and the class fails if that entry
- * stops being description-only, so the list cannot go stale unnoticed.
+ * stops being description-only, so the list cannot go stale unnoticed. There is none now.
  *
  * The runtime checks send a request that provokes each distinct error body and hold the
  * answer to the schema the document gives for that operation and status, with Opis, and to
@@ -41,21 +41,12 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 {
 	/**
 	 * Declared error responses allowed to stay description-only, by "METHOD /path STATUS".
-	 * Each is unreachable, so there is no body to describe; they are kept in the document
-	 * (deleting a declared status is a maintainer decision) with a description that says so.
-	 *
-	 * LabelWorkerApiController maps a `forbidden` refusal to 403, but `forbidden` is raised only
-	 * for attempt, printer and artifact-bytes ownership (LabelWorkerAuthorization::Authorize(),
-	 * lines 33-54), plus LabelCaptureService and PrintAttemptService. Register, Claim and Rotate
-	 * raise none of them. POST /labels/pair is worse: BaseAuthMiddleware returns before any
-	 * authorization for labels-pair (lines 100-106) and Pair() raises only 401 and 422.
+	 * None is: the four that used to be listed here (the 403 of POST /labels/pair, register,
+	 * jobs/claim and credentials/rotate) were unreachable and are no longer declared, and
+	 * LabelWorkerRoute403Test pins that they stay unreachable. A new entry needs a reason as
+	 * strong as that one, and the class fails if it stops being description-only.
 	 */
-	private const ALLOWED_DESCRIPTION_ONLY = [
-		'POST /labels/pair 403',
-		'POST /labels/register 403',
-		'POST /labels/jobs/claim 403',
-		'POST /labels/credentials/rotate 403',
-	];
+	private const ALLOWED_DESCRIPTION_ONLY = [];
 
 	private const ADMIN_USER = 9700;
 	private const OPERATOR_USER = 9701;
@@ -133,6 +124,9 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 
 	public function testTheAllowlistNamesOnlyEntriesThatAreStillDescriptionOnly(): void
 	{
+		// No description-only response is allowed; a new entry is a deliberate change to this line
+		self::assertSame([], self::ALLOWED_DESCRIPTION_ONLY);
+
 		foreach (self::ALLOWED_DESCRIPTION_ONLY as $key)
 		{
 			[$method, $path, $status] = explode(' ', $key);
@@ -229,6 +223,21 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 	public function testAnAnonymousWorkerRequestIsAnApiError(): void
 	{
 		self::AssertBody(self::Send('POST', '/api/labels/jobs/claim', ['limit' => 1]), 'POST', '/labels/jobs/claim', 401, ['error_message' => 'Unauthorized']);
+	}
+
+	public function testNewlyDocumentedPermissionGatesAnswer403(): void
+	{
+		$cases = [
+			['/api/stock', '/stock', User::PERMISSION_STOCK_VIEW],
+			['/api/labels/templates', '/labels/templates', User::PERMISSION_ADMIN],
+			['/api/calendar/ical', '/calendar/ical', User::PERMISSION_CALENDAR_VIEW],
+		];
+
+		foreach ($cases as [$url, $path, $permission])
+		{
+			self::AssertBody(self::Send('GET', $url, null, self::$nobodyKey), 'GET', $path, 403,
+				['error_message' => 'Permission missing: ' . $permission]);
+		}
 	}
 
 	public function testACallerWithoutAdminOnAnAdminLabelRouteIsAnApiError(): void
@@ -364,6 +373,23 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::AssertBody($response, 'POST', '/labels/printers', 422, [
 			'field' => 'driver_schema_version', 'code' => 'unknown_driver_version', 'error_message' => 'Unknown driver version',
 		]);
+	}
+
+	/** Issue #944: a LabelRefusal naming the path, where PostgreSQL's generic 400 used to answer. */
+	public function testANulInAWorkerCapabilityDocumentIsALabelRefusal(): void
+	{
+		$driver = self::Driver();
+		$driver['driver_id'] = 'errbodies.nul-capability';
+		$model = "QL-820NWBc\0";
+		$driver['capability_document']['models'][0] = $model;
+		$driver['capability_document']['combinations'][0]['model'] = $model;
+		$response = self::Send('POST', '/api/labels/register', ['drivers' => [$driver]], self::$ownerKey);
+
+		self::assertSame(422, $response['status'], $response['body']);
+		self::AssertBody($response, 'POST', '/labels/register', 422, [
+			'field' => 'drivers.0.capability_document.models.0', 'code' => 'invalid_value', 'error_message' => 'A registration string must not contain a NUL byte',
+		]);
+		self::assertSame(0, (int)self::$db->query("SELECT COUNT(*) FROM label_drivers WHERE driver_id = 'errbodies.nul-capability'")->fetchColumn());
 	}
 
 	public function testAnInvalidPrintRequestIsALabelRefusal(): void
@@ -677,6 +703,47 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		}
 
 		self::assertSame([], $missing, count($missing) . " operations inherit security and declare no 401:\n" . implode("\n", $missing));
+	}
+
+	public function testEveryOperationWithAReachable403DeclaresIt(): void
+	{
+		// Ordinary routes reach BaseAuthMiddleware's untrusted-proxy refusal;
+		// authenticated writes can also meet read-only and cross-origin refusals.
+		// Typed worker routes bypass those checks, but some have their own 403 for
+		// attempt/printer/artifact ownership. These ten have no reachable 403:
+		// public pairing, three worker operations, and six renderer/byte routes.
+		$without403 = [
+			'POST /labels/pair',
+			'POST /labels/credentials/rotate',
+			'POST /labels/register',
+			'POST /labels/jobs/claim',
+			'GET /labels/assets/{assetId}/bytes',
+			'POST /labels/render/claim',
+			'POST /labels/render/{requestId}/result',
+			'POST /labels/render/{requestId}/invalid',
+			'POST /labels/render/{requestId}/failed',
+			'GET /labels/artifacts/{artifactId}/bytes',
+		];
+		$missing = [];
+		$unexpected = [];
+
+		foreach (self::Operations() as [$method, $path, $operation])
+		{
+			$key = "$method $path";
+			$declared = isset($operation['responses']['403']);
+
+			if (!in_array($key, $without403, true) && !$declared)
+			{
+				$missing[] = $key;
+			}
+			if (in_array($key, $without403, true) && $declared)
+			{
+				$unexpected[] = $key;
+			}
+		}
+
+		self::assertSame([], $missing, 'Operations missing reachable 403: ' . implode(', ', $missing));
+		self::assertSame([], $unexpected, 'Operations with unreachable 403: ' . implode(', ', $unexpected));
 	}
 
 	public function testEveryOperationWithAnIntegerPathParameterDeclaresA400(): void

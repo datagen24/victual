@@ -242,9 +242,13 @@ class StockLineageBackfillTest extends PgsqlSchemaTestCase
 		self::assertSame([['pool' => [4.0, 'unknown']]], self::contributions('U_merged_consumed'));
 	}
 
+	/** Migration 0304 refuses a non-finite stock amount and rolls back its tables; it succeeds once the row is repaired. */
 	public function testACorruptFamilyFailsTheMigrationAndRollsItBack(): void
 	{
 		self::unmigrate();
+		// Migration 0313's stock_amount_finite refuses this row today; 0304 still has to refuse
+		// it on a database from before 0313, so the constraint is lifted for the setup only
+		self::$db->exec('ALTER TABLE stock DROP CONSTRAINT stock_amount_finite');
 		$row = (int)self::$db->query('SELECT id FROM stock WHERE product_id = ' . self::product('E_consumed'))->fetchColumn();
 		self::$db->exec("UPDATE stock SET amount = 'Infinity' WHERE id = $row");
 		$before = self::untouched();
@@ -266,6 +270,7 @@ class StockLineageBackfillTest extends PgsqlSchemaTestCase
 
 		self::$db->exec("UPDATE stock SET amount = 3 WHERE id = $row");
 		DatabaseMigrationService::GetInstance()->MigrateDatabase();
+		self::$db->exec("ALTER TABLE stock ADD CONSTRAINT stock_amount_finite CHECK (amount > '-Infinity' AND amount < 'Infinity')");
 		self::assertMigrated();
 		self::assertSame([], self::violations());
 	}

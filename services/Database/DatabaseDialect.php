@@ -311,6 +311,34 @@ abstract class DatabaseDialect
 	abstract public function LockProductStock(\PDO $pdo, int $productId): void;
 
 	/**
+	 * Blocks every write to `quantity_unit_conversions` - insert, update and delete, global
+	 * rows included - until the caller's transaction ends, without blocking readers (issue
+	 * #930).
+	 *
+	 * MergeProducts() checks that the kept and removed products' effective conversions agree,
+	 * inside a savepoint it rolls back, and then performs the merge. A row lock cannot cover
+	 * that window: the check reads rows that do not exist yet as well as the ones that do (a
+	 * conversion inserted for the kept product, or a new global fallback, changes the effective
+	 * factor), and ROLLBACK TO SAVEPOINT releases locks taken after the savepoint. Conversion
+	 * writes through the generic entity API take no product lock, so the product locks do not
+	 * cover it either.
+	 *
+	 * PostgreSQL: `LOCK TABLE quantity_unit_conversions IN SHARE MODE`, which conflicts with
+	 * the ROW EXCLUSIVE lock every writer takes and with nothing a reader takes. A writer that
+	 * is already in flight is waited for, so the check reads its committed result.
+	 *
+	 * SqliteDialect's version is a no-op, for the same reason as LockProductStock()'s: under
+	 * ADR-0008 SQLite is not a concurrent runtime engine.
+	 *
+	 * Requires a transaction already open on $pdo; DatabaseService::LockQuantityUnitConversionWrites()
+	 * is the caller-facing wrapper that enforces it.
+	 *
+	 * @param \PDO $pdo The connection already inside the caller's transaction
+	 * @return void
+	 */
+	abstract public function LockQuantityUnitConversionWrites(\PDO $pdo): void;
+
+	/**
 	 * The row-claim lock clause a caller appends to a `SELECT ... ORDER BY ... LIMIT n`
 	 * query, so that a second, concurrent claim on the same rows skips past whatever this
 	 * one has already claimed rather than reading it too (issue #510, M10 -

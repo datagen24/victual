@@ -350,6 +350,7 @@ class WireContractTest extends PgsqlSchemaTestCase
 		self::assertBool($details['has_childs'], 'product_details.has_childs, which was already a boolean');
 	}
 
+	/** Every chore flag is sent as a JSON boolean. */
 	public function testChoreFlagsAreBooleans(): void
 	{
 		foreach (self::get('/api/objects/chores') as $row)
@@ -374,6 +375,7 @@ class WireContractTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Every userfield flag is sent as a JSON boolean. */
 	public function testUserfieldFlagsAreBooleans(): void
 	{
 		$rows = self::get('/api/objects/userfields');
@@ -438,9 +440,11 @@ class WireContractTest extends PgsqlSchemaTestCase
 		'CurrentChoreResponse.is_rescheduled' => 'chores_current',
 		'CurrentChoreResponse.is_reassigned' => 'chores_current',
 		'CurrentStockResponse.is_aggregated_amount' => 'stock_current',
+		'CurrentStockResponse.value_incomplete' => 'stock_current',
 		'CurrentUserCapabilities.read_only' => 'php',
 		'ProductDetailsResponse.has_childs' => 'php',
 		'ProductDetailsResponse.is_aggregated_amount' => 'product_details',
+		'ProductDetailsResponse.stock_value_incomplete' => 'product_details',
 		'RecipeFulfillmentResponse.need_fulfilled' => 'recipes_resolved',
 		'RecipeFulfillmentResponse.need_fulfilled_with_shopping_list' => 'recipes_resolved',
 		'RecipeFulfillmentResponse.prices_incomplete' => 'recipes_resolved',
@@ -472,7 +476,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 	private const CONVERSION_COVERAGE = [
 		'stock_log.spoiled' => '/api/objects/stock_log',
 		'stock_current.is_aggregated_amount' => '/api/stock',
+		'stock_current.value_incomplete' => '/api/stock',
 		'product_details.is_aggregated_amount' => '/api/stock/products/9500',
+		'product_details.stock_value_incomplete' => '/api/stock/products/9500',
 		'chores.track_date_only' => '/api/objects/chores',
 		'chores.rollover' => '/api/objects/chores',
 		'chores_current.track_date_only' => '/api/chores',
@@ -1604,6 +1610,15 @@ class WireContractTest extends PgsqlSchemaTestCase
 		$schemas = $spec['components']['schemas'];
 
 		$columns = self::relationColumns();
+		// FieldPolicy::INTERNAL_FIELDS are never sent, whatever the caller holds, so they are
+		// not part of what a row of the relation carries on the wire
+		foreach (\Victual\Services\FieldPolicy::INTERNAL_FIELDS as $internalEntity => $internalFields)
+		{
+			if (isset($columns[$internalEntity]))
+			{
+				$columns[$internalEntity] = array_values(array_diff($columns[$internalEntity], $internalFields));
+			}
+		}
 		$noListing = $schemas['ExposedEntityNoListing']['enum'];
 		$keysByEntity = [];
 		$rowsByEntity = [];
@@ -2248,7 +2263,7 @@ class WireContractTest extends PgsqlSchemaTestCase
 	 *                 entity with no member is "undocumented rather than absent". Proven by
 	 *                 testTheServedSchemasAreAnsweredByTheGenericEntityRoute().
 	 *   'dev-only'  - the application renders this body, but only in `dev`. Proven by
-	 *                 testError500IsTheDevelopmentBodyOnly().
+	 *                 testServerErrorsUseProductionAndDevelopmentShapes().
 	 *
 	 * Adding a row is not a way to keep a schema. Each value is a claim with a test behind
 	 * it, and a new schema that no path references has to make one of those claims true.
@@ -2458,45 +2473,36 @@ class WireContractTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * `Error500` is the body the application renders on an uncaught exception when
-	 * `VICTUAL_MODE` is `dev`: `error_message` plus an `error_details` object carrying the
-	 * stack trace, file and line. It is unreferenced because production does not carry
-	 * `error_details` and because no route documents a 500 at all any more - an invalid
-	 * filter or sort has been a 400 since the previous release, and the nine list
-	 * operations that used to document one lost it along with the field.
-	 *
-	 * So the schema is kept, unlike the journal pair: the shape is rendered, just never by
-	 * the deployment the document describes. Both halves of that are checked, because the
-	 * claim is only worth keeping while both hold - a route that documented a 500 would
-	 * have to name a schema, and a production body that carried `error_details` would mean
-	 * the document is describing the wrong thing.
+	 * Every operation can fail in the schema-version gate before routing (503 text/plain),
+	 * and an uncaught exception can become a production 500 ApiError. Error500 remains
+	 * the development-only shape, including error_details.
 	 */
-	public function testError500IsTheDevelopmentBodyOnly(): void
+	public function testServerErrorsUseProductionAndDevelopmentShapes(): void
 	{
 		$spec = self::spec();
-
-		$documented = [];
+		$checked = 0;
 		foreach ($spec['paths'] as $path => $operations)
 		{
 			foreach ($operations as $method => $operation)
 			{
-				if (is_array($operation) && isset($operation['responses']['500']))
+				if (!in_array($method, ['get', 'post', 'put', 'patch', 'delete', 'head', 'options'], true))
 				{
-					$documented[] = strtoupper($method) . " $path";
+					continue;
 				}
+				$checked++;
+				self::assertSame('#/components/responses/ServerError', $operation['responses']['500']['$ref'] ?? null, "$method $path must document production 500");
+				self::assertSame('#/components/responses/SchemaUnavailable', $operation['responses']['503']['$ref'] ?? null, "$method $path must document the pre-routing 503");
 			}
 		}
-
-		self::assertSame(
-			[],
-			$documented,
-			'a route documents a 500 now, so Error500 belongs to that route rather than to this table'
-		);
+		self::assertGreaterThan(170, $checked);
+		self::assertSame('#/components/schemas/ApiError', $spec['components']['responses']['ServerError']['content']['application/json']['schema']['$ref']);
+		self::assertSame('string', $spec['components']['responses']['SchemaUnavailable']['content']['text/plain']['schema']['type']);
+		self::assertSame(['error_message'], $spec['components']['schemas']['ApiError']['required']);
 
 		self::assertSame(
 			['error_message', 'error_details'],
 			array_keys($spec['components']['schemas']['Error500']['properties']),
-			'Error500 no longer describes the dev body'
+			'Error500 must preserve the development-only details'
 		);
 
 		// The request helper runs in production mode, which is the half that is observable

@@ -1078,6 +1078,8 @@ actually decided: only two land on `null` — `equipmentmanuals` and `userfiles`
 with `EntityReadPolicy::PERMISSIONS['equipment']` and `['userfields']`, both already
 `null` there. A caller who may read the underlying entity without a permission needs
 none for the file hanging off it either.
+`userfiles` stopped being open afterwards: since #905 a file follows the records that
+reference it (`UserfileOwnerPolicy`).
 
 `productpictures` and `recipepictures` keep the two gates S2 already had. `userpictures`
 gains one it did not have before, `USERS_READ`, in step with

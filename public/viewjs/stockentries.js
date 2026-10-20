@@ -443,13 +443,17 @@ function RefreshStockEntryRow(stockRowId)
 				Victual.Api.Get("stock/products/" + result.product_id,
 					function(productDetails)
 					{
-						if (!result.price)
+						// An unknown price is null (a marked 0 included, ADR-0045) and absent for a
+						// caller who may not see prices; neither is shown as a price of 0
+						if (result.price === null || result.price === undefined)
 						{
-							result.price = 0;
+							$('#stock-' + stockRowId + '-price').text('').attr("data-original-title", '');
 						}
-
-						$('#stock-' + stockRowId + '-price').text(__t("%1$s per %2$s", (result.price * productDetails.qu_conversion_factor_purchase_to_stock).toLocaleString(undefined, { style: "currency", currency: Victual.Currency, minimumFractionDigits: Victual.UserSettings.stock_decimal_places_prices_display, maximumFractionDigits: Victual.UserSettings.stock_decimal_places_prices_display }), productDetails.default_quantity_unit_purchase.name));
-						$('#stock-' + stockRowId + '-price').attr("data-original-title", __t("%1$s per %2$s", result.price.toLocaleString(undefined, { style: "currency", currency: Victual.Currency, minimumFractionDigits: Victual.UserSettings.stock_decimal_places_prices_display, maximumFractionDigits: Victual.UserSettings.stock_decimal_places_prices_display }), productDetails.quantity_unit_stock.name));
+						else
+						{
+							$('#stock-' + stockRowId + '-price').text(__t("%1$s per %2$s", (result.price * productDetails.qu_conversion_factor_purchase_to_stock).toLocaleString(undefined, { style: "currency", currency: Victual.Currency, minimumFractionDigits: Victual.UserSettings.stock_decimal_places_prices_display, maximumFractionDigits: Victual.UserSettings.stock_decimal_places_prices_display }), productDetails.default_quantity_unit_purchase.name));
+							$('#stock-' + stockRowId + '-price').attr("data-original-title", __t("%1$s per %2$s", result.price.toLocaleString(undefined, { style: "currency", currency: Victual.Currency, minimumFractionDigits: Victual.UserSettings.stock_decimal_places_prices_display, maximumFractionDigits: Victual.UserSettings.stock_decimal_places_prices_display }), productDetails.quantity_unit_stock.name));
+						}
 
 						if (productDetails.product.disable_open == 1)
 						{
