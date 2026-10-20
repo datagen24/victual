@@ -47,8 +47,8 @@
    "size": "M",
    "fit": "Verification and documentation only: closes release gate R5.",
    "classification": "release evidence",
-   "next_action": "Run the drill in its own session against the v0.5.0 digests; report at docs/releases/0.5.0-restore-drill.md; check the manual's php bin/victual-migrate step against the migrate image.",
-   "pr": null
+   "next_action": "Merge PR #1028: R5 evidenced by docs/releases/0.5.0-restore-drill.md; backup-restore.md corrected (roles.sql before pg_restore, restore as victual_migrate).",
+   "pr": "https://github.com/datagen24/victual/pull/1028"
   },
   {
    "number": 252,
@@ -199,14 +199,14 @@
   }
  ],
  "observation": {
-  "observed_at": "2026-10-20T15:05:32Z",
+  "observed_at": "2026-10-20T17:17:47Z",
   "source": "GitHub REST API via gh",
-  "evidence_directory": "evidence/refresh-2026-10-20T150532Z",
+  "evidence_directory": "evidence/refresh-2026-10-20T171747Z",
   "master_sha": "e639389b9d7171f3b14309a71778f8fdc404ef94",
   "latest_release": "v0.5.0",
   "latest_release_published_at": "2026-10-19T12:28:41Z",
   "open_issues": 23,
-  "open_prs": 0,
+  "open_prs": 1,
   "unassigned_open_issues": [
    80,
    86,
@@ -232,11 +232,11 @@
    ],
    "closure_rule": "Close with candidate-specific evidence, or a narrowly justified production restriction naming affected operations/accounts and user impact.",
    "status_at_v0_5_0": "Not evidenced at v0.5.0",
-   "status": "Tracked in 0.5.1 as #1010",
+   "status": "Evidenced 2026-10-20 against the v0.5.0 digests: docs/releases/0.5.0-restore-drill.md",
    "issues": [
     1010
    ],
-   "remaining": "Run the restore drill against the v0.5.0 artifacts, or record a narrow restriction."
+   "remaining": "None for database storage. Not drilled: FILE_STORAGE filesystem, labels/MQTT/InfluxDB traffic, cross-version restore."
   },
   {
    "id": "R6",
@@ -368,6 +368,15 @@
    "issues": [
     904
    ]
+  },
+  {
+   "id": "P12",
+   "date": "2026-10-20",
+   "question": "What does the manual tell an operator to restore with, given the two-role deployment (#1010)?",
+   "answer": "Run deploy/postgres/roles.sql against the empty target, then pg_restore as victual_migrate. The drill showed the manual as written fails both as victual_app and as victual_migrate, and that victual_app cannot restore even after roles.sql. The dump itself may run as victual_app.",
+   "issues": [
+    1010
+   ]
   }
  ],
  "github_writes": [
@@ -455,6 +464,11 @@
    "at": "2026-10-20",
    "action": "Opened PR #1027 for #904",
    "url": "https://github.com/datagen24/victual/pull/1027"
+  },
+  {
+   "at": "2026-10-20",
+   "action": "Opened PR #1028 for #1010 (restore drill, gate R5)",
+   "url": "https://github.com/datagen24/victual/pull/1028"
   }
  ]
 }
