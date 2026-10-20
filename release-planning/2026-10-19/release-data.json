@@ -64,7 +64,7 @@
    "size": "M",
    "fit": "Test infrastructure: no application change.",
    "classification": "compatible fix (conditional)",
-   "next_action": "Push the local-only branch -x5-b (91 files), merge master, migrate the post-2026-10-13 stragglers, run the full pgsql suite once, open one PR.",
+   "next_action": "On the pushed branch -x5-b (91 files), merge master, migrate the post-2026-10-13 stragglers, run the full pgsql suite once, open one PR.",
    "pr": null
   },
   {
@@ -349,6 +349,31 @@
    "at": "2026-10-19",
    "action": "Opened #1010, backup and restore drill (gate R5), in 0.5.1",
    "url": "https://github.com/datagen24/victual/issues/1010"
+  },
+  {
+   "at": "2026-10-20",
+   "action": "Posted the 2026-10-20 planning comment on #252",
+   "url": "https://github.com/datagen24/victual/issues/252#issuecomment-6291698864"
+  },
+  {
+   "at": "2026-10-20",
+   "action": "Posted the 2026-10-20 planning comment on #900",
+   "url": "https://github.com/datagen24/victual/issues/900#issuecomment-6291699319"
+  },
+  {
+   "at": "2026-10-20",
+   "action": "Posted the 2026-10-20 planning comment on #904",
+   "url": "https://github.com/datagen24/victual/issues/904#issuecomment-6291699719"
+  },
+  {
+   "at": "2026-10-20",
+   "action": "Posted the 2026-10-20 planning comment on #1010",
+   "url": "https://github.com/datagen24/victual/issues/1010#issuecomment-6291700046"
+  },
+  {
+   "at": "2026-10-20",
+   "action": "Pushed the local-only #904 branch claude/sonnet5_issue904-subprocess-migration-x5-b (e532e4f5) to origin",
+   "url": "https://github.com/datagen24/victual/tree/claude/sonnet5_issue904-subprocess-migration-x5-b"
   }
  ]
 }

@@ -1,8 +1,8 @@
 # 0.5.1 planning responses, 2026-10-20
 
-Drafts of the planning comments for the four open 0.5.1 issues. Each was checked against
-`master` at `11ab0244` on 2026-10-20. Nothing here was posted to GitHub until the
-maintainer approved it; the GitHub writes table in release-data.json records what was.
+The planning comments posted, with the maintainer's approval, on the four open 0.5.1
+issues on 2026-10-20. Each was checked against `master` at `11ab0244`. The GitHub writes
+table in release-data.json links each posted comment.
 
 ## #252 Code that coverage proved nothing can reach
 

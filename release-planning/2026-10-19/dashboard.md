@@ -20,7 +20,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | [#252 Code that coverage proved nothing can reach](https://github.com/datagen24/victual/issues/252) | open | P3 | M | investigation / record correction | Compatible removal of unreachable code, or a comment that keeps it as a deliberate guard. | WebhookRunner is already gone (0ea46c25) and ADR-0024 still says it stays. Maintainer picks the form of that record correction and rules on the ConfigurationValidator guard; then one code PR for the confirmed removals. | None |
 | [#900 ADR-0019 does not list the Resolve() validation refusal as a dead-letter cause](https://github.com/datagen24/victual/issues/900) | open | P2 | M | documentation / investigation | Documentation correction only. | Maintainer accepts or rejects ADR-0049 (Proposed, PR #932) in a lifecycle-only PR; then correct the PrintAttemptService.php:56-59 comment. Part 2 stays out of 0.5.1. | None |
-| [#904 Subprocess test helpers read stdout before stderr and deadlock on more than 64 KB of stderr](https://github.com/datagen24/victual/issues/904) | open | P2 | M | compatible fix (conditional) | Test infrastructure: no application change. | Push the local-only branch -x5-b (91 files), merge master, migrate the post-2026-10-13 stragglers, run the full pgsql suite once, open one PR. | None |
+| [#904 Subprocess test helpers read stdout before stderr and deadlock on more than 64 KB of stderr](https://github.com/datagen24/victual/issues/904) | open | P2 | M | compatible fix (conditional) | Test infrastructure: no application change. | On the pushed branch -x5-b (91 files), merge master, migrate the post-2026-10-13 stragglers, run the full pgsql suite once, open one PR. | None |
 | [#1010 Backup/restore drill against the v0.5.0 artifacts (release gate R5)](https://github.com/datagen24/victual/issues/1010) | open | P2 | M | release evidence | Verification and documentation only: closes release gate R5. | Run the drill in its own session against the v0.5.0 digests; report at docs/releases/0.5.0-restore-drill.md; check the manual's php bin/victual-migrate step against the migrate image. | None |
 | [#987 Consume stores any integer recipe_id, including negative ids and ids no recipe has](https://github.com/datagen24/victual/issues/987) | closed | P3 | S | bug | Compatible fix: invalid input is refused, valid input is unchanged. | Review and merge PR #1013. | https://github.com/datagen24/victual/pull/1013 |
 | [#988 prose-baseline-prune fails daily: it pushes to master, which requires a pull request](https://github.com/datagen24/victual/issues/988) | closed | P3 | S | ci | CI hygiene: no application change. | Merge PR #1012, enable 'Allow GitHub Actions to create and approve pull requests', then run the workflow by hand once. | https://github.com/datagen24/victual/pull/1012 |
@@ -64,6 +64,11 @@ Observed 2026-10-20T13:07:59Z. Unassigned open issues: [#80](https://github.com/
 | 2026-10-19 | [Milestone of #909 changed from 0.5.1 to vNext](https://github.com/datagen24/victual/issues/909) |
 | 2026-10-19 | [Milestone of #252 set to 0.5.1](https://github.com/datagen24/victual/issues/252) |
 | 2026-10-19 | [Opened #1010, backup and restore drill (gate R5), in 0.5.1](https://github.com/datagen24/victual/issues/1010) |
+| 2026-10-20 | [Posted the 2026-10-20 planning comment on #252](https://github.com/datagen24/victual/issues/252#issuecomment-6291698864) |
+| 2026-10-20 | [Posted the 2026-10-20 planning comment on #900](https://github.com/datagen24/victual/issues/900#issuecomment-6291699319) |
+| 2026-10-20 | [Posted the 2026-10-20 planning comment on #904](https://github.com/datagen24/victual/issues/904#issuecomment-6291699719) |
+| 2026-10-20 | [Posted the 2026-10-20 planning comment on #1010](https://github.com/datagen24/victual/issues/1010#issuecomment-6291700046) |
+| 2026-10-20 | [Pushed the local-only #904 branch claude/sonnet5_issue904-subprocess-migration-x5-b (e532e4f5) to origin](https://github.com/datagen24/victual/tree/claude/sonnet5_issue904-subprocess-migration-x5-b) |
 
 ## Evidence
 
