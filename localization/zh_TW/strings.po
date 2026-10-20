@@ -2110,9 +2110,6 @@ msgstr ""
 msgid "DD"
 msgstr "‎期限‎"
 
-msgid "Print on label printer"
-msgstr "在標籤機上列印"
-
 msgid "Default stock entry label"
 msgstr "預設庫存條目標籤"
 
@@ -2127,13 +2124,6 @@ msgstr "單一標籤"
 
 msgid "Label per unit"
 msgstr "單位標籤"
-
-msgid "Error while executing WebHook"
-msgstr "執行WebHook時發生錯誤"
-
-# Example: Print *Product* Grocycode on label printer
-msgid "Print %s Grocycode on label printer"
-msgstr ""
 
 msgid "Open stock entry label in new window"
 msgstr "在新分頁中開啟庫存條目標籤"

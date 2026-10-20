@@ -453,9 +453,8 @@ class DatabaseService
 	 * **Called with no transaction open, the work runs immediately** - see the body for why
 	 * that is the honest reading of "before the outermost commit" rather than a fallback.
 	 *
-	 * This is process state for the length of one transaction, not between requests - the
-	 * same category as the label-webhook payloads StockService collects inside a transaction
-	 * and fires after it, and not the cold-start problem ADR-0007 forbids.
+	 * This is process state for the length of one transaction, not between requests, and not
+	 * the cold-start problem ADR-0007 forbids.
 	 *
 	 * @param string $key Identifies the work; a second registration under the same key is ignored
 	 * @param callable $work Receives no arguments; its return value is discarded

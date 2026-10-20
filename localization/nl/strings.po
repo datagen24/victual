@@ -2326,9 +2326,6 @@ msgstr ""
 msgid "DD"
 msgstr "DD"
 
-msgid "Print on label printer"
-msgstr "Print op een label printer"
-
 msgid "Default stock entry label"
 msgstr "Standaard voorraad invoer label"
 
@@ -2343,13 +2340,6 @@ msgstr "Enkel label"
 
 msgid "Label per unit"
 msgstr "Label per eenheid"
-
-msgid "Error while executing WebHook"
-msgstr "Fout tijdens het uitvoeren van WebHook"
-
-# Example: Print *Product* Grocycode on label printer
-msgid "Print %s Grocycode on label printer"
-msgstr "Print %s Grocycode op labelprinter"
 
 msgid "Open stock entry label in new window"
 msgstr "Open voorraad invoer label in een nieuw venster"

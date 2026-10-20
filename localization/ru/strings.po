@@ -2347,9 +2347,6 @@ msgstr ""
 msgid "DD"
 msgstr "СГ"
 
-msgid "Print on label printer"
-msgstr "Печать на принтере для этикеток"
-
 msgid "Default stock entry label"
 msgstr "Этикетка запаса по умолчанию"
 
@@ -2364,13 +2361,6 @@ msgstr "Одна этикетка"
 
 msgid "Label per unit"
 msgstr "Этикетка на единицу измерения"
-
-msgid "Error while executing WebHook"
-msgstr "Ошибка при вызове Вебхука"
-
-# Example: Print *Product* Grocycode on label printer
-msgid "Print %s Grocycode on label printer"
-msgstr "Печать Grocy-код \"%s\" на принтере этикеток"
 
 msgid "Open stock entry label in new window"
 msgstr "Открыть этикетку запаса в новом окне"

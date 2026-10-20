@@ -2272,9 +2272,6 @@ msgstr ""
 msgid "DD"
 msgstr "L.Idő"
 
-msgid "Print on label printer"
-msgstr "Nyomtatás címkenyomtatóval"
-
 msgid "Default stock entry label"
 msgstr "Alapértelmezett készletbejegyzés címke"
 
@@ -2289,13 +2286,6 @@ msgstr "Egy címke"
 
 msgid "Label per unit"
 msgstr "Mennyiségenkénti címke"
-
-msgid "Error while executing WebHook"
-msgstr "Webhook hívási hiba"
-
-# Example: Print *Product* Grocycode on label printer
-msgid "Print %s Grocycode on label printer"
-msgstr "%s Grocy kód címkenyomtatóra küldés"
 
 msgid "Open stock entry label in new window"
 msgstr "Készletbejegyzés címkéjének megnyitása új lapon"
