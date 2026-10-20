@@ -10,6 +10,7 @@ use Victual\Services\ConsumptionRecipeService;
 use Victual\Services\ConsumptionRefillService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * ConsumptionRefillService::ListRefills() and ::Notices() against a revoke, on a fixed schedule.
@@ -41,6 +42,7 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 	private static int $unit;
 	private static int $product;
 
+	/** Creates an owner and a reader with stock permissions, a second connection for the scripted revoke, and a product with ten units in stock. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -68,6 +70,7 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 		StockService::GetInstance()->AddProduct(self::$product, 10, '2999-12-31', StockService::TRANSACTION_TYPE_PURCHASE, '2026-01-01', null, $location);
 	}
 
+	/** Drops the second connection, then runs the parent teardown. */
 	public static function tearDownAfterClass(): void
 	{
 		self::$other = null;
@@ -86,7 +89,7 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 	}
 
 	/** Starts one service call in its own process and returns once it has been released. */
-	private function start(string $method, array $args): array
+	private function start(string $method, array $args): Subprocess
 	{
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
 		$env = array_merge($inherited, [
@@ -94,24 +97,21 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 			'PGHOST' => getenv('PGHOST'), 'PGPORT' => getenv('PGPORT'), 'PGUSER' => getenv('PGUSER'), 'PGPASSWORD' => getenv('PGPASSWORD'), 'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 		$spec = ['method' => $method, 'args' => $args, 'service' => $method === 'RemoveShare' ? 'recipe' : 'refill', 'delay_us' => 0];
-		$process = proc_open([PHP_BINARY, __DIR__ . '/consumption-refill-race-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
+		$process = Subprocess::start([PHP_BINARY, __DIR__ . '/consumption-refill-race-subprocess-helper.php', base64_encode(json_encode($spec))], $env, null, true);
 
-		self::assertSame("ready\n", fgets($pipes[1]), 'the helper connected');
-		fwrite($pipes[0], "go\n");
-		fclose($pipes[0]);
+		self::assertSame("ready\n", $process->readLine(), 'the helper connected');
+		$process->write("go\n");
+		$process->closeStdin();
 
-		return [$process, $pipes];
+		return $process;
 	}
 
-	private function finish(array $handle): array
+	/** Waits for a helper subprocess to exit and returns its decoded JSON output, failing if it printed none. */
+	private function finish(Subprocess $process): array
 	{
-		[$process, $pipes] = $handle;
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed($process->finish());
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 		$decoded = json_decode($output, true);
 		self::assertIsArray($decoded, "the helper printed no JSON. stdout: $output stderr: $errors");
 
@@ -183,6 +183,7 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 		return array_map(fn(array $row) => (int)$row['recipe_id'], $result[$key]);
 	}
 
+	/** A ListRefills read paused while the share is revoked and a fill is recorded omits that recipe, does not disclose its name or the new fill, and keeps the result envelope. */
 	public function testAListRefillsPausedAcrossARevokeReturnsNothingOfThatRecipe(): void
 	{
 		[$recipe, $name] = self::fixture();
@@ -197,6 +198,7 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 		self::assertSame(['as_of', 'as_of_source', 'refills'], array_keys($result['result']), 'the envelope is unchanged');
 	}
 
+	/** A Notices read paused while the share is revoked raises no notice for that recipe even though the new fill leaves it due. */
 	public function testNoticesPausedAcrossARevokeRaiseNothingForThatRecipe(): void
 	{
 		[$recipe] = self::fixture();
@@ -209,6 +211,7 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 		self::assertSame(['as_of', 'as_of_source', 'notices'], array_keys($result['result']), 'the envelope is unchanged');
 	}
 
+	/** A ListRefills read paused while a fill and an order are committed reports the new fill and the open order together. */
 	public function testAListRefillsPausedAcrossAnOrderAndFillReadsOneCompleteState(): void
 	{
 		[$recipe] = self::fixture();
@@ -227,6 +230,7 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 		self::assertSame('2026-02-27', $state[0]['open_order']['ordered_on'], 'the order recorded in the same transaction is seen with the fill');
 	}
 
+	/** A Notices read paused while a fill that clears the due date is committed raises no notice for the recipe. */
 	public function testNoticesPausedAcrossAFillThatClearsTheDueDateRaiseNothing(): void
 	{
 		[$recipe] = self::fixture();
@@ -247,6 +251,7 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 		self::fixture();
 		$refusing = new class extends ConsumptionRecipeService
 		{
+			/** Always throws a 403 permission_missing ConsumptionException, standing in for a lock check that refuses. */
 			public function AuthoriseRefill(int $recipeId, int $userId, ?string $right, bool $forUpdate): array
 			{
 				throw new ConsumptionException(403, 'permission_missing', 'Permission missing: STOCK_VIEW');
@@ -278,6 +283,7 @@ class ConsumptionRefillReadRaceTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** A revoke started while a ListRefills read holds the recipe lock waits for it; both then complete, the read still lists the recipe and the share is gone. */
 	public function testARevokeWaitsForAListRefillsThatHoldsTheRecipeLock(): void
 	{
 		[$recipe] = self::fixture();

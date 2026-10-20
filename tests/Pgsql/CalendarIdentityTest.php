@@ -4,6 +4,7 @@ namespace Victual\Tests\Pgsql;
 
 use PDO;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Regression tests for calendar event identity and date bounds (issue #511).
@@ -32,6 +33,10 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 	private static int $locationId;
 	private static string $sessionKey = '';
 
+	/**
+	 * Creates the calendar test user with the permissions the iCal route needs, a session for
+	 * it, and a location for stock entries.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -56,6 +61,10 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 		self::$locationId = (int)self::$db->lastInsertId();
 	}
 
+	/**
+	 * Proves that fetching the iCal feed twice over unchanged data yields the same event UIDs
+	 * both times.
+	 */
 	public function testIdenticalReadsYieldIdenticalUIDs()
 	{
 		// Arrange: Create simple calendar data (a product with due date)
@@ -75,6 +84,7 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 		$this->assertSame($uids1, $uids2, 'Identical reads should yield identical UIDs');
 	}
 
+	/** Proves that two events for different products get different UIDs. */
 	public function testDistinctEventsHaveDistinctUIDs()
 	{
 		// Arrange: Create two different events (two products with different due dates)
@@ -95,6 +105,10 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 		$this->assertCount(count(array_unique($uids)), $uids, 'All UIDs should be unique');
 	}
 
+	/**
+	 * Proves that stock dated with the never-expires sentinel (2999-12-31) produces no calendar
+	 * event and no DTSTART in 2999.
+	 */
 	public function testSentinelDatedProductYieldsNoBoundedEvent()
 	{
 		// Arrange: Create a never-expiring product (sentinel date 2999-12-31)
@@ -129,6 +143,7 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 		$this->assertSame(0, $hasUnboundedEvent, 'Should not have events spanning to year 2999');
 	}
 
+	/** Proves that a product with an ordinary best-before date still appears in the iCal feed. */
 	public function testNormalDatedEventRemains()
 	{
 		// Arrange: Create a normal product with a reasonable due date
@@ -146,6 +161,10 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 		$this->assertStringContainsString('20270615', $ical);
 	}
 
+	/**
+	 * Proves that sentinel-dated stock does not stretch the VTIMEZONE block of a non-UTC feed,
+	 * so no DTSTART passes 2100 and the feed stays under 10 KB.
+	 */
 	public function testTimeZoneBoundsDoNotIncludeSentinelDates()
 	{
 		// Arrange: a normal event (so there is a legitimate min/max date to build a
@@ -490,19 +509,9 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 			'VICTUAL_CALENDAR_UID_DOMAIN' => '',
 		], $extraEnv);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$environment
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $environment));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		$this->assertIsArray($result, "Request helper did not return JSON. stdout: $output\nstderr: $errors");

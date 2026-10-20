@@ -4,6 +4,7 @@ namespace Victual\Tests\Pgsql;
 
 use PDO;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #571: UsersApiController::EditUser() reads the request's session cookie as "the
@@ -36,6 +37,7 @@ class AdminPasswordResetSessionRevocationTest extends PgsqlSchemaTestCase
 	private const TARGET_PASSWORD = 'a571 original password';
 	private const NEW_PASSWORD = 'a571 administrator-reset password';
 
+	/** Inserts the target user, with a hashed original password, whose password the tests reset. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -76,19 +78,9 @@ class AdminPasswordResetSessionRevocationTest extends PgsqlSchemaTestCase
 			$env['VICTUAL_' . $name] = $value;
 		}
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/authstack-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/authstack-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		self::assertIsArray($result, "the request helper printed no JSON for $method $path. stdout: $output\nstderr: $errors");
@@ -106,6 +98,7 @@ class AdminPasswordResetSessionRevocationTest extends PgsqlSchemaTestCase
 		return $key;
 	}
 
+	/** Returns how many rows the sessions table holds for the given user id. */
 	private static function sessionCountFor(int $userId): int
 	{
 		$statement = self::$db->prepare('SELECT count(*) FROM sessions WHERE user_id = ?');

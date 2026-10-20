@@ -25,6 +25,7 @@
 define('VICTUAL_ROOT_PATH', getenv('VICTUAL_ROOT') ?: dirname(__DIR__, 2));
 
 require_once VICTUAL_ROOT_PATH . '/packages/autoload.php';
+require_once VICTUAL_ROOT_PATH . '/tests/Support/Subprocess.php';
 
 use Victual\Services\Database\DatabaseImporter;
 use Victual\Services\Database\PostgresDialect;
@@ -46,11 +47,13 @@ $max = DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MAX;
 $failures = 0;
 $scratch = sys_get_temp_dir() . '/victual-import-tests-' . getmypid();
 
+/** Prints one passing check line. */
 function Ok(string $label, string $detail): void
 {
 	printf("  ok     %-46s %s\n", $label, $detail);
 }
 
+/** Counts a failure and prints one failing check line. */
 function Fail(string $label, string $detail): void
 {
 	global $failures;
@@ -59,6 +62,7 @@ function Fail(string $label, string $detail): void
 	printf("  FAIL   %-46s %s\n", $label, $detail);
 }
 
+/** Reports a check as Ok() when the condition holds and as Fail() with the expected and actual values when it does not. */
 function Check(string $label, bool $condition, string $expected, string $actual): void
 {
 	$condition ? Ok($label, $actual) : Fail($label, 'expected ' . $expected . ', got ' . $actual);
@@ -126,19 +130,23 @@ function RunImport(string $dataPath, string $source, array $flags = []): array
 		}
 	}
 
-	$descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-	$process = proc_open($command . ' 2>&1', $descriptors, $pipes, VICTUAL_ROOT_PATH, $environment);
-
-	if (!is_resource($process))
+	// The shell merges stderr into stdout, and the helper drains both pipes under a bound. A
+	// string command runs through sh -c, so a timeout signals the shell, not the importer.
+	try
+	{
+		$finished = \Victual\Tests\Support\Subprocess::run($command . ' 2>&1', $environment, VICTUAL_ROOT_PATH);
+	}
+	catch (RuntimeException $exception)
 	{
 		return [-1, 'could not start ' . $command];
 	}
 
-	$output = stream_get_contents($pipes[1]);
-	fclose($pipes[1]);
-	fclose($pipes[2]);
+	if ($finished['timedOut'] || $finished['pipesHeldOpen'])
+	{
+		return [-1, \Victual\Tests\Support\Subprocess::Describe($finished)];
+	}
 
-	return [proc_close($process), $output];
+	return [$finished['exit'], $finished['stdout'] . $finished['stderr']];
 }
 
 /**
@@ -170,6 +178,7 @@ function FixtureClaiming(string $fixture, int $version, string $scratch): string
 	return $path;
 }
 
+/** Opens a PDO connection to the named database from the PG* environment, with exceptions on errors and empty strings kept as they are. */
 function Target(string $dbName): \PDO
 {
 	$dsn = 'pgsql:host=' . getenv('PGHOST') . ';port=' . getenv('PGPORT') . ';dbname=' . $dbName;
@@ -180,6 +189,7 @@ function Target(string $dbName): \PDO
 	return $pdo;
 }
 
+/** Runs the query and returns the first column of its first row. */
 function Scalar(\PDO $pdo, string $sql)
 {
 	return $pdo->query($sql)->fetchColumn();
@@ -212,6 +222,7 @@ function TargetState(\PDO $pdo): array
 	return $state;
 }
 
+/** Deletes a file, or a directory and everything under it. */
 function RemoveTree(string $path): void
 {
 	if (!is_dir($path))

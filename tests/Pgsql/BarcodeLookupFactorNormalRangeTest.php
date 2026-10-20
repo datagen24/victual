@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\Depends;
 use Victual\Services\ApiKeyService;
 use Victual\Services\DatabaseService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #890 (maintainer decision L): a barcode lookup source's
@@ -35,6 +36,10 @@ class BarcodeLookupFactorNormalRangeTest extends PgsqlSchemaTestCase
 	private static int $quPurchase = 0;
 	private static int $quStock = 0;
 
+	/**
+	 * Creates an ADMIN user with an API key, and picks the first active location and two active
+	 * quantity units to use as purchase and stock units.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -59,6 +64,7 @@ class BarcodeLookupFactorNormalRangeTest extends PgsqlSchemaTestCase
 		return unpack('P', pack('e', $x))[1];
 	}
 
+	/** The double whose IEEE-754 binary64 bit pattern is $bits; the inverse of bitsOf(). */
 	private static function fromBits(int $bits): float
 	{
 		return unpack('e', pack('P', $bits))[1];
@@ -116,6 +122,11 @@ class BarcodeLookupFactorNormalRangeTest extends PgsqlSchemaTestCase
 		return array_filter(self::boundaryProvider(), static fn(array $case) => $case[1]);
 	}
 
+	/**
+	 * Proves the premises the boundary data relies on: PHP_FLOAT_MIN is the smallest normal
+	 * double, its inverse is exact, and the neighbours beyond each boundary are subnormal or
+	 * overflow.
+	 */
 	public function testPhpAndTheFixtureAgreeOnWhatIsNormal(): void
 	{
 		self::assertSame(2.2250738585072014E-308, PHP_FLOAT_MIN, 'PHP_FLOAT_MIN is the smallest positive NORMAL double');
@@ -147,18 +158,9 @@ class BarcodeLookupFactorNormalRangeTest extends PgsqlSchemaTestCase
 			'VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => $pluginClass,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);
@@ -215,12 +217,21 @@ PLUGIN);
 		return $counts;
 	}
 
+	/**
+	 * Proves the request subprocess authenticates and can read /api/stock, so a refusal in the
+	 * dependent test cannot be an authentication failure.
+	 */
 	public function testTheSubprocessCanReadStock(): void
 	{
 		$probe = self::send('/api/stock', 'DoesNotMatterForThisRequest');
 		self::assertSame(200, $probe['status'], 'The subprocess identity can read stock: ' . $probe['body']);
 	}
 
+	/**
+	 * Runs an external barcode lookup that returns the factor given by $factorBits. When the
+	 * factor and its inverse are both normal, it proves the product and both conversion rows
+	 * are stored exactly; otherwise it proves a 400 refusal that writes nothing.
+	 */
 	#[Depends('testTheSubprocessCanReadStock')]
 	#[DataProvider('boundaryProvider')]
 	public function testALookupFactorIsAcceptedExactlyWhenItAndItsInverseAreNormal(int $factorBits, bool $accepted, string $pgOutcome, string $barcode): void

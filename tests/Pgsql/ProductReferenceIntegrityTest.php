@@ -5,6 +5,7 @@ namespace Victual\Tests\Pgsql;
 use PDO;
 use Victual\Services\ApiKeyService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Regression coverage for issue #552 (D4, #487 remediation): none of products' six upstream
@@ -34,6 +35,10 @@ class ProductReferenceIntegrityTest extends PgsqlSchemaTestCase
 	private static int $locationId;
 	private static int $quId;
 
+	/**
+	 * Creates the caller user with MASTER_DATA_EDIT, issues it a default API key, and inserts the
+	 * shared location and quantity unit the tests reference.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -61,6 +66,7 @@ class ProductReferenceIntegrityTest extends PgsqlSchemaTestCase
 	// Helpers
 	// ------------------------------------------------------------------------------
 
+	/** Inserts one row built from the column map and returns the new id. */
 	private static function insertRow(string $table, array $columns): int
 	{
 		$names = implode(', ', array_keys($columns));
@@ -71,6 +77,7 @@ class ProductReferenceIntegrityTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/** Returns whether a row with the given id is still present in the table. */
 	private static function rowExists(string $table, int $id): bool
 	{
 		$statement = self::$db->prepare("SELECT count(*) FROM $table WHERE id = ?");
@@ -102,19 +109,9 @@ class ProductReferenceIntegrityTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);

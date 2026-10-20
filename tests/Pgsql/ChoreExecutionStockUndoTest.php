@@ -7,6 +7,7 @@ use Victual\Services\ApiKeyService;
 use Victual\Services\ChoresService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #506 (#487 remediation, M6; maintainer decision D1, 2026-09-28): undoing a chore
@@ -52,6 +53,9 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 	private static string $apiKey = '';
 	private static string $limitedApiKey = '';
 
+	/**
+	 * Creates the in-process admin caller, a location, an admin API user, and an API user holding only CHORE_UNDO_EXECUTION, each over HTTP with its own key.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -89,6 +93,9 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 	// Helpers (mirroring ComposedOperationAtomicityTest.php's own)
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Inserts one row built from the column map and returns its generated id.
+	 */
 	private static function insertRow(string $table, array $columns): int
 	{
 		$names = implode(', ', array_keys($columns));
@@ -99,6 +106,9 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/**
+	 * Inserts a product in the fixture location with quantity unit 2 for every purchase, stock, consume and price unit, and returns its id.
+	 */
 	private static function insertProduct(string $name): int
 	{
 		return self::insertRow('products', [
@@ -111,6 +121,9 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 		]);
 	}
 
+	/**
+	 * Inserts a manually-scheduled chore, with the given columns overriding the defaults, and returns its id.
+	 */
 	private static function insertChore(string $name, array $columns = []): int
 	{
 		return self::insertRow('chores', array_merge([
@@ -133,11 +146,17 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 		]);
 	}
 
+	/**
+	 * Books a purchase of the given amount of the product into stock.
+	 */
 	private static function stockUp(int $productId, float $amount): void
 	{
 		self::$stock->AddProduct($productId, $amount, '2035-06-30', StockService::TRANSACTION_TYPE_PURCHASE, '2026-04-01', 1.0);
 	}
 
+	/**
+	 * Returns the total amount of the product currently in stock.
+	 */
 	private static function stockAmount(int $productId): float
 	{
 		$statement = self::$db->prepare('SELECT COALESCE(SUM(amount), 0) FROM stock WHERE product_id = ?');
@@ -165,6 +184,9 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 		return $statement->fetchAll(PDO::FETCH_ASSOC);
 	}
 
+	/**
+	 * Returns the chores_log row of the execution.
+	 */
 	private static function choreLogRow(int $executionId): array
 	{
 		$statement = self::$db->prepare('SELECT * FROM chores_log WHERE id = ?');
@@ -197,19 +219,9 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);
@@ -225,6 +237,9 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 	//    stock and marks that booking undone.
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Undoing a chore execution that consumed stock restores the stock, marks the chore log row undone and marks the original consume booking undone instead of adding a row.
+	 */
 	public function testUndoingChoreExecutionThatConsumedStockRestoresStockAndMarksBookingUndone(): void
 	{
 		$product = self::insertProduct('Chore Undo Consumed Stock');
@@ -264,6 +279,9 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 	// 2. A refused stock undo leaves both the chore and the stock unchanged.
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * When the stock undo is refused because a later booking depends on the entry, the chore undo is refused too and the chore log, stock and stock log are unchanged.
+	 */
 	public function testARefusedStockUndoLeavesBothTheChoreAndTheStockUnchanged(): void
 	{
 		$product = self::insertProduct('Chore Undo Refused Stock');
@@ -305,6 +323,9 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 	//    stock_transaction_id NULL for it (nothing was ever booked to link).
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * A chore that never consumed stock records no stock transaction link and undoes cleanly.
+	 */
 	public function testChoreWithoutStockConsumptionStillUndoes(): void
 	{
 		$choreId = self::insertChore('Chore Undo No Consumption', [
@@ -334,6 +355,9 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 	//     effect of anything else that happens to share its transaction.
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * When the chore does not consume and an unrelated consumption shares its database transaction, undoing the chore leaves that consumption untouched.
+	 */
 	public function testStrangerConsumptionInTheSameTransactionIsNotReversedWhenTheChoreNeverConsumes(): void
 	{
 		$product = self::insertProduct('Chore Undo Probe A Product');
@@ -374,6 +398,9 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 	//     product untouched.
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * An execution row with a NULL stock_transaction_id undoes only the chore and leaves an unrelated live consumption of the same product alone.
+	 */
 	public function testNullStockTransactionIdUndoesTheChoreOnlyAndLeavesStockUnchanged(): void
 	{
 		$product = self::insertProduct('Chore Undo Probe B Product');
@@ -424,6 +451,9 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 	// way it was. The chore undo must instead succeed as chore-only.
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * When the linked stock transaction was already undone through the stock journal, undoing the chore still succeeds as chore-only and does not touch stock again.
+	 */
 	public function testUndoingAnExecutionWhoseStockTransactionWasAlreadyFullyUndoneStillUndoesTheChore(): void
 	{
 		$product = self::insertProduct('Chore Undo Probe B2 Product');
@@ -467,6 +497,9 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 	//     product ended up in stock_log.
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * When the consumption lands on a child product by substitution, the link still names that booking and undoing the chore restores the child's stock.
+	 */
 	public function testSubProductSubstitutionConsumptionIsStillLinkedAndRestored(): void
 	{
 		$parent = self::insertProduct('Chore Undo Probe C Parent');
@@ -500,6 +533,9 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 	// not only as a thrown exception at the service level.
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Over HTTP, undoing an execution whose stock undo is refused answers 400 and leaves the ledger unchanged.
+	 */
 	public function testUndoingAnExecutionWithARefusedStockUndoRespondsWithHttp400(): void
 	{
 		$product = self::insertProduct('Chore Undo HTTP Refusal Product');
@@ -531,6 +567,9 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 	// route already applies (STOCK_PURCHASE on top of STOCK_CONSUME, issue #532/#581).
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * A caller holding only CHORE_UNDO_EXECUTION gets 403 on an execution with a live linked stock booking and nothing changes, but can still undo a chore-only execution.
+	 */
 	public function testUndoingALinkedExecutionOverHttpWithoutStockEditIsRefusedButChoreOnlyIsNotRequired(): void
 	{
 		$product = self::insertProduct('Chore Undo Authz Product');

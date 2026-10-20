@@ -8,6 +8,7 @@ use Victual\Services\Database\PostgresDialect;
 use Victual\Services\Labels\LabelIdentityService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * ADR-0037 acceptance prerequisite 5: the races of section 7 on two real connections.
@@ -33,6 +34,7 @@ class StockLabelRevivalRaceTest extends PgsqlSchemaTestCase
 	private static PDO $db;
 	private static int $location;
 
+	/** Creates an ADMIN user and a location shared by all the cases. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -45,6 +47,10 @@ class StockLabelRevivalRaceTest extends PgsqlSchemaTestCase
 
 	// --- subprocesses -----------------------------------------------------------------------
 
+	/**
+	 * Returns the environment a child PHP process needs to reach this test's schema (inherited
+	 * scalar variables plus schema, database and path settings), with $extra merged over it.
+	 */
 	private static function environment(array $extra = []): array
 	{
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
@@ -60,21 +66,21 @@ class StockLabelRevivalRaceTest extends PgsqlSchemaTestCase
 		], $extra);
 	}
 
-	/** @return array{0: resource, 1: array} */
-	private static function start(string $helper, array $args, array $environment = []): array
+	/** @return Subprocess The running child, nothing read yet */
+	private static function start(string $helper, array $args, array $environment = []): Subprocess
 	{
-		$process = proc_open(array_merge([PHP_BINARY, __DIR__ . '/' . $helper], $args), [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, self::environment($environment));
-		return [$process, $pipes];
+		return Subprocess::start(array_merge([PHP_BINARY, __DIR__ . '/' . $helper], $args), self::environment($environment));
 	}
 
-	private static function finish(array $processAndPipes): array
+	/**
+	 * Waits for the child to complete, requires it to have printed a JSON result, and returns
+	 * that result with the child's stderr added under "stderr".
+	 */
+	private static function finish(Subprocess $process): array
 	{
-		[$process, $pipes] = $processAndPipes;
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed($process->finish());
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);
 		self::assertIsArray($result, "the subprocess printed no JSON. stdout: $output\nstderr: $errors");
@@ -82,11 +88,19 @@ class StockLabelRevivalRaceTest extends PgsqlSchemaTestCase
 		return $result;
 	}
 
-	private static function undo(int $booking, string $name): array
+	/**
+	 * Starts the stock-undo helper to undo the given booking, with $name as its PostgreSQL
+	 * application name so waitBlocked() can find it.
+	 */
+	private static function undo(int $booking, string $name): Subprocess
 	{
 		return self::start('stock-undo-subprocess-helper.php', ['undo', (string)$booking], ['VICTUAL_TEST_APPLICATION_NAME' => $name]);
 	}
 
+	/**
+	 * Polls pg_stat_activity until a backend with the given application name is waiting on a
+	 * lock, and fails the test after the timeout.
+	 */
 	private static function waitBlocked(string $applicationName, float $timeoutSeconds = 10.0): void
 	{
 		$check = self::$db->prepare("SELECT 1 FROM pg_stat_activity WHERE application_name = ? AND wait_event_type = 'Lock'");
@@ -104,6 +118,7 @@ class StockLabelRevivalRaceTest extends PgsqlSchemaTestCase
 		self::fail("Timed out waiting for $applicationName to block on a lock");
 	}
 
+	/** Opens a second connection on this schema for the test to hold locks on. */
 	private static function gate(): PDO
 	{
 		$gate = new PDO('pgsql:host=' . getenv('PGHOST') . ';port=' . getenv('PGPORT') . ';dbname=' . getenv('PHPUNIT_DB_NAME'),
@@ -130,11 +145,13 @@ class StockLabelRevivalRaceTest extends PgsqlSchemaTestCase
 		return [$product, $row, $uid, $booking];
 	}
 
+	/** Returns the labels row with the given uid. */
 	private static function label(string $uid): array
 	{
 		return self::$db->query('SELECT * FROM labels WHERE uid = ' . self::$db->quote($uid))->fetch(PDO::FETCH_ASSOC);
 	}
 
+	/** Returns the stock_label_retirements rows for the uid, oldest first. */
 	private static function events(string $uid): array
 	{
 		return self::$db->query('SELECT * FROM stock_label_retirements WHERE label_uid = ' . self::$db->quote($uid) . ' ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
@@ -142,6 +159,10 @@ class StockLabelRevivalRaceTest extends PgsqlSchemaTestCase
 
 	// --- C1 ---------------------------------------------------------------------------------
 
+	/**
+	 * Proves that a label issuance queued behind an undo on the import lock returns the revived
+	 * uid, with one live label left on the restored stock row.
+	 */
 	public function testC1IssuanceDuringTheUndoReturnsTheRevivedUid(): void
 	{
 		[, $row, $uid, $booking] = self::consumedLabelledRow('C1');
@@ -180,6 +201,11 @@ class StockLabelRevivalRaceTest extends PgsqlSchemaTestCase
 
 	// --- C2 ---------------------------------------------------------------------------------
 
+	/**
+	 * Proves that of two undos of one booking queued on the product lock, one succeeds and the
+	 * other is refused as already undone rather than deadlocking, leaving a single revival
+	 * event.
+	 */
 	public function testC2ASecondUndoOfTheSameBookingWaitsAndRefuses(): void
 	{
 		[$product, $row, $uid, $booking] = self::consumedLabelledRow('C2');
@@ -218,6 +244,11 @@ class StockLabelRevivalRaceTest extends PgsqlSchemaTestCase
 
 	// --- consumption racing the undo of the same label -------------------------------------
 
+	/**
+	 * Proves that a consumption queued behind the undo of the consumption that retired the same
+	 * label deadlocks neither side, and leaves one retirement event per consumption, with the
+	 * label retired again.
+	 */
 	public function testAConsumptionRacingTheUndoNeverDeadlocks(): void
 	{
 		[$product, , $uid, $booking] = self::consumedLabelledRow('Consume race');
@@ -255,6 +286,10 @@ class StockLabelRevivalRaceTest extends PgsqlSchemaTestCase
 
 	// --- C3a, C3b (the import cases replace the data, so they run last) -----------------------
 
+	/**
+	 * Copies the importer's current-version SQLite fixture to a temporary file and returns its
+	 * path.
+	 */
 	private static function sourceCopy(): string
 	{
 		$file = tempnam(sys_get_temp_dir(), 'label-revival-race-source-');
@@ -262,6 +297,10 @@ class StockLabelRevivalRaceTest extends PgsqlSchemaTestCase
 		return $file;
 	}
 
+	/**
+	 * Proves that when an import queues behind an undo, the undo revives the label and the
+	 * import is refused with 400 for the live label, leaving the import epoch unchanged.
+	 */
 	public function testC3aAnImportDuringTheUndoFindsTheRevivedLabelAndRefuses(): void
 	{
 		[, $row, $uid, $booking] = self::consumedLabelledRow('C3a');
@@ -299,6 +338,12 @@ class StockLabelRevivalRaceTest extends PgsqlSchemaTestCase
 		self::$db->exec("DELETE FROM stock WHERE id = $row");
 	}
 
+	/**
+	 * Proves that when an undo queues behind a paused import, nothing is revived against
+	 * replaced data. If the import commits, the undo fails and the label stays retired. If the
+	 * import loses a deadlock and rolls back, the undo revives the label and the import epoch
+	 * is unchanged.
+	 */
 	public function testC3bAnUndoDuringAnImportNeverRevivesAgainstReplacedData(): void
 	{
 		[, , $uid, $booking] = self::consumedLabelledRow('C3b');

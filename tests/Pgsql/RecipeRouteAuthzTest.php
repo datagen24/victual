@@ -7,6 +7,7 @@ use Victual\Services\ApiKeyService;
 use Victual\Services\RecipesService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #532 (part of #487 remediation): the recipe consume and add-missing-to-shoppinglist
@@ -50,6 +51,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 
 	private static int $locationId;
 
+	/** Creates one user per permission combination under test, a CHILD-role user and a custom-role user, an API key for each, sessions for the page-render cases, and a location. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -168,18 +170,8 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		], $extraEnv);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
 
 		$response = json_decode($output, true);
 		if (isset($response['body']) && is_string($response['body']))
@@ -194,6 +186,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 		return $response;
 	}
 
+	/** Inserts a row built from the column map and returns the new id. */
 	private static function insertRow(string $table, array $columns): int
 	{
 		$names = implode(', ', array_keys($columns));
@@ -204,6 +197,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/** Inserts a product at the fixture location using quantity unit 2 for every unit column, and returns its id. */
 	private static function insertProduct(string $name): int
 	{
 		return self::insertRow('products', [
@@ -235,6 +229,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 		return $recipeId;
 	}
 
+	/** Adds a recipe ingredient line for the product in quantity unit 2 and returns its id. */
 	private static function addIngredient(int $recipeId, int $productId, float $amount): int
 	{
 		return self::insertRow('recipes_pos', [
@@ -251,6 +246,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 		self::$stock->AddProduct($productId, $amount, self::BEST_BEFORE, StockService::TRANSACTION_TYPE_PURCHASE, self::PURCHASED, self::INGREDIENT_PRICE);
 	}
 
+	/** Returns the total stock amount of a product. */
 	private static function stockAmount(int $productId): float
 	{
 		$statement = self::$db->prepare('SELECT COALESCE(SUM(amount), 0) FROM stock WHERE product_id = ?');
@@ -259,6 +255,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 		return (float)$statement->fetchColumn();
 	}
 
+	/** Returns the highest stock_log id, or 0 when the log is empty, as a watermark for stockLogSince(). */
 	private static function highestStockLogId(): int
 	{
 		return (int)self::$db->query('SELECT COALESCE(MAX(id), 0) FROM stock_log')->fetchColumn();
@@ -273,6 +270,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 		return $statement->fetchAll(PDO::FETCH_ASSOC);
 	}
 
+	/** Counts the shopping_list rows for a product. */
 	private static function shoppingListCountFor(int $productId): int
 	{
 		$statement = self::$db->prepare('SELECT COUNT(*) FROM shopping_list WHERE product_id = ?');
@@ -281,6 +279,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/** Counts the rows in the outbox. */
 	private static function outboxCount(): int
 	{
 		return (int)self::$db->query('SELECT COUNT(*) FROM outbox')->fetchColumn();
@@ -302,6 +301,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 		return self::send($method, $path, $apiKey, $body, ['VICTUAL_INFLUXDB_ENABLED' => 'true']);
 	}
 
+	/** Returns the id of the role with the given code. */
 	private static function roleId(string $code): int
 	{
 		$statement = self::$db->prepare('SELECT id FROM roles WHERE code = ?');
@@ -337,18 +337,8 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
 
 		$response = json_decode($output, true);
 		if (isset($response['body']) && is_string($response['body']))
@@ -367,6 +357,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 	// POST /api/recipes/{id}/consume
 	// ------------------------------------------------------------------------------
 
+	/** A STOCK_CONSUME-only caller gets 403 consuming a producing recipe; stock, stock_log, shopping list and outbox are unchanged. */
 	public function testConsumeOnlyCannotConsumeAProducingRecipe(): void
 	{
 		$ingredientId = self::insertProduct('Authz Ingredient A');
@@ -388,6 +379,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 		self::assertSame($outboxBefore, self::outboxCount(), 'No outbox row was enqueued on refusal');
 	}
 
+	/** RECIPES_VIEW plus STOCK_CONSUME gets 403 on a producing recipe, and nothing is consumed or produced. */
 	public function testViewAndConsumeCannotConsumeAProducingRecipe(): void
 	{
 		$ingredientId = self::insertProduct('Authz Ingredient B');
@@ -409,6 +401,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 		self::assertSame($outboxBefore, self::outboxCount(), 'No outbox row was enqueued on refusal');
 	}
 
+	/** RECIPES_VIEW plus STOCK_CONSUME consumes a recipe that produces nothing: 204, ingredient stock reduced, one consume booking. */
 	public function testViewAndConsumeCanConsumeAConsumptionOnlyRecipe(): void
 	{
 		$ingredientId = self::insertProduct('Authz Ingredient C');
@@ -430,6 +423,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 		self::assertSame(StockService::TRANSACTION_TYPE_CONSUME, $booked[0]['transaction_type']);
 	}
 
+	/** RECIPES_VIEW, STOCK_CONSUME and STOCK_PURCHASE consume a producing recipe: 204, ingredient consumed, output self-produced, two bookings. */
 	public function testViewConsumeAndPurchaseCanConsumeAProducingRecipe(): void
 	{
 		$ingredientId = self::insertProduct('Authz Ingredient D');
@@ -453,6 +447,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 		self::assertSame([StockService::TRANSACTION_TYPE_CONSUME, StockService::TRANSACTION_TYPE_SELF_PRODUCTION], $types);
 	}
 
+	/** Consuming the shadow recipe of a meal plan entry whose original produces stock gets 403 without STOCK_PURCHASE and succeeds with it, consuming and producing two servings. */
 	public function testMealPlanShadowOfAProducingRecipeNeedsStockPurchase(): void
 	{
 		$ingredientId = self::insertProduct('Authz Ingredient E');
@@ -525,6 +520,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 	// POST /api/recipes/{id}/add-not-fulfilled-products-to-shoppinglist
 	// ------------------------------------------------------------------------------
 
+	/** A SHOPPINGLIST_ITEMS_ADD-only caller gets 403 on the add-not-fulfilled-products route and nothing is written. */
 	public function testShoppingListItemsAddOnlyCannotUseTheRoute(): void
 	{
 		$productId = self::insertProduct('Authz Shopping Product A');
@@ -542,6 +538,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 		self::assertSame($outboxBefore, self::outboxCount(), 'No outbox row was enqueued on refusal');
 	}
 
+	/** RECIPES_VIEW plus SHOPPINGLIST_ITEMS_ADD gets 204 on the add-not-fulfilled-products route and the missing ingredient is put on the shopping list. */
 	public function testViewAndShoppingListItemsAddCanUseTheRoute(): void
 	{
 		$productId = self::insertProduct('Authz Shopping Product B');
@@ -705,6 +702,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 		self::assertSame($outboxBefore, self::outboxCount(), 'No outbox row was enqueued on refusal');
 	}
 
+	/** A user with the built-in CHILD role consumes a recipe that produces nothing: 204 and the ingredient stock is reduced. */
 	public function testChildRoleCanConsumeAConsumptionOnlyRecipe(): void
 	{
 		$ingredientId = self::insertProduct('Authz Child Ingredient B');
@@ -719,6 +717,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 		self::assertSame(3.0, self::stockAmount($ingredientId), 'The ingredient was consumed');
 	}
 
+	/** A user with the built-in CHILD role gets 204 on the add-not-fulfilled-products route and the missing ingredient is put on the shopping list. */
 	public function testChildRoleCanAddMissingToShoppingList(): void
 	{
 		$productId = self::insertProduct('Authz Child Shopping Product');

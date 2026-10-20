@@ -8,6 +8,7 @@ use Victual\Services\Labels\LabelPrintJobService;
 use Victual\Services\Labels\LabelTemplateService;
 use Victual\Services\Labels\PrinterConfigurationService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * PR #626 delta review (Opus), "cycle A": `LabelOperationsService::RevisedPrint()` used to
@@ -52,11 +53,17 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  */
 class LabelRevisedPrintNeverDeadlocksWithRetirementTest extends PgsqlSchemaTestCase
 {
+	/**
+	 * Reads the Brother QL driver definition fixture.
+	 */
 	private static function driverDefinition(): array
 	{
 		return json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/.devtools/labels/fixtures/brother-ql.json'), true, 512, JSON_THROW_ON_ERROR);
 	}
 
+	/**
+	 * Creates a declared label worker with the driver registered and a printer on it, each committed, and returns the printer id.
+	 */
 	private static function newPrinter(): int
 	{
 		$db = self::Pdo();
@@ -96,6 +103,9 @@ class LabelRevisedPrintNeverDeadlocksWithRetirementTest extends PgsqlSchemaTestC
 		return $template;
 	}
 
+	/**
+	 * Builds the environment for a child PHP process: the inherited scalars plus the test schema and database connection settings.
+	 */
 	private static function subprocessEnv(): array
 	{
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
@@ -112,23 +122,18 @@ class LabelRevisedPrintNeverDeadlocksWithRetirementTest extends PgsqlSchemaTestC
 		]);
 	}
 
-	/** @return array{0: resource, 1: array} */
-	private static function start(array $args): array
+	/** @return Subprocess The running child, nothing read yet */
+	private static function start(array $args): Subprocess
 	{
-		$process = proc_open(array_merge([PHP_BINARY], $args), [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, self::subprocessEnv());
-
-		return [$process, $pipes];
+		return Subprocess::start(array_merge([PHP_BINARY], $args), self::subprocessEnv());
 	}
 
 	/** @return array{status: int, stderr: string, error_message?: string, sqlstate?: string} */
-	private static function finish(array $processAndPipes): array
+	private static function finish(Subprocess $process): array
 	{
-		[$process, $pipes] = $processAndPipes;
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed($process->finish());
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);

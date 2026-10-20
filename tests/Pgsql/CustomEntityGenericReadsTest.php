@@ -5,6 +5,7 @@ namespace Victual\Tests\Pgsql;
 use PDO;
 use Victual\Services\ApiKeyService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #869: the generic read of custom-entity rows was open to any authenticated caller.
@@ -31,6 +32,10 @@ class CustomEntityGenericReadsTest extends PgsqlSchemaTestCase
 	private static int $objectId;
 	private static int $entityId;
 
+	/**
+	 * Creates four callers (no permission, STOCK_VIEW, MASTER_DATA_EDIT, ADMIN) with API keys,
+	 * a custom entity with one object, and the user fields and secret value the tests read.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -55,6 +60,7 @@ class CustomEntityGenericReadsTest extends PgsqlSchemaTestCase
 		self::$db->prepare('INSERT INTO userfield_values(field_id, object_id, value) VALUES (?, ?, ?)')->execute([$noteFieldId, (string)self::$objectId, self::SECRET]);
 	}
 
+	/** Inserts a 30-day default read-write API key for the user and returns its plaintext. */
 	private static function issueKey(int $userId): string
 	{
 		$plaintext = bin2hex(random_bytes(25));
@@ -85,18 +91,8 @@ class CustomEntityGenericReadsTest extends PgsqlSchemaTestCase
 			'PGPASSWORD' => getenv('PGPASSWORD'),
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
 
 		$response = json_decode($output, true);
 		if (isset($response['body']) && is_string($response['body']))
@@ -111,6 +107,10 @@ class CustomEntityGenericReadsTest extends PgsqlSchemaTestCase
 		return $response;
 	}
 
+	/**
+	 * Proves that callers without MASTER_DATA_EDIT get 403 for both the userobjects list and a
+	 * single userobject, with no row data in the body.
+	 */
 	public function testCallerWithoutMasterDataEditCannotReadUserobjects(): void
 	{
 		foreach (['zero', 'stock'] as $who)
@@ -125,6 +125,7 @@ class CustomEntityGenericReadsTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Proves that a caller with MASTER_DATA_EDIT can list userobjects and read a single one. */
 	public function testCallerWithMasterDataEditReadsUserobjects(): void
 	{
 		$list = self::send('GET', '/api/objects/userobjects', self::$keys['editor']);
@@ -136,6 +137,11 @@ class CustomEntityGenericReadsTest extends PgsqlSchemaTestCase
 		self::assertSame(self::$entityId, (int)$one['body']['userentity_id']);
 	}
 
+	/**
+	 * Proves that the user field values of a custom entity object are refused with 403 without
+	 * MASTER_DATA_EDIT and returned, with the stored value, to the editor and the
+	 * administrator.
+	 */
 	public function testFieldValuesOfACustomEntityObjectNeedMasterDataEdit(): void
 	{
 		// The data of a custom entity lives in userfield_values under 'userentity-<name>',
@@ -157,6 +163,7 @@ class CustomEntityGenericReadsTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Proves that userentities and userfields can be read by a caller with no permissions. */
 	public function testDefinitionsStayReadableByAnyAuthenticatedCaller(): void
 	{
 		$entities = self::send('GET', '/api/objects/userentities', self::$keys['zero']);
@@ -168,6 +175,10 @@ class CustomEntityGenericReadsTest extends PgsqlSchemaTestCase
 		self::assertContains('ce_manual', array_column($fields['body'], 'name'));
 	}
 
+	/**
+	 * Proves that a STOCK_VIEW caller can still fetch a userfile referenced by a product user
+	 * field, because the file read follows the owning record's permission (#905).
+	 */
 	public function testStockViewerStillFetchesAFileReferencedFromAProductUserfield(): void
 	{
 		// Guard for #905: ordinary pages (stock overview, product form) link file and image

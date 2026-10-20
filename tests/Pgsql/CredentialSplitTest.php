@@ -5,6 +5,7 @@ namespace Victual\Tests\Pgsql;
 use PDO;
 use PHPUnit\Framework\Attributes\Depends;
 use PHPUnit\Framework\TestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Plan 20 verification 8 (issue #133): deploy/postgres/roles.sql really does split the
@@ -39,6 +40,9 @@ class CredentialSplitTest extends TestCase
 	/** Whether this class created the roles, and so may drop them: never someone else's. */
 	private static bool $createdRoles = false;
 
+	/**
+	 * Creates a throwaway database and data directory, refuses to run if the migrate or app role already exists, and runs deploy/postgres/roles.sql twice to check it is repeatable.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		self::$database = 'victual_credsplit_' . bin2hex(random_bytes(4));
@@ -76,6 +80,9 @@ class CredentialSplitTest extends TestCase
 		self::runRolesScript();
 	}
 
+	/**
+	 * Drops the throwaway database and, if this test created them, the two roles; a role that is still depended on is left alone.
+	 */
 	public static function tearDownAfterClass(): void
 	{
 		// The roles are cluster-wide and this database is the only thing here that referenced
@@ -97,6 +104,9 @@ class CredentialSplitTest extends TestCase
 		}
 	}
 
+	/**
+	 * The app role fails to run bin/victual-migrate on an unmigrated database, the migrate role succeeds, and a second run by the migrate role also succeeds.
+	 */
 	public function testTheMigrateRoleCanMigrateAnEmptyDatabaseAndTheAppRoleCannot(): void
 	{
 		// The role that cannot migrate first, against a database nobody has migrated. If it
@@ -114,6 +124,9 @@ class CredentialSplitTest extends TestCase
 		$this->assertSame(0, $again, "a second migrate run failed:\n" . $againOutput);
 	}
 
+	/**
+	 * The app role can connect, read, write and use sequences, including on a table created later by the migrate role, but is refused with SQLSTATE 42501 for DDL, TRUNCATE, triggers and schemas.
+	 */
 	#[Depends('testTheMigrateRoleCanMigrateAnEmptyDatabaseAndTheAppRoleCannot')]
 	public function testTheAppRoleConnectsAndWritesRowsButCannotChangeStructure(): void
 	{
@@ -140,6 +153,9 @@ class CredentialSplitTest extends TestCase
 		}
 	}
 
+	/**
+	 * Every table in the public schema is owned by the migrate role, and the app role's probe left no structure or rows behind.
+	 */
 	#[Depends('testTheAppRoleConnectsAndWritesRowsButCannotChangeStructure')]
 	public function testNothingWasLeftBehindByTheRestrictedRoleAndTheMigrateRoleStillOwnsTheSchema(): void
 	{
@@ -159,6 +175,9 @@ class CredentialSplitTest extends TestCase
 		);
 	}
 
+	/**
+	 * Runs credential-split-helper.php as the app role and returns its decoded JSON report of connection and statement attempts.
+	 */
 	private function probeAsAppRole(): array
 	{
 		[$exit, $output] = $this->runProcess([PHP_BINARY, __DIR__ . '/credential-split-helper.php'], self::APP_ROLE, self::APP_PASSWORD);
@@ -170,6 +189,9 @@ class CredentialSplitTest extends TestCase
 		return $decoded;
 	}
 
+	/**
+	 * Runs one SQL statement on the throwaway database as the migrate role.
+	 */
 	private function asMigrateRole(string $sql): void
 	{
 		$pdo = new PDO(
@@ -181,6 +203,9 @@ class CredentialSplitTest extends TestCase
 		$pdo->exec($sql);
 	}
 
+	/**
+	 * Opens a connection to the throwaway database with the suite's own credentials.
+	 */
 	private function connectToDatabase(): PDO
 	{
 		return new PDO(
@@ -191,6 +216,9 @@ class CredentialSplitTest extends TestCase
 		);
 	}
 
+	/**
+	 * Runs deploy/postgres/roles.sql with psql against the throwaway database, passing the role passwords through the environment, and asserts it exits 0.
+	 */
 	private static function runRolesScript(): void
 	{
 		$env = self::environment(getenv('PGUSER'), getenv('PGPASSWORD'));
@@ -199,33 +227,25 @@ class CredentialSplitTest extends TestCase
 		$env['MIGRATE_PASSWORD'] = self::MIGRATE_PASSWORD;
 		$env['APP_PASSWORD'] = self::APP_PASSWORD;
 
-		$process = proc_open(
+		$finished = Subprocess::Completed(Subprocess::run(
 			[
 				'psql', '--no-psqlrc', '--quiet',
 				'-v', 'ON_ERROR_STOP=1',
 				'-v', 'db=' . self::$database,
 				'-f', VICTUAL_ROOT_PATH . '/deploy/postgres/roles.sql',
 			],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
 			$env
-		);
-		self::assertIsResource($process, 'psql could not be started - the suite needs the PostgreSQL client tools, as run-tests.sh itself does');
-
-		$output = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
-		self::assertSame(0, proc_close($process), "deploy/postgres/roles.sql failed:\n" . $output);
+		));
+		$output = $finished['stdout'] . $finished['stderr'];
+		self::assertSame(0, $finished['exit'], "deploy/postgres/roles.sql failed:\n" . $output);
 	}
 
 	/** @return array{0:int,1:string} exit status, and stdout and stderr together */
 	private function runProcess(array $command, string $role, string $password): array
 	{
-		$process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, self::environment($role, $password, true));
-		$this->assertIsResource($process);
+		$finished = Subprocess::Completed(Subprocess::run($command, self::environment($role, $password, true)));
 
-		$output = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
-
-		return [proc_close($process), $output];
+		return [$finished['exit'], $finished['stdout'] . $finished['stderr']];
 	}
 
 	/**

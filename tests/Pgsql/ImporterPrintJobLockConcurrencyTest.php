@@ -5,6 +5,7 @@ namespace Victual\Tests\Pgsql;
 use PDO;
 use Victual\Services\Database\DatabaseImporter;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * CodeRabbit review of PR #561 (issue #487 remediation): LabelIdentityService::LockImport()
@@ -131,43 +132,24 @@ class ImporterPrintJobLockConcurrencyTest extends PgsqlSchemaTestCase
 		]);
 	}
 
-	/** @return array{0: resource, 1: array} */
-	private static function startImportSubprocess(string $sourcePath, int $gateClass, int $gateObject): array
+	/** @return Subprocess The running child, nothing read yet */
+	private static function startImportSubprocess(string $sourcePath, int $gateClass, int $gateObject): Subprocess
 	{
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/importer-lock-subprocess-helper.php', $sourcePath, (string)$gateClass, (string)$gateObject],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			self::subprocessEnv()
-		);
-
-		return [$process, $pipes];
+		return Subprocess::start([PHP_BINARY, __DIR__ . '/importer-lock-subprocess-helper.php', $sourcePath, (string)$gateClass, (string)$gateObject], self::subprocessEnv());
 	}
 
-	/** @return array{0: resource, 1: array} */
-	private static function startClaimSubprocess(int $workerId): array
+	/** @return Subprocess The running child, nothing read yet */
+	private static function startClaimSubprocess(int $workerId): Subprocess
 	{
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/print-attempt-claim-subprocess-helper.php', (string)$workerId],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			self::subprocessEnv()
-		);
-
-		return [$process, $pipes];
+		return Subprocess::start([PHP_BINARY, __DIR__ . '/print-attempt-claim-subprocess-helper.php', (string)$workerId], self::subprocessEnv());
 	}
 
 	/** @return array{status: int, stderr: string, messages?: array, claimed?: array, error_message?: string} */
-	private static function finishSubprocess(array $processAndPipes): array
+	private static function finishSubprocess(Subprocess $process): array
 	{
-		[$process, $pipes] = $processAndPipes;
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed($process->finish());
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);

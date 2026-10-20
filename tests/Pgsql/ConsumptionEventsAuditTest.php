@@ -10,6 +10,7 @@ use Victual\Services\ConsumptionMappingService;
 use Victual\Services\ConsumptionRecipeService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * The 2026-10-12 audit findings on consumption events (#863, #864, #867, #870), asserted as resulting
@@ -33,6 +34,7 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 	private static string $adminKey;
 	private static string $adminWithUsersKey;
 
+	/** Gets the event and mapping services, creates the caller, another user and two MASTER_DATA_EDIT admins (one also with USERS_READ) with API keys, a quantity unit and a shelf location. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -68,11 +70,13 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 
 	// --- Fixtures ----------------------------------------------------------------------------
 
+	/** Inserts a location with a unique numbered name and returns its id. */
 	private static function location(string $name): int
 	{
 		return (int)self::$db->query('INSERT INTO locations (name) VALUES (' . self::$db->quote($name . ' ' . ++self::$sequence) . ') RETURNING id')->fetchColumn();
 	}
 
+	/** Inserts a product on the shelf with a unique numbered name, purchases the given on-hand amount, and returns the product id. */
 	private static function product(string $name, float $onHand): int
 	{
 		$statement = self::$db->prepare('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price) VALUES (?, ?, ?, ?, ?, ?) RETURNING id');
@@ -83,16 +87,19 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 		return $id;
 	}
 
+	/** Returns the summed stock amount of a product. */
 	private static function onHand(int $productId): float
 	{
 		return (float)self::$db->query('SELECT COALESCE(sum(amount), 0) FROM stock WHERE product_id = ' . $productId)->fetchColumn();
 	}
 
+	/** Returns a fresh unique source event id. */
 	private static function uid(): string
 	{
 		return 'cea' . ++self::$sequence;
 	}
 
+	/** Creates a HealthKit mapping from a new medication reference to the product, with a fixed shelf location, and returns the reference. */
 	private static function map(int $productId): string
 	{
 		$ref = 'med' . ++self::$sequence;
@@ -104,6 +111,7 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 		return $ref;
 	}
 
+	/** Returns a taken-event submission body for the medication reference, one hour in the past. */
 	private static function body(string $ref): array
 	{
 		return ['status' => 'taken', 'medication_ref' => $ref, 'quantity' => 1, 'unit_label' => 'tablet', 'occurred_at' => gmdate('Y-m-d\TH:i:s\Z', time() - 3600)];
@@ -118,6 +126,7 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 		return $recipes->Consume($recipe, self::uid(), null, null, self::ME)['transaction_id'];
 	}
 
+	/** Returns the consumption_events row for the user, source system and source event id. */
 	private static function eventRow(string $id, int $user = self::ME, string $system = 'healthkit'): array
 	{
 		$statement = self::$db->prepare('SELECT * FROM consumption_events WHERE user_id = ? AND source_system = ? AND source_event_id = ?');
@@ -126,6 +135,7 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 		return $statement->fetch(PDO::FETCH_ASSOC);
 	}
 
+	/** Inserts a consumption_events row directly in the given state with the given transaction and linked transaction ids, and returns its id. */
 	private static function insertEvent(string $system, string $id, string $state, ?string $transactionId, ?string $linked = null, int $user = self::ME, ?string $ref = null): int
 	{
 		$statement = self::$db->prepare("INSERT INTO consumption_events (user_id, source_system, source_event_id, state, transaction_id, linked_transaction_id, medication_ref, occurred_at)
@@ -135,6 +145,7 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/** Runs the callable and asserts it throws a ConsumptionException with the given status and error code, failing if it does not throw. */
 	private function expectRefusal(callable $work, int $status, string $code): void
 	{
 		try
@@ -159,13 +170,9 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 			'RBAC_TEST_SCHEMA' => self::Schema(), 'PHPUNIT_DB_NAME' => getenv('PHPUNIT_DB_NAME'), 'VICTUAL_DATAPATH' => getenv('VICTUAL_DATAPATH'),
 			'PGHOST' => getenv('PGHOST'), 'PGPORT' => getenv('PGPORT'), 'PGUSER' => getenv('PGUSER'), 'PGPASSWORD' => getenv('PGPASSWORD'), 'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
-		$process = proc_open([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$response = $start === false ? null : json_decode(substr($output, $start), true);
@@ -178,6 +185,7 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 
 	// --- #863 ---------------------------------------------------------------------------------
 
+	/** With 300 newer booked events present, ListEvents still finds the older undone and needs-review events within its limit, does not list undone events as booked, and BulkResolve selects the same events as the list. */
 	public function testTheStateFilterIsAppliedBeforeTheLimitAndAgreesWithBulkResolve(): void
 	{
 		$product = self::product('CEA list', 20);
@@ -239,6 +247,7 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 
 	// --- #864 ---------------------------------------------------------------------------------
 
+	/** Linking an event to an undone transaction is refused with 422 invalid_link, and the event row and stock are unchanged. */
 	public function testALinkToAnUndoneTransactionIsRefusedAndChangesNothing(): void
 	{
 		$product = self::product('CEA link undone', 10);
@@ -263,6 +272,7 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 		return new PDO('pgsql:host=' . getenv('PGHOST') . ';port=' . getenv('PGPORT') . ';dbname=' . getenv('PHPUNIT_DB_NAME'), getenv('PGUSER'), getenv('PGPASSWORD'), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 	}
 
+	/** While another connection holds the product advisory lock, linking a received event to a transaction of that product waits and hits the lock timeout, leaving the event and its lines unchanged. */
 	public function testALinkWaitsForTheProductLockOfTheTargetTransactionEvenWhenTheEventHoldsNoBooking(): void
 	{
 		$product = self::product('CEA link lock', 10);
@@ -297,6 +307,7 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 		self::assertSame(0, (int)self::$db->query('SELECT count(*) FROM consumption_event_lines WHERE event_id = ' . (int)$row['id'])->fetchColumn());
 	}
 
+	/** When a trigger undoes the target booking as the link is written, the booking is undone and no event line copies it. */
 	public function testABookingUndoneWhileTheLinkIsWrittenIsNotCopiedAsALine(): void
 	{
 		$product = self::product('CEA link under lock', 10);
@@ -326,6 +337,7 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 		self::assertSame(0, (int)self::$db->query('SELECT count(*) FROM consumption_event_lines WHERE event_id = ' . $eventId)->fetchColumn(), 'and no line copies it');
 	}
 
+	/** A unique violation raised while the link is written is reported as 422 invalid_link, and the event and its own booking are left as they were. */
 	public function testAUniqueViolationDuringTheLinkIsTheInvalidLinkRefusalAndRollsTheUndoBack(): void
 	{
 		$product = self::product('CEA link race', 10);
@@ -357,6 +369,7 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 		self::assertSame(0, (int)self::$db->query('SELECT undone FROM stock_log WHERE transaction_id = ' . self::$db->quote($booked['event']['transaction_id']))->fetchColumn());
 	}
 
+	/** The database raises a unique violation when a transaction is both an event booking and another event link, in either order, except when the booking is the same user's manual event. */
 	public function testTheDatabaseRefusesATransactionUsedAsBothBookingAndLinkExceptTheManualRuleNineCase(): void
 	{
 		// An imported booked event A holds T1; linking B to T1 would count one deduction for two doses.
@@ -405,6 +418,7 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 
 	// --- #867 ---------------------------------------------------------------------------------
 
+	/** Deleting a location named by an event line sets the line location to null (ON DELETE SET NULL) and the event remains booked. */
 	public function testDeletingALocationNamedByEventHistoryNullsTheLineAndKeepsTheEvent(): void
 	{
 		$location = self::location('CEA history');
@@ -425,6 +439,7 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 
 	// --- #870 ---------------------------------------------------------------------------------
 
+	/** Deleting a location used by a consumption mapping returns 400 naming the mapping count; the owner is named only to a caller with USERS_READ, the medication never is, and the location and mapping remain. */
 	public function testDeletingALocationThatAMappingNamesIsRefusedWithTheMappingNamed(): void
 	{
 		$location = self::location('CEA mapped');
@@ -452,6 +467,7 @@ class ConsumptionEventsAuditTest extends PgsqlSchemaTestCase
 		self::assertSame($location, (int)self::$db->query('SELECT location_id FROM consumption_mappings WHERE id = ' . $mappingId)->fetchColumn(), 'and so is the mapping');
 	}
 
+	/** A deleted location is dropped from candidate_location_ids in both Get() and ListEvents(). */
 	public function testADeletedLocationIsNotOfferedAsACandidate(): void
 	{
 		$kept = self::location('CEA candidate kept');

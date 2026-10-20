@@ -19,6 +19,7 @@ use Victual\Services\UsersService;
 use Victual\Tests\Support\Operation;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 use Victual\Tests\Support\RouteInventory;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * ADR-0025 spike 2: the largest bespoke phase (its own check()/status() helpers, session
@@ -128,6 +129,10 @@ class RbacTest extends PgsqlSchemaTestCase
 	private static int $editor;
 	private static int $newUserId;
 
+	/**
+	 * Opens the schema connection and builds the roles service, a minimal DI container with a
+	 * view and URL manager, and the roles, users and files API controllers.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -142,11 +147,16 @@ class RbacTest extends PgsqlSchemaTestCase
 		self::$files = new FilesApiController(self::$container);
 	}
 
+	/** Builds a PSR-7 request to the API with the given method and parsed body. */
 	private static function request(string $method = 'GET', $body = null)
 	{
 		return (new ServerRequestFactory())->createServerRequest($method, 'http://localhost/api')->withParsedBody($body);
 	}
 
+	/**
+	 * Runs $work, takes the status of the response or of the HttpException it throws, asserts
+	 * it equals $expected, and returns the response (null on an exception).
+	 */
 	private function expectStatus(callable $work, int $expected, string $message)
 	{
 		try { $response = $work(); $actual = $response->getStatusCode(); }
@@ -155,6 +165,7 @@ class RbacTest extends PgsqlSchemaTestCase
 		return $response;
 	}
 
+	/** Replaces user 9000's direct permissions with the named ones and removes its roles. */
 	private static function grant(array $names): void
 	{
 		self::$db->exec('DELETE FROM user_permissions WHERE user_id = 9000; DELETE FROM user_roles WHERE user_id = 9000');
@@ -162,12 +173,14 @@ class RbacTest extends PgsqlSchemaTestCase
 		foreach ($names as $name) $stmt->execute([$name]);
 	}
 
+	/** Returns the id of the role with the given code. */
 	private static function roleId(string $code): int
 	{
 		$stmt = self::$db->prepare('SELECT id FROM roles WHERE code = ?'); $stmt->execute([$code]);
 		return (int)$stmt->fetchColumn();
 	}
 
+	/** Returns the id of the named permission in the hierarchy. */
 	private static function permissionId(string $name): int
 	{
 		$stmt = self::$db->prepare('SELECT id FROM permission_hierarchy WHERE name = ?'); $stmt->execute([$name]);
@@ -190,21 +203,18 @@ class RbacTest extends PgsqlSchemaTestCase
 			'PGPASSWORD' => getenv('PGPASSWORD'),
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
-		$process = proc_open(
-			array_merge([PHP_BINARY, __DIR__ . '/rbac-subprocess-helper.php'], $args),
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		$exit = proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run(array_merge([PHP_BINARY, __DIR__ . '/rbac-subprocess-helper.php'], $args), $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
+		$exit = $finished['exit'];
 		return [$exit, $output, $errors];
 	}
 
+	/**
+	 * Proves a fresh database has no user_roles rows, four built-in roles, six _VIEW
+	 * permissions backfilled for the first admin, and one MASTER_DATA_ADD permission nested
+	 * under MASTER_DATA_EDIT.
+	 */
 	public function testFreshDatabaseState(): void
 	{
 		self::assertSame(0, (int)self::$db->query('SELECT COUNT(*) FROM user_roles')->fetchColumn(), 'Fresh user_roles is empty');
@@ -218,6 +228,10 @@ class RbacTest extends PgsqlSchemaTestCase
 		self::assertSame(1, (int)self::$db->query("SELECT COUNT(*) FROM permission_hierarchy WHERE name = 'MASTER_DATA_ADD'")->fetchColumn(), 'Exactly one MASTER_DATA_ADD row');
 	}
 
+	/**
+	 * Creates the caller, target and admin fixture users (ids 9000 to 9002) that the later
+	 * tests use; the admin gets the ADMIN role and a picture name.
+	 */
 	public function testSeedFixtureUsers(): void
 	{
 		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9000, 'rbac-caller', 'fixture'), (9001, 'rbac-target', 'fixture'), (9002, 'rbac-admin', 'fixture')");
@@ -330,6 +344,11 @@ class RbacTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * Proves every ExposedEntity in the OpenAPI spec has an explicit read policy, and that each
+	 * entity with a required permission is refused with 403 for list, single-object and
+	 * userfield reads when the caller holds no grant.
+	 */
 	#[Depends('testRoutedReadsRefuseWithoutGrants')]
 	public function testExposedEntityReadPoliciesRequireGrant(): void
 	{
@@ -346,6 +365,12 @@ class RbacTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Proves every FileGroups member in the OpenAPI spec has an explicit read permission, and
+	 * that a caller without it is refused for each group and, once granted it, is let through
+	 * to the file lookup (404). Groups governed by the owning record, and groups that are
+	 * deliberately open, are checked on their own terms.
+	 */
 	#[Depends('testExposedEntityReadPoliciesRequireGrant')]
 	public function testFileGroupReadPolicies(): void
 	{
@@ -391,6 +416,10 @@ class RbacTest extends PgsqlSchemaTestCase
 		$this->expectStatus(fn() => self::$files->UploadFile(self::request(), new Response(), ['group' => 'unmapped-file-group', 'fileName' => base64_encode('nonexistent.png')]), 400, 'UploadFile refuses the same unmapped group');
 	}
 
+	/**
+	 * Proves each view leaf permission (such as STOCK_VIEW or CHORES_VIEW) lets the generic API
+	 * list its entity and resolves to that one permission only.
+	 */
 	#[Depends('testFileGroupReadPolicies')]
 	public function testGenericLeafPermissionsGrantReadOnly(): void
 	{
@@ -403,6 +432,13 @@ class RbacTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Proves role assignment and resolution: two assigned roles show up sorted as the
+	 * provenance of a resolved permission, the Child role does not confer purchasing or recipe
+	 * editing, a direct grant survives role removal, unknown roles and permissions and
+	 * malformed bodies are refused with 400, and a built-in role cannot be deleted or have its
+	 * code changed but can be renamed.
+	 */
 	#[Depends('testGenericLeafPermissionsGrantReadOnly')]
 	public function testRoleAssignmentAndPermissionResolution(): void
 	{
@@ -427,6 +463,12 @@ class RbacTest extends PgsqlSchemaTestCase
 		$this->expectStatus(fn() => self::$roleApi->EditRole(self::request('PUT', ['name' => 'Kids']), new Response(), ['roleId' => self::roleId('CHILD')]), 204, 'Built-in display name can change');
 	}
 
+	/**
+	 * Proves callers cannot hand out roles or permissions beyond what they hold: an Adult
+	 * cannot assign Admin or widen Child, and a USERS_EDIT holder cannot grant Admin, strip a
+	 * stronger user, or grant a permission it lacks. Granting a held direct permission
+	 * succeeds.
+	 */
 	#[Depends('testRoleAssignmentAndPermissionResolution')]
 	public function testPrivilegeEscalationRefusedForWeakerGrants(): void
 	{
@@ -441,6 +483,11 @@ class RbacTest extends PgsqlSchemaTestCase
 		$this->expectStatus(fn() => self::$userApi->SetPermissions(self::request('PUT', ['permissions' => [1]]), new Response(), ['userId' => 9001]), 403, 'Direct grant subset enforced');
 	}
 
+	/**
+	 * Proves MASTER_DATA_ADD follows the no-escalation rule: a USERS_EDIT caller without it
+	 * cannot grant it to a user or role or assign a role carrying it, while holders of
+	 * MASTER_DATA_EDIT or ADMIN can.
+	 */
 	#[Depends('testPrivilegeEscalationRefusedForWeakerGrants')]
 	public function testMasterDataAddGrantNeedsTheCallerToHoldIt(): void
 	{
@@ -483,6 +530,10 @@ class RbacTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Proves a user whose USERS_EDIT comes only from a role still cannot delete an
+	 * administrator's picture, and that a role name containing markup can be created.
+	 */
 	#[Depends('testMasterDataAddGrantNeedsTheCallerToHoldIt')]
 	public function testRoleOnlyEditorInheritsPictureOwnershipRule(): void
 	{
@@ -494,6 +545,11 @@ class RbacTest extends PgsqlSchemaTestCase
 		$this->expectStatus(fn() => self::$files->DeleteFile(self::request('DELETE'), new Response(), ['group' => 'userpictures', 'fileName' => base64_encode('protected.png')]), 403, 'Role-only editor cannot delete stronger user picture');
 	}
 
+	/**
+	 * Runs the own-picture read scenarios in child processes. A caller whose row claims another
+	 * user's picture name, or one that two users share, is refused with 403, while a name no
+	 * other user claims falls through to a 404 file lookup.
+	 */
 	#[Depends('testRoleOnlyEditorInheritsPictureOwnershipRule')]
 	public function testOwnPictureReadException(): void
 	{
@@ -521,6 +577,11 @@ class RbacTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Runs the own-picture delete scenarios in child processes. USERS_EDIT_SELF deletes a
+	 * picture only when no other user claims the name, and a USERS_EDIT holder cannot delete a
+	 * picture shared with an ADMIN user.
+	 */
 	#[Depends('testOwnPictureReadException')]
 	public function testOwnPictureDeleteException(): void
 	{
@@ -551,6 +612,10 @@ class RbacTest extends PgsqlSchemaTestCase
 		self::assertSame(0, $exit, "Own-picture deletion exception (strongshared.png, stronger duplicate owner): $output $errors");
 	}
 
+	/**
+	 * Proves that when a trigger makes one insert fail partway through replacing a role's
+	 * permissions, the role keeps its previous permissions.
+	 */
 	#[Depends('testOwnPictureDeleteException')]
 	public function testFailedPermissionReplacementRollsBack(): void
 	{
@@ -566,6 +631,11 @@ CREATE TRIGGER rbac_fail_grant BEFORE INSERT ON role_permissions FOR EACH ROW EX
 		self::assertSame([], User::ResolvedPermissionNames(self::$newUserId), 'New user does not receive upgrade backfill');
 	}
 
+	/**
+	 * Proves the roles seed can run twice in a transaction, backfills a previously unprivileged
+	 * user with six permissions and keeps a renamed built-in role's name; the transaction is
+	 * rolled back.
+	 */
 	#[Depends('testFailedPermissionReplacementRollsBack')]
 	public function testSeedIsIdempotentAndPreservesRenamedBuiltins(): void
 	{
@@ -580,6 +650,10 @@ CREATE TRIGGER rbac_fail_grant BEFORE INSERT ON role_permissions FOR EACH ROW EX
 		self::$db->rollBack();
 	}
 
+	/**
+	 * Proves the role and user pages (roles list, role edit form, permission list, users list)
+	 * render with status 200 and escape a role name containing HTML.
+	 */
 	#[Depends('testSeedIsIdempotentAndPreservesRenamedBuiltins')]
 	public function testRoleUiRendersAndEscapesNames(): void
 	{
@@ -593,6 +667,10 @@ CREATE TRIGGER rbac_fail_grant BEFORE INSERT ON role_permissions FOR EACH ROW EX
 		}
 	}
 
+	/**
+	 * Runs the helper with VICTUAL_DEFAULT_ROLES set to CHILD in a child process and requires
+	 * exit code 0.
+	 */
 	#[Depends('testRoleUiRendersAndEscapesNames')]
 	public function testDefaultRoleChild(): void
 	{
@@ -600,6 +678,10 @@ CREATE TRIGGER rbac_fail_grant BEFORE INSERT ON role_permissions FOR EACH ROW EX
 		self::assertSame(0, $exit, "Default roles CHILD: $output $errors");
 	}
 
+	/**
+	 * Runs the helper with VICTUAL_DEFAULT_ROLES set to ADMIN in a child process and requires
+	 * exit code 0.
+	 */
 	#[Depends('testDefaultRoleChild')]
 	public function testDefaultRoleAdmin(): void
 	{
@@ -607,6 +689,10 @@ CREATE TRIGGER rbac_fail_grant BEFORE INSERT ON role_permissions FOR EACH ROW EX
 		self::assertSame(0, $exit, "Default roles ADMIN: $output $errors");
 	}
 
+	/**
+	 * Runs the helper with VICTUAL_DEFAULT_ROLES set to the unknown code UNKNOWN in a child
+	 * process and requires exit code 0.
+	 */
 	#[Depends('testDefaultRoleAdmin')]
 	public function testDefaultRoleUnknown(): void
 	{

@@ -9,6 +9,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Victual\Services\ApiKeyService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Replays the JSON fixtures in tests/fixtures/consumption-events/ through the whole middleware stack, one process
@@ -31,6 +32,7 @@ class ConsumptionEventFixtureTest extends PgsqlSchemaTestCase
 	private static int $nextName = 0;
 	private bool $descendingTransactionProducts = false;
 
+	/** Opens the connection, adds the caller user and creates the quantity unit that every fixture world uses. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -55,6 +57,7 @@ class ConsumptionEventFixtureTest extends PgsqlSchemaTestCase
 		return $cases;
 	}
 
+	/** Checks that at least one fixture file exists and that each file name appears in the fixtures README. */
 	public function testEveryFixtureIsListedInTheReadme(): void
 	{
 		$files = array_keys(self::fixtures());
@@ -67,6 +70,7 @@ class ConsumptionEventFixtureTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Replays the partial-undo fixture with the transaction-products responses re-sorted by descending product_id, to prove the outcome does not depend on their order. */
 	public function testPartialUndoWithDescendingTransactionProducts(): void
 	{
 		$this->descendingTransactionProducts = true;
@@ -80,6 +84,7 @@ class ConsumptionEventFixtureTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Checks the fixture has its required keys, builds its world and replays each step against the expectations the fixture documents. */
 	#[DataProvider('fixtures')]
 	public function testFixtureReplaysAsDocumented(string $path): void
 	{
@@ -232,6 +237,7 @@ class ConsumptionEventFixtureTest extends PgsqlSchemaTestCase
 		return $world;
 	}
 
+	/** Returns the summed stock amount of a product, optionally limited to one location. */
 	private static function onHand(int $product, ?int $location = null): float
 	{
 		return (float)self::$db->query("SELECT COALESCE(sum(amount), 0) FROM stock WHERE product_id = $product" . ($location === null ? '' : " AND location_id = $location"))->fetchColumn();
@@ -271,6 +277,7 @@ class ConsumptionEventFixtureTest extends PgsqlSchemaTestCase
 		return preg_replace_callback('/\{\{([^{}]+)\}\}/', fn(array $found) => (string)$this->placeholder($found[1], $world), $value);
 	}
 
+	/** Resolves one placeholder expression against the world: product, location, username or saved-entry names, plus the others it handles such as the unit. */
 	private function placeholder(string $expression, array $world): mixed
 	{
 		if (preg_match('/^(product|location|user|username|saved)\.(.+)$/', $expression, $m) === 1)
@@ -403,13 +410,9 @@ class ConsumptionEventFixtureTest extends PgsqlSchemaTestCase
 			'RBAC_TEST_SCHEMA' => self::Schema(), 'PHPUNIT_DB_NAME' => getenv('PHPUNIT_DB_NAME'), 'VICTUAL_DATAPATH' => getenv('VICTUAL_DATAPATH'),
 			'PGHOST' => getenv('PGHOST'), 'PGPORT' => getenv('PGPORT'), 'PGUSER' => getenv('PGUSER'), 'PGPASSWORD' => getenv('PGPASSWORD'), 'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
-		$process = proc_open([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$response = $start === false ? null : json_decode(substr($output, $start), true);

@@ -6,6 +6,7 @@ use PDO;
 use Victual\Services\ApiKeyService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #507 regression (M7): RemoveProductFromShoppingList scope validation.
@@ -23,6 +24,7 @@ class ShoppingListScopeTest extends PgsqlSchemaTestCase
 	/** API key for the HTTP-level scenarios below; see the send() helper. */
 	private static string $apiKey = '';
 
+	/** Creates the stock service and an ADMIN user with an API key for the HTTP-level scenarios. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -41,6 +43,11 @@ class ShoppingListScopeTest extends PgsqlSchemaTestCase
 		$statement->execute([ApiKeyService::HashKey(self::$apiKey), substr(self::$apiKey, -4), ApiKeyService::API_KEY_TYPE_DEFAULT]);
 	}
 
+	/**
+	 * Returns the shopping_list rows for one product on one list, ordered by id.
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
 	private static function getShoppingListItems(int $listId, int $productId): array
 	{
 		$stmt = self::$db->prepare('SELECT id, shopping_list_id, product_id, amount FROM shopping_list WHERE shopping_list_id = ? AND product_id = ? ORDER BY id');
@@ -78,18 +85,9 @@ class ShoppingListScopeTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		// A PHP diagnostic printed before the response would otherwise make this unparseable;
 		// the response object is the last thing the helper writes.

@@ -7,6 +7,7 @@ use Victual\Services\ApiKeyService;
 use Victual\Services\Time\Instant;
 use Victual\Services\WireBooleans;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * The five wire defects the first-party Swift client (ADR-0024) found, issues #229 to #233.
@@ -57,6 +58,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 	/** @var array<string,mixed>|null victual.openapi.json, decoded once */
 	private static ?array $spec = null;
 
+	/**
+	 * Creates an administrator and a master-data-edit user with API keys, then seeds the fixture rows the tests read.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -216,18 +220,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 			// request that asked for no zone has to overwrite one an earlier one set.
 			'VICTUAL_TEST_TIMEZONE' => $timezone ?? ''
 		]);
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		self::assertIsArray($result, "the request helper printed no JSON for $method $path. stdout: $output\nstderr: $errors");
@@ -246,6 +241,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 
 	// --------------------------------------------------------------------- issue #229
 
+	/**
+	 * A POST whose Content-Type is application/json with a charset parameter is accepted and its body reaches the write.
+	 */
 	public function testAJsonBodyWithACharsetParameterIsAccepted(): void
 	{
 		// The rendering Apple's swift-openapi-runtime sends and cannot be told not to.
@@ -264,6 +262,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * A POST with a bare application/json Content-Type is still accepted.
+	 */
 	public function testAJsonBodyWithoutParametersIsStillAccepted(): void
 	{
 		$response = self::send('POST', '/api/objects/tasks', ['Content-Type' => 'application/json'], ['name' => 'WireTaskPlain']);
@@ -271,6 +272,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		self::assertSame(200, $response['status'], $response['body']);
 	}
 
+	/**
+	 * A Content-Type with mixed case and spacing around the semicolon is parsed as application/json and accepted.
+	 */
 	public function testMediaTypeParsingIsCaseInsensitiveAndTolerantOfSpacing(): void
 	{
 		$response = self::send('POST', '/api/objects/tasks', ['Content-Type' => 'Application/JSON ;charset=UTF-8'], ['name' => 'WireTaskCased']);
@@ -278,6 +282,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		self::assertSame(200, $response['status'], $response['body']);
 	}
 
+	/**
+	 * A text/plain body is refused with 400 Bad Content-Type and nothing is written.
+	 */
 	public function testANonJsonContentTypeIsStillRefused(): void
 	{
 		$response = self::send('POST', '/api/objects/tasks', ['Content-Type' => 'text/plain'], ['name' => 'WireTaskRefused']);
@@ -290,6 +297,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * A Content-Type of application/jsonx, which only shares a prefix with the media type, is refused with 400.
+	 */
 	public function testAContentTypeThatMerelyStartsWithTheMediaTypeIsRefused(): void
 	{
 		// "application/jsonx" shares a prefix with the media type and is not it. The parse
@@ -301,11 +311,17 @@ class WireContractTest extends PgsqlSchemaTestCase
 
 	// --------------------------------------------------------------------- issue #230
 
+	/**
+	 * Asserts the value is a JSON boolean, naming the field in the failure message.
+	 */
 	private static function assertBool($value, string $what): void
 	{
 		self::assertIsBool($value, "$what is " . var_export($value, true) . ', not a boolean');
 	}
 
+	/**
+	 * The spoiled flag is a boolean on the stock booking response while undone stays an integer, and the values are converted rather than replaced by a constant.
+	 */
 	public function testStockLogSpoiledIsABooleanOnTheBookingResponse(): void
 	{
 		// The route every one of the stock booking POSTs delegates to for its response body
@@ -328,6 +344,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		self::assertSame([false, true], $spoiled, 'the value was converted, not replaced by a constant');
 	}
 
+	/**
+	 * The spoiled flag is a boolean on the single-booking read.
+	 */
 	public function testStockLogSpoiledIsABooleanOnASingleBooking(): void
 	{
 		$row = self::get('/api/stock/bookings/9500');
@@ -335,6 +354,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		self::assertTrue($row['spoiled']);
 	}
 
+	/**
+	 * The spoiled flag is a boolean on every row of the generic stock_log read.
+	 */
 	public function testStockLogSpoiledIsABooleanOnTheGenericEntityRead(): void
 	{
 		$rows = self::get('/api/objects/stock_log');
@@ -346,6 +368,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * is_aggregated_amount is a boolean on the stock list and on product details, and has_childs is still a boolean there.
+	 */
 	public function testIsAggregatedAmountIsABoolean(): void
 	{
 		foreach (self::get('/api/stock') as $row)
@@ -772,6 +797,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		self::assertSame([], $localPattern, 'nothing documents the old local wall-clock rendering');
 	}
 
+	/**
+	 * Timestamps from a base table column, the changed-time row and the PHP clock match the wire pattern, and the document declares that pattern with the date-time format for those three properties.
+	 */
 	public function testTheWireRenderingIsSentWhereverItIsDocumented(): void
 	{
 		$rendering = '/' . Instant::WIRE_PATTERN . '/D';
@@ -817,6 +845,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * The document types the date-backed properties of Task, CurrentTaskResponse and ProductPriceHistory with the date format.
+	 */
 	public function testDateBackedColumnsAreTypedDate(): void
 	{
 		$schemas = self::spec()['components']['schemas'];
@@ -1029,6 +1060,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/**
+	 * Executing a chore, charging a battery and completing a task without a timestamp book the current time, not an earlier one.
+	 */
 	public function testAnAbsentTimestampBooksTheCurrentTime(): void
 	{
 		// Wire renderings compare as text in chronological order (ADR-0027 decision 2).
@@ -1050,6 +1084,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		self::assertGreaterThanOrEqual($before, self::taskDoneTimestamp($taskId), 'tasks.done_timestamp');
 	}
 
+	/**
+	 * Each accepted timestamp literal sent to chore execution, battery charge and task completion is stored and returned in the documented wire rendering.
+	 */
 	public function testAnAcceptedRenderingIsStoredAsTheDocumentedOne(): void
 	{
 		foreach (self::acceptedRenderings() as $what => [$literal, $instant])
@@ -1427,11 +1464,17 @@ class WireContractTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Returns the number of rows in the table.
+	 */
 	private static function rowCount(string $table): int
 	{
 		return (int)self::$db->query('SELECT count(*) FROM ' . $table)->fetchColumn();
 	}
 
+	/**
+	 * Returns the task's done_timestamp in the wire rendering, or null when it is not set.
+	 */
 	private static function taskDoneTimestamp(int $taskId): ?string
 	{
 		$statement = self::$db->prepare('SELECT done_timestamp FROM tasks WHERE id = ?');
@@ -1443,6 +1486,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 
 	// --------------------------------------------------------------------- issue #232
 
+	/**
+	 * Checks which union members admit another member's rows in the generic list and single reads; exactly the two documented overlaps are found.
+	 */
 	public function testTheGenericEntityUnionMembersOverlapOnlyWhereDocumented(): void
 	{
 		$spec = self::spec();
@@ -1491,6 +1537,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		self::assertSame(['list' => $expected, 'single' => $expected], $overlaps);
 	}
 
+	/**
+	 * The generic POST and PUT request bodies reference GenericEntityWrite instead of the read union.
+	 */
 	public function testTheWriteBodiesDoNotShareTheReadUnion(): void
 	{
 		$spec = self::spec();
@@ -1508,6 +1557,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Quantity unit rows carry name_plural and no qu_id_stock, so they cannot decode as a Product, and location rows carry parent_location_id.
+	 */
 	public function testQuantityUnitsDoNotDecodeAsProducts(): void
 	{
 		// The concrete loss issue #232 names: name_plural is on no other union member, so a
@@ -1828,6 +1880,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		return $single ? $schema : $schema['items'];
 	}
 
+	/**
+	 * Returns the schema names in the anyOf union of the generic entity read, for the single read or the list.
+	 */
 	private static function unionMembers(array $spec, bool $single): array
 	{
 		$schema = $spec['paths'][$single ? '/objects/{entity}/{objectId}' : '/objects/{entity}']['get']['responses']['200']['content']['application/json']['schema'];
@@ -2032,6 +2087,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		'Role' => 'roles',
 	];
 
+	/**
+	 * For each response schema mapped to a table, every property that has a column is declared nullable exactly when the migrated column is nullable.
+	 */
 	public function testResponseColumnNullabilityMatchesTheMigratedSchema(): void
 	{
 		$statement = self::$db->prepare('SELECT table_name, column_name, is_nullable FROM information_schema.columns WHERE table_schema = ?');
@@ -2061,6 +2119,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		self::assertSame([], $failures, implode("\n", $failures));
 	}
 
+	/**
+	 * Setting every nullable property of ten entities to NULL inside a rolled-back transaction still produces rows that validate against their response schemas.
+	 */
 	public function testExplicitNullColumnsValidateAgainstResponseSchemas(): void
 	{
 		$failures = [];
@@ -2102,6 +2163,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		self::assertSame([], $failures, implode("\n", $failures));
 	}
 
+	/**
+	 * Validating a product row with three required properties nulled reports exactly those three type errors.
+	 */
 	public function testValidationReportsEveryInvalidProperty(): void
 	{
 		$row = self::get('/api/objects/products/9500');
@@ -2114,6 +2178,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		self::assertSame(['location_id: type', 'name: type', 'qu_id_stock: type'], $errors);
 	}
 
+	/**
+	 * Every single-object read of each mapped entity returns userfields as an object and validates against its schema.
+	 */
 	public function testServedSingleObjectsValidateWithEmptyUserfields(): void
 	{
 		$failures = [];
@@ -2138,6 +2205,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		self::assertSame([], $failures, implode("\n", $failures));
 	}
 
+	/**
+	 * Storage class temperatures come back as numbers or null, with fractions and zero preserved, on both the list and the single read, and the rows validate against StorageClass.
+	 */
 	public function testStorageClassTemperaturesAreNumbersOrNullOnBothReads(): void
 	{
 		self::$db->exec("INSERT INTO storage_classes (id, name, min_temp_c, max_temp_c) VALUES
@@ -2171,6 +2241,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * The location and default consume location in product details carry parent_location_id and validate against the Location and ProductDetailsResponse schemas.
+	 */
 	public function testProductDetailsLocationsIncludeTheirParent(): void
 	{
 		self::$db->exec("INSERT INTO locations (id, name, parent_location_id) VALUES (9580, 'Wire child shelf', 9500)");
@@ -2198,6 +2271,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * The product, chore, battery, task and stock domain responses validate against their schemas, including nullable history and assignment fields.
+	 */
 	public function testDomainResponsesValidateNullableHistoryAndAssignments(): void
 	{
 		$failures = [];
@@ -2227,6 +2303,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 
 	// --------------------------------------------------------------------- issue #233
 
+	/**
+	 * The document describes the current-user response as an array of UserDto, and the route returns an array whose first element is the calling user.
+	 */
 	public function testCurrentUserIsDocumentedAsTheArrayItReturns(): void
 	{
 		$documented = self::spec()['paths']['/user']['get']['responses']['200']['content']['application/json']['schema'];

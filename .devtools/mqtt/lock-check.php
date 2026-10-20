@@ -36,6 +36,7 @@ if (!defined('VICTUAL_DATAPATH'))
 }
 
 require_once __DIR__ . '/../../packages/autoload.php';
+require_once __DIR__ . '/../../tests/Support/Subprocess.php';
 
 if (file_exists(VICTUAL_DATAPATH . '/config.php'))
 {
@@ -71,36 +72,34 @@ if ($holdIndex !== false)
 
 $hold = 3.0;
 
-$descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-$child = proc_open(
-	escapeshellcmd(PHP_BINARY) . ' ' . escapeshellarg(__FILE__) . ' --hold ' . $hold,
-	$descriptors,
-	$pipes,
-	null,
-	// getenv() rather than $_ENV: PHP's default variables_order has no "E", so $_ENV is
-	// empty and the child would inherit none of the connection settings its config.php
-	// reads - and would then report "never took the lock" for a reason that has nothing to
-	// do with locking.
-	['VICTUAL_DATAPATH' => VICTUAL_DATAPATH] + getenv()
-);
-
-if (!is_resource($child))
+try
+{
+	$child = \Victual\Tests\Support\Subprocess::start(
+		escapeshellcmd(PHP_BINARY) . ' ' . escapeshellarg(__FILE__) . ' --hold ' . $hold,
+		// getenv() rather than $_ENV: PHP's default variables_order has no "E", so $_ENV is
+		// empty and the child would inherit none of the connection settings its config.php
+		// reads - and would then report "never took the lock" for a reason that has nothing to
+		// do with locking.
+		['VICTUAL_DATAPATH' => VICTUAL_DATAPATH] + getenv()
+	);
+}
+catch (RuntimeException $exception)
 {
 	fwrite(STDERR, "Could not start the holder process.\n");
 	exit(1);
 }
 
 // Wait until the child says it actually has the lock, so the parent's wait measures
-// contention rather than process startup
-$announced = fgets($pipes[1]);
+// contention rather than process startup. The helper keeps draining the child's stderr
+// meanwhile; a child that never answers is given 60 s.
+$announced = $child->readLine(60.0);
 
 if (trim((string)$announced) !== 'held')
 {
 	// Whatever the holder said instead is the actual diagnosis - a connection failure, a
 	// missing table - and printing it beats reporting a lock that did not hold
 	fwrite(STDERR, "The holder never took the lock: " . var_export($announced, true) . "\n");
-	fwrite(STDERR, (string)stream_get_contents($pipes[2]));
-	proc_terminate($child);
+	fwrite(STDERR, $child->abort()['stderr']);
 	exit(1);
 }
 
@@ -113,9 +112,7 @@ $dialect->WithPublicationLock(function ()
 
 $waited = microtime(true) - $startedWaiting;
 
-fclose($pipes[1]);
-fclose($pipes[2]);
-proc_close($child);
+$child->finish();
 
 $serialised = $waited > ($hold * 0.5);
 $engine = $dialect->GetName();

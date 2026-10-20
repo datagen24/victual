@@ -5,6 +5,7 @@ namespace Victual\Tests\Pgsql;
 use PDO;
 use Victual\Services\ApiKeyService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #553 (maintainer decision D4): creating a product with a parent_product_id and no
@@ -29,6 +30,10 @@ class ProductParentStockUnitDefaultTest extends PgsqlSchemaTestCase
 	private static int $otherQuId;
 	private static int $parentProductId;
 
+	/**
+	 * Creates a user with MASTER_DATA_EDIT and STOCK_VIEW and an API key, a location, two quantity
+	 * units, and a parent product that uses the first unit throughout.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -68,6 +73,10 @@ class ProductParentStockUnitDefaultTest extends PgsqlSchemaTestCase
 		self::$parentProductId = (int)$productStatement->fetchColumn();
 	}
 
+	/**
+	 * Sends an API request with the fixture API key and a JSON content type, with an optional body,
+	 * and returns the decoded response.
+	 */
 	private static function Request(string $method, string $path, ?array $body = null): array
 	{
 		$spec = [
@@ -99,19 +108,9 @@ class ProductParentStockUnitDefaultTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$requestLabel = ($spec['method'] ?? '?') . ' ' . ($spec['path'] ?? '?');
 
@@ -122,6 +121,10 @@ class ProductParentStockUnitDefaultTest extends PgsqlSchemaTestCase
 		return $result;
 	}
 
+	/**
+	 * Creating a product with a parent_product_id and no qu_id_stock stores the parent's stock
+	 * unit.
+	 */
 	public function testCreatingAProductWithAParentAndNoStockUnitDefaultsToTheParentsOwn(): void
 	{
 		// Given/When: a sub product created with only parent_product_id, no qu_id_stock.
@@ -144,6 +147,10 @@ class ProductParentStockUnitDefaultTest extends PgsqlSchemaTestCase
 		self::assertSame(self::$parentQuId, (int)$stmt->fetchColumn());
 	}
 
+	/**
+	 * Creating a product with a parent and its own, different qu_id_stock stores the caller's unit,
+	 * not the parent's.
+	 */
 	public function testCreatingAProductWithAParentAndAnExplicitStockUnitKeepsTheCallersChoice(): void
 	{
 		// Given/When: a sub product created with parent_product_id AND its own qu_id_stock,
@@ -167,6 +174,7 @@ class ProductParentStockUnitDefaultTest extends PgsqlSchemaTestCase
 		self::assertSame(self::$otherQuId, (int)$stmt->fetchColumn());
 	}
 
+	/** Creating a product with no parent stores the given stock unit and a null parent_product_id. */
 	public function testCreatingAProductWithNoParentIsUnaffected(): void
 	{
 		// Given/When: a plain top-level product, no parent_product_id at all.

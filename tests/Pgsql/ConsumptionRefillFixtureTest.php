@@ -8,6 +8,7 @@ use Victual\Services\ApiKeyService;
 use Victual\Services\ConsumptionRecipeService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Replays the JSON fixtures in tests/fixtures/consumption-refill/ through the whole middleware stack, one process per
@@ -30,6 +31,9 @@ class ConsumptionRefillFixtureTest extends PgsqlSchemaTestCase
 	private static int $nextUser = 9701;
 	private static int $nextName = 0;
 
+	/**
+	 * Creates a quantity unit, a location and a product holding 10 units in stock for the fixtures to run against.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -58,6 +62,9 @@ class ConsumptionRefillFixtureTest extends PgsqlSchemaTestCase
 		return $cases;
 	}
 
+	/**
+	 * Every fixture file found is named in the fixtures README.
+	 */
 	public function testEveryFixtureIsListedInTheReadme(): void
 	{
 		$files = array_keys(self::fixtures());
@@ -70,6 +77,9 @@ class ConsumptionRefillFixtureTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Replays one fixture's steps through the API as the named users and checks each response status and body against what the fixture expects, saving values for later steps.
+	 */
 	#[DataProvider('fixtures')]
 	public function testFixtureReplaysAsDocumented(string $path): void
 	{
@@ -185,6 +195,9 @@ class ConsumptionRefillFixtureTest extends PgsqlSchemaTestCase
 		return preg_replace_callback('/\{\{([^{}]+)\}\}/', fn(array $found) => (string)$this->placeholder($found[1], $world), $value);
 	}
 
+	/**
+	 * Resolves a recipe, user or saved placeholder from the world to its id or saved value, and fails the test when it names nothing.
+	 */
 	private function placeholder(string $expression, array $world): mixed
 	{
 		if (preg_match('/^(recipe|user|saved)\.(.+)$/', $expression, $m) === 1)
@@ -294,13 +307,9 @@ class ConsumptionRefillFixtureTest extends PgsqlSchemaTestCase
 			'RBAC_TEST_SCHEMA' => self::Schema(), 'PHPUNIT_DB_NAME' => getenv('PHPUNIT_DB_NAME'), 'VICTUAL_DATAPATH' => getenv('VICTUAL_DATAPATH'),
 			'PGHOST' => getenv('PGHOST'), 'PGPORT' => getenv('PGPORT'), 'PGUSER' => getenv('PGUSER'), 'PGPASSWORD' => getenv('PGPASSWORD'), 'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
-		$process = proc_open([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$response = $start === false ? null : json_decode(substr($output, $start), true);

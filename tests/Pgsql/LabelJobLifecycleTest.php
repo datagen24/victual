@@ -14,6 +14,7 @@ use Victual\Services\Labels\LabelValidationException;
 use Victual\Services\Labels\PrintAttemptService;
 use Victual\Services\Labels\PrinterConfigurationService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #516 (audit finding M16): label job lifecycle boundary cases
@@ -41,6 +42,10 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 	/** Distinct locations across the class, so no two jobs ever contend for one label. */
 	private static int $locationSequence = 0;
 
+	/**
+	 * Loads the label test support, creates the caller and an ADMIN user, and publishes the
+	 * location label template used by the tests.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -74,6 +79,7 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** The Brother QL driver definition from the fixtures, decoded. */
 	private static function driverDefinition(): array
 	{
 		return json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/.devtools/labels/fixtures/brother-ql.json'), true, 512, JSON_THROW_ON_ERROR);
@@ -92,6 +98,7 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 		return [$worker, $printer];
 	}
 
+	/** Inserts a location whose name is $name plus a running number, and returns its id. */
 	private static function newLocation(string $name): int
 	{
 		self::$locationSequence++;
@@ -114,6 +121,10 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 		return $template;
 	}
 
+	/**
+	 * Enqueues a print job for a new location with the shared template on the printer, and returns
+	 * the job id.
+	 */
 	private static function enqueue(int $printerId, string $locationName): int
 	{
 		return self::tx(static fn () => (new LabelPrintJobService(self::$db))
@@ -129,6 +140,7 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 		return $jobId;
 	}
 
+	/** The print_jobs row with the given id. */
 	private static function jobRow(int $jobId): array
 	{
 		return self::$db->query('SELECT * FROM print_jobs WHERE id = ' . $jobId)->fetch(PDO::FETCH_ASSOC);
@@ -358,7 +370,6 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 		$key = 'lifecycle-race-' . bin2hex(random_bytes(6));
 		$request = ['op' => 'print', 'seq' => 1];
 		$process = null;
-		$pipes = [];
 
 		// A plain try/finally rather than tx(): this test must hold the reservation open
 		// (uncommitted) *while* the child races it, which is the one shape none of this
@@ -381,11 +392,8 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 				'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 			]), 'is_scalar');
 
-			$process = proc_open(
+			$process = Subprocess::start(
 				[PHP_BINARY, __DIR__ . '/label-idempotency-subprocess-helper.php', (string)self::CALLER_USER, 'print', $key, json_encode($request)],
-				[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-				$pipes,
-				null,
 				$environment
 			);
 
@@ -410,11 +418,9 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 			}
 		}
 
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed($process->finish());
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		self::assertIsArray($result, "the child printed no JSON. stdout: $output\nstderr: $errors");
@@ -428,6 +434,10 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 
 	// --- Source-only: printer deletion sweeps running and cancelled jobs too ------------------
 
+	/**
+	 * Inserts print attempt number 1 for the job and worker, with a lease of $leaseSeconds, ended
+	 * or open as $ended says and with the given outcome, and returns its id.
+	 */
 	private static function insertAttempt(int $jobId, int $workerId, int $leaseSeconds, ?string $outcome, bool $ended): int
 	{
 		$outboxId = self::jobRow($jobId)['outbox_id'];
@@ -438,6 +448,7 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/** Inserts a 30-day default API key for the admin user and returns the plain key. */
 	private static function issueAdminKey(): string
 	{
 		$key = bin2hex(random_bytes(25));
@@ -464,19 +475,9 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]), 'is_scalar');
 
-		$process = proc_open(
-			[PHP_BINARY, VICTUAL_ROOT_PATH . '/tests/Pgsql/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$environment
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, VICTUAL_ROOT_PATH . '/tests/Pgsql/request-subprocess-helper.php', base64_encode(json_encode($spec))], $environment));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		self::assertIsArray($result, "the request helper printed no JSON for $method $path. stdout: $output\nstderr: $errors");

@@ -7,6 +7,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Depends;
 use Victual\Services\ApiKeyService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #844 end to end: GET /api/stock/barcodes/external-lookup/{barcode}?add=true with a
@@ -27,6 +28,10 @@ class BarcodeLookupNonFiniteHttpTest extends PgsqlSchemaTestCase
 	private static int $quPurchase = 0;
 	private static int $quStock = 0;
 
+	/**
+	 * Creates an ADMIN user with an API key and picks the first active location and two active
+	 * quantity units for the generated plugin to use.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -65,18 +70,9 @@ class BarcodeLookupNonFiniteHttpTest extends PgsqlSchemaTestCase
 			'VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => $pluginClass,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);
@@ -154,6 +150,10 @@ PLUGIN);
 		];
 	}
 
+	/**
+	 * With add=true, a plugin output holding a non-finite or otherwise unusable value answers 400
+	 * with the expected message and writes no product, barcode or conversion row.
+	 */
 	#[Depends('testTheSubprocessCanReadStock')]
 	#[DataProvider('refusedOutputProvider')]
 	public function testAddingAProductWhoseSourceOutputIsUnusableIsRefusedWith400AndWritesNothing(string $overrideFields, string $expectedMessage, string $barcode): void
@@ -205,6 +205,10 @@ PLUGIN);
 		}
 	}
 
+	/**
+	 * The subprocess API key can read stock and get 200, so later failures are not an
+	 * authentication problem.
+	 */
 	public function testTheSubprocessCanReadStock(): void
 	{
 		$probe = self::send('/api/stock', 'DoesNotMatterForThisRequest');

@@ -6,6 +6,7 @@ use PDO;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Victual\Services\ApiKeyService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * #487 remediation regression coverage for issues #535, #544, #582 and #583: input
@@ -56,6 +57,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 	private static string $apiKey;
 	private static int $quId;
 
+	/**
+	 * Creates a user with the stock and shopping list permissions the tests exercise, an API
+	 * key for it, and the quantity unit used by every fixture product.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -97,6 +102,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 	// HTTP + fixture helpers (same pattern as ApiInputShapesTest.php/StockEntryEditContractTest.php)
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * Sends one API request in a child process with the test user's API key and returns the
+	 * decoded result (status and body).
+	 */
 	private static function Request(string $method, string $path, ?array $body = null): array
 	{
 		$spec = [
@@ -118,18 +127,9 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		self::assertIsArray($result, "the request helper printed no JSON for $method $path. stdout: $output\nstderr: $errors");
@@ -150,6 +150,7 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		return $body;
 	}
 
+	/** Inserts one row into $table from the column map and returns the new id. */
 	private static function insertRow(string $table, array $columns): int
 	{
 		$names = implode(', ', array_keys($columns));
@@ -160,16 +161,22 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/** Inserts a location with the given name and returns its id. */
 	private static function insertLocation(string $name): int
 	{
 		return self::insertRow('locations', ['name' => $name]);
 	}
 
+	/** Inserts a shopping location (store) with the given name and returns its id. */
 	private static function insertShoppingLocation(string $name): int
 	{
 		return self::insertRow('shopping_locations', ['name' => $name]);
 	}
 
+	/**
+	 * Inserts a product at the given location, using the shared quantity unit for purchase and
+	 * stock, and returns its id.
+	 */
 	private static function insertProduct(string $name, int $locationId): int
 	{
 		return self::insertRow('products', [
@@ -191,6 +198,11 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		return [$locationId, $productId];
 	}
 
+	/**
+	 * Inserts a stock row for the product with a unique stock_id, a best-before date 30 days
+	 * out and today as the purchased date; $overrides replace those columns. Returns the row
+	 * id.
+	 */
 	private static function insertStock(int $productId, int $locationId, float $amount, array $overrides = []): int
 	{
 		static $n = 0;
@@ -206,6 +218,7 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		], $overrides));
 	}
 
+	/** Returns how many stock rows the product has. */
 	private static function stockCount(int $productId): int
 	{
 		$statement = self::$db->prepare('SELECT count(*) FROM stock WHERE product_id = ?');
@@ -214,6 +227,7 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/** Returns how many stock_log rows the product has. */
 	private static function stockLogCount(int $productId): int
 	{
 		$statement = self::$db->prepare('SELECT count(*) FROM stock_log WHERE product_id = ?');
@@ -222,6 +236,7 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/** Returns the stock row with the given id, failing the test if it does not exist. */
 	private static function stockRow(int $stockRowId): array
 	{
 		$statement = self::$db->prepare('SELECT * FROM stock WHERE id = ?');
@@ -232,6 +247,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		return $row;
 	}
 
+	/**
+	 * Returns the id, product_id and done columns of the items on the shopping list, ordered by
+	 * id.
+	 */
 	private static function shoppingListRows(int $listId): array
 	{
 		$statement = self::$db->prepare('SELECT id, product_id, done FROM shopping_list WHERE shopping_list_id = ? ORDER BY id');
@@ -256,6 +275,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 	// #535: shopping_location_id naming no active shopping location
 	// ================================================================================
 
+	/**
+	 * Proves that a purchase naming a shopping_location_id that does not exist is refused with
+	 * a 400 and writes no stock or stock_log row.
+	 */
 	public function testAddProductWithNonexistentShoppingLocationIsRefusedWithoutBooking(): void
 	{
 		[$locationId, $productId] = self::freshProduct('535 Add Nonexistent Store');
@@ -270,6 +293,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		self::assertSame(0, self::stockLogCount($productId), 'a refused purchase must not have written a ledger row');
 	}
 
+	/**
+	 * Proves that an upward inventory correction naming a nonexistent shopping_location_id is
+	 * refused with a 400 and leaves the existing entry and the ledger unchanged.
+	 */
 	public function testInventoryUpwardCorrectionWithNonexistentShoppingLocationIsRefusedWithoutBooking(): void
 	{
 		[$locationId, $productId] = self::freshProduct('535 Inventory Nonexistent Store');
@@ -309,6 +336,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 	// #544: best_before_date / purchased_date / price / location_id silently defaulted
 	// ================================================================================
 
+	/**
+	 * Proves that a purchase whose best_before_date is an array is refused with a 400 and
+	 * writes nothing.
+	 */
 	public function testAddProductWithArrayBestBeforeDateIsRefusedWithoutBooking(): void
 	{
 		[, $productId] = self::freshProduct('544 Add Array Date');
@@ -323,6 +354,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		self::assertSame(0, self::stockLogCount($productId), 'a refused purchase must not have written a ledger row either');
 	}
 
+	/**
+	 * Proves that a purchase whose purchased_date is not a date is refused with a 400 and
+	 * writes nothing.
+	 */
 	public function testAddProductWithUnreadablePurchasedDateIsRefusedWithoutBooking(): void
 	{
 		[, $productId] = self::freshProduct('544 Add Bad Purchased Date');
@@ -337,6 +372,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		self::assertSame(0, self::stockLogCount($productId), 'a refused purchase must not have written a ledger row either');
 	}
 
+	/**
+	 * Proves that a purchase with a non-numeric price is refused with a 400 and is not booked
+	 * with the price silently dropped.
+	 */
 	public function testAddProductWithNonNumericPriceIsRefusedWithoutBooking(): void
 	{
 		[, $productId] = self::freshProduct('544 Add Bad Price');
@@ -351,6 +390,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		self::assertSame(0, self::stockLogCount($productId), 'a refused purchase must not have written a ledger row either');
 	}
 
+	/**
+	 * Proves that a purchase with a malformed location_id is refused with a 400 and is not
+	 * booked at the product's default location.
+	 */
 	public function testAddProductWithMalformedLocationIdIsRefusedWithoutBooking(): void
 	{
 		[, $productId] = self::freshProduct('544 Add Bad Location');
@@ -365,6 +408,7 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		self::assertSame(0, self::stockLogCount($productId), 'a refused purchase must not have written a ledger row either');
 	}
 
+	/** Proves that a purchase at an inactive location is refused with a 400 and writes nothing. */
 	public function testAddProductWithInactiveLocationIsRefusedWithoutBooking(): void
 	{
 		[, $productId] = self::freshProduct('544 Add Inactive Location');
@@ -380,6 +424,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		self::assertSame(0, self::stockLogCount($productId), 'a refused purchase must not have written a ledger row either');
 	}
 
+	/**
+	 * Proves that an inventory correction whose best_before_date is an array is refused with a
+	 * 400 and adds no stock or ledger row.
+	 */
 	public function testInventoryWithArrayBestBeforeDateIsRefusedWithoutBooking(): void
 	{
 		[$locationId, $productId] = self::freshProduct('544 Inventory Array Date');
@@ -395,6 +443,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		self::assertSame(0, self::stockLogCount($productId), 'a refused inventory correction must not have written a ledger row either');
 	}
 
+	/**
+	 * Proves that an inventory correction naming an inactive shopping location is refused with
+	 * a 400 and adds no stock or ledger row.
+	 */
 	public function testInventoryWithInactiveShoppingLocationIsRefusedWithoutBooking(): void
 	{
 		[$locationId, $productId] = self::freshProduct('544 Inventory Inactive Store');
@@ -519,6 +571,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 	// #582: list_id on the shopping-list routes
 	// ================================================================================
 
+	/**
+	 * Proves that clearing the shopping list with a non-numeric list_id is refused and leaves
+	 * both the default list and another list untouched.
+	 */
 	public function testClearShoppingListWithNonNumericListIdIsRefusedAndLeavesListsUntouched(): void
 	{
 		self::resetShoppingListRows();
@@ -533,6 +589,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		self::assertCount(1, self::shoppingListRows($otherListId), 'the other list must be untouched too');
 	}
 
+	/**
+	 * Proves that clearing the shopping list with list_id 0 is refused rather than silently
+	 * clearing the default list.
+	 */
 	public function testClearShoppingListWithZeroListIdIsRefusedAndLeavesDefaultListUntouched(): void
 	{
 		self::resetShoppingListRows();
@@ -547,6 +607,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		self::assertCount(1, self::shoppingListRows(1), 'list_id:0 must not silently clear list 1');
 	}
 
+	/**
+	 * Proves that adding missing products to the shopping list with an array list_id is refused
+	 * rather than falling back to the default list.
+	 */
 	public function testAddMissingProductsToShoppingListWithArrayListIdIsRefused(): void
 	{
 		self::resetShoppingListRows();
@@ -565,6 +629,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		self::assertCount(0, self::shoppingListRows(1), 'an array list_id must not silently apply the default list');
 	}
 
+	/**
+	 * Proves that adding overdue products to the shopping list with a non-numeric list_id is
+	 * refused.
+	 */
 	public function testAddOverdueProductsToShoppingListWithNonNumericListIdIsRefused(): void
 	{
 		$result = self::Request('POST', '/api/stock/shoppinglist/add-overdue-products', ['list_id' => 'abc']);
@@ -572,6 +640,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		self::AssertRefused($result, 'POST /stock/shoppinglist/add-overdue-products with list_id:"abc"');
 	}
 
+	/**
+	 * Proves that adding expired products to the shopping list with a non-numeric list_id is
+	 * refused.
+	 */
 	public function testAddExpiredProductsToShoppingListWithNonNumericListIdIsRefused(): void
 	{
 		$result = self::Request('POST', '/api/stock/shoppinglist/add-expired-products', ['list_id' => 'abc']);
@@ -579,6 +651,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		self::AssertRefused($result, 'POST /stock/shoppinglist/add-expired-products with list_id:"abc"');
 	}
 
+	/**
+	 * Proves that adding a product to the shopping list with a non-numeric list_id is refused
+	 * and creates no row on the default list.
+	 */
 	public function testAddProductToShoppingListWithNonNumericListIdIsRefusedWithoutCreatingARow(): void
 	{
 		self::resetShoppingListRows();
@@ -590,6 +666,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		self::assertCount(0, self::shoppingListRows(1), 'a refused add-product must not have created a row on the default list');
 	}
 
+	/**
+	 * Proves that removing a product from the shopping list with a non-numeric list_id is
+	 * refused and does not delete the row on the default list.
+	 */
 	public function testRemoveProductFromShoppingListWithNonNumericListIdIsRefusedWithoutDeletingARow(): void
 	{
 		self::resetShoppingListRows();
@@ -621,6 +701,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 	// #583: the measurement flag "gross"
 	// ================================================================================
 
+	/**
+	 * Inserts an opened stock row of amount 1 with the given opened_amount in the shared unit
+	 * and no tare, and returns its id.
+	 */
 	private static function insertOpenSingleUnitStock(int $productId, int $locationId, float $openedAmount): int
 	{
 		return self::insertStock($productId, $locationId, 1, [
@@ -632,6 +716,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		]);
 	}
 
+	/**
+	 * Proves that measuring a stock entry with gross given as the string "false" is refused and
+	 * the entry's opened_amount is unchanged.
+	 */
 	public function testMeasureStockEntryWithStringFalseGrossIsRefusedWithoutMeasuring(): void
 	{
 		[$locationId, $productId] = self::freshProduct('583 Measure String Gross');
@@ -669,6 +757,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		self::assertEqualsWithDelta(1.0, (float)$row['opened_amount'], 0.0001, 'gross:true must still subtract the tare (1.2 - 0.2)');
 	}
 
+	/**
+	 * Proves that opening a product with a measurement whose gross is the string "false" is
+	 * refused and the entry stays unopened.
+	 */
 	public function testOpenProductWithStringFalseMeasurementGrossIsRefusedWithoutOpening(): void
 	{
 		[$locationId, $productId] = self::freshProduct('583 Open String Gross');
@@ -709,6 +801,7 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 	// #786: transaction_type that is not a string
 	// ================================================================================
 
+	/** Returns the transaction_type of each stock_log row of the product, in id order. */
 	private static function stockLogTransactionTypes(int $productId): array
 	{
 		$statement = self::$db->prepare('SELECT transaction_type FROM stock_log WHERE product_id = ? ORDER BY id');
@@ -728,6 +821,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/**
+	 * Proves that a purchase with an unacceptable transaction_type is refused with a 400 and
+	 * writes no stock_log row and no stock.
+	 */
 	#[DataProvider('UnacceptableTransactionTypes')]
 	public function testAddProductWithUnacceptableTransactionTypeIsRefusedWithoutBooking(mixed $transactionType): void
 	{
@@ -743,6 +840,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		self::assertSame(0, self::stockCount($productId), 'a refused add must not book stock');
 	}
 
+	/**
+	 * Proves that a purchase by barcode whose transaction_type is the JSON value true is
+	 * refused and writes no stock_log row.
+	 */
 	public function testAddProductByBarcodeWithJsonTrueTransactionTypeIsRefusedWithoutBooking(): void
 	{
 		[, $productId] = self::freshProduct('786 Add By Barcode Bad Type');
@@ -769,6 +870,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/**
+	 * Proves that a purchase with an accepted transaction_type succeeds and the stock_log row
+	 * carries the expected type.
+	 */
 	#[DataProvider('AcceptedAddTransactionTypes')]
 	public function testAddProductWithAcceptedTransactionTypeBooksIt(?string $transactionType, string $expected): void
 	{
@@ -786,6 +891,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		self::assertSame([$expected], self::stockLogTransactionTypes($productId));
 	}
 
+	/**
+	 * Proves that a consumption with an unacceptable transaction_type is refused with a 400,
+	 * writes no stock_log row and leaves the stock amount unchanged.
+	 */
 	#[DataProvider('UnacceptableTransactionTypes')]
 	public function testConsumeProductWithUnacceptableTransactionTypeIsRefusedWithoutBooking(mixed $transactionType): void
 	{
@@ -813,6 +922,10 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/**
+	 * Proves that a consumption with an accepted transaction_type succeeds and the stock_log
+	 * row carries the expected type.
+	 */
 	#[DataProvider('AcceptedConsumeTransactionTypes')]
 	public function testConsumeProductWithAcceptedTransactionTypeBooksIt(?string $transactionType, string $expected): void
 	{

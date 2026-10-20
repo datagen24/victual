@@ -5,6 +5,7 @@ namespace Victual\Tests\Pgsql;
 use PDO;
 use Victual\Services\ApiKeyService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue 742, ADR-0043 decisions 2 and 7: the create gates of POST /api/objects/{entity}.
@@ -49,6 +50,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 	private static int $locationId;
 	private static int $unitId;
 
+	/** Creates a location, a unit and eight callers (add-only, edit-only, admin, chores, tasks, child, adult, add-and-shopping) with the permissions or built-in roles their names say, an API key for each, and the auto-add shopping list setting for two of them. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -92,6 +94,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 	// Helpers
 	// ------------------------------------------------------------------------------
 
+	/** Inserts a read-write API key for the user and returns its plaintext. */
 	private static function issueKey(int $userId): string
 	{
 		$plaintext = bin2hex(random_bytes(25));
@@ -122,18 +125,9 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$response = json_decode($output, true);
 		self::assertIsArray($response, 'The request helper answered: ' . $output . $errors);
@@ -149,6 +143,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 		return $response;
 	}
 
+	/** Inserts a row built from the column map and returns the new id. */
 	private static function insertRow(string $table, array $columns): int
 	{
 		$names = implode(', ', array_keys($columns));
@@ -159,6 +154,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/** Inserts a product at the fixture location using the fixture unit for every unit column, and returns its id. */
 	private static function insertProduct(string $name): int
 	{
 		return self::insertRow('products', [
@@ -193,6 +189,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 		return $entity === 'product_barcodes' ? 'barcode' : 'name';
 	}
 
+	/** Counts the rows of the entity whose name column (barcode for product_barcodes) equals the tag. */
 	private static function rowCount(string $entity, string $tag): int
 	{
 		$statement = self::$db->prepare("SELECT COUNT(*) FROM $entity WHERE " . self::nameColumn($entity) . ' = ?');
@@ -256,6 +253,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 	// Decision 2
 	// ------------------------------------------------------------------------------
 
+	/** An account holding only MASTER_DATA_ADD creates a row in each of the six add entities, getting 200 and a created_object_id. */
 	public function testAddOnlyAccountCreatesEachOfTheSixEntities(): void
 	{
 		foreach (self::ADD_ENTITIES as $entity)
@@ -269,6 +267,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Accounts holding only MASTER_DATA_EDIT, and ADMIN, still create a row in each of the six add entities. */
 	public function testMasterDataEditOnlyAndAdminStillCreateTheSixEntities(): void
 	{
 		foreach (['edit-only', 'admin'] as $caller)
@@ -284,6 +283,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** An add-only account gets 403 asking for MASTER_DATA_EDIT when it edits or deletes a row of any of the six entities, and the row is unchanged. */
 	public function testAddOnlyAccountCannotEditOrDeleteTheSixEntities(): void
 	{
 		foreach (self::ADD_ENTITIES as $entity)
@@ -301,6 +301,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** An add-only account gets 403 asking for MASTER_DATA_EDIT when it creates a quantity unit conversion, and no row is written. */
 	public function testAddOnlyAccountCannotCreateAConversion(): void
 	{
 		$productId = self::insertProduct('conversion target');
@@ -313,6 +314,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 		self::assertSame($before, (int)self::$db->query('SELECT COUNT(*) FROM quantity_unit_conversions')->fetchColumn(), 'No conversion row was written');
 	}
 
+	/** An add-only account gets 403 asking for MASTER_DATA_EDIT when it creates any editable entity outside the add set and the own-gate set, and no row is written. */
 	public function testAddOnlyAccountCannotCreateAnyOtherEditableEntity(): void
 	{
 		foreach (self::otherEditableEntities() as $entity)
@@ -325,6 +327,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** An add-only account gets 403 asking for MASTER_DATA_EDIT on creating each no-edit entity, because the permission gate runs before the entity check. */
 	public function testAddOnlyAccountIsRefusedAtTheGateOnNoEditEntitiesToo(): void
 	{
 		// ExposedEntityNoEdit entities are not creatable at all, but the permission gate runs first.
@@ -336,6 +339,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** MASTER_DATA_EDIT and ADMIN pass the create gate (no 403, no 5xx) for every other editable entity, except that userfields and userentities refuse an edit-only account with 403 asking for ADMIN. */
 	public function testMasterDataEditOnlyAndAdminReachTheBodyOfEveryOtherEntity(): void
 	{
 		// A permitted caller is not answered 403 by the gate. The body is empty on purpose, so
@@ -365,6 +369,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 	// Decision 7
 	// ------------------------------------------------------------------------------
 
+	/** A CHORES holder creates and edits chores, and a TASKS holder creates and edits tasks, including rows made by others, without MASTER_DATA_EDIT; deleting is refused with 403 asking for MASTER_DATA_EDIT. */
 	public function testChoresAndTasksAreCreatedAndEditedUnderTheirOwnPermission(): void
 	{
 		foreach (['chores' => ['chores', 'CHORES'], 'tasks' => ['tasks', 'TASKS']] as $caller => [$entity, $permission])
@@ -390,6 +395,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** A TASKS holder cannot create chores and a CHORES holder cannot create tasks; both get 403 and no row is written. */
 	public function testHoldingOnlyTheOtherDomainPermissionIsNotEnough(): void
 	{
 		$chores = self::tableCount('chores');
@@ -400,6 +406,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 		self::assertSame($tasks, self::tableCount('tasks'), 'No task row was written');
 	}
 
+	/** The built-in Adult role creates and edits chores and tasks but is refused deleting them with 403 asking for MASTER_DATA_EDIT. */
 	public function testTheAdultRoleCreatesAndEditsChoresAndTasks(): void
 	{
 		foreach (['chores', 'tasks'] as $entity)
@@ -412,6 +419,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** The built-in Child role gets 403 asking for CHORES or TASKS when it creates or edits chores and tasks, and nothing is written or changed. */
 	public function testTheChildRoleCannotCreateOrEditChoresAndTasks(): void
 	{
 		foreach (['chores' => 'CHORES', 'tasks' => 'TASKS'] as $entity => $permission)
@@ -426,6 +434,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** An account with MASTER_DATA_EDIT but without CHORES or TASKS is refused creating and editing chores and tasks, while ADMIN can create, edit and delete them. */
 	public function testMasterDataEditAloneNoLongerCreatesChoresOrTasks(): void
 	{
 		// CHORES and TASKS are not below MASTER_DATA_EDIT, so decision 7 takes create and edit
@@ -443,6 +452,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** An account with MASTER_DATA_EDIT deletes a chore and a task and gets 204. */
 	public function testMasterDataEditStillDeletesChoresAndTasks(): void
 	{
 		foreach (['chores', 'tasks'] as $entity)
@@ -456,6 +466,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 	// Shopping-list side effect of creating a product
 	// ------------------------------------------------------------------------------
 
+	/** Creates a product with a minimum stock of 3 through the API as the caller, expects 200, and returns the new product id. */
 	private function createBelowMinStockProduct(string $caller, string $name): int
 	{
 		$body = self::createBody('products', $name) + ['min_stock_amount' => 3];
@@ -465,11 +476,13 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 		return (int)$response['body']['created_object_id'];
 	}
 
+	/** Counts the shopping_list rows for a product. */
 	private static function shoppingListRows(int $productId): int
 	{
 		return (int)self::$db->query("SELECT COUNT(*) FROM shopping_list WHERE product_id = $productId")->fetchColumn();
 	}
 
+	/** Creating a product below its minimum stock adds it to the shopping list when the caller holds SHOPPINGLIST_ITEMS_ADD. */
 	public function testCreatingAProductFillsTheShoppingListForACallerWithShoppinglistItemsAdd(): void
 	{
 		$productId = $this->createBelowMinStockProduct('add-and-shopping', 'auto-add with shopping list right');
@@ -477,6 +490,7 @@ class MasterDataAddPermissionTest extends PgsqlSchemaTestCase
 		self::assertSame(1, self::shoppingListRows($productId), 'The below-min-stock product was added to the shopping list');
 	}
 
+	/** Without SHOPPINGLIST_ITEMS_ADD the product is still created, but no shopping_list row is written. */
 	public function testCreatingAProductWithoutShoppinglistItemsAddCreatesItAndWritesNoShoppingListRow(): void
 	{
 		$before = (int)self::$db->query('SELECT COUNT(*) FROM shopping_list')->fetchColumn();

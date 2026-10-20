@@ -7,6 +7,7 @@ use Victual\Services\Labels\DriverRegistryService;
 use Victual\Services\Labels\LabelOperationsService;
 use Victual\Services\Labels\PrinterConfigurationService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * PR #626 delta review (Opus), second round, BLOCKING: dropping RevisedPrint()'s label lock
@@ -50,11 +51,17 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  */
 class LabelRevisedPrintCascadeCancelsStockEntryJobTest extends PgsqlSchemaTestCase
 {
+	/**
+	 * Reads the Brother QL driver definition fixture.
+	 */
 	private static function driverDefinition(): array
 	{
 		return json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/.devtools/labels/fixtures/brother-ql.json'), true, 512, JSON_THROW_ON_ERROR);
 	}
 
+	/**
+	 * Builds the environment for a child PHP process: the inherited scalars plus the test schema and database connection settings.
+	 */
 	private static function subprocessEnv(): array
 	{
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
@@ -71,23 +78,18 @@ class LabelRevisedPrintCascadeCancelsStockEntryJobTest extends PgsqlSchemaTestCa
 		]);
 	}
 
-	/** @return array{0: resource, 1: array} */
-	private static function start(array $args): array
+	/** @return Subprocess The running child, nothing read yet */
+	private static function start(array $args): Subprocess
 	{
-		$process = proc_open(array_merge([PHP_BINARY], $args), [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, self::subprocessEnv());
-
-		return [$process, $pipes];
+		return Subprocess::start(array_merge([PHP_BINARY], $args), self::subprocessEnv());
 	}
 
 	/** @return array{status: int, stderr: string, error_message?: string} */
-	private static function finish(array $processAndPipes): array
+	private static function finish(Subprocess $process): array
 	{
-		[$process, $pipes] = $processAndPipes;
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed($process->finish());
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);

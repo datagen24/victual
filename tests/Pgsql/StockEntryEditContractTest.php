@@ -6,6 +6,7 @@ use PDO;
 use Victual\Services\ApiKeyService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Audit findings M19 (issue #519) and M24 (issue #524), and the EditStockEntry half of H3
@@ -38,6 +39,10 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 	private static int $grocerId;
 	private static int $quId;
 
+	/**
+	 * Creates a user with STOCK_EDIT, STOCK_VIEW and STOCK_PRICES_VIEW and an API key for it, plus
+	 * a quantity unit, two locations and a shopping location.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -114,6 +119,7 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 		return $row === false ? null : $row;
 	}
 
+	/** The number of rows in stock_log. */
 	private static function stockLogCount(): int
 	{
 		return (int)self::$db->query('SELECT count(*) FROM stock_log')->fetchColumn();
@@ -137,18 +143,9 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 			'PGPASSWORD' => getenv('PGPASSWORD'),
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		self::assertIsArray($result, "the request helper printed no JSON for $method $path. stdout: $output\nstderr: $errors");
@@ -175,6 +172,10 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 	// M24 (issue #524): amount-only edit is a partial update, not a 500
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * A PUT carrying only an amount answers 200, applies the amount, keeps every omitted field as
+	 * stored, and writes the old/new stock_log pair.
+	 */
 	public function testAmountOnlyEditKeepsEveryOtherFieldAndSucceeds(): void
 	{
 		$entryId = self::seedStockRow();
@@ -197,6 +198,7 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 		self::assertSame($logsBefore + 2, self::stockLogCount(), 'the edit still records its old/new stock_log pair');
 	}
 
+	/** A PUT without `open` on an opened entry leaves it open and keeps its opened date. */
 	public function testAmountOnlyEditOnAnOpenEntryDoesNotCloseIt(): void
 	{
 		$entryId = self::seedStockRow(['open' => 1, 'opened_date' => '2026-01-20']);
@@ -265,6 +267,10 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 	// M19 (issue #519): an unreadable supplied value is refused, not silently erased
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * An unreadable best_before_date or location_id answers 400, keeps the stored values and
+	 * amount, and writes no stock_log rows.
+	 */
 	public function testInvalidBestBeforeDateAndLocationAreRefusedWithoutErasingStoredValues(): void
 	{
 		$entryId = self::seedStockRow(['best_before_date' => '2030-01-01', 'location_id' => self::$pantryId]);
@@ -289,6 +295,10 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 		self::assertSame($logsBefore, self::stockLogCount(), 'a refused edit writes no ledger rows');
 	}
 
+	/**
+	 * An explicit null for `open` or best_before_date answers 400 and leaves both stored values as
+	 * they were.
+	 */
 	public function testExplicitNullIsRefusedNotTreatedAsKeepOrClear(): void
 	{
 		$entryId = self::seedStockRow(['open' => 1, 'best_before_date' => '2030-01-01']);
@@ -303,6 +313,7 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 		self::assertSame($before['best_before_date'], $after['best_before_date'], 'an explicit null must not clear the due date');
 	}
 
+	/** `open` given as the string "false" answers 400 and does not open the entry. */
 	public function testOpenAsTheStringFalseIsRefusedNotReadAsTrue(): void
 	{
 		$entryId = self::seedStockRow(['open' => 0]);
@@ -313,6 +324,7 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 		self::assertSame(0, (int)self::stockRow($entryId)['open'], 'boolval("false") is true in PHP - "false" must not open the entry (issue #524)');
 	}
 
+	/** A location_id or shopping_location_id that names no row answers 400 and changes nothing. */
 	public function testNonexistentLocationAndShoppingLocationAreRefused(): void
 	{
 		$entryId = self::seedStockRow();
@@ -329,6 +341,7 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 		self::assertSame($before['shopping_location_id'], $after['shopping_location_id'], 'the refused shopping location edit changed nothing');
 	}
 
+	/** A location_id naming an inactive location answers 400 and leaves the stored location. */
 	public function testInactiveLocationIsRefused(): void
 	{
 		$inactiveLocationId = (int)self::$db->query("INSERT INTO locations (name, active) VALUES ('EditInactive', 0) RETURNING id")->fetchColumn();
@@ -346,6 +359,7 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 	// too, matching the web form's own "no store" option (issue #487 review of #519/#524)
 	// ------------------------------------------------------------------------------
 
+	/** null for price, shopping_location_id and note answers 200 and clears all three. */
 	public function testNullClearsPriceStoreAndNote(): void
 	{
 		$entryId = self::seedStockRow(['price' => 4.5, 'shopping_location_id' => self::$grocerId, 'note' => 'to be cleared']);
@@ -359,6 +373,10 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 		self::assertNull($after['note'], 'null clears the note');
 	}
 
+	/**
+	 * An empty string for shopping_location_id clears the store, as the web form's 'no store'
+	 * option sends.
+	 */
 	public function testEmptyStringAlsoClearsTheStore(): void
 	{
 		$entryId = self::seedStockRow(['shopping_location_id' => self::$grocerId]);
@@ -370,6 +388,7 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 		self::assertNull(self::stockRow($entryId)['shopping_location_id'], '"" clears the store the same way null does');
 	}
 
+	/** An empty string for price clears the price, as it did before this change. */
 	public function testEmptyStringAlsoClearsThePrice(): void
 	{
 		$entryId = self::seedStockRow(['price' => 4.5]);
@@ -381,6 +400,7 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 		self::assertNull(self::stockRow($entryId)['price'], '"" clears the price the same way null does');
 	}
 
+	/** An empty string for note is stored as the empty string and not turned into null. */
 	public function testEmptyStringIsARealNoteNotACleared(): void
 	{
 		$entryId = self::seedStockRow(['note' => 'to be replaced']);
@@ -398,6 +418,7 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 	// and refuses the two word strings that used to be silently misread
 	// ------------------------------------------------------------------------------
 
+	/** `open` is accepted as 1, "1", 0 and "0" and sets the stored flag accordingly. */
 	public function testOpenAcceptsIntegerAndDigitStringForms(): void
 	{
 		$closed = self::seedStockRow(['open' => 0]);
@@ -417,6 +438,7 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 		self::assertSame(0, (int)self::stockRow($open2)['open']);
 	}
 
+	/** `open` given as "true" or "false" answers 400 and leaves the stored flag. */
 	public function testOpenWordStringsAreRefused(): void
 	{
 		$entryId = self::seedStockRow(['open' => 0]);
@@ -435,6 +457,7 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 	// generated or hand-written client that reads an entry before editing it does this
 	// ------------------------------------------------------------------------------
 
+	/** Sending back every field of a GET response in a PUT answers 200 and leaves the row unchanged. */
 	public function testGetThenPutRoundTripSucceeds(): void
 	{
 		$entryId = self::seedStockRow(['price' => 3.25, 'shopping_location_id' => self::$grocerId, 'open' => 1, 'opened_date' => '2026-01-10']);
@@ -592,6 +615,7 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 	// A fully-specified edit still works end to end
 	// ------------------------------------------------------------------------------
 
+	/** A PUT that supplies every field answers 200 and stores the new value of each. */
 	public function testFullySpecifiedEditUpdatesEveryField(): void
 	{
 		$entryId = self::seedStockRow(['open' => 0, 'opened_date' => null]);
@@ -626,6 +650,10 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 	// service level, for every caller - not only this HTTP route.
 	// ------------------------------------------------------------------------------
 
+	/**
+	 * A negative amount over the HTTP route answers 400, leaves the row exactly as it was and
+	 * writes no stock_log rows.
+	 */
 	public function testHttpPutRefusesANegativeAmount(): void
 	{
 		$entryId = self::seedStockRow(['amount' => 2]);
@@ -639,6 +667,10 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 		self::assertSame($logsBefore, self::stockLogCount(), 'a refused edit writes no ledger rows');
 	}
 
+	/**
+	 * StockService::EditStockEntry() called directly with a negative amount throws and leaves the
+	 * row and the stock_log unchanged.
+	 */
 	public function testServiceRefusesANegativeAmountAtomically(): void
 	{
 		$entryId = self::seedStockRow(['amount' => 2]);
@@ -670,6 +702,7 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 		self::assertSame($logsBefore, self::stockLogCount(), 'a refused edit writes no ledger rows');
 	}
 
+	/** StockService::EditStockEntry() called directly with an amount of zero stores zero. */
 	public function testServiceStillAcceptsAZeroAmount(): void
 	{
 		$entryId = self::seedStockRow(['amount' => 2]);

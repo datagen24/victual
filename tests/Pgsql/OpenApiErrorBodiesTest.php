@@ -7,6 +7,7 @@ use Victual\Controllers\Users\User;
 use Victual\Services\ApiKeyService;
 use Victual\Services\Storage\FileSizeLimit;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue 802: a declared 4xx/5xx response says what its body is.
@@ -62,6 +63,11 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 	private static int $printerId;
 	private static string $strangerKey;
 
+	/**
+	 * Creates the admin, operator and nobody users with their permissions and API keys, then two
+	 * declared label workers (an owner and a stranger), registers the Brother QL driver and creates
+	 * one printer owned by the first worker.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -96,6 +102,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 
 	// ---------------------------------------------------------------- the document
 
+	/**
+	 * Every 4xx and 5xx response in the OpenAPI document, once a $ref is followed, has a content
+	 * entry with a schema unless it is on the description-only allowlist.
+	 */
 	public function testEveryDeclaredErrorResponseDescribesItsBody(): void
 	{
 		$missing = [];
@@ -121,6 +131,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::assertSame([], $missing, count($missing) . " error responses are description-only:\n" . implode("\n", $missing));
 	}
 
+	/**
+	 * The description-only allowlist is empty, and any entry added to it must still be declared by
+	 * the document and still lack a body schema.
+	 */
 	public function testTheAllowlistNamesOnlyEntriesThatAreStillDescriptionOnly(): void
 	{
 		// No description-only response is allowed; a new entry is a deliberate change to this line
@@ -181,6 +195,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::assertSame([], $bare, count($bare) . " label error responses are a bare object:\n" . implode("\n", $bare));
 	}
 
+	/**
+	 * Every response declared under components/responses is referenced by at least one $ref in the
+	 * document.
+	 */
 	public function testEveryComponentResponseIsUsed(): void
 	{
 		$document = file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json');
@@ -194,6 +212,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * ApiError, ConsumptionError, LabelRefusal and CredentialRevoked require the keys the server
+	 * always sends, and CredentialRevoked pins its constant values.
+	 */
 	public function testTheErrorSchemasRequireWhatTheServerAlwaysSends(): void
 	{
 		$schemas = self::Spec()['components']['schemas'];
@@ -209,21 +231,37 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 
 	// ---------------------------------------------------------------- the wire: ApiError
 
+	/**
+	 * An unauthenticated request to a consumption route answers 401 with the documented ApiError
+	 * body.
+	 */
 	public function testAnAnonymousConsumptionRequestIsAnApiError(): void
 	{
 		self::AssertBody(self::Send('GET', '/api/consumption/capabilities'), 'GET', '/consumption/capabilities', 401, ['error_message' => 'Unauthorized']);
 	}
 
+	/**
+	 * An unauthenticated request to an admin label route answers 401 with the documented ApiError
+	 * body.
+	 */
 	public function testAnAnonymousAdminLabelRequestIsAnApiError(): void
 	{
 		self::AssertBody(self::Send('GET', '/api/labels/jobs'), 'GET', '/labels/jobs', 401, ['error_message' => 'Unauthorized']);
 	}
 
+	/**
+	 * An unauthenticated request to a worker route answers 401 with the documented ApiError body,
+	 * not a label refusal.
+	 */
 	public function testAnAnonymousWorkerRequestIsAnApiError(): void
 	{
 		self::AssertBody(self::Send('POST', '/api/labels/jobs/claim', ['limit' => 1]), 'POST', '/labels/jobs/claim', 401, ['error_message' => 'Unauthorized']);
 	}
 
+	/**
+	 * A user with no permissions is refused with 403 and a 'Permission missing' ApiError on stock,
+	 * label templates and the calendar iCal feed.
+	 */
 	public function testNewlyDocumentedPermissionGatesAnswer403(): void
 	{
 		$cases = [
@@ -239,6 +277,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * A caller who lacks the admin permission and creates a printer is refused with 403 and an
+	 * ApiError naming the permission.
+	 */
 	public function testACallerWithoutAdminOnAnAdminLabelRouteIsAnApiError(): void
 	{
 		$response = self::Send('POST', '/api/labels/printers', self::PrinterBody(self::$ownerWorkerId), self::$operatorKey);
@@ -246,6 +288,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::AssertBody($response, 'POST', '/labels/printers', 403, ['error_message' => 'Permission missing: ' . User::PERMISSION_ADMIN]);
 	}
 
+	/**
+	 * A caller without stock view is refused 403 on the consumption capabilities route with an
+	 * ApiError that has no `error` key.
+	 */
 	public function testACallerWithoutStockViewOnAConsumptionRouteIsAnApiError(): void
 	{
 		// The service layer checks the same permission for the same user, but the controller
@@ -255,6 +301,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::AssertBody($response, 'GET', '/consumption/capabilities', 403, ['error_message' => 'Permission missing: ' . User::PERMISSION_STOCK_VIEW]);
 	}
 
+	/**
+	 * A caller who can view stock but not consume it is refused 403 with an ApiError when deleting
+	 * a consumption event.
+	 */
 	public function testACallerWithoutStockConsumeOnAConsumptionWriteIsAnApiError(): void
 	{
 		$response = self::Send('DELETE', '/api/consumption/events/errbodies/evt-1', null, self::$operatorKey);
@@ -262,6 +312,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::AssertBody($response, 'DELETE', '/consumption/events/{source_system}/{source_event_id}', 403, ['error_message' => 'Permission missing: ' . User::PERMISSION_STOCK_CONSUME]);
 	}
 
+	/**
+	 * A caller without stock view is refused 403 with an ApiError on the label context of a
+	 * location.
+	 */
 	public function testALocationContextWithoutStockViewIsAnApiError(): void
 	{
 		$response = self::Send('GET', '/api/labels/locations/1/context', null, self::$nobodyKey);
@@ -269,6 +323,7 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::AssertBody($response, 'GET', '/labels/locations/{locationId}/context', 403, ['error_message' => 'Permission missing: ' . User::PERMISSION_STOCK_VIEW]);
 	}
 
+	/** The label context of a location that does not exist answers 404 with an ApiError. */
 	public function testAnUnknownLocationContextIsAnApiError(): void
 	{
 		$response = self::Send('GET', '/api/labels/locations/999999/context', null, self::$operatorKey);
@@ -276,6 +331,7 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::AssertBody($response, 'GET', '/labels/locations/{locationId}/context', 404, ['error_message' => 'Location not found']);
 	}
 
+	/** The label context of a stock entry that does not exist answers 404 with an ApiError. */
 	public function testAnUnknownTargetContextIsAnApiError(): void
 	{
 		$response = self::Send('GET', '/api/labels/stock_entry/999999/context', null, self::$operatorKey);
@@ -285,6 +341,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 
 	// ---------------------------------------------------------------- the wire: LabelRefusal
 
+	/**
+	 * Pairing with well-formed material that matches no worker answers 401 with an `unauthorized`
+	 * label refusal.
+	 */
 	public function testUnknownPairingMaterialIsALabelRefusal(): void
 	{
 		$response = self::Send('POST', '/api/labels/pair', ['material' => bin2hex(random_bytes(32))]);
@@ -294,6 +354,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		]);
 	}
 
+	/**
+	 * Pairing with material that is not 32 bytes of lowercase hex answers 422 with a
+	 * `value_out_of_range` label refusal.
+	 */
 	public function testMalformedPairingMaterialIsALabelRefusal(): void
 	{
 		$response = self::Send('POST', '/api/labels/pair', ['material' => 'not-hex']);
@@ -316,6 +380,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		]);
 	}
 
+	/**
+	 * Uploading a label asset without content_base64 answers 422 with an `invalid_value` label
+	 * refusal.
+	 */
 	public function testAnAssetUploadWithoutBytesIsALabelRefusal(): void
 	{
 		$response = self::Send('POST', '/api/labels/assets', [], self::$adminKey);
@@ -325,6 +393,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		]);
 	}
 
+	/**
+	 * Requesting the preview image of an artifact that does not exist answers 422 with a
+	 * `not_found` label refusal.
+	 */
 	public function testAPreviewImageOfAnUnknownArtifactIsALabelRefusal(): void
 	{
 		$response = self::Send('GET', '/api/labels/artifacts/999999/image', null, self::$adminKey);
@@ -334,6 +406,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		]);
 	}
 
+	/**
+	 * A worker posting heartbeat, sent or evidence for an attempt it does not own, or that does not
+	 * exist, gets the same 403 `forbidden` label refusal.
+	 */
 	public function testAWorkerThatDoesNotOwnTheAttemptIsAForbiddenLabelRefusal(): void
 	{
 		// No attempt with this id exists, which the authorization cannot tell apart from one
@@ -355,6 +431,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		]);
 	}
 
+	/**
+	 * A worker reporting the status of a printer assigned to another worker gets a 403 `forbidden`
+	 * label refusal.
+	 */
 	public function testAWorkerThatDoesNotHoldThePrinterIsAForbiddenLabelRefusal(): void
 	{
 		$response = self::Send('POST', '/api/labels/printers/' . self::$printerId . '/status', ['device_state' => 'idle'], self::$strangerKey);
@@ -364,6 +444,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		]);
 	}
 
+	/**
+	 * Creating a printer with an unknown driver schema version answers 422 with an
+	 * `unknown_driver_version` label refusal.
+	 */
 	public function testAnInvalidPrinterBodyIsALabelRefusal(): void
 	{
 		$response = self::Send('POST', '/api/labels/printers', self::PrinterBody(self::$ownerWorkerId, ['driver_schema_version' => '9.9']), self::$adminKey);
@@ -391,6 +475,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::assertSame(0, (int)self::$db->query("SELECT COUNT(*) FROM label_drivers WHERE driver_id = 'errbodies.nul-capability'")->fetchColumn());
 	}
 
+	/**
+	 * A location print request without an integer import_epoch answers 422 with a
+	 * `value_out_of_range` label refusal.
+	 */
 	public function testAnInvalidPrintRequestIsALabelRefusal(): void
 	{
 		$response = self::Send('POST', '/api/labels/locations/999999/print', ['printer_id' => self::$printerId], self::$adminKey);
@@ -402,6 +490,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 
 	// ---------------------------------------------------------------- the wire: CredentialRevoked
 
+	/**
+	 * Presenting an already-rotated worker credential again, under a new rotation request id,
+	 * answers 401 with the CredentialRevoked body and revokes the successor credential.
+	 */
 	public function testReusingAConsumedCredentialAnswersCredentialRevoked(): void
 	{
 		$worker = self::Send('POST', '/api/labels/workers', ['name' => 'Errbodies paired', 'configuration_mode' => 'paired'], self::$adminKey);
@@ -447,6 +539,11 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::AssertMatchesDocumentedResponse($response['json'], $method, $path, $status);
 	}
 
+	/**
+	 * Validates $body with Opis against the application/json schema the document declares for the
+	 * method, path and status, following a response $ref and resolving schema $refs against the
+	 * document's components.
+	 */
 	private static function AssertMatchesDocumentedResponse(array $body, string $method, string $path, int $status): void
 	{
 		$declared = self::SpecObject()->paths->$path->{strtolower($method)}->responses->{(string)$status} ?? null;
@@ -492,6 +589,7 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 
 	// ---------------------------------------------------------------- the document, decoded
 
+	/** The OpenAPI document decoded as arrays, read once and cached. */
 	private static function Spec(): array
 	{
 		static $document = null;
@@ -544,6 +642,7 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		return $response;
 	}
 
+	/** Whether any media type of the response declares a schema. */
 	private static function HasBodySchema(array $response): bool
 	{
 		foreach ($response['content'] ?? [] as $media)
@@ -559,6 +658,7 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 
 	// ---------------------------------------------------------------- fixtures and transport
 
+	/** Replaces the user's permissions with the named ones. */
 	private static function Grant(int $userId, array $permissions): void
 	{
 		self::$db->exec('DELETE FROM user_permissions WHERE user_id = ' . $userId);
@@ -570,6 +670,7 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Inserts a default-type API key valid for 30 days for the user and returns the plain key. */
 	private static function IssueUserKey(int $userId): string
 	{
 		$key = bin2hex(random_bytes(25));
@@ -579,6 +680,7 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		return $key;
 	}
 
+	/** Creates a declared-mode label worker through the API as admin and returns its id. */
 	private static function CreateWorker(string $name): int
 	{
 		$response = self::Send('POST', '/api/labels/workers', ['name' => $name, 'configuration_mode' => 'declared'], self::$adminKey);
@@ -587,6 +689,7 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		return (int)$response['json']['id'];
 	}
 
+	/** Issues a credential for the worker through the API as admin and returns it. */
 	private static function IssueWorkerCredential(int $workerId): string
 	{
 		$response = self::Send('POST', "/api/labels/workers/$workerId/credentials", [], self::$adminKey);
@@ -595,11 +698,13 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		return $response['json']['credential'];
 	}
 
+	/** The Brother QL driver definition from the fixtures, decoded. */
 	private static function Driver(): array
 	{
 		return json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/.devtools/labels/fixtures/brother-ql.json'), true, 512, JSON_THROW_ON_ERROR);
 	}
 
+	/** The body of a printer creation request for the worker, with $overrides taking precedence. */
 	private static function PrinterBody(int $workerId, array $overrides = []): array
 	{
 		return $overrides + [
@@ -653,19 +758,9 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		$specFile = tempnam(getenv('VICTUAL_DATAPATH') ?: sys_get_temp_dir(), 'errbodies-request-');
 		file_put_contents($specFile, json_encode($spec));
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/labelapi-subprocess-helper.php', '@' . $specFile],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$environment
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/labelapi-subprocess-helper.php', '@' . $specFile], $environment));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 		unlink($specFile);
 
 		$result = json_decode((string)$output, true);
@@ -696,6 +791,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		'POST /labels/jobs/{jobId}/cancel' => ['idempotency_conflict', 'already_claimed'],
 	];
 
+	/**
+	 * Every operation that is not public (its own or the root security requirement is non-empty)
+	 * declares a 401 response.
+	 */
 	public function testEveryOperationBehindAuthenticationDeclaresA401(): void
 	{
 		$root = self::Spec()['security'] ?? [];
@@ -714,6 +813,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::assertSame([], $missing, count($missing) . " operations inherit security and declare no 401:\n" . implode("\n", $missing));
 	}
 
+	/**
+	 * Every operation declares a 403 except the ten listed as having none reachable, and those ten
+	 * do not declare one.
+	 */
 	public function testEveryOperationWithAReachable403DeclaresIt(): void
 	{
 		// Ordinary routes reach BaseAuthMiddleware's untrusted-proxy refusal;
@@ -755,6 +858,7 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::assertSame([], $unexpected, 'Operations with unreachable 403: ' . implode(', ', $unexpected));
 	}
 
+	/** Every operation with an integer path parameter declares a 400 response. */
 	public function testEveryOperationWithAnIntegerPathParameterDeclaresA400(): void
 	{
 		$missing = [];
@@ -777,6 +881,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::assertSame(['$ref' => '#/components/schemas/Error400'], self::Spec()['components']['responses']['InvalidPathParameter']['content']['application/json']['schema'] ?? null);
 	}
 
+	/**
+	 * PUT /files/{group}/{fileName} declares a 413 with the ApiError schema and a description
+	 * naming FILE_STORAGE_MAX_SIZE_MB.
+	 */
 	public function testAnUploadDeclaresThe413ItCanAnswer(): void
 	{
 		$response = self::Spec()['paths']['/files/{group}/{fileName}']['put']['responses']['413'] ?? null;
@@ -786,6 +894,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('FILE_STORAGE_MAX_SIZE_MB', $response['description']);
 	}
 
+	/**
+	 * Every /consumption/recipes operation documents its 401 as ApiError; the five gate-only routes document
+	 * their 403 as ApiError, and the others as ApiError or ConsumptionError.
+	 */
 	public function testTheConsumptionRecipeAndRefillGatesAreDocumentedWithTheBodiesTheyAnswer(): void
 	{
 		$gateOnly = [
@@ -823,6 +935,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::assertSame(20, $seen, 'the recipe and refill operations');
 	}
 
+	/**
+	 * Exactly the label operations in LABEL_CONFLICTS declare a 409, each with the LabelRefusal
+	 * schema and a description naming its conflict codes.
+	 */
 	public function testTheLabelConflictsAreDocumentedAsLabelRefusals(): void
 	{
 		$declared = [];
@@ -852,6 +968,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Unauthenticated requests to the newly documented label, renderer and consumption routes
+	 * answer 401 with the ApiError body.
+	 */
 	public function testAnonymousRequestsToTheNewlyDocumentedRoutesAnswerAnApiError(): void
 	{
 		$cases = [
@@ -879,6 +999,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * A worker key presented on a renderer route answers 401 with an ApiError, not the label
+	 * refusal worker routes use.
+	 */
 	public function testARendererKeyThatIsNotValidForTheRouteAnswersAnApiError(): void
 	{
 		// A worker key on a renderer route is not a key the route accepts: the middleware
@@ -886,6 +1010,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::AssertBody(self::Send('POST', '/api/labels/render/claim', [], self::$ownerKey), 'POST', '/labels/render/claim', 401, ['error_message' => 'Unauthorized']);
 	}
 
+	/**
+	 * A non-integer value in an integer path parameter answers 400 with the 'Invalid path
+	 * parameter' ApiError on admin, worker and renderer routes.
+	 */
 	public function testANonIntegerPathParameterIsAnErrorBody(): void
 	{
 		$renderer = self::Send('POST', '/api/labels/workers/' . self::$ownerWorkerId . '/renderer-credentials', [], self::$adminKey);
@@ -914,6 +1042,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * On the {kind}/{id} label routes a non-digit id matches no route and answers 404, while digits
+	 * beyond the integer range match the route and are refused with 400.
+	 */
 	public function testTheRegexConstrainedLabelRoutesAnswer404ForANonDigitIdAnd400ForOneBeyondTheIntegerRange(): void
 	{
 		$routes = [
@@ -936,6 +1068,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Fetching the bytes of an asset that does not exist, with a renderer credential, answers 404
+	 * with a `not_found` label refusal.
+	 */
 	public function testAMissingAssetIsALabelRefusalNotFound(): void
 	{
 		$renderer = self::Send('POST', '/api/labels/workers/' . self::$ownerWorkerId . '/renderer-credentials', [], self::$adminKey);
@@ -946,6 +1082,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::AssertBody($response, 'GET', '/labels/assets/{assetId}/bytes', 404, ['field' => 'asset_id', 'code' => 'not_found', 'error_message' => 'No such asset']);
 	}
 
+	/**
+	 * The renderer and byte routes document their 422 with the LabelRefusal schema, and the 401 and
+	 * 422 descriptions explain how those routes use them.
+	 */
 	public function testTheRendererAndByteRoutesDocumentTheir422AsALabelRefusal(): void
 	{
 		$routes = [
@@ -968,6 +1108,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('renderer key', self::Spec()['paths']['/labels/render/claim']['post']['responses']['401']['description']);
 	}
 
+	/**
+	 * An upload one byte over the effective size limit answers 413 with an ApiError naming
+	 * FILE_STORAGE_MAX_SIZE_MB, matching the documented response.
+	 */
 	public function testAnUploadOverTheLimitAnswers413AnApiError(): void
 	{
 		// The limit is the smallest of FILE_STORAGE_MAX_SIZE_MB and the php.ini upload directives. The suite's PHP
@@ -980,6 +1124,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::AssertMatchesDocumentedResponse($response['json'], 'PUT', '/files/{group}/{fileName}', 413);
 	}
 
+	/**
+	 * Saving a template draft with a stale revision token answers 409 with a `stale_revision` label
+	 * refusal.
+	 */
 	public function testAStaleDraftRevisionIsALabelRefusalConflict(): void
 	{
 		$template = self::Send('POST', '/api/labels/templates', ['name' => 'Errbodies draft', 'entity_kind' => 'location'], self::$adminKey);
@@ -993,6 +1141,10 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		]);
 	}
 
+	/**
+	 * The stock-view gate on the consumption recipe list and refill routes answers 403 with an
+	 * ApiError that the document declares.
+	 */
 	public function testTheConsumptionPermissionGateAnswersAnApiErrorTheDocumentAllows(): void
 	{
 		$response = self::Send('GET', '/api/consumption/recipes', null, self::$nobodyKey);

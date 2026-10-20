@@ -8,6 +8,7 @@ use Victual\Services\BaseService;
 use Victual\Services\Database\PostgresDialect;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Lock order of StockService::MergeProducts() against the chore paths (ADR-0040 rule 8: row locks
@@ -31,6 +32,9 @@ class MergeProductsChoreLockOrderTest extends PgsqlSchemaTestCase
 	private static int $unit;
 	private static int $location;
 
+	/**
+	 * Resets the service instance cache, opens a second connection into the test schema, and creates a quantity unit and a location.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -46,12 +50,18 @@ class MergeProductsChoreLockOrderTest extends PgsqlSchemaTestCase
 		self::$location = (int)self::$db->query("INSERT INTO locations (name) VALUES ('MPL shelf') RETURNING id")->fetchColumn();
 	}
 
+	/**
+	 * Releases the second connection before the parent teardown.
+	 */
 	public static function tearDownAfterClass(): void
 	{
 		self::$other = null;
 		parent::tearDownAfterClass();
 	}
 
+	/**
+	 * Inserts a product at the fixture location and unit and returns its id.
+	 */
 	private static function product(string $name): int
 	{
 		$statement = self::$db->prepare('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price) VALUES (?, ?, ?, ?, ?, ?) RETURNING id');
@@ -72,6 +82,9 @@ class MergeProductsChoreLockOrderTest extends PgsqlSchemaTestCase
 		return [$keep, $remove, $chore];
 	}
 
+	/**
+	 * Returns the product, stock, stock log and chore rows involved in a merge, for comparing before and after.
+	 */
 	private static function state(int $keep, int $remove, int $chore): array
 	{
 		return [
@@ -82,7 +95,7 @@ class MergeProductsChoreLockOrderTest extends PgsqlSchemaTestCase
 		];
 	}
 
-	/** Starts the merge in its own process and returns [process, pipes, backend pid] once it has been released. */
+	/** Starts the merge in its own process and returns [Subprocess, backend pid] once it has been released. */
 	private function startMerge(int $keep, int $remove, int $lockTimeoutMs): array
 	{
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
@@ -91,31 +104,33 @@ class MergeProductsChoreLockOrderTest extends PgsqlSchemaTestCase
 			'PGHOST' => getenv('PGHOST'), 'PGPORT' => getenv('PGPORT'), 'PGUSER' => getenv('PGUSER'), 'PGPASSWORD' => getenv('PGPASSWORD'), 'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 		$spec = ['keep' => $keep, 'remove' => $remove, 'lock_timeout_ms' => $lockTimeoutMs];
-		$process = proc_open([PHP_BINARY, __DIR__ . '/merge-products-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
+		$process = Subprocess::start([PHP_BINARY, __DIR__ . '/merge-products-subprocess-helper.php', base64_encode(json_encode($spec))], $env, null, true);
 
-		$ready = (string)fgets($pipes[1]);
+		$ready = (string)$process->readLine();
 		self::assertStringStartsWith('ready ', $ready, 'the helper connected');
-		fwrite($pipes[0], "go\n");
-		fclose($pipes[0]);
+		$process->write("go\n");
+		$process->closeStdin();
 
-		return [$process, $pipes, (int)substr($ready, 6)];
+		return [$process, (int)substr($ready, 6)];
 	}
 
+	/**
+	 * Waits for the merge subprocess to finish and returns its decoded JSON result, failing if it printed none.
+	 */
 	private function finishMerge(array $handle): array
 	{
-		[$process, $pipes] = $handle;
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed($handle[0]->finish());
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 		$decoded = json_decode($output, true);
 		self::assertIsArray($decoded, "the helper printed no JSON. stdout: $output stderr: $errors");
 
 		return $decoded;
 	}
 
+	/**
+	 * Polls pg_stat_activity until the backend is waiting on a lock, and fails the test if it is not within WAIT_SECONDS.
+	 */
 	private function awaitBlocked(int $pid): void
 	{
 		$deadline = microtime(true) + self::WAIT_SECONDS;
@@ -133,6 +148,9 @@ class MergeProductsChoreLockOrderTest extends PgsqlSchemaTestCase
 		self::fail("the merge (pid $pid) was not waiting on a lock within " . self::WAIT_SECONDS . ' s');
 	}
 
+	/**
+	 * While another transaction holds the chore row, the waiting merge holds no product advisory lock, so no wait cycle can form; once released the merge completes and repoints the chore.
+	 */
 	public function testAMergeWaitingOnAChoreRowHoldsNoProductLockAndCompletesWhenItIsReleased(): void
 	{
 		[$keep, $remove, $chore] = self::fixture();
@@ -147,7 +165,7 @@ class MergeProductsChoreLockOrderTest extends PgsqlSchemaTestCase
 			$otherPid = (int)self::$other->query('SELECT pg_backend_pid()')->fetchColumn();
 
 			$handle = $this->startMerge($keep, $remove, 30000);
-			$mergePid = $handle[2];
+			$mergePid = $handle[1];
 			$this->awaitBlocked($mergePid);
 
 			$blockers = self::$other->query("SELECT pg_blocking_pids($mergePid)")->fetchColumn();
@@ -180,12 +198,14 @@ class MergeProductsChoreLockOrderTest extends PgsqlSchemaTestCase
 			}
 			if ($handle !== null)
 			{
-				proc_terminate($handle[0]);
-				proc_close($handle[0]);
+				$handle[0]->abort();
 			}
 		}
 	}
 
+	/**
+	 * A merge that hits its lock timeout on a held chore row fails with a lock timeout message and leaves all rows unchanged.
+	 */
 	public function testAMergeThatTimesOutOnAChoreRowChangesNothing(): void
 	{
 		[$keep, $remove, $chore] = self::fixture();
@@ -213,8 +233,7 @@ class MergeProductsChoreLockOrderTest extends PgsqlSchemaTestCase
 			}
 			if ($handle !== null)
 			{
-				proc_terminate($handle[0]);
-				proc_close($handle[0]);
+				$handle[0]->abort();
 			}
 		}
 

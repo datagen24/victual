@@ -5,6 +5,7 @@ namespace Victual\Tests\Pgsql;
 use PDO;
 use Victual\Services\ApiKeyService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Regression coverage for issue #515 (audit finding M15): DELETE /api/objects/{entity}/{id}
@@ -53,6 +54,10 @@ class ReferenceRefusalTest extends PgsqlSchemaTestCase
 	private static PDO $db;
 	private static string $apiKey = '';
 
+	/**
+	 * Creates the caller user with MASTER_DATA_EDIT and issues it a default API key for the
+	 * subprocess requests.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -77,6 +82,7 @@ class ReferenceRefusalTest extends PgsqlSchemaTestCase
 	// Helpers
 	// ------------------------------------------------------------------------------
 
+	/** Inserts one row built from the column map and returns the new id. */
 	private static function insertRow(string $table, array $columns): int
 	{
 		$names = implode(', ', array_keys($columns));
@@ -96,6 +102,10 @@ class ReferenceRefusalTest extends PgsqlSchemaTestCase
 		$statement->execute(array_values($columns));
 	}
 
+	/**
+	 * Inserts a product at the given location with quantity unit 2 as purchase and stock unit, and
+	 * returns its id.
+	 */
 	private static function insertProduct(string $name, int $locationId): int
 	{
 		return self::insertRow('products', [
@@ -106,6 +116,7 @@ class ReferenceRefusalTest extends PgsqlSchemaTestCase
 		]);
 	}
 
+	/** Returns whether a row with the given id is still present in the table. */
 	private static function rowExists(string $table, int $id): bool
 	{
 		$statement = self::$db->prepare("SELECT count(*) FROM $table WHERE id = ?");
@@ -142,19 +153,9 @@ class ReferenceRefusalTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);

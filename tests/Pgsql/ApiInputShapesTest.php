@@ -6,6 +6,7 @@ use PDO;
 use Victual\Services\ApiKeyService;
 use Victual\Services\Labels\LabelIdentityService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Regression coverage for issue #498 (audit finding H9, #487): malformed or absent API
@@ -104,6 +105,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 	private static PDO $db;
 	private static string $apiKey;
 
+	/** Creates the caller with the shopping list, chore, battery, task and stock permissions the routes need, and an API key for it. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -231,19 +233,9 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$requestLabel = ($spec['method'] ?? '?') . ' ' . ($spec['path'] ?? '?');
 
@@ -331,6 +323,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 	// Fixture helpers
 	// ------------------------------------------------------------------------------
 
+	/** Inserts a row built from the column map and returns the new id. */
 	private static function insertRow(string $table, array $columns): int
 	{
 		$names = implode(', ', array_keys($columns));
@@ -341,6 +334,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/** Inserts a location with the given name and returns its id. */
 	private static function insertLocation(string $name): int
 	{
 		return self::insertRow('locations', ['name' => $name]);
@@ -359,6 +353,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		]);
 	}
 
+	/** Inserts a stock row for the product at the location with the given amount and best-before date, and returns its id. */
 	private static function insertStock(int $productId, int $locationId, float $amount, string $bestBeforeDate): int
 	{
 		return self::insertRow('stock', [
@@ -371,11 +366,13 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		]);
 	}
 
+	/** Counts all rows in shopping_list. */
 	private static function shoppingListCount(): int
 	{
 		return (int)self::$db->query('SELECT count(*) FROM shopping_list')->fetchColumn();
 	}
 
+	/** Returns whether the product is on the given shopping list (the default list when none is given). */
 	private static function shoppingListHasProduct(int $productId, int $listId = 1): bool
 	{
 		$statement = self::$db->prepare('SELECT count(*) FROM shopping_list WHERE product_id = ? AND shopping_list_id = ?');
@@ -390,6 +387,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 
 	// --- requestBody.required: false -> an absent body applies the documented defaults ---
 
+	/** add-missing-products with no body answers 204 and adds a product below its minimum stock to the default list. */
 	public function testAddMissingProductsToShoppingListWithNoBodyAppliesTheDefaultList(): void
 	{
 		$locationId = self::insertLocation('H9 Missing Location');
@@ -401,6 +399,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::assertTrue(self::shoppingListHasProduct($productId), 'the missing product must have been added to the default list (id 1)');
 	}
 
+	/** add-overdue-products with no body answers 204 and adds a product past its best-before date to the default list. */
 	public function testAddOverdueProductsToShoppingListWithNoBodyAppliesTheDefaultList(): void
 	{
 		$locationId = self::insertLocation('H9 Overdue Location');
@@ -413,6 +412,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::assertTrue(self::shoppingListHasProduct($productId), 'the overdue product must have been added to the default list (id 1)');
 	}
 
+	/** add-expired-products with no body answers 204 and adds an expired product to the default list. */
 	public function testAddExpiredProductsToShoppingListWithNoBodyAppliesTheDefaultList(): void
 	{
 		$locationId = self::insertLocation('H9 Expired Location');
@@ -425,6 +425,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::assertTrue(self::shoppingListHasProduct($productId), 'the expired product must have been added to the default list (id 1)');
 	}
 
+	/** Clearing the shopping list with no body answers 204 and removes both the done and the open rows of the default list. */
 	public function testClearShoppingListWithNoBodyClearsTheDefaultList(): void
 	{
 		$openId = self::insertRow('shopping_list', ['note' => 'H9 clear open item', 'shopping_list_id' => 1, 'done' => 0]);
@@ -439,6 +440,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::assertSame(0, (int)$statement->fetchColumn(), 'both rows of the default list must have been cleared, done and not done alike');
 	}
 
+	/** calculate-next-assignments with no body answers 204 and assigns the only assignable user to a chore that had none. */
 	public function testCalculateNextAssignmentsWithNoBodyAppliesToAllChores(): void
 	{
 		$choreId = self::insertRow('chores', [
@@ -463,6 +465,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 
 	// --- requestBody.required: true -> an absent body is refused, not defaulted ---
 
+	/** add-product with no body is refused with 400 and no shopping list row is added. */
 	public function testAddProductToShoppingListWithNoBodyIsRefusedWithoutCreatingARow(): void
 	{
 		$before = self::shoppingListCount();
@@ -473,6 +476,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::assertSame($before, self::shoppingListCount(), 'a refused request must not have added a row');
 	}
 
+	/** remove-product with no body is refused with 400 and the shopping list row is kept. */
 	public function testRemoveProductFromShoppingListWithNoBodyIsRefusedWithoutDeletingARow(): void
 	{
 		$locationId = self::insertLocation('H9 Remove Location');
@@ -488,6 +492,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::assertSame(1, (int)$statement->fetchColumn(), 'a refused request must not have removed the row');
 	}
 
+	/** Executing a chore with no body is refused with 400 and no chores_log row is written. */
 	public function testChoreExecuteWithNoBodyIsRefusedWithoutLoggingAnExecution(): void
 	{
 		$choreId = self::insertRow('chores', ['name' => 'H9 Execute Chore', 'period_type' => 'manually']);
@@ -501,6 +506,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::assertSame(0, (int)$statement->fetchColumn(), 'a refused request must not have logged an execution');
 	}
 
+	/** Charging a battery with no body is refused with 400 and no charge cycle is logged. */
 	public function testBatteryChargeWithNoBodyIsRefusedWithoutLoggingACharge(): void
 	{
 		$batteryId = self::insertRow('batteries', ['name' => 'H9 Charge Battery']);
@@ -514,6 +520,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::assertSame(0, (int)$statement->fetchColumn(), 'a refused request must not have logged a charge cycle');
 	}
 
+	/** Completing a task with no body is refused with 400 and the task stays not done with no completion time. */
 	public function testTaskCompleteWithNoBodyIsRefusedWithoutCompletingTheTask(): void
 	{
 		$taskId = self::insertRow('tasks', ['name' => 'H9 Complete Task']);
@@ -552,6 +559,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::assertSame(2, (int)$statement->fetchColumn(), 'a refused request must not have cleared either list - not the one it named and not the default it could not fall back to');
 	}
 
+	/** A JSON null body on shopping list clear is refused with 400 and the row is kept. */
 	public function testJsonNullBodyOnClearShoppingListIsRefusedAndLeavesTheListUntouched(): void
 	{
 		$rowId = self::insertRow('shopping_list', ['note' => 'H9 round2 null body item', 'shopping_list_id' => 1, 'done' => 0]);
@@ -565,6 +573,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::assertSame(1, (int)$statement->fetchColumn(), 'a JSON null body is present, not absent, and must not default to clearing the list');
 	}
 
+	/** A scalar JSON body on shopping list clear is refused with 400 and the row is kept. */
 	public function testScalarBodyOnClearShoppingListIsRefusedAndLeavesTheListUntouched(): void
 	{
 		$rowId = self::insertRow('shopping_list', ['note' => 'H9 round2 scalar body item', 'shopping_list_id' => 1, 'done' => 0]);
@@ -578,6 +587,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::assertSame(1, (int)$statement->fetchColumn(), 'a scalar JSON body is present, not absent, and must not default to clearing the list');
 	}
 
+	/** A JSON array body on shopping list clear is refused with 400 and the row is kept. */
 	public function testArrayBodyOnClearShoppingListIsRefusedAndLeavesTheListUntouched(): void
 	{
 		$rowId = self::insertRow('shopping_list', ['note' => 'H9 round2 array body item', 'shopping_list_id' => 1, 'done' => 0]);
@@ -654,6 +664,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 	// Group B: malformed query shapes on GET /api/objects/{entity}
 	// ================================================================================
 
+	/** A scalar query parameter on /api/objects/products is refused with 400. */
 	public function testScalarQueryParameterIsRefused(): void
 	{
 		$result = self::Request('GET', '/api/objects/products?query=abc');
@@ -661,6 +672,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::AssertRefusedAsError400($result, 'GET /objects/products?query=abc (scalar "query")');
 	}
 
+	/** An array-valued order parameter on /api/objects/products is refused with 400. */
 	public function testArrayOrderParameterIsRefused(): void
 	{
 		$result = self::Request('GET', '/api/objects/products?order%5B%5D=name');
@@ -668,6 +680,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::AssertRefusedAsError400($result, 'GET /objects/products?order[]=name (array "order")');
 	}
 
+	/** A limit of -1 on /api/objects/products is refused with 400. */
 	public function testNegativeLimitIsRefused(): void
 	{
 		$result = self::Request('GET', '/api/objects/products?limit=-1');
@@ -675,6 +688,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::AssertRefusedAsError400($result, 'GET /objects/products?limit=-1');
 	}
 
+	/** An offset of -1 on /api/objects/products is refused with 400. */
 	public function testNegativeOffsetIsRefused(): void
 	{
 		$result = self::Request('GET', '/api/objects/products?offset=-1');
@@ -710,6 +724,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::AssertRefusedAsError400($result, 'GET /objects/products?limit=-1abc');
 	}
 
+	/** An offset of -3x on /api/objects/products is refused with 400. */
 	public function testOffsetWithTrailingGarbageIsRefused(): void
 	{
 		$result = self::Request('GET', '/api/objects/products?offset=-3x');
@@ -737,6 +752,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 	// Group C: the "spoiled" boolean on POST /stock/products/{id}/consume
 	// ================================================================================
 
+	/** Returns the amount of one stock row. */
 	private static function stockAmount(int $stockRowId): float
 	{
 		$statement = self::$db->prepare('SELECT amount FROM stock WHERE id = ?');
@@ -745,6 +761,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		return (float)$statement->fetchColumn();
 	}
 
+	/** Counts the stock_log rows of a product. */
 	private static function stockLogCountFor(int $productId): int
 	{
 		$statement = self::$db->prepare('SELECT count(*) FROM stock_log WHERE product_id = ?');
@@ -753,6 +770,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/** Consuming with spoiled null is refused with 400, stock is unchanged and no ledger row is written. */
 	public function testConsumeWithNullSpoiledIsRefusedWithoutConsumingStock(): void
 	{
 		$locationId = self::insertLocation('H9 Spoiled Null Location');
@@ -766,6 +784,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::assertSame(0, self::stockLogCountFor($productId), 'a refused consume must not have written a ledger row');
 	}
 
+	/** Consuming with spoiled as the string "false" is refused with 400, stock is unchanged and no ledger row is written. */
 	public function testConsumeWithStringFalseSpoiledIsRefusedWithoutConsumingStock(): void
 	{
 		$locationId = self::insertLocation('H9 Spoiled String Location');
@@ -866,6 +885,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::assertSame(2.0, self::stockAmount($childStockRowId), 'a real true must still consume from the child');
 	}
 
+	/** Opening with allow_subproduct_substitution as the string "false" is refused with 400 and the child entry stays unopened. */
 	public function testOpenWithStringFalseSubstitutionIsRefusedWithoutOpeningStock(): void
 	{
 		[$parentId, $childId, $childStockRowId] = self::insertSubstitutionFixture('Open String Substitution');
@@ -917,6 +937,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::assertSame(1, (int)$statement->fetchColumn(), 'a malformed done_only must not silently mean "clear everything"');
 	}
 
+	/** Executing a chore with skipped set to a non-boolean string is refused with 400 and no execution is logged. */
 	public function testChoreExecuteWithGarbageSkippedIsRefusedWithoutLoggingAnExecution(): void
 	{
 		$choreId = self::insertRow('chores', ['name' => 'H9 Round2 Garbage Skipped Chore', 'period_type' => 'manually']);
@@ -1003,6 +1024,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		return $routes;
 	}
 
+	/** Returns the JSON request body schema that victual.openapi.json documents for POST on the path. */
 	private static function requestSchemaFor(string $path): object
 	{
 		$document = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), false, flags: JSON_THROW_ON_ERROR);
@@ -1010,6 +1032,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		return $document->paths->{$path}->post->requestBody->content->{'application/json'}->schema;
 	}
 
+	/** Returns whether the body, encoded as a JSON object, passes the documented POST request schema for the path. */
 	private static function validatesAgainstRequestSchema(string $path, array $body): bool
 	{
 		// Fresh decode per validation, as assertCandidateAgreesWithServer() does: Opis is
@@ -1020,6 +1043,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		return (new \Opis\JsonSchema\Validator())->validate($data, self::requestSchemaFor($path))->isValid();
 	}
 
+	/** The documented request schema lists the required fields, rejects an empty body, a body of optional fields only and a body missing any required field, and accepts the minimal body. */
 	#[\PHPUnit\Framework\Attributes\DataProvider('requiredFieldRoutes')]
 	public function testRequestSchemaDocumentsTheRequiredFields(string $path, array $required, array $minimal, array $messages, array $optionalOnly): void
 	{
@@ -1046,6 +1070,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/** Omitting a required field is refused with 400 and the controller's message for the first missing field, and no stock, stock_log or shopping_list row changes. */
 	#[\PHPUnit\Framework\Attributes\DataProvider('requiredFieldRoutes')]
 	public function testOmittingARequiredFieldIsRefusedWithTheDocumentedMessageAndBooksNothing(string $path, array $required, array $minimal, array $messages, array $optionalOnly): void
 	{
@@ -1145,6 +1170,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		return self::RawRequest($method, $path, json_encode((object)$body));
 	}
 
+	/** Returns the required list of the documented JSON request body schema for the path and method, or an empty list. */
 	private static function requestRequiredList(string $path, string $method): array
 	{
 		$document = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), true, flags: JSON_THROW_ON_ERROR);
@@ -1152,6 +1178,11 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		return $document['paths'][$path][$method]['requestBody']['content']['application/json']['schema']['required'] ?? [];
 	}
 
+	/**
+	 * Data provider: operations paired with their expected required list and a minimal valid body.
+	 *
+	 * @return array<string, array{0: string, 1: string, 2: list<string>, 3: array, 4: array}>
+	 */
 	public static function requestSchemaProvider(): array
 	{
 		$hex = str_repeat('a', 64);
@@ -1167,6 +1198,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/** The documented required list matches, an empty body fails the schema, the minimal body passes, and dropping any one field of it fails. */
 	#[\PHPUnit\Framework\Attributes\DataProvider('requestSchemaProvider')]
 	public function testRequestSchemaRequiredListAndMinimalBody(string $path, string $method, array $required, array $minimal): void
 	{
@@ -1188,6 +1220,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** The POST user permission schema accepts an integer permission_id and rejects permissions_id and a string id. */
 	public function testPostUserPermissionDocumentsPermissionIdAndNotPermissionsId(): void
 	{
 		self::assertNotNull(self::ValidateRequestBody('/users/{userId}/permissions', 'post', '{"permissions_id": 1}'),
@@ -1196,6 +1229,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::assertNotNull(self::ValidateRequestBody('/users/{userId}/permissions', 'post', '{"permission_id": "1"}'), 'the documented type is integer');
 	}
 
+	/** The PUT user permissions schema accepts an empty list and a list of ids, and rejects a non-list, zero, negative and string ids. */
 	public function testPutUserPermissionsDocumentsAnEmptyListAsValidAndRefusesNonIdLists(): void
 	{
 		self::assertNull(self::ValidateRequestBody('/users/{userId}/permissions', 'put', '{"permissions": []}'), 'an empty list is accepted by the runtime and by the schema');
@@ -1207,6 +1241,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** The open schema requires amount and qu_id in a measurement and a tare when gross is true, while the measurement itself stays optional. */
 	public function testOpenMeasurementDocumentsAmountQuIdAndTareForAGrossReading(): void
 	{
 		$validate = static fn (string $measurement): ?string => self::ValidateRequestBody('/stock/products/{productId}/open', 'post', '{"amount": 1, "measurement": ' . $measurement . '}');
@@ -1241,6 +1276,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/** The measure schema accepts net readings and requires a tare when gross is true. */
 	public function testMeasureDocumentsTareForAGrossReading(): void
 	{
 		$validate = static fn (string $body): ?string => self::ValidateRequestBody('/stock/entry/{entryId}/measure', 'post', $body);
@@ -1265,11 +1301,13 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		return self::targetPermissions();
 	}
 
+	/** Returns the permission ids held directly by the target user, in id order. */
 	private static function targetPermissions(): array
 	{
 		return self::$db->query('SELECT permission_id FROM user_permissions WHERE user_id = ' . self::TARGET_USER_ID . ' ORDER BY permission_id')->fetchAll(PDO::FETCH_COLUMN);
 	}
 
+	/** POST user permission with no permission_id, a permissions_id or a null permission_id is refused with 400 "permission_id is required" and the target's permissions are unchanged. */
 	public function testPostUserPermissionWithoutPermissionIdIsRefusedAndAssignsNothing(): void
 	{
 		$before = self::prepareUserPermissionFixture();
@@ -1285,6 +1323,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** PUT user permissions with a missing, null, non-list, non-positive or string id list is refused with 400 and the matching message, and the assignments are kept. */
 	public function testPutUserPermissionsWithoutAnIdListIsRefusedAndKeepsTheAssignments(): void
 	{
 		$before = self::prepareUserPermissionFixture();
@@ -1328,12 +1367,14 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		return [$productId, self::bookingDigest($productId)];
 	}
 
+	/** Returns an md5 over every stock and stock_log row of the product, to detect any write. */
 	private static function bookingDigest(int $productId): string
 	{
 		return (string)self::$db->query("SELECT md5(coalesce((SELECT string_agg(row_to_json(s)::text, ',' ORDER BY s.id) FROM stock s WHERE s.product_id = $productId), '')"
 			. " || '|' || coalesce((SELECT string_agg(row_to_json(l)::text, ',' ORDER BY l.id) FROM stock_log l WHERE l.product_id = $productId), ''))")->fetchColumn();
 	}
 
+	/** Opening with an empty measurement, one missing qu_id or amount, or a gross one without tare is refused with 400 and the matching message, and nothing is written. */
 	public function testOpenWithAnIncompleteMeasurementIsRefusedAndWritesNothing(): void
 	{
 		[$productId, $digest] = self::openMeasurementFixture('Open Measurement Required');
@@ -1356,6 +1397,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Measuring an entry with a gross reading and no tare is refused with 400 and no stock or stock_log row is written. */
 	public function testMeasureOfAGrossReadingWithoutTareIsRefusedAndWritesNothing(): void
 	{
 		self::$db->exec('INSERT INTO user_permissions (user_id, permission_id) SELECT ' . self::USER_ID . ", id FROM permission_hierarchy WHERE name = 'STOCK_EDIT' ON CONFLICT DO NOTHING");

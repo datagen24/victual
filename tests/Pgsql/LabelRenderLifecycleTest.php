@@ -15,6 +15,7 @@ use Victual\Services\Labels\PrintAttemptService;
 use Victual\Services\Labels\PrinterConfigurationService;
 use Victual\Services\Labels\RenderRequestService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issues #846, #857 and #858: a render request that can never be rendered must reach a
@@ -38,6 +39,11 @@ class LabelRenderLifecycleTest extends PgsqlSchemaTestCase
 	private static int $captureId;
 	private static int $locationSequence = 0;
 
+	/**
+	 * Creates a caller and an ADMIN user with an API key, publishes a QR template, creates a
+	 * draft template pinning a font nobody uploaded, and sets up a printer, its resolved media
+	 * profile and a sample capture.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -72,6 +78,10 @@ class LabelRenderLifecycleTest extends PgsqlSchemaTestCase
 
 	// --- fixtures ---------------------------------------------------------------------------
 
+	/**
+	 * Runs $work inside a transaction, committing and returning its result, or rolling back and
+	 * rethrowing if it throws.
+	 */
 	private static function tx(callable $work): mixed
 	{
 		self::$db->beginTransaction();
@@ -87,23 +97,30 @@ class LabelRenderLifecycleTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Returns a RenderRequestService on the test connection. */
 	private static function requests(): RenderRequestService
 	{
 		return new RenderRequestService(self::$db);
 	}
 
+	/** Returns a 62 mm by 30 mm label canvas with 1 mm margins. */
 	private static function canvas(): array
 	{
 		return ['width_mm' => 62.0, 'height_mm' => 30.0, 'max_height_mm' => null,
 			'margins_mm' => ['top' => 1.0, 'right' => 1.0, 'bottom' => 1.0, 'left' => 1.0]];
 	}
 
+	/** Returns a QR code element whose source is label.payload. */
 	private static function qrElement(): array
 	{
 		return ['type' => 'qr', 'id' => 'code', 'x_mm' => 2.0, 'y_mm' => 2.0, 'module_mm' => 0.6,
 			'ec_level' => 'M', 'quiet_zone_modules' => 4, 'color' => 'black', 'source' => 'label.payload'];
 	}
 
+	/**
+	 * Returns a location label document with the QR element and a title text element that uses
+	 * the given font asset.
+	 */
 	private static function textDocument(string $fontAsset): array
 	{
 		return ['schema_version' => 1, 'entity_kind' => 'location', 'canvas' => self::canvas(),
@@ -136,6 +153,10 @@ class LabelRenderLifecycleTest extends PgsqlSchemaTestCase
 		return [$worker, $printer];
 	}
 
+	/**
+	 * Creates a location and enqueues a print job for it on the given printer with the
+	 * published template, and returns the job id.
+	 */
 	private static function enqueue(int $printerId): int
 	{
 		self::$locationSequence++;
@@ -150,32 +171,44 @@ class LabelRenderLifecycleTest extends PgsqlSchemaTestCase
 		self::$db->exec("UPDATE label_render_requests SET state = 'failed' WHERE state IN ('pending', 'rendering')");
 	}
 
+	/** Creates a production render request for the published template version and returns it. */
 	private static function productionRequest(): array
 	{
 		return self::tx(static fn () => self::requests()->CreateForVersion('production', self::$templateVersion, self::$profileId, self::$captureId, self::CALLER_USER));
 	}
 
+	/**
+	 * Creates a sample preview render request for the published template version and returns
+	 * it.
+	 */
 	private static function previewRequest(): array
 	{
 		return self::tx(static fn () => self::requests()->CreateForVersion('preview_sample', self::$templateVersion, self::$profileId, self::$captureId, self::CALLER_USER));
 	}
 
+	/**
+	 * Creates a render request for the draft template whose document pins a font that was never
+	 * uploaded, and returns it.
+	 */
 	private static function missingFontDraftRequest(): array
 	{
 		return self::tx(static fn () => self::requests()->CreateForDraft(
 			self::$draftTemplate, self::textDocument('Never Uploaded'), self::$profileId, self::$captureId, self::CALLER_USER));
 	}
 
+	/** Returns the label_render_requests row with the given id. */
 	private static function requestRow(int $requestId): array
 	{
 		return self::$db->query('SELECT * FROM label_render_requests WHERE id = ' . $requestId)->fetch(PDO::FETCH_ASSOC);
 	}
 
+	/** Returns the print_jobs row with the given id. */
 	private static function jobRow(int $jobId): array
 	{
 		return self::$db->query('SELECT * FROM print_jobs WHERE id = ' . $jobId)->fetch(PDO::FETCH_ASSOC);
 	}
 
+	/** Returns the outbox row with the given id. */
 	private static function outboxRow(int $outboxId): array
 	{
 		return self::$db->query('SELECT * FROM outbox WHERE id = ' . $outboxId)->fetch(PDO::FETCH_ASSOC);
@@ -193,13 +226,9 @@ class LabelRenderLifecycleTest extends PgsqlSchemaTestCase
 			'VICTUAL_DATAPATH' => getenv('VICTUAL_DATAPATH'), 'PGHOST' => getenv('PGHOST'), 'PGPORT' => getenv('PGPORT'),
 			'PGUSER' => getenv('PGUSER'), 'PGPASSWORD' => getenv('PGPASSWORD'), 'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
-		$process = proc_open([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $environment);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $environment));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);
@@ -293,6 +322,11 @@ class LabelRenderLifecycleTest extends PgsqlSchemaTestCase
 
 	// --- #858: a print job follows its render request to a terminal state ---------------------
 
+	/**
+	 * Proves that recording a claimed render request as invalid dead-letters its print job: the
+	 * job gets the outcome dead_lettered with no artifact, and its outbox row is dead-lettered
+	 * with an error naming the invalid render.
+	 */
 	public function testJobWhoseRenderRequestBecomesInvalidIsDeadLettered(): void
 	{
 		self::quiesceQueue();
@@ -316,6 +350,10 @@ class LabelRenderLifecycleTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('TEXT_OVERFLOW', (string)$outbox['last_error']);
 	}
 
+	/**
+	 * Proves that a render request stays pending and its job stays queued through the retryable
+	 * failures, and the job is dead-lettered only when the last allowed attempt fails.
+	 */
 	public function testJobWhoseRenderRequestFailsTerminallyIsDeadLetteredButNotBeforeThen(): void
 	{
 		self::quiesceQueue();
@@ -339,6 +377,10 @@ class LabelRenderLifecycleTest extends PgsqlSchemaTestCase
 		self::assertNotNull(self::outboxRow((int)$after['outbox_id'])['dead_lettered_at']);
 	}
 
+	/**
+	 * Proves that when an expired render lease has used all its attempts, ReapExpired() fails
+	 * the request and dead-letters the job.
+	 */
 	public function testJobWhoseRenderLeaseIsExhaustedIsDeadLettered(): void
 	{
 		self::quiesceQueue();
@@ -354,6 +396,10 @@ class LabelRenderLifecycleTest extends PgsqlSchemaTestCase
 		self::assertSame('dead_lettered', self::jobRow($jobId)['outcome'], 'Lease exhaustion is terminal for the job as well');
 	}
 
+	/**
+	 * Proves that a late invalid report for a request whose job already has its rendered
+	 * artifact leaves the job's outcome unset.
+	 */
 	public function testJobThatAlreadyHasItsArtifactIsNotDeadLettered(): void
 	{
 		self::quiesceQueue();
@@ -391,6 +437,11 @@ class LabelRenderLifecycleTest extends PgsqlSchemaTestCase
 
 	// --- #857: expired previews are collected on the claim tick -------------------------------
 
+	/**
+	 * Proves that after one claim tick, expired preview requests are failed with code expired
+	 * and no attempt spent, the rendered preview's artifact is collected and its bytes removed,
+	 * and the status route shows the request as failed and not retryable.
+	 */
 	public function testExpiredPreviewsAreCollectedAndNoLongerRetryableAfterOneClaimTick(): void
 	{
 		self::quiesceQueue();
@@ -426,6 +477,10 @@ class LabelRenderLifecycleTest extends PgsqlSchemaTestCase
 		self::assertFalse($status['json']['retryable']);
 	}
 
+	/**
+	 * Proves that a claim tick with only an unexpired preview offers no request, reports no
+	 * change, and leaves the preview artifact uncollected.
+	 */
 	public function testUnexpiredPreviewIsNotCollectedByTheClaimTick(): void
 	{
 		self::quiesceQueue();

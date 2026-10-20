@@ -23,6 +23,7 @@ use Victual\Controllers\SystemController;
 use Victual\Controllers\TasksController;
 use Victual\Controllers\UsersController;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * The household Blade page controllers - chores, batteries, tasks, equipment, the
@@ -86,6 +87,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 
 	private static string $today;
 
+	/** Builds the container and the page controllers, creates two users and seeds the chore, battery, task, equipment, user entity, label template and full-stack caller fixtures. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -232,6 +234,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::$db->exec("INSERT INTO userfields (entity, name, caption, type, show_as_column_in_tables) VALUES ('batteries', 'batterynote', 'Battery note', 'text-single-line', 1)");
 	}
 
+	/** Seeds an active and a retired task category, five tasks (overdue, due today, due soon, no due date, already done) and a user field on tasks. */
 	private static function seedTasks(): void
 	{
 		self::$db->exec("INSERT INTO task_categories (name, active) VALUES ('Task category active', 1), ('Task category retired', 0)");
@@ -256,6 +259,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::$db->exec("INSERT INTO userfields (entity, name, caption, type, show_as_column_in_tables) VALUES ('tasks', 'tasknote', 'Task note', 'text-single-line', 1)");
 	}
 
+	/** Seeds two equipment items, two user entities (one shown in the sidebar, one hidden), one object under each, and user fields on a user entity and on chores. */
 	private static function seedEquipmentAndUserEntities(): void
 	{
 		$insert = self::$db->prepare('INSERT INTO equipment (name, description) VALUES (?, ?) RETURNING id');
@@ -281,6 +285,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::$ids['userfield chorenote'] = (int)self::$db->query("SELECT id FROM userfields WHERE name = 'chorenote'")->fetchColumn();
 	}
 
+	/** Seeds two product label templates. */
 	private static function seedLabelTemplates(): void
 	{
 		$insert = self::$db->prepare("INSERT INTO label_templates (name, description, entity_kind) VALUES (?, ?, 'product') RETURNING id");
@@ -292,6 +297,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 
 	// ---------------------------------------------------------------- harness helpers
 
+	/** Resets the caller to the ADMIN role before each test so no test depends on the grants the previous one left. */
 	protected function setUp(): void
 	{
 		parent::setUp();
@@ -301,6 +307,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::grantRole('ADMIN');
 	}
 
+	/** Builds a PSR-7 server request, with the query parameters and parsed body when given. */
 	private static function request(string $method = 'GET', array $query = [], $body = null)
 	{
 		$request = (new ServerRequestFactory())->createServerRequest($method, 'http://localhost/page');
@@ -343,6 +350,11 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		return $response;
 	}
 
+	/**
+	 * Replaces the caller's roles and permissions with exactly the named permissions.
+	 *
+	 * @param string[] $names
+	 */
 	private static function grant(array $names): void
 	{
 		self::$db->exec('DELETE FROM user_permissions WHERE user_id = 9000; DELETE FROM user_roles WHERE user_id = 9000');
@@ -353,6 +365,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Replaces the caller's roles and permissions with the single role of the given code. */
 	private static function grantRole(string $code): void
 	{
 		self::$db->exec('DELETE FROM user_permissions WHERE user_id = 9000; DELETE FROM user_roles WHERE user_id = 9000');
@@ -408,11 +421,13 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		return [$html, $warnings];
 	}
 
+	/** Asserts the rendered HTML contains a table row with the given id. */
 	private static function assertListsRow(string $html, string $rowId, string $message): void
 	{
 		self::assertStringContainsString('id="' . $rowId . '"', $html, $message);
 	}
 
+	/** Asserts the rendered HTML contains no table row with the given id. */
 	private static function assertOmitsRow(string $html, string $rowId, string $message): void
 	{
 		self::assertStringNotContainsString('id="' . $rowId . '"', $html, $message);
@@ -466,6 +481,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 
 	// ---------------------------------------------------------------------- chores
 
+	/** The chores overview marks overdue, due-today and due-soon chores with their row classes, lists never-executed and executed chores, shows the last execution instant, and omits the retired chore. */
 	public function testChoresOverviewFlagsEachCurrentChoreByWhenItIsNextDue(): void
 	{
 		$html = self::render(fn () => self::$chores->Overview(self::request(), self::response(), []), 'GET /choresoverview');
@@ -483,6 +499,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertOmitsRow($html, 'chore-' . self::$ids['Chore retired'] . '-row', 'an inactive chore is not something the household still owes');
 	}
 
+	/** The chores overview answers 403 without CHORES_VIEW and leaves every table as it was. */
 	public function testChoresOverviewRefusesACallerWithoutChoresViewAndWritesNothing(): void
 	{
 		self::grant(['TASKS_VIEW']);
@@ -493,6 +510,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertSame($before, self::stateSnapshot(), 'a refused page read leaves every table as it was');
 	}
 
+	/** The chores list hides retired chores by default and adds them, keeping the rest, when include_disabled is present. */
 	public function testChoresListShowsActiveChoresAndOnlyIncludesRetiredOnesWhenAsked(): void
 	{
 		$default = self::render(fn () => self::$chores->ChoresList(self::request(), self::response(), []), 'GET /chores');
@@ -504,12 +522,14 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('Chore overdue', $withDisabled, 'and it adds to the list rather than replacing it');
 	}
 
+	/** The chores list answers 403 for a caller with no grants. */
 	public function testChoresListRefusesACallerWithoutChoresView(): void
 	{
 		self::grant([]);
 		$this->expectStatus(fn () => self::$chores->ChoresList(self::request(), self::response(), []), 403, 'GET /chores without CHORES_VIEW');
 	}
 
+	/** The chore edit form is populated from its chore and no other, renders with no PHP diagnostics for a chore without assignment, and the create form carries no chore. */
 	public function testChoreEditFormCarriesTheChoreItEditsAndTheCreateFormCarriesNone(): void
 	{
 		// views/choreform.blade.php explode(',', $chore->assignment_config) on the edit
@@ -537,6 +557,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertStringNotContainsString('/grocycode', $edit, 'and neither does the edit form');
 	}
 
+	/** The chore create and edit forms answer 403 for a caller with no grants. */
 	public function testChoreEditFormRefusesACallerWithoutChoresView(): void
 	{
 		self::grant([]);
@@ -544,6 +565,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		$this->expectStatus(fn () => self::$chores->ChoreEditForm(self::request(), self::response(), ['choreId' => self::$ids['Chore overdue']]), 403, 'GET /chore/{id} without CHORES_VIEW');
 	}
 
+	/** The chores journal lists executions within the months window (default twelve), and a larger, zero or invalid months value moves or resets the cut-off accordingly. */
 	public function testChoresJournalListsRecentExecutionsAndTheMonthsWindowMovesTheCutOff(): void
 	{
 		$default = self::render(fn () => self::$chores->Journal(self::request(), self::response(), []), 'GET /choresjournal');
@@ -566,6 +588,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertOmitsRow($invalid, 'chore-execution-' . self::$ids['log long ago'] . '-row', 'and the default still does not reach 2020');
 	}
 
+	/** The chores journal filtered by chore lists only that chore's executions. */
 	public function testChoresJournalFiltersByChore(): void
 	{
 		$other = self::$ids['Chore overdue'];
@@ -576,12 +599,14 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertListsRow($mine, 'chore-execution-' . self::$ids['log long ago'] . '-row', 'filtering by the chore that was executed lists its executions');
 	}
 
+	/** The chores journal answers 403 for a caller with no grants. */
 	public function testChoresJournalRefusesACallerWithoutChoresView(): void
 	{
 		self::grant([]);
 		$this->expectStatus(fn () => self::$chores->Journal(self::request(), self::response(), []), 403, 'GET /choresjournal without CHORES_VIEW');
 	}
 
+	/** The chore tracking page offers active chores and the users an execution can be attributed to, and not retired chores. */
 	public function testChoreTrackingOffersActiveChoresOnly(): void
 	{
 		$html = self::render(fn () => self::$chores->TrackChoreExecution(self::request(), self::response(), []), 'GET /choretracking');
@@ -590,12 +615,14 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('household-caller', $html, 'and it offers the users an execution can be attributed to');
 	}
 
+	/** The chore tracking page answers 403 for a caller with no grants. */
 	public function testChoreTrackingRefusesACallerWithoutChoresView(): void
 	{
 		self::grant([]);
 		$this->expectStatus(fn () => self::$chores->TrackChoreExecution(self::request(), self::response(), []), 403, 'GET /choretracking without CHORES_VIEW');
 	}
 
+	/** The chores settings page renders for an administrator and answers 403 for a caller with no grants. */
 	public function testChoresSettingsRendersAndIsGated(): void
 	{
 		self::render(fn () => self::$chores->ChoresSettings(self::request(), self::response(), []), 'GET /choressettings');
@@ -666,6 +693,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertSame($eventsBefore, (int)self::$db->query('SELECT COUNT(*) FROM consumption_events')->fetchColumn(), 'and no event');
 	}
 
+	/** The consumption inbox page answers 403 without STOCK_VIEW and renders its shell with STOCK_VIEW alone. */
 	public function testConsumptionInboxRefusesACallerWithoutStockViewAndRendersForOneWhoHoldsIt(): void
 	{
 		self::grant([]);
@@ -708,6 +736,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('does not say that a pharmacy or an insurer will allow a refill', $html, 'the page says what an estimate is not');
 	}
 
+	/** The consumption refills page answers 403 without STOCK_VIEW and 200 with STOCK_VIEW alone. */
 	public function testConsumptionRefillsRefusesACallerWithoutStockView(): void
 	{
 		self::grant([]);
@@ -719,6 +748,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 
 	// -------------------------------------------------------------------- batteries
 
+	/** The batteries overview marks overdue, never-charged, due-today and due-soon batteries with their row classes, leaves a battery without a charge interval unmarked, omits the retired battery, and shows the last charge instant. */
 	public function testBatteriesOverviewFlagsEachBatteryByWhenItIsNextDue(): void
 	{
 		$html = self::render(fn () => self::$batteries->Overview(self::request(), self::response(), []), 'GET /batteriesoverview');
@@ -769,6 +799,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::render(fn () => self::$batteries->BatteryEditForm(self::request(), self::response(), ['batteryId' => 'new']), 'GET /battery/new with BATTERIES_VIEW');
 	}
 
+	/** The batteries list hides retired batteries by default and adds them, keeping the rest, when include_disabled is present. */
 	public function testBatteriesListShowsActiveBatteriesAndOnlyIncludesRetiredOnesWhenAsked(): void
 	{
 		$default = self::render(fn () => self::$batteries->BatteriesList(self::request(), self::response(), []), 'GET /batteries');
@@ -780,6 +811,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('Battery overdue', $withDisabled);
 	}
 
+	/** The battery edit form carries only the battery it edits, and the create form carries none. */
 	public function testBatteryEditFormCarriesTheBatteryItEditsAndTheCreateFormCarriesNone(): void
 	{
 		$edit = self::render(fn () => self::$batteries->BatteryEditForm(self::request(), self::response(), ['batteryId' => self::$ids['Battery overdue']]), 'GET /battery/{id}');
@@ -790,6 +822,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertStringNotContainsString('Battery overdue', $create);
 	}
 
+	/** The batteries journal lists charge cycles within the months window (default twenty-four), a larger months value reaches older cycles, the battery filter keeps only that battery's cycles, and an invalid months value falls back to the default. */
 	public function testBatteriesJournalListsChargeCyclesAndTheMonthsWindowMovesTheCutOff(): void
 	{
 		// The default is twenty-four months, which does not reach 2020 either.
@@ -809,6 +842,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertOmitsRow($invalid, 'charge-cycle-' . self::$ids['cycle long ago'] . '-row', 'and the defaults still do not reach 2020');
 	}
 
+	/** The battery tracking page offers active batteries and not retired ones. */
 	public function testBatteryTrackingOffersActiveBatteriesOnly(): void
 	{
 		$html = self::render(fn () => self::$batteries->TrackChargeCycle(self::request(), self::response(), []), 'GET /batterytracking');
@@ -816,6 +850,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertStringNotContainsString('Battery retired', $html, 'a retired battery cannot be charged, so it is not offered');
 	}
 
+	/** The batteries settings page renders with a 200 answer. */
 	public function testBatteriesSettingsRender(): void
 	{
 		self::render(fn () => self::$batteries->BatteriesSettings(self::request(), self::response(), []), 'GET /batteriessettings');
@@ -823,6 +858,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 
 	// ------------------------------------------------------------------------ tasks
 
+	/** The task list marks overdue, due-today and due-soon tasks with their row classes, leaves a task without a due date unmarked, and omits done tasks. */
 	public function testTaskListFlagsEachTaskByItsDueDateAndHidesDoneOnes(): void
 	{
 		$html = self::render(fn () => self::$tasks->Overview(self::request(), self::response(), []), 'GET /tasks');
@@ -835,6 +871,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertOmitsRow($html, 'task-' . self::$ids['Task already done'] . '-row', 'a completed task is off the list');
 	}
 
+	/** The task list adds done tasks, and keeps open ones, when include_done is present. */
 	public function testTaskListIncludesDoneTasksWhenAsked(): void
 	{
 		$html = self::render(fn () => self::$tasks->Overview(self::request('GET', ['include_done' => '']), self::response(), []), 'GET /tasks?include_done');
@@ -842,6 +879,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertListsRow($html, 'task-' . self::$ids['Task overdue'] . '-row', 'and keeps the open ones');
 	}
 
+	/** The task list, task form, category list, category form and tasks settings pages answer 403 without TASKS_VIEW and leave every table as it was. */
 	public function testTaskPagesRefuseACallerWithoutTasksViewAndWriteNothing(): void
 	{
 		self::grant(['CHORES_VIEW']);
@@ -856,6 +894,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertSame($before, self::stateSnapshot(), 'five refusals leave every table as it was');
 	}
 
+	/** The task edit form carries only its task and offers active categories but not retired ones; the create form carries no task and offers the same categories. */
 	public function testTaskEditFormCarriesTheTaskItEditsAndTheCreateFormCarriesNone(): void
 	{
 		$edit = self::render(fn () => self::$tasks->TaskEditForm(self::request(), self::response(), ['taskId' => self::$ids['Task overdue']]), 'GET /task/{id}');
@@ -869,6 +908,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('Task category active', $create, 'the create form offers the same categories');
 	}
 
+	/** The task categories list hides retired categories by default and adds them when include_disabled is present. */
 	public function testTaskCategoriesListShowsActiveCategoriesAndOnlyIncludesRetiredOnesWhenAsked(): void
 	{
 		$default = self::render(fn () => self::$tasks->TaskCategoriesList(self::request(), self::response(), []), 'GET /taskcategories');
@@ -879,6 +919,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('Task category retired', $withDisabled);
 	}
 
+	/** The task category edit form carries only its category, the create form carries none, and the tasks settings page renders. */
 	public function testTaskCategoryEditFormCarriesTheCategoryItEditsAndTasksSettingsRenders(): void
 	{
 		$edit = self::render(fn () => self::$tasks->TaskCategoryEditForm(self::request(), self::response(), ['categoryId' => self::$ids['Task category active']]), 'GET /taskcategory/{id}');
@@ -892,6 +933,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 
 	// -------------------------------------------------------------------- equipment
 
+	/** The equipment overview lists every item, and the edit form carries only the item it edits. */
 	public function testEquipmentPagesListTheEquipmentAndCarryTheItemTheyEdit(): void
 	{
 		$overview = self::render(fn () => self::$equipment->Overview(self::request(), self::response(), []), 'GET /equipment');
@@ -1014,6 +1056,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 
 	// ------------------------------------------------------- user defined entities
 
+	/** The user entities list shows every entity including those hidden from the sidebar, the edit form is populated from its entity only, and the create form starts empty. */
 	public function testUserentityPagesListTheEntitiesAndCarryTheOneTheyEdit(): void
 	{
 		$list = self::render(fn () => self::$generic->UserentitiesList(self::request(), self::response(), []), 'GET /userentities');
@@ -1031,6 +1074,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertStringNotContainsString('value="householdbook"', $create, 'the create form starts empty');
 	}
 
+	/** The user fields list covers every entity's fields, the edit form carries only its field, and the create form starts empty. */
 	public function testUserfieldPagesListTheFieldsAndCarryTheOneTheyEdit(): void
 	{
 		$list = self::render(fn () => self::$generic->UserfieldsList(self::request(), self::response(), []), 'GET /userfields');
@@ -1045,6 +1089,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertStringNotContainsString('Book page', $create);
 	}
 
+	/** The user objects list is titled by its entity and lists only that entity's objects, and the object forms offer the entity's user fields. */
 	public function testUserobjectPagesListOnlyTheChosenEntitysObjects(): void
 	{
 		$list = self::render(fn () => self::$generic->UserobjectsList(self::request(), self::response(), ['userentityName' => 'householdbook']), 'GET /userobjects/{name}');
@@ -1135,6 +1180,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 
 	// ------------------------------------------------------------------------ users
 
+	/** The users list shows every user and answers 403 without USERS_READ, writing nothing. */
 	public function testUsersListShowsEveryUserAndIsGatedOnUsersRead(): void
 	{
 		$html = self::render(fn () => self::$users->UsersList(self::request(), self::response(), []), 'GET /users');
@@ -1147,6 +1193,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertSame($before, self::stateSnapshot(), 'the refusal wrote nothing');
 	}
 
+	/** The user form carries the user it edits, the create form renders without PHP diagnostics, and a USERS_EDIT_SELF-only caller reaches its own form but gets 403 for another user's form and for create. */
 	public function testUserEditFormAsksForTheRightLeafForCreateSelfAndOthers(): void
 	{
 		$self = self::render(fn () => self::$users->UserEditForm(self::request(), self::response(), ['userId' => 9000]), 'GET /user/9000');
@@ -1171,6 +1218,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		$this->expectStatus(fn () => self::$users->UserEditForm(self::request(), self::response(), ['userId' => 'new']), 403, 'GET /user/new with USERS_EDIT_SELF only');
 	}
 
+	/** The user form answers 403 with no grants for the create form, the caller's own record and another user's record, and leaves every table as it was. */
 	public function testUserEditFormRefusalsWriteNothing(): void
 	{
 		self::grant([]);
@@ -1183,6 +1231,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertSame($before, self::stateSnapshot());
 	}
 
+	/** The permission page shows for each permission whether the target holds it directly, through a role, or both; a USERS_READ caller gets disabled controls, and a caller without USERS_READ gets 403. */
 	public function testPermissionListRendersTheTargetsGrantsAndSaysWhetherTheCallerMayEdit(): void
 	{
 		// Give the target a grant of its own, so the page has something true to report.
@@ -1222,6 +1271,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** The roles list links to the seeded ADMIN, ADULT, CHILD and GUEST roles, and the role form is populated from the role it edits. */
 	public function testRolePagesListTheSeededRolesAndCarryTheOneTheyEdit(): void
 	{
 		// Asserted on the per-role link the list builds, not on the role code as text:
@@ -1266,6 +1316,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 
 	// ------------------------------------------------------------- label designer
 
+	/** The label template list and editor render for an administrator and answer 403 for a USERS_READ caller, writing nothing. */
 	public function testLabelTemplatePagesAreAdministrationOnly(): void
 	{
 		$list = self::render(fn () => self::$labelTemplates->TemplatesList(self::request(), self::response(), []), 'GET /labeltemplates');
@@ -1299,6 +1350,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/** The label print jobs and printers pages render for an administrator and answer 403 for a USERS_READ caller, writing nothing. */
 	public function testLabelPrintJobPagesAreAdministrationOnly(): void
 	{
 		self::render(fn () => self::$labelPrintJobs->Index(self::request(), self::response(), []), 'GET /labelprintjobs');
@@ -1313,6 +1365,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 
 	// ------------------------------------------------------------------------ login
 
+	/** The login page renders a form with a username field for an authenticated caller. */
 	public function testLoginPageRendersForAnAuthenticatedCaller(): void
 	{
 		$html = self::render(fn () => self::$login->LoginPage(self::request(), self::response(), []), 'GET /login');
@@ -1332,6 +1385,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('name="username"', $answer['body']);
 	}
 
+	/** A login with valid credentials answers 302 to the root page and adds one session row for the user. */
 	public function testProcessLoginWithValidCredentialsCreatesASessionAndRedirectsHome(): void
 	{
 		$password = 'household-login-password';
@@ -1354,6 +1408,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** A login with a base64-encoded password field is decoded, redirects to the root page and creates one session. */
 	public function testProcessLoginAcceptsABase64EncodedPassword(): void
 	{
 		$password = 'household-login-password';
@@ -1373,6 +1428,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Logins with a wrong password, an unknown user, an empty password or no fields are sent back and create no session. */
 	public function testProcessLoginWithABadCredentialSendsTheCallerBackAndCreatesNoSession(): void
 	{
 		$password = 'household-login-password';
@@ -1400,6 +1456,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Logging out redirects to the root page and deletes the session row, and logging out again with no cookie also redirects without error. */
 	public function testLogoutDeletesTheSessionRowAndIsHarmlessWhenThereIsNoCookie(): void
 	{
 		self::$db->exec("INSERT INTO sessions(session_key, user_id, expires) VALUES ('household-logout-key', 9000, now() + interval '1 day')");
@@ -1442,6 +1499,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('<code>' . phpversion() . '</code>', $html);
 	}
 
+	/** The about page shows the newest changelog release version and renders one entry for every changelog file. */
 	public function testAboutPageCarriesTheChangelogNewestFirst(): void
 	{
 		$html = self::render(fn () => self::$system->About(self::request(), self::response(), []), 'GET /about');
@@ -1456,6 +1514,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertSame(count($files), substr_count($html, 'Released on <span'), 'every changelog entry is rendered');
 	}
 
+	/** The barcode scanner testing page renders with a 200 answer. */
 	public function testBarcodeScannerTestingPageRenders(): void
 	{
 		self::render(fn () => self::$system->BarcodeScannerTesting(self::request(), self::response(), []), 'GET /barcodescannertesting');
@@ -1495,6 +1554,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertSame('http://localhost/about', $fallback->getHeaderLine('Location'), 'a caller without STOCK_VIEW is not sent to the stock overview');
 	}
 
+	/** In production mode with migrate-on-root off, the root route leaves every table and the migration level unchanged. */
 	public function testRootWritesNothingInProductionMode(): void
 	{
 		// VICTUAL_MODE is 'production' and VICTUAL_MIGRATE_ON_ROOT_REQUEST is false here,
@@ -1540,18 +1600,9 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		], $extraEnv);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		self::assertIsArray($result, "the request helper printed no JSON for $method $path. stdout: $output\nstderr: $errors");
@@ -1581,18 +1632,9 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		], $extraEnv);
 
-		$process = proc_open(
-			array_merge([PHP_BINARY, __DIR__ . '/root-subprocess-helper.php'], $sessionKey === null ? [] : [$sessionKey]),
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run(array_merge([PHP_BINARY, __DIR__ . '/root-subprocess-helper.php'], $sessionKey === null ? [] : [$sessionKey]), $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		self::assertIsArray($result, "the root helper printed no JSON. stdout: $output\nstderr: $errors");
@@ -1623,6 +1665,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/** With the entry page setting, a caller holding the page's view permission is redirected to it and a caller without it is redirected to /about. */
 	#[\PHPUnit\Framework\Attributes\DataProvider('gatedEntryPages')]
 	public function testConfiguredEntryPageIsHonouredForACallerWhoMayViewItAndNotForOneWhoMayNot(string $entryPage, string $target, string $leaf): void
 	{
@@ -1670,6 +1713,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/** The chore and battery pages render without a print action while the labels feature flag is off, and with it on offer the print action and name the configured printer. */
 	#[\PHPUnit\Framework\Attributes\DataProvider('labelPrintingPages')]
 	public function testChoreAndBatteryPagesOfferPrintingOnlyWhenLabelsAreEnabled(string $path, string $marker): void
 	{

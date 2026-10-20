@@ -8,6 +8,7 @@ use Victual\Middleware\Auth\SessionCookie;
 use Victual\Services\ApiKeyService;
 use Victual\Services\SessionService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * The boot gate and the authentication stack, end to end: SchemaVersionMiddleware,
@@ -73,6 +74,11 @@ class AuthStackTest extends PgsqlSchemaTestCase
 	private const OWN_ORIGIN = 'http://localhost';
 	private const ALLOWED_ORIGIN = 'https://client.example';
 
+	/**
+	 * Creates the users the child-process requests authenticate as (admin, session, password,
+	 * legacy-hash and seeded-password accounts), and issues the API keys of each kind, a session, a
+	 * revoked and an expired key, and the worker credential.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -133,12 +139,14 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		self::$workerCredential = $issued['credential'];
 	}
 
+	/** Inserts a user row with the given id, username and stored password value. */
 	private static function createUser(int $id, string $username, string $password = 'fixture'): void
 	{
 		$statement = self::$db->prepare('INSERT INTO users(id, username, password) VALUES (?, ?, ?)');
 		$statement->execute([$id, $username, $password]);
 	}
 
+	/** Gives the user the ADMIN permission. */
 	private static function grantAdmin(int $userId): void
 	{
 		$statement = self::$db->prepare('INSERT INTO user_permissions (user_id, permission_id) '
@@ -210,19 +218,9 @@ class AuthStackTest extends PgsqlSchemaTestCase
 			$env['VICTUAL_' . $name] = $value;
 		}
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/authstack-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/authstack-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		self::assertIsArray($result, "the request helper printed no JSON for $method $path. stdout: $output\nstderr: $errors");
@@ -244,6 +242,7 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		return '';
 	}
 
+	/** Returns the number of rows in the sessions table. */
 	private static function sessionCount(): int
 	{
 		return (int)self::$db->query('SELECT count(*) FROM sessions')->fetchColumn();
@@ -259,6 +258,7 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		return $value === false ? null : $value;
 	}
 
+	/** Returns the number of recorded failed-login attempts for the username. */
 	private static function loginAttemptCount(string $username): int
 	{
 		$statement = self::$db->prepare('SELECT count(*) FROM login_attempts WHERE username = ?');
@@ -302,6 +302,10 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		return $numbers;
 	}
 
+	/**
+	 * With the schema at the version the code expects, an authenticated GET /api/user answers 200
+	 * with the admin account.
+	 */
 	public function testAMatchingSchemaServesTheRequest(): void
 	{
 		$response = self::send('GET', '/api/user', ['headers' => ['VICTUAL-API-KEY' => self::$adminKey]]);
@@ -604,6 +608,7 @@ class AuthStackTest extends PgsqlSchemaTestCase
 
 	// --- ApiKeyAuthenticator -----------------------------------------------------------
 
+	/** A valid API key in the header authenticates the request with 200 and gets its last_used stamp set. */
 	public function testAValidApiKeyAuthenticatesAndIsStamped(): void
 	{
 		$response = self::send('GET', '/api/user', ['headers' => ['VICTUAL-API-KEY' => self::$adminKey]]);
@@ -612,6 +617,10 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		self::assertNotNull(self::keyLastUsed(self::$adminKey), 'a key that authenticated is stamped last_used');
 	}
 
+	/**
+	 * An expired API key is answered 401 'Unauthorized', is not stamped as used, and no session is
+	 * created.
+	 */
 	public function testAnExpiredApiKeyIsRefusedAndWritesNothing(): void
 	{
 		$sessionsBefore = self::sessionCount();
@@ -624,6 +633,10 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		self::assertSame($sessionsBefore, self::sessionCount(), 'a refusal must not create a session');
 	}
 
+	/**
+	 * An API key that matches no row is answered 401, and presenting it creates neither a key nor a
+	 * session.
+	 */
 	public function testAnUnknownApiKeyIsRefused(): void
 	{
 		$sessionsBefore = self::sessionCount();
@@ -650,6 +663,7 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		self::assertNull(self::keyLastUsed(self::$labelWorkerKey, ApiKeyService::API_KEY_TYPE_LABEL_WORKER));
 	}
 
+	/** An API key whose row was deleted is answered 401. */
 	public function testARevokedApiKeyIsRefused(): void
 	{
 		$response = self::send('GET', '/api/user', ['headers' => ['VICTUAL-API-KEY' => self::$revokedKey]]);
@@ -833,6 +847,7 @@ class AuthStackTest extends PgsqlSchemaTestCase
 
 	// --- SessionAuthenticator and SessionCookie ----------------------------------------
 
+	/** A live session cookie authenticates GET /api/user with 200 as the session's user. */
 	public function testAValidSessionAuthenticates(): void
 	{
 		$response = self::send('GET', '/api/user', ['cookie' => self::$sessionKey]);
@@ -842,6 +857,10 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		self::assertSame('authstack-session', $decoded[0]['username'] ?? null, $response['body']);
 	}
 
+	/**
+	 * An expired session cookie is answered 401, is neither renewed nor replaced, and its last_used
+	 * is left unset.
+	 */
 	public function testAnExpiredSessionIsRefusedAndWritesNothing(): void
 	{
 		$expired = self::issueSession(self::SESSION_USER_ID, '-1 hour');
@@ -857,6 +876,7 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		self::assertNull($statement->fetchColumn(), 'a refused session must not be stamped');
 	}
 
+	/** A session cookie that matches no row is answered 401 'Unauthorized'. */
 	public function testAnUnknownSessionKeyIsRefused(): void
 	{
 		$response = self::send('GET', '/api/user', ['cookie' => bin2hex(random_bytes(25))]);
@@ -865,6 +885,7 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		self::assertSame(['error_message' => 'Unauthorized'], json_decode($response['body'], true));
 	}
 
+	/** A request with neither a session cookie nor an API key is answered 401. */
 	public function testNoCookieAndNoKeyIsRefused(): void
 	{
 		$response = self::send('GET', '/api/user');
@@ -990,6 +1011,12 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Data provider: server-variable sets (HTTPS and X-Forwarded-Proto variants), whether each
+	 * counts as HTTPS, and the reason.
+	 *
+	 * @return array<string, array{array<string, string>, bool, string}>
+	 */
 	public static function httpsDetectionCases(): array
 	{
 		return [
@@ -1265,6 +1292,12 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Data provider: Origin and Referer header sets, whether the origin check refuses each, and the
+	 * reason.
+	 *
+	 * @return array<string, array{array<string, string>, bool, string}>
+	 */
 	public static function originCases(): array
 	{
 		return [
@@ -1483,6 +1516,10 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		self::assertSame('Origin', self::header($response, 'Vary'));
 	}
 
+	/**
+	 * A request whose Origin is in the configured CORS allow-list gets 200 and an Access-Control-
+	 * Allow-Origin header echoing that origin.
+	 */
 	public function testAnAllowedOriginGetsTheHeadersOnANormalResponse(): void
 	{
 		$response = self::send('GET', '/api/user', [
@@ -1594,6 +1631,10 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		], $extra)]);
 	}
 
+	/**
+	 * A login with the right password redirects to the root without an invalid flag, creates
+	 * exactly one session for that account, and the session cookie authenticates a request.
+	 */
 	public function testACorrectPasswordCreatesASession(): void
 	{
 		$own = self::$db->prepare('SELECT count(*) FROM sessions WHERE user_id = ?');
@@ -1650,6 +1691,10 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * A login with the wrong password redirects to /login?invalid=true, creates no session, and
+	 * counts a failed attempt.
+	 */
 	public function testAWrongPasswordIsRefusedAndWritesNoSession(): void
 	{
 		$before = self::sessionCount();

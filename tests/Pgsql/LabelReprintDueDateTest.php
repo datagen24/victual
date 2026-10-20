@@ -11,6 +11,7 @@ use Victual\Services\Labels\LabelValidationException;
 use Victual\Services\Labels\PrinterConfigurationService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 use Victual\Tests\Support\SfntFixture;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue #523 (audit finding M23): StockService::OpenProduct() shortens a stock entry's due
@@ -48,6 +49,9 @@ class LabelReprintDueDateTest extends PgsqlSchemaTestCase
 	private static int $printerId;
 	private static int $templateId;
 
+	/**
+	 * Registers a Brother QL driver, creates a printer and a font asset, and publishes a stock entry template printing the best-before date and the location name as the default version.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -125,11 +129,17 @@ class LabelReprintDueDateTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Reads the Brother QL driver definition fixture.
+	 */
 	private static function driverDefinition(): array
 	{
 		return json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/.devtools/labels/fixtures/brother-ql.json'), true, 512, JSON_THROW_ON_ERROR);
 	}
 
+	/**
+	 * Returns a LabelOperationsService on the test connection.
+	 */
 	private static function operations(): LabelOperationsService
 	{
 		return new LabelOperationsService(self::$db);
@@ -197,6 +207,9 @@ class LabelReprintDueDateTest extends PgsqlSchemaTestCase
 		return [$productId, $stockRowId, $labelUid, $locationIdFrom, $locationIdTo];
 	}
 
+	/**
+	 * Returns the best-before date stored in the capture's captured_fields, or null when the capture has none.
+	 */
 	private static function capturedDueDate(int $captureId): ?string
 	{
 		$row = self::$db->prepare("SELECT captured_fields->>'stock_entry.best_before_date' FROM label_captures WHERE id = ?");
@@ -220,11 +233,17 @@ class LabelReprintDueDateTest extends PgsqlSchemaTestCase
 		return $row === false ? null : $row;
 	}
 
+	/**
+	 * Returns the number of print_jobs rows.
+	 */
 	private static function printJobCount(): int
 	{
 		return (int)self::$db->query('SELECT COUNT(*) FROM print_jobs')->fetchColumn();
 	}
 
+	/**
+	 * Returns the best_before_date of the stock row, or null when there is none.
+	 */
 	private static function stockBestBeforeDate(int $stockRowId): ?string
 	{
 		$statement = self::$db->prepare('SELECT best_before_date FROM stock WHERE id = ?');
@@ -247,18 +266,9 @@ class LabelReprintDueDateTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/label-reprint-duedate-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/label-reprint-duedate-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode($output, true);
 		self::assertIsArray($result, "the open-product helper printed no JSON. stdout: $output\nstderr: $errors");
@@ -280,18 +290,9 @@ class LabelReprintDueDateTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/label-reprint-duedate-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/label-reprint-duedate-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode($output, true);
 		self::assertIsArray($result, "the transfer-product helper printed no JSON. stdout: $output\nstderr: $errors");

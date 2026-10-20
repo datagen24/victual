@@ -4,6 +4,7 @@ namespace Victual\Tests\Pgsql;
 
 use PDO;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * `GET /` in production mode, through the whole middleware stack.
@@ -32,6 +33,10 @@ class RootEntryTest extends PgsqlSchemaTestCase
 {
 	private static PDO $db;
 
+	/**
+	 * Creates an ADMIN user and a user holding only TASKS_VIEW, each with a live session key, for
+	 * the root-redirect requests.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -47,6 +52,7 @@ class RootEntryTest extends PgsqlSchemaTestCase
 		self::$db->exec("INSERT INTO sessions(session_key, user_id, expires) VALUES ('root-test-admin', 9300, now() + interval '1 day'), ('root-test-tasks', 9301, now() + interval '1 day')");
 	}
 
+	/** Returns the id of the role with the given code. */
 	private static function roleId(string $code): int
 	{
 		$stmt = self::$db->prepare('SELECT id FROM roles WHERE code = ?');
@@ -68,18 +74,10 @@ class RootEntryTest extends PgsqlSchemaTestCase
 			'PGPASSWORD' => getenv('PGPASSWORD'),
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		], $entryPage === null ? [] : ['VICTUAL_ENTRY_PAGE' => $entryPage]);
-		$process = proc_open(
-			array_merge([PHP_BINARY, __DIR__ . '/root-subprocess-helper.php'], $sessionKey === null ? [] : [$sessionKey]),
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		$exit = proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run(array_merge([PHP_BINARY, __DIR__ . '/root-subprocess-helper.php'], $sessionKey === null ? [] : [$sessionKey]), $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
+		$exit = $finished['exit'];
 
 		$decoded = json_decode($output, true);
 		self::assertIsArray($decoded, "The helper printed no JSON (exit $exit). stdout: $output stderr: $errors");
@@ -87,6 +85,10 @@ class RootEntryTest extends PgsqlSchemaTestCase
 		return $decoded;
 	}
 
+	/**
+	 * A GET / with no session answers 302 to /stockoverview, chosen by the feature flag alone,
+	 * instead of failing.
+	 */
 	public function testAnonymousRootRedirectsToTheEntryPageRatherThanFailing(): void
 	{
 		$answer = self::getRoot(null);
@@ -95,6 +97,7 @@ class RootEntryTest extends PgsqlSchemaTestCase
 		self::assertSame('http://localhost/stockoverview', $answer['location'], 'chosen by feature flag alone, as upstream does; /stockoverview then sends the caller to /login');
 	}
 
+	/** A session cookie nobody issued gets the same redirect to /stockoverview as no cookie at all. */
 	public function testUnknownSessionCookieIsTreatedAsAnonymous(): void
 	{
 		$answer = self::getRoot('a-cookie-nobody-issued');
@@ -103,6 +106,7 @@ class RootEntryTest extends PgsqlSchemaTestCase
 		self::assertSame('http://localhost/stockoverview', $answer['location']);
 	}
 
+	/** An authenticated caller holding STOCK_VIEW is redirected from / to /stockoverview. */
 	public function testLoggedInCallerWhoMayViewStockLandsOnStock(): void
 	{
 		$answer = self::getRoot('root-test-admin');
@@ -111,6 +115,10 @@ class RootEntryTest extends PgsqlSchemaTestCase
 		self::assertSame('http://localhost/stockoverview', $answer['location']);
 	}
 
+	/**
+	 * An authenticated caller without STOCK_VIEW is redirected from / to /about, not to a page that
+	 * would refuse them.
+	 */
 	public function testLoggedInCallerWhoMayNotViewStockFallsBackToAbout(): void
 	{
 		$answer = self::getRoot('root-test-tasks');
@@ -138,6 +146,10 @@ class RootEntryTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/**
+	 * For each configured entry page without a *_VIEW leaf, an anonymous caller and a caller
+	 * holding the grant are sent to that page, and a caller without the grant is sent to /about.
+	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('ungatedEntryPages')]
 	public function testEntryPageWithItsOwnGrantIsHonouredAndWithoutItFallsBackToAbout(string $entryPage, string $target): void
 	{

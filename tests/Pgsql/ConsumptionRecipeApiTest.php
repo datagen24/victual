@@ -6,6 +6,7 @@ use PDO;
 use Victual\Services\ApiKeyService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * The consumption recipe routes through the whole middleware stack, one process per request
@@ -24,6 +25,9 @@ class ConsumptionRecipeApiTest extends PgsqlSchemaTestCase
 	private static int $unit;
 	private static int $location;
 
+	/**
+	 * Creates five users (owner, member, stranger, viewer, nobody) with their stock grants and API keys, plus a quantity unit and a location.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -51,6 +55,9 @@ class ConsumptionRecipeApiTest extends PgsqlSchemaTestCase
 		self::$location = (int)self::$db->query("INSERT INTO locations (name) VALUES ('API organizer') RETURNING id")->fetchColumn();
 	}
 
+	/**
+	 * Creates a product and books the given amount into stock, returning the product id.
+	 */
 	private static function product(float $onHand): int
 	{
 		$statement = self::$db->prepare('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price) VALUES (?, ?, ?, ?, ?, ?) RETURNING id');
@@ -61,6 +68,9 @@ class ConsumptionRecipeApiTest extends PgsqlSchemaTestCase
 		return $id;
 	}
 
+	/**
+	 * Returns the total stock amount of the product.
+	 */
 	private static function onHand(int $product): float
 	{
 		return (float)self::$db->query("SELECT COALESCE(sum(amount), 0) FROM stock WHERE product_id = $product")->fetchColumn();
@@ -84,13 +94,9 @@ class ConsumptionRecipeApiTest extends PgsqlSchemaTestCase
 			'RBAC_TEST_SCHEMA' => self::Schema(), 'PHPUNIT_DB_NAME' => getenv('PHPUNIT_DB_NAME'), 'VICTUAL_DATAPATH' => getenv('VICTUAL_DATAPATH'),
 			'PGHOST' => getenv('PGHOST'), 'PGPORT' => getenv('PGPORT'), 'PGUSER' => getenv('PGUSER'), 'PGPASSWORD' => getenv('PGPASSWORD'), 'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
-		$process = proc_open([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$start = strrpos($output, '{"status"');
 		$response = $start === false ? null : json_decode(substr($output, $start), true);
@@ -101,6 +107,9 @@ class ConsumptionRecipeApiTest extends PgsqlSchemaTestCase
 		return $response;
 	}
 
+	/**
+	 * Creates a one-line consumption recipe over the API as the named user and returns its id.
+	 */
 	private static function createRecipe(string $as, int $product, float $amount = 2): int
 	{
 		$response = self::send('POST', '/api/consumption/recipes', $as, ['name' => 'API recipe', 'lines' => [['product_id' => $product, 'amount' => $amount, 'qu_id' => self::$unit]]]);
@@ -109,6 +118,9 @@ class ConsumptionRecipeApiTest extends PgsqlSchemaTestCase
 		return (int)$response['body']['created_object_id'];
 	}
 
+	/**
+	 * A request without a key gets 401, and an account without grants gets 403 on every recipe route.
+	 */
 	public function testAnUnauthenticatedCallIsRefusedAndAnAccountWithNoGrantsGets403OnEveryRoute(): void
 	{
 		self::assertSame(401, self::send('GET', '/api/consumption/recipes', null)['status']);
@@ -122,6 +134,9 @@ class ConsumptionRecipeApiTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * A recipe the caller cannot see and one that does not exist answer with the same 404 status and body, and the stranger's list is empty.
+	 */
 	public function testAHiddenRecipeAndAMissingOneAnswerTheSame(): void
 	{
 		$id = self::createRecipe('owner', self::product(10));
@@ -138,6 +153,9 @@ class ConsumptionRecipeApiTest extends PgsqlSchemaTestCase
 		self::assertSame(404, self::send('POST', '/api/consumption/recipes/987654/consume', 'stranger', [])['status']);
 	}
 
+	/**
+	 * The generic object routes answer 400 for each of the five private consumption tables.
+	 */
 	public function testGenericRoutesRefuseThePrivateTables(): void
 	{
 		foreach (['consumption_recipes', 'consumption_recipe_lines', 'consumption_recipe_shares', 'consumption_events', 'consumption_event_lines'] as $table)
@@ -147,6 +165,9 @@ class ConsumptionRecipeApiTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Consuming a recipe through the route books once, a repeat with the same request id is a replay, the booking is attributed to the caller and stock_log.recipe_id stays null.
+	 */
 	public function testConsumeThroughTheRouteBooksOnceAttributesTheCallerAndKeepsRecipeIdOutOfTheLedger(): void
 	{
 		$product = self::product(10);
@@ -165,6 +186,9 @@ class ConsumptionRecipeApiTest extends PgsqlSchemaTestCase
 		self::assertNull($row['recipe_id'], 'stock_log.recipe_id stays null');
 	}
 
+	/**
+	 * Refusals carry the documented status and error token: 409 stock_refused, 403 for a missing permission, 422 invalid_name and 403 right_missing.
+	 */
 	public function testRefusalsCarryTheirStatusAndToken(): void
 	{
 		$product = self::product(1);
@@ -191,6 +215,9 @@ class ConsumptionRecipeApiTest extends PgsqlSchemaTestCase
 		})());
 	}
 
+	/**
+	 * A recipe can be shared, edited by a member with the edit right, have that right withdrawn, be transferred to the member, and be removed from the former owner and deleted.
+	 */
 	public function testEditShareRevokeAndTransferThroughTheRoutes(): void
 	{
 		$product = self::product(10);
@@ -212,6 +239,9 @@ class ConsumptionRecipeApiTest extends PgsqlSchemaTestCase
 		self::assertSame(404, self::send('GET', "/api/consumption/recipes/$id", 'member')['status']);
 	}
 
+	/**
+	 * Undoing a consumption event through the route restores the stock and marks the event undone, and a second undo is refused with 409.
+	 */
 	public function testUndoThroughTheRouteRestoresTheRecordedBookings(): void
 	{
 		$product = self::product(10);

@@ -124,6 +124,7 @@
 		<testsuite name="helperunits">
 			<file>tests/Pgsql/HelperUnitsTest.php</file>
 			<file>tests/Pgsql/SubprocessHelperTest.php</file>
+			<file>tests/Pgsql/SubprocessReadGuardTest.php</file>
 		</testsuite>
 		<testsuite name="barcodelookup">
 			<file>tests/Pgsql/BarcodeLookupTest.php</file>

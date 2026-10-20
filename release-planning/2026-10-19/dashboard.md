@@ -1,6 +1,6 @@
 # Victual 0.5.1 release dashboard
 
-0.5.1: 5 of 8 issues closed. Latest release v0.5.0 (published 2026-10-19T12:28:41Z). Master `05c8ca68`. 23 open issues and 1 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-20T14:30:37Z.
+0.5.1: 6 of 8 issues closed. Latest release v0.5.0 (published 2026-10-19T12:28:41Z). Master `e639389b`. 23 open issues and 0 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-20T15:05:32Z.
 
 [Interactive dashboard](dashboard.html) · [Structured source](release-data.json) · [Execution ledger](execution.md) · [Handoff](HANDOFF.md) · [0.5.0 release plan (frozen)](../2026-10-15/dashboard.md)
 
@@ -18,9 +18,9 @@
 
 | Issue | State | Priority | Size | Classification | Patch fit | Next action | PR |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| [#252 Code that coverage proved nothing can reach](https://github.com/datagen24/victual/issues/252) | open | P3 | M | record correction / cleanup | Compatible removal of unreachable code, or a comment that keeps it as a deliberate guard. | Merge PR #1024 (webhook residue) and PR #1025 (unreachable branches). #252 then closes; the CanonicalJson and StderrLogger fallbacks stay until each has a per-PHP-version proof (0.5.2 at the earliest). | https://github.com/datagen24/victual/pull/1025 |
-| [#904 Subprocess test helpers read stdout before stderr and deadlock on more than 64 KB of stderr](https://github.com/datagen24/victual/issues/904) | open | P2 | M | compatible fix (conditional) | Test infrastructure: no application change. | On the pushed branch -x5-b (91 files), merge master, migrate the post-2026-10-13 stragglers, run the full pgsql suite once, open one PR. | None |
+| [#904 Subprocess test helpers read stdout before stderr and deadlock on more than 64 KB of stderr](https://github.com/datagen24/victual/issues/904) | open | P2 | M | compatible fix (conditional) | Test infrastructure: no application change. | Merge PR #1027: -x5-b plus the nine post-2026-10-13 sites, every touched file documented to 80%, all 56 pgsql phases passing. | https://github.com/datagen24/victual/pull/1027 |
 | [#1010 Backup/restore drill against the v0.5.0 artifacts (release gate R5)](https://github.com/datagen24/victual/issues/1010) | open | P2 | M | release evidence | Verification and documentation only: closes release gate R5. | Run the drill in its own session against the v0.5.0 digests; report at docs/releases/0.5.0-restore-drill.md; check the manual's php bin/victual-migrate step against the migrate image. | None |
+| [#252 Code that coverage proved nothing can reach](https://github.com/datagen24/victual/issues/252) | closed | P3 | M | record correction / cleanup | Compatible removal of unreachable code, or a comment that keeps it as a deliberate guard. | Closed 2026-10-20. The CanonicalJson and StderrLogger fallbacks moved to #1026 in 0.5.2. | https://github.com/datagen24/victual/pull/1025 |
 | [#900 ADR-0019 does not list the Resolve() validation refusal as a dead-letter cause](https://github.com/datagen24/victual/issues/900) | closed | P2 | M | documentation / investigation | Documentation correction only. | Merge PR #1020 (Claim() comment correction). Per the 2026-10-20 plan, #900 then closes and ADR-0049 part 2 gets its own issue, outside 0.5.1. | https://github.com/datagen24/victual/pull/1020 |
 | [#987 Consume stores any integer recipe_id, including negative ids and ids no recipe has](https://github.com/datagen24/victual/issues/987) | closed | P3 | S | bug | Compatible fix: invalid input is refused, valid input is unchanged. | Review and merge PR #1013. | https://github.com/datagen24/victual/pull/1013 |
 | [#988 prose-baseline-prune fails daily: it pushes to master, which requires a pull request](https://github.com/datagen24/victual/issues/988) | closed | P3 | S | ci | CI hygiene: no application change. | Merge PR #1012, enable 'Allow GitHub Actions to create and approve pull requests', then run the workflow by hand once. | https://github.com/datagen24/victual/pull/1012 |
@@ -29,13 +29,13 @@
 
 ## Open milestones
 
-Observed 2026-10-20T14:30:37Z. Unassigned open issues: [#80](https://github.com/datagen24/victual/issues/80), [#86](https://github.com/datagen24/victual/issues/86), [#93](https://github.com/datagen24/victual/issues/93), [#133](https://github.com/datagen24/victual/issues/133), [#139](https://github.com/datagen24/victual/issues/139).
+Observed 2026-10-20T15:05:32Z. Unassigned open issues: [#80](https://github.com/datagen24/victual/issues/80), [#86](https://github.com/datagen24/victual/issues/86), [#93](https://github.com/datagen24/victual/issues/93), [#133](https://github.com/datagen24/victual/issues/133), [#139](https://github.com/datagen24/victual/issues/139).
 
 | Milestone | Open | Closed | Due | Description |
 | --- | --- | --- | --- | --- |
 | [0.6.0](https://github.com/datagen24/victual/milestone/6) | 9 | 0 | Unset | Later feature release: OAuth then federation; installation country, canonical/scoped barcode resolution and web onboarding, each behind its own design/ADR gates. Full API audit remains later work. These are not requirements for 0.5.0. |
-| [0.5.1](https://github.com/datagen24/victual/milestone/7) | 3 | 5 | Unset | Follow-ups found while building 0.5.0 that do not block the first production release: presentation residuals, low-severity disclosures and CI hygiene. Lands after 0.5.0 and before 0.6.0. |
-| [0.5.2](https://github.com/datagen24/victual/milestone/8) | 5 | 0 | Unset | Interm quality of life fixes |
+| [0.5.1](https://github.com/datagen24/victual/milestone/7) | 2 | 6 | Unset | Follow-ups found while building 0.5.0 that do not block the first production release: presentation residuals, low-severity disclosures and CI hygiene. Lands after 0.5.0 and before 0.6.0. |
+| [0.5.2](https://github.com/datagen24/victual/milestone/8) | 6 | 0 | Unset | Interm quality of life fixes |
 | [vNext](https://github.com/datagen24/victual/milestone/9) | 1 | 0 | Unset | Farther in the future Ideas and Concepts, not commited to a planned release |
 
 ## Gates carried from 0.5.0
@@ -59,6 +59,7 @@ Observed 2026-10-20T14:30:37Z. Unassigned open issues: [#80](https://github.com/
 | P8 | 2026-10-20 | Is ADR-0049 accepted? | Yes, part 1, on the maintainer's motion. Part 2 decides nothing and stays open, so #900 stays open until the comment correction lands. Acceptance is PR #1019, which carries only the lifecycle edits; its dashboard row lives here. | [#900](https://github.com/datagen24/victual/issues/900) |
 | P9 | 2026-10-20 | How is ADR-0024's WebhookRunner claim corrected (#252)? | By a superseding record, ADR-0051, as the maintainer directed. The InfluxDB writer never called WebhookRunner (Guzzle directly since 296d99dd), so ADR-0019's original last-caller statement stands. ADR-0051 also proposes removing the webhook residue: three unused catalogue strings, one docstring and plan 20's curl row. | [#252](https://github.com/datagen24/victual/issues/252) |
 | P10 | 2026-10-20 | Does ConfigurationValidator keep its demo/prerelease label refusal (#252)? | No. The maintainer ruled to remove it, as the review comment said. checkFileStorage() and the label check already refuse every demo or prerelease configuration that enables labels, and HelperUnitsTest keeps proving it. | [#252](https://github.com/datagen24/victual/issues/252) |
+| P11 | 2026-10-20 | Does the #904 PR document every file it touches, when the migration touches 99 PHP files and 79 are below 80%? | Yes. The maintainer chose to honour the docstring rule in full: about 3,100 lines of docblocks in a separate commit, so review can skip it. | [#904](https://github.com/datagen24/victual/issues/904) |
 
 ## GitHub writes made by planning
 
@@ -78,7 +79,10 @@ Observed 2026-10-20T14:30:37Z. Unassigned open issues: [#80](https://github.com/
 | 2026-10-20 | [Opened PR #1023, accepting ADR-0051](https://github.com/datagen24/victual/pull/1023) |
 | 2026-10-20 | [Opened PR #1024, removing the webhook residue ADR-0051 lists](https://github.com/datagen24/victual/pull/1024) |
 | 2026-10-20 | [Opened PR #1025, removing three unreachable branches (#252)](https://github.com/datagen24/victual/pull/1025) |
+| 2026-10-20 | [Closed #252 with a summary comment](https://github.com/datagen24/victual/issues/252) |
+| 2026-10-20 | [Opened #1026 in 0.5.2: prove or keep the CanonicalJson and StderrLogger fallbacks](https://github.com/datagen24/victual/issues/1026) |
+| 2026-10-20 | [Opened PR #1027 for #904](https://github.com/datagen24/victual/pull/1027) |
 
 ## Evidence
 
-The latest snapshot is in `evidence/refresh-2026-10-20T143037Z`, taken from the GitHub REST API via gh. Assessments are planning estimates, not validation results.
+The latest snapshot is in `evidence/refresh-2026-10-20T150532Z`, taken from the GitHub REST API via gh. Assessments are planning estimates, not validation results.

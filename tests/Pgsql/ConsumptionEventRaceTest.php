@@ -7,6 +7,7 @@ use Victual\Services\ConsumptionEventService;
 use Victual\Services\ConsumptionMappingService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * ADR-0041 rules 5 and 6 under real concurrency: several processes, one connection each, against the
@@ -33,6 +34,10 @@ class ConsumptionEventRaceTest extends PgsqlSchemaTestCase
 	private static int $seed;
 	private static int $sequence = 0;
 
+	/**
+	 * Fixes the race-schedule seed (from CONSUMPTION_RACE_SEED or random), creates the two test
+	 * users with stock permissions, and inserts the shared quantity unit and location.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -53,6 +58,10 @@ class ConsumptionEventRaceTest extends PgsqlSchemaTestCase
 		self::$location = (int)self::$db->query("INSERT INTO locations (name) VALUES ('ER organizer') RETURNING id")->fetchColumn();
 	}
 
+	/**
+	 * Inserts a product in the shared unit and location, purchases the given amount of it into
+	 * stock, and returns its id.
+	 */
 	private static function product(float $onHand): int
 	{
 		$statement = self::$db->prepare('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price) VALUES (?, ?, ?, ?, ?, ?) RETURNING id');
@@ -63,11 +72,16 @@ class ConsumptionEventRaceTest extends PgsqlSchemaTestCase
 		return $id;
 	}
 
+	/** Returns the total amount currently in stock for the product, 0 when there is none. */
 	private static function onHand(int $product): float
 	{
 		return (float)self::$db->query("SELECT COALESCE(sum(amount), 0) FROM stock WHERE product_id = $product")->fetchColumn();
 	}
 
+	/**
+	 * Registers a HealthKit medication mapping for the user that points a fixed-location 'tablet'
+	 * unit at the product, and returns the medication reference.
+	 */
 	private static function mapped(int $product, int $user = self::ME): string
 	{
 		$ref = 'race-med-' . ++self::$sequence;
@@ -77,6 +91,10 @@ class ConsumptionEventRaceTest extends PgsqlSchemaTestCase
 		return $ref;
 	}
 
+	/**
+	 * Builds a taken-event request body for the medication reference (one tablet, one hour ago,
+	 * UTC), with $extra overriding any field.
+	 */
 	private static function body(string $ref, array $extra = []): array
 	{
 		return $extra + ['status' => 'taken', 'medication_ref' => $ref, 'quantity' => 1, 'unit_label' => 'tablet',
@@ -101,29 +119,25 @@ class ConsumptionEventRaceTest extends PgsqlSchemaTestCase
 		foreach ($calls as [$service, $method, $args])
 		{
 			$spec = ['service' => $service, 'method' => $method, 'args' => $args, 'delay_us' => mt_rand(0, 4000)];
-			$process = proc_open([PHP_BINARY, __DIR__ . '/consumption-event-race-subprocess-helper.php', base64_encode(json_encode($spec))],
-				[0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-			$processes[] = [$process, $pipes];
+			$processes[] = Subprocess::start([PHP_BINARY, __DIR__ . '/consumption-event-race-subprocess-helper.php', base64_encode(json_encode($spec))], $env, null, true);
 		}
 
-		foreach ($processes as [, $pipes])
+		foreach ($processes as $process)
 		{
-			self::assertSame("ready\n", fgets($pipes[1]), 'the helper connected');
+			self::assertSame("ready\n", $process->readLine(), 'the helper connected');
 		}
-		foreach ($processes as [, $pipes])
+		foreach ($processes as $process)
 		{
-			fwrite($pipes[0], "go\n");
-			fclose($pipes[0]);
+			$process->write("go\n");
+			$process->closeStdin();
 		}
 
 		$results = [];
-		foreach ($processes as [$process, $pipes])
+		foreach ($processes as $process)
 		{
-			$output = stream_get_contents($pipes[1]);
-			$errors = stream_get_contents($pipes[2]);
-			fclose($pipes[1]);
-			fclose($pipes[2]);
-			proc_close($process);
+			$finished = Subprocess::Completed($process->finish());
+			$output = $finished['stdout'];
+			$errors = $finished['stderr'];
 			$decoded = json_decode($output, true);
 			self::assertIsArray($decoded, 'the helper printed no JSON (seed ' . self::$seed . "). stdout: $output stderr: $errors");
 			self::assertStringNotContainsString('deadlock', strtolower((string)($decoded['message'] ?? '')), 'deadlock detected (seed ' . self::$seed . '): ' . ($decoded['message'] ?? ''));
@@ -133,6 +147,10 @@ class ConsumptionEventRaceTest extends PgsqlSchemaTestCase
 		return $results;
 	}
 
+	/**
+	 * Twelve simultaneous submissions of the same event id all answer booked, exactly one creates
+	 * the row, and stock is deducted once.
+	 */
 	public function testIdenticalConcurrentSubmissionsBookExactlyOnce(): void
 	{
 		for ($round = 0; $round < self::ROUNDS; $round++)
@@ -156,6 +174,10 @@ class ConsumptionEventRaceTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * The same source event id submitted at once by two different users creates two separate events
+	 * and deducts stock twice.
+	 */
 	public function testTheSameKeyFromTwoUsersMakesTwoEvents(): void
 	{
 		for ($round = 0; $round < self::ROUNDS; $round++)
@@ -174,6 +196,11 @@ class ConsumptionEventRaceTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Two corrections that each move an event onto the other's medication run at once without a
+	 * deadlock, and each event ends holding exactly one deduction (the corrected dose if it
+	 * applied, the original otherwise).
+	 */
 	public function testTwoCorrectionsOverOverlappingProductsNeverDeadlock(): void
 	{
 		for ($round = 0; $round < self::ROUNDS; $round++)
@@ -204,6 +231,10 @@ class ConsumptionEventRaceTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * A correction racing a direct undo of the same booking leaves either the corrected dose or
+	 * nothing deducted, never a partial amount.
+	 */
 	public function testACorrectionRacingADirectUndoLeavesAConsistentDeduction(): void
 	{
 		for ($round = 0; $round < self::ROUNDS; $round++)
@@ -224,6 +255,10 @@ class ConsumptionEventRaceTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * A deletion racing a replay of the same event ends with the event voided and the full stock
+	 * restored.
+	 */
 	public function testADeletionRacingAReplayEndsVoidedWithTheStockRestored(): void
 	{
 		for ($round = 0; $round < self::ROUNDS; $round++)
@@ -242,6 +277,10 @@ class ConsumptionEventRaceTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Nine concurrent events against five units book five and hold four as needs_review with
+	 * insufficient_stock, leaving stock at exactly zero.
+	 */
 	public function testScarceStockIsNeverOverdrawnByConcurrentEvents(): void
 	{
 		for ($round = 0; $round < 3; $round++)

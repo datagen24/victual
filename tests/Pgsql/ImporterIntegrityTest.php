@@ -7,6 +7,7 @@ use Victual\Services\Database\DatabaseImporter;
 use Victual\Services\DatabaseService;
 use Victual\Services\Labels\LabelPrintJobService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Regression coverage for issue #487's importer findings, #496 (H7) and #518 (M18).
@@ -96,6 +97,10 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 		return new PDO('sqlite:' . $file, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 	}
 
+	/**
+	 * Builds a DatabaseImporter that reads from the given source and writes to this class's target
+	 * schema, with a no-op progress callback unless one is supplied.
+	 */
 	private function importer(PDO $source, ?callable $progress = null): DatabaseImporter
 	{
 		return new DatabaseImporter($source, self::Pdo(), DatabaseService::GetInstance()->GetDialect(), $progress ?? static function ($message) {});
@@ -131,6 +136,11 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 
 	// --- H7(a): unsupported product nesting is repaired, and the guard works afterward ----
 
+	/**
+	 * Importing a source with a three-level product chain clears the middle product's parent link,
+	 * keeps the leaf under it, names the repair in the progress output, and leaves product 8002
+	 * writable despite the nesting guard trigger.
+	 */
 	public function testImportRepairsAMultiLevelProductChainAndReportsIt(): void
 	{
 		$source = $this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MAX);
@@ -193,6 +203,10 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * An import of a source with no nesting defect reports no repair, and the target's nesting
+	 * guard trigger still refuses a write that creates a three-level chain.
+	 */
 	public function testImportWithNoNestingDefectReportsNothingAndLeavesGuardIntact(): void
 	{
 		$source = $this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MIN);
@@ -220,6 +234,10 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 
 	// --- H7(b): outbox is surgically cleared without disturbing print history -------------
 
+	/**
+	 * A forced import from a source that has no outbox table still deletes an unreferenced outbox
+	 * row already in the target, and reports the deletion.
+	 */
 	public function testImportClearsAnUnreferencedOutboxRowEvenWhenTheSourcePredatesTheTable(): void
 	{
 		self::Pdo()->exec("INSERT INTO outbox (event_type, payload, attempts) VALUES ('stock.transaction_booked', '{\"marker\":\"pre-import\"}', 0)");
@@ -242,6 +260,10 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 		self::assertNotEmpty(preg_grep('/outbox: deleted 1 unreferenced row/', $messages), 'the deletion must be reported: ' . implode("\n", $messages));
 	}
 
+	/**
+	 * A forced import leaves a delivered outbox row referenced by a print job unchanged, and the
+	 * print job and its attempt survive.
+	 */
 	public function testImportKeepsADeliveredPrintJobsOutboxRowUntouched(): void
 	{
 		$db = self::Pdo();
@@ -346,6 +368,10 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 			'the dead-lettering must be reported: ' . implode("\n", $messages));
 	}
 
+	/**
+	 * A non-forced import into a target that holds an undelivered outbox row throws an error
+	 * mentioning the outbox and --force, and leaves the row in place.
+	 */
 	public function testNonForceImportRefusesAPreExistingUndeliveredOutboxRowRatherThanSilentlyDiscardingIt(): void
 	{
 		// Isolate AssertOutboxIsHandleable() from the pre-existing AssertTargetIsEmpty(): the
@@ -381,6 +407,10 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 
 	// --- H7(b): the target's own MQTT broker state is neither copied nor cleared ----------
 
+	/**
+	 * A forced import keeps the target's MQTT publication ledger row but deletes the per-product
+	 * MQTT opt-in row, whose product id the import has replaced.
+	 */
 	public function testImportKeepsTheMqttPublicationLedgerButClearsTheProductOptIn(): void
 	{
 		$db = self::Pdo();
@@ -471,20 +501,9 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 				'VICTUAL_MQTT_PORT' => (string)$port
 			]);
 
-			$process = proc_open(
-				[PHP_BINARY, __DIR__ . '/mqttcoverage-subprocess-helper.php', 'scenario', 'state', $resultFile],
-				[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-				$pipes,
-				null,
-				$environment
-			);
-
-			self::assertIsResource($process, 'could not start the scenario helper');
-			$output = stream_get_contents($pipes[1]);
-			$errors = stream_get_contents($pipes[2]);
-			fclose($pipes[1]);
-			fclose($pipes[2]);
-			proc_close($process);
+			$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/mqttcoverage-subprocess-helper.php', 'scenario', 'state', $resultFile], $environment));
+			$output = $finished['stdout'];
+			$errors = $finished['stderr'];
 
 			self::assertFileExists($resultFile, "the scenario helper wrote no result.\nstdout: $output\nstderr: $errors");
 			$result = json_decode((string)file_get_contents($resultFile), true);
@@ -535,6 +554,10 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Binds a TCP socket to port 0 on 127.0.0.1 to learn a free port number, closes it, and returns
+	 * that port.
+	 */
 	private function reserveTcpPort(): int
 	{
 		$socket = stream_socket_server('tcp://127.0.0.1:0', $errorNumber, $errorMessage);
@@ -590,6 +613,10 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 
 	// --- H7(b), replacement scope: price caches are recomputed, not just copied -----------
 
+	/**
+	 * A forced import recomputes the average-price cache from the purchase history (20/9) instead
+	 * of copying the stale 2.0 cached in the source, and reports the rebuild.
+	 */
 	public function testImportRebuildsThePriceCachesRatherThanCopyingAStaleOne(): void
 	{
 		$source = $this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MIN);
@@ -793,6 +820,10 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 
 	// --- M18: a hole below the maximum is refused on both sides ---------------------------
 
+	/**
+	 * An import is refused, naming the missing and the maximum migration numbers, when the source
+	 * lacks a migration below its highest one, and the target is left unchanged.
+	 */
 	public function testImportRefusesASourceWithAMigrationHoleBelowItsClaimedMaximum(): void
 	{
 		$max = DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MAX;
@@ -858,6 +889,10 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 		self::assertSame($before, $this->targetState());
 	}
 
+	/**
+	 * An import is refused, naming the missing migration number, when the target lacks a migration
+	 * below its own highest one, and the target is left unchanged.
+	 */
 	public function testImportRefusesATargetWithAMigrationHoleBelowItsOwnMaximum(): void
 	{
 		$maxBefore = (int)self::Pdo()->query('SELECT max(migration) FROM migrations')->fetchColumn();

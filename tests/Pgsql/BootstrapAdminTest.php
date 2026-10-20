@@ -9,6 +9,7 @@ use Victual\Services\Database\InitialDataSeeder;
 use Victual\Services\DatabaseMigrationService;
 use Victual\Services\DatabaseService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * The first administrator on a fresh installation, and what an account that has to change
@@ -49,6 +50,10 @@ class BootstrapAdminTest extends PgsqlSchemaTestCase
 
 	private static string $flaggedApiKey;
 
+	/**
+	 * Creates five administrator users (flagged, clear, other, default-password and one that will
+	 * change its password), sessions for three of them, and an API key minted by the flagged user.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -94,18 +99,10 @@ class BootstrapAdminTest extends PgsqlSchemaTestCase
 			'PGPASSWORD' => getenv('PGPASSWORD'),
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/bootstrap-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		$exit = proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/bootstrap-subprocess-helper.php', base64_encode(json_encode($spec))], $env));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
+		$exit = $finished['exit'];
 
 		$decoded = json_decode($output, true);
 		self::assertIsArray($decoded, "The helper printed no JSON (exit $exit). stdout: $output stderr: $errors");
@@ -113,6 +110,10 @@ class BootstrapAdminTest extends PgsqlSchemaTestCase
 		return $decoded;
 	}
 
+	/**
+	 * The must_change_password flag of the user, read from $schema or from the test schema when
+	 * none is given.
+	 */
 	private static function flag(int $userId, ?string $schema = null): int
 	{
 		$stmt = self::$db->prepare('SELECT must_change_password FROM ' . ($schema ?? self::Schema()) . '.users WHERE id = ?');
@@ -121,6 +122,10 @@ class BootstrapAdminTest extends PgsqlSchemaTestCase
 		return (int)$stmt->fetchColumn();
 	}
 
+	/**
+	 * The seeded admin account has the password the operator supplied through the environment, not
+	 * 'admin', and is not flagged for a forced change.
+	 */
 	public function testOperatorSuppliedPasswordSeedsTheAdministratorWithoutAForcedChange(): void
 	{
 		$supplied = getenv(InitialDataSeeder::BOOTSTRAP_PASSWORD_ENV);
@@ -133,6 +138,11 @@ class BootstrapAdminTest extends PgsqlSchemaTestCase
 		self::assertSame(0, (int)$admin['must_change_password'], 'a password the operator chose is not one somebody else read in a log');
 	}
 
+	/**
+	 * With no operator password, a fresh schema's migration generates a random admin password,
+	 * reports it exactly once, stores it flagged for a forced change, and still forces the change
+	 * on a retry after an interrupted first run.
+	 */
 	public function testWithoutAnOperatorPasswordOneIsGeneratedReportedOnceAndMustBeChanged(): void
 	{
 		$schema = 'phpunit_bootstrap_' . bin2hex(random_bytes(6));
@@ -225,12 +235,17 @@ class BootstrapAdminTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Replaces the DatabaseService connection with $pdo, by reflection, and clears its cached
+	 * wrapped connection.
+	 */
 	private static function pointDatabaseServiceAt(PDO $pdo): void
 	{
 		(new ReflectionProperty(DatabaseService::class, 'DbConnectionRaw'))->setValue(null, $pdo);
 		(new ReflectionProperty(DatabaseService::class, 'DbConnection'))->setValue(null, null);
 	}
 
+	/** Logging in with the default admin password raises the must-change flag on that account. */
 	public function testLoggingInWithTheDefaultPasswordRaisesTheFlag(): void
 	{
 		self::assertSame(0, self::flag(self::DEFAULT_LOGIN));
@@ -255,6 +270,10 @@ class BootstrapAdminTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/**
+	 * A session of a flagged account is refused with 403 'must change its password' on household
+	 * data reads and on user, permission and settings writes, and nothing is created.
+	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('refusedApiRequests')]
 	public function testFlaggedSessionIsRefusedByTheApi(string $method, string $path, ?array $json): void
 	{
@@ -265,6 +284,7 @@ class BootstrapAdminTest extends PgsqlSchemaTestCase
 		self::assertSame(0, (int)self::$db->query("SELECT COUNT(*) FROM users WHERE username = 'planted-by-flagged'")->fetchColumn());
 	}
 
+	/** An API key minted by a flagged account is refused 403 like the session that minted it. */
 	public function testFlaggedApiKeyIsRefusedTheSameWay(): void
 	{
 		$answer = self::request(['method' => 'GET', 'path' => '/api/objects/products', 'apikey' => self::$flaggedApiKey]);
@@ -272,6 +292,10 @@ class BootstrapAdminTest extends PgsqlSchemaTestCase
 		self::assertSame(403, $answer['status'], 'a key minted by a flagged account is no more the operator\'s than the session that minted it');
 	}
 
+	/**
+	 * A flagged account can still call /api/user and the db-changed-time poll, and rendered pages
+	 * redirect it to the password form.
+	 */
 	public function testWhatTheChangePasswordPageNeedsStillAnswers(): void
 	{
 		$whoAmI = self::request(['method' => 'GET', 'path' => '/api/user', 'cookie' => 'bootstrap-flagged']);
@@ -286,11 +310,16 @@ class BootstrapAdminTest extends PgsqlSchemaTestCase
 		self::assertSame('http://localhost/user/' . self::FLAGGED . '?changepw=true', $page['location'], 'rendered pages still redirect to the form');
 	}
 
+	/** A session of an unflagged account can still read household data. */
 	public function testAnUnflaggedAccountIsUnaffected(): void
 	{
 		self::assertSame(200, self::request(['method' => 'GET', 'path' => '/api/objects/products', 'cookie' => 'bootstrap-clear'])['status']);
 	}
 
+	/**
+	 * A flagged account cannot rename itself or re-save the same password, but changing its
+	 * password through the allowed route clears the flag and lifts the restriction.
+	 */
 	public function testChangingThePasswordThroughTheAllowedRouteLiftsTheRestriction(): void
 	{
 		self::assertSame(403, self::request(['method' => 'GET', 'path' => '/api/objects/products', 'cookie' => 'bootstrap-changes'])['status']);

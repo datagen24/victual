@@ -6,6 +6,7 @@ use PDO;
 use Victual\Services\ApiKeyService;
 use Victual\Services\Labels\LabelWorkerCredentialService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Issue 894: POST /labels/pair, /labels/credentials/rotate, /labels/register and
@@ -49,6 +50,7 @@ class LabelWorkerRoute403Test extends PgsqlSchemaTestCase
 	private static string $workerKey;
 	private static string $rendererKey;
 
+	/** Creates a plain user, a must-change-password user and a reverse-proxy user, their keys and sessions, and a declared worker with worker and renderer credentials; the password-change flag is set last. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -79,6 +81,7 @@ class LabelWorkerRoute403Test extends PgsqlSchemaTestCase
 
 	// ---------------------------------------------------------------- the document
 
+	/** Checks that victual.openapi.json declares no 403 response on POST for the four worker routes. */
 	public function testTheFourOperationsDeclareNo403(): void
 	{
 		$spec = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), true, 512, JSON_THROW_ON_ERROR);
@@ -93,6 +96,7 @@ class LabelWorkerRoute403Test extends PgsqlSchemaTestCase
 
 	// ---------------------------------------------------------------- what is not a worker credential
 
+	/** Sends every non-worker caller to all four routes and requires 401 and not 403 each time, with the row counts unchanged afterwards. */
 	public function testNothingThatIsNotAWorkerCredentialAnswers403(): void
 	{
 		$before = self::State();
@@ -110,6 +114,7 @@ class LabelWorkerRoute403Test extends PgsqlSchemaTestCase
 		self::assertSame($before, self::State(), 'a refused request wrote nothing');
 	}
 
+	/** With reverse-proxy auth and an untrusted REMOTE_ADDR, GET /api/user answers 403 as the control while the four worker routes still answer 401. */
 	public function testAUntrustedProxyAddressIsNotAnswered403OnTheseRoutes(): void
 	{
 		// ReverseProxyAuthenticator throws HttpForbiddenException from inside
@@ -133,6 +138,7 @@ class LabelWorkerRoute403Test extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** A valid worker credential sent with a foreign Origin and a flagged session still reaches the handlers: claim and register answer 200, rotate and pair answer 401 unauthorized. */
 	public function testAWorkerCredentialIsNotRefusedByTheCheapChecksThatRefuseAUser(): void
 	{
 		// The positive control for the matrix above: a valid worker credential passes the
@@ -201,6 +207,7 @@ class LabelWorkerRoute403Test extends PgsqlSchemaTestCase
 		return $counts;
 	}
 
+	/** Asserts the response is 401 and not 403, with the pairing refusal body for /labels/pair and the plain Unauthorized body for the other routes. */
 	private static function AssertRefused(array $response, string $path, string $why): void
 	{
 		self::assertNotSame(403, $response['status'], "$why answered 403: " . $response['body']);
@@ -219,6 +226,11 @@ class LabelWorkerRoute403Test extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Returns a valid-shaped request body for each of the four operations, keyed by path.
+	 *
+	 * @return array<string, array>
+	 */
 	private static function Bodies(): array
 	{
 		return [
@@ -229,6 +241,7 @@ class LabelWorkerRoute403Test extends PgsqlSchemaTestCase
 		];
 	}
 
+	/** Inserts an API key for the user, read-only or not, and returns its plaintext. */
 	private static function IssueKey(int $userId, bool $readOnly): string
 	{
 		$key = bin2hex(random_bytes(25));
@@ -238,6 +251,7 @@ class LabelWorkerRoute403Test extends PgsqlSchemaTestCase
 		return $key;
 	}
 
+	/** Inserts a one-day session row for the user and returns its key. */
 	private static function IssueSession(int $userId): string
 	{
 		$key = bin2hex(random_bytes(25));
@@ -288,19 +302,9 @@ class LabelWorkerRoute403Test extends PgsqlSchemaTestCase
 			$environment['VICTUAL_' . $name] = $value;
 		}
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/authstack-subprocess-helper.php', base64_encode(json_encode($spec))],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$environment
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/authstack-subprocess-helper.php', base64_encode(json_encode($spec))], $environment));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		self::assertIsArray($result, "the request helper printed no JSON for $method $path. stdout: $output\nstderr: $errors");

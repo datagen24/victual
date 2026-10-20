@@ -3,6 +3,7 @@
 namespace Victual\Tests\Pgsql;
 
 use PHPUnit\Framework\TestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * The upload limit's clamp announcement is written once, at the CLI boot, and never by a
@@ -26,6 +27,7 @@ class FileSizeLimitTest extends TestCase
 
 	private static string $datapath;
 
+	/** Creates a temporary data path holding an empty config.php for the helper process. */
 	public static function setUpBeforeClass(): void
 	{
 		self::$datapath = sys_get_temp_dir() . '/victual-filesizelimit-' . getmypid();
@@ -33,6 +35,7 @@ class FileSizeLimitTest extends TestCase
 		file_put_contents(self::$datapath . '/config.php', "<?php\n");
 	}
 
+	/** Removes the temporary config.php and data path. */
 	public static function tearDownAfterClass(): void
 	{
 		@unlink(self::$datapath . '/config.php');
@@ -74,12 +77,10 @@ class FileSizeLimitTest extends TestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 			'REDIRECT_STATUS' => '1',
 		]);
-		$process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-		$output = stream_get_contents($pipes[1]);
-		$stderr = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		$exit = proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run($command, $env));
+		$output = $finished['stdout'];
+		$stderr = $finished['stderr'];
+		$exit = $finished['exit'];
 
 		$logged = file_get_contents($log);
 		unlink($log);
@@ -90,6 +91,7 @@ class FileSizeLimitTest extends TestCase
 		return ['output' => $decoded, 'log' => $logged, 'exit' => $exit, 'stderr' => $stderr];
 	}
 
+	/** The php-cgi binary next to PHP_BINARY; skips the test when it is not installed. */
 	private static function cgiBinary(): string
 	{
 		$candidate = dirname(PHP_BINARY) . '/php-cgi';
@@ -101,6 +103,10 @@ class FileSizeLimitTest extends TestCase
 		return $candidate;
 	}
 
+	/**
+	 * With upload_max_filesize at 1M, a CLI boot reports an effective limit of 1 MB and writes
+	 * exactly one clamp line to the error log.
+	 */
 	public function testTheCliBootAnnouncesTheClampOnce(): void
 	{
 		$run = self::boot(PHP_BINARY, '1M');
@@ -110,6 +116,10 @@ class FileSizeLimitTest extends TestCase
 		self::assertSame(1, preg_match_all(self::CLAMP_LINE, $run['log']), 'exactly one clamp line at the CLI boot; log was: ' . $run['log']);
 	}
 
+	/**
+	 * With upload_max_filesize at 64M, a CLI boot reports an effective limit of 64 MB and logs
+	 * nothing about FILE_STORAGE_MAX_SIZE_MB.
+	 */
 	public function testTheCliBootIsSilentWhenTheSettingIsHonoured(): void
 	{
 		$run = self::boot(PHP_BINARY, '64M');
@@ -118,6 +128,10 @@ class FileSizeLimitTest extends TestCase
 		self::assertStringNotContainsString('FILE_STORAGE_MAX_SIZE_MB', $run['log'], 'nothing to announce when no directive binds; log was: ' . $run['log']);
 	}
 
+	/**
+	 * Under php-cgi with upload_max_filesize at 1M, the effective limit is clamped to 1 MB but no
+	 * clamp line is logged.
+	 */
 	public function testAWebProcessClampsTheSameButLogsNothing(): void
 	{
 		$run = self::boot(self::cgiBinary(), '1M');

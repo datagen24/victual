@@ -19,6 +19,7 @@ use Victual\Services\Storage\FilesystemStorage;
 use Victual\Services\Storage\FileTooLargeException;
 use Victual\Services\Storage\InvalidFileNameException;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * Files and the two storage backends (docs/plans/landed/01-file-storage.md).
@@ -56,6 +57,10 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 	/** Where FilesystemStorage puts its group folders. */
 	private static string $storageRoot;
 
+	/**
+	 * Builds the DI container and FilesApiController, creates the caller user, and prepares the PNG
+	 * and PDF fixtures and the storage root path.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -1226,6 +1231,11 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * A user's own avatar thumbnail is served without USERS_READ, but another user who names the
+	 * cached derivative of that avatar, with or without the force option, gets 403 and no bytes, on
+	 * both backends.
+	 */
 	public function testTheOwnPictureExceptionNeverServesACachedDerivativeOfSomeoneElsesPicture(): void
 	{
 		$force = json_encode(['force_serve_as' => 'picture', 'best_fit_height' => '32', 'best_fit_width' => '32']);
@@ -1426,17 +1436,20 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 		return $bytes;
 	}
 
+	/** A GET (or the given method) PSR-7 request to the API with the given query parameters. */
 	private static function request(string $method = 'GET', array $queryParams = [])
 	{
 		return (new ServerRequestFactory())->createServerRequest($method, 'http://localhost/api')->withQueryParams($queryParams);
 	}
 
+	/** A PSR-7 request whose body is the given raw bytes. */
 	private static function requestWithRawBody(string $method, string $bytes)
 	{
 		return (new ServerRequestFactory())->createServerRequest($method, 'http://localhost/api')
 			->withBody((new StreamFactory())->createStream($bytes));
 	}
 
+	/** Replaces the caller's permissions and roles with the named permissions. */
 	private static function grant(array $names): void
 	{
 		self::$db->exec('DELETE FROM user_permissions WHERE user_id = ' . self::CALLER_ID . '; DELETE FROM user_roles WHERE user_id = ' . self::CALLER_ID);
@@ -1488,19 +1501,9 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 			'PGPASSWORD' => getenv('PGPASSWORD')
 		], $extraEnvironment);
 
-		$process = proc_open(
-			array_merge([PHP_BINARY, __DIR__ . '/storagefiles-subprocess-helper.php'], $arguments),
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$environment
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run(array_merge([PHP_BINARY, __DIR__ . '/storagefiles-subprocess-helper.php'], $arguments), $environment));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
 
 		$result = json_decode((string)$output, true);
 		self::assertIsArray($result, 'The storage files helper printed no JSON for ' . implode(' ', $arguments) . ". stdout: $output\nstderr: $errors");

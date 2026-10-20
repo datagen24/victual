@@ -27,6 +27,7 @@ use Victual\Services\Labels\SettingsSchemaValidator;
 use Victual\Services\Labels\TemplateDocument;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 use Victual\Tests\Support\SfntFixture;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * The label services the artifact, identity and worker-API phases in `.devtools/labels/`
@@ -58,6 +59,11 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 	private static int $monoPrinter;
 	private static int $redTemplate;
 
+	/**
+	 * Creates the caller and a location, registers the Brother QL and monochrome drivers for a
+	 * declared worker, saves a colour and a monochrome printer, uploads a font, publishes the
+	 * QR, text, edge and red templates, and records one real and one sample capture.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -139,11 +145,16 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		self::fail($why . ': expected a refusal ' . $code . ' on ' . $field . ', nothing was refused');
 	}
 
+	/** Loads the Brother QL driver definition from the labels fixtures. */
 	private static function driverDefinition(): array
 	{
 		return json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/.devtools/labels/fixtures/brother-ql.json'), true, 512, JSON_THROW_ON_ERROR);
 	}
 
+	/**
+	 * Returns a valid Brother QL-820NWBc printer configuration on the fixture worker (62 mm red
+	 * media, 300 dpi, black and red).
+	 */
 	private static function printerDefinition(): array
 	{
 		return ['name' => 'Fixture printer', 'worker_id' => self::$worker, 'driver_id' => 'brother.ql',
@@ -165,6 +176,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		return $definition;
 	}
 
+	/**
+	 * Returns the printer configuration for the fixture monochrome driver: the colour printer's
+	 * definition with a different name, driver, media and a monochrome colour mode.
+	 */
 	private static function monoPrinterDefinition(): array
 	{
 		return array_merge(self::printerDefinition(), ['name' => 'Fixture monochrome printer',
@@ -184,30 +199,35 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 
 	// --- Documents -------------------------------------------------------------------------
 
+	/** Returns a 58.9 mm by 30 mm canvas with 2 mm margins. */
 	private static function canvas(): array
 	{
 		return ['width_mm' => 58.9, 'height_mm' => 30.0, 'max_height_mm' => null,
 			'margins_mm' => ['top' => 2.0, 'right' => 2.0, 'bottom' => 2.0, 'left' => 2.0]];
 	}
 
+	/** Returns a valid QR element whose source is label.payload. */
 	private static function qrElement(): array
 	{
 		return ['type' => 'qr', 'id' => 'code', 'x_mm' => 2.0, 'y_mm' => 2.0, 'module_mm' => 0.6,
 			'ec_level' => 'M', 'quiet_zone_modules' => 4, 'source' => 'label.payload', 'color' => 'black'];
 	}
 
+	/** Returns a valid text element showing location.name in the fixture font. */
 	private static function textElement(): array
 	{
 		return ['type' => 'text', 'id' => 'title', 'x_mm' => 2.0, 'y_mm' => 22.0, 'width_mm' => 40.0,
 			'height_mm' => 6.0, 'field' => 'location.name', 'font_asset' => 'Fixture Sans', 'size_pt' => 10.0];
 	}
 
+	/** Returns a valid location template document holding only the QR element. */
 	private static function qrOnlyDocument(): array
 	{
 		return ['schema_version' => 1, 'entity_kind' => 'location', 'canvas' => self::canvas(),
 			'elements' => [self::qrElement()]];
 	}
 
+	/** Returns a valid location template document holding the QR element and the text element. */
 	private static function textDocument(): array
 	{
 		return ['schema_version' => 1, 'entity_kind' => 'location', 'canvas' => self::canvas(),
@@ -230,11 +250,16 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		return $document;
 	}
 
+	/**
+	 * Returns the QR-only document with the standard text element, after $overrides are applied
+	 * to it, appended.
+	 */
 	private static function withText(array $overrides): array
 	{
 		return self::withElement(array_merge(self::textElement(), $overrides));
 	}
 
+	/** Returns the QR-only document with $overrides applied to its canvas. */
 	private static function withCanvas(array $overrides): array
 	{
 		$document = self::qrOnlyDocument();
@@ -277,6 +302,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		return "\x00\x01\x00\x00" . pack('nnnn', 1, 16, 0, 0) . $entry . 'dead';
 	}
 
+	/**
+	 * Builds one PNG chunk: the data length, the chunk type, the data and the CRC-32 of type
+	 * and data.
+	 */
 	private static function pngChunk(string $type, string $data): string
 	{
 		return pack('N', strlen($data)) . $type . $data . pack('N', crc32($type . $data));
@@ -335,18 +364,21 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 
 	// --- TemplateDocument: the refusals ----------------------------------------------------
 
+	/** Returns a valid image element that uses the fixture mark asset. */
 	private static function imageElement(): array
 	{
 		return ['type' => 'image', 'id' => 'logo', 'x_mm' => 2.0, 'y_mm' => 10.0, 'width_mm' => 10.0,
 			'height_mm' => 10.0, 'asset' => 'Fixture Mark', 'fit' => 'contain'];
 	}
 
+	/** Returns a valid line element. */
 	private static function lineElement(): array
 	{
 		return ['type' => 'line', 'id' => 'rule', 'x1_mm' => 2.0, 'y1_mm' => 18.0, 'x2_mm' => 50.0,
 			'y2_mm' => 18.0, 'stroke_mm' => 0.3];
 	}
 
+	/** Returns a valid rectangle element with no fill. */
 	private static function rectElement(): array
 	{
 		return ['type' => 'rect', 'id' => 'box', 'x_mm' => 2.0, 'y_mm' => 10.0, 'width_mm' => 20.0,
@@ -463,6 +495,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/**
+	 * Proves that TemplateDocument::Validate() refuses each malformed document in the data set,
+	 * naming the offending field and the refusal code.
+	 */
 	#[DataProvider('malformedDocuments')]
 	public function testMalformedDocumentIsRefusedByName(array $document, string $field, string $code): void
 	{
@@ -595,6 +631,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			. self::pngChunk('IEND', '');
 	}
 
+	/** Returns the bytes of a 4 by 3 GIF image. */
 	private static function gifBytes(): string
 	{
 		$image = imagecreatetruecolor(4, 3);
@@ -603,11 +640,13 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		return (string)ob_get_clean();
 	}
 
+	/** Returns how many rows label_assets holds. */
 	private static function assetRowCount(): int
 	{
 		return (int)self::$db->query('SELECT COUNT(*) FROM label_assets')->fetchColumn();
 	}
 
+	/** Returns how many stored files are in the labelassets file group. */
 	private static function assetFileCount(): int
 	{
 		return (int)self::$db->query("SELECT COUNT(*) FROM files WHERE file_group = 'labelassets'")->fetchColumn();
@@ -717,6 +756,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		return $result;
 	}
 
+	/** Proves that asking for the bytes of an asset id that does not exist returns null. */
 	public function testBytesOfAnAssetThatDoesNotExistIsNull(): void
 	{
 		self::assertNull((new LabelAssetService(self::$db))->Bytes(987654),
@@ -746,6 +786,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/**
+	 * Proves that Store() refuses each rejected asset in the data set with the expected field
+	 * and code, and adds no asset row and no stored file.
+	 */
 	#[DataProvider('rejectedAssets')]
 	public function testRejectedAssetStoresNothing(string $name, string $kind, string $mime, string $bytes, string $field, string $code): void
 	{
@@ -818,6 +862,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 
 	// --- RenderRequestService --------------------------------------------------------------
 
+	/** Returns a RenderRequestService on the test connection. */
 	private static function requests(): RenderRequestService
 	{
 		return new RenderRequestService(self::$db);
@@ -829,6 +874,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		self::$db->exec("UPDATE label_render_requests SET state = 'failed' WHERE state IN ('pending', 'rendering')");
 	}
 
+	/**
+	 * Creates a render request for the given purpose in a transaction, defaulting to the QR
+	 * template version, the fixture profile and the real capture, and returns it.
+	 */
 	private static function createRequest(string $purpose, ?int $versionId = null, ?int $captureId = null, ?int $profileId = null): array
 	{
 		return self::tx(static fn () => self::requests()->CreateForVersion(
@@ -847,6 +896,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		return $input;
 	}
 
+	/** Returns the label_render_requests row with the given id. */
 	private static function requestRow(int $requestId): array
 	{
 		return self::$db->query('SELECT * FROM label_render_requests WHERE id = ' . $requestId)->fetch(PDO::FETCH_ASSOC);
@@ -878,6 +928,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Proves that a render request with the purpose preview_draft is refused as an invalid
+	 * value and queues no request.
+	 */
 	public function testUnknownRenderPurposeIsRefusedAndQueuesNothing(): void
 	{
 		$before = (int)self::$db->query('SELECT COUNT(*) FROM label_render_requests')->fetchColumn();
@@ -887,12 +941,14 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'A refused purpose queues no render');
 	}
 
+	/** Proves that Get() for a render request id nothing issued is refused as not found. */
 	public function testGettingARequestThatDoesNotExistIsRefused(): void
 	{
 		self::assertRefused(static fn () => self::requests()->Get(987654), 'render_request_id', 'not_found',
 			'A render request id nothing issued');
 	}
 
+	/** Proves that a created render request reads back by its id. */
 	public function testGetReturnsTheStoredRequest(): void
 	{
 		$created = self::createRequest('production');
@@ -900,6 +956,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'A request reads back by its id');
 	}
 
+	/** Proves that Claim() returns null when no request is waiting. */
 	public function testClaimReturnsNothingWhenTheQueueIsEmpty(): void
 	{
 		self::quiesceQueue();
@@ -1003,6 +1060,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'A draft resolves its assets by the name the document pins');
 	}
 
+	/**
+	 * Proves that a draft render request pinning a font that was never uploaded is settled as
+	 * invalid at claim time, and nothing else is left waiting.
+	 */
 	public function testDraftReferencingAnAssetThatIsNotStoredIsSettledAsInvalid(): void
 	{
 		self::quiesceQueue();
@@ -1070,6 +1131,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'The record says how many times it tried');
 	}
 
+	/** Proves that ReapExpired() reaps nothing when no render lease has expired. */
 	public function testReapingFindsNothingWhenNoLeaseHasExpired(): void
 	{
 		self::quiesceQueue();
@@ -1097,6 +1159,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'An invalid request is not retried; somebody has to change the document');
 	}
 
+	/**
+	 * Proves that RecordFailure() puts a request back on the queue with the code RENDER_FAILED
+	 * and offers it again, until the attempt bound is reached, after which it stops retrying.
+	 */
 	public function testInfrastructureFailureRetriesUntilTheBoundThenFails(): void
 	{
 		$input = self::claimFresh();
@@ -1115,12 +1181,17 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		self::assertSame('failed', $terminal['state'], 'Past the bound the request stops retrying and waits for a person');
 	}
 
+	/** Proves that AssertCurrent() for a request id nothing issued is refused as not found. */
 	public function testResultForARequestThatDoesNotExistIsRefused(): void
 	{
 		self::assertRefused(static fn () => self::tx(static fn () => self::requests()->AssertCurrent(987654, 'whatever')),
 			'render_request_id', 'not_found', 'A result for a request nothing issued');
 	}
 
+	/**
+	 * Proves that AssertCurrent() refuses a result carrying a generation token the request
+	 * never issued, as a stale generation.
+	 */
 	public function testResultCarryingTheWrongTokenIsRefused(): void
 	{
 		$input = self::claimFresh();
@@ -1131,6 +1202,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 
 	// --- ArtifactService -------------------------------------------------------------------
 
+	/** Returns an ArtifactService on the test connection. */
 	private static function artifacts(): ArtifactService
 	{
 		return new ArtifactService(self::$db);
@@ -1211,6 +1283,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			['driver_id' => 'brother.ql', 'driver_schema_version' => '1.0', 'connection_type' => 'tcp'], [], $combination));
 	}
 
+	/**
+	 * Creates a 29 mm die-cut monochrome media profile with a 25.4 mm square printable area and
+	 * returns its id.
+	 */
 	private static function dieCutProfile(): int
 	{
 		return (int)self::profileFor(['model' => 'QL-820NWBc', 'media' => '29die', 'color_mode' => 'monochrome',
@@ -1283,6 +1359,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'generation_token', 'already_committed', 'A second result for a request that already has an artifact');
 	}
 
+	/**
+	 * Proves that Get() and Promote() for an artifact id nothing produced are refused as not
+	 * found.
+	 */
 	public function testArtifactThatDoesNotExistIsRefused(): void
 	{
 		self::assertRefused(static fn () => self::artifacts()->Get(987654), 'artifact_id', 'not_found', 'An artifact id nothing produced');
@@ -1480,6 +1560,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'artifact_id', 'artifact_collected', 'An exact reprint of collected bytes is refused rather than rerendered');
 	}
 
+	/**
+	 * Proves that CollectExpiredPreviews() collects nothing when no preview artifact has
+	 * expired.
+	 */
 	public function testCollectingFindsNothingWhenNoPreviewHasExpired(): void
 	{
 		self::$db->exec("UPDATE label_artifacts SET retention_class = 'retained' WHERE collected_at IS NULL");
@@ -1537,9 +1621,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 				if ($value !== false) $env[$key] = $value;
 			}
 			$env['RBAC_TEST_SCHEMA'] = self::Schema();
-			$process = proc_open([PHP_BINARY, __DIR__ . '/artifact-accept-subprocess-helper.php', $spec],
-				[1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-			self::assertIsResource($process, 'The independent writer process starts');
+			$process = Subprocess::start([PHP_BINARY, __DIR__ . '/artifact-accept-subprocess-helper.php', $spec], $env);
 			$deadline = microtime(true) + 5;
 			while (!is_file($ready) && microtime(true) < $deadline) {
 				usleep(10000);
@@ -1558,12 +1640,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 				usleep(10000);
 			}
 			self::$db->commit();
-			$stdout = stream_get_contents($pipes[1]);
-			$stderr = stream_get_contents($pipes[2]);
-			fclose($pipes[1]);
-			fclose($pipes[2]);
-			$exit = proc_close($process);
-			$process = null;
+			$finished = Subprocess::Completed($process->finish());
+			$stdout = $finished['stdout'];
+			$stderr = $finished['stderr'];
+			$exit = $finished['exit'];
 			self::assertTrue($waiting, 'Store waited on the collector\'s per-file transaction lock');
 			self::assertSame(0, $exit, 'The writer completes after collection commits: ' . $stderr);
 			$result = json_decode($stdout, true, 512, JSON_THROW_ON_ERROR);
@@ -1573,24 +1653,23 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			if (self::$db->inTransaction()) {
 				self::$db->rollBack();
 			}
-			if (is_resource($process)) {
-				proc_terminate($process);
-				foreach ($pipes as $pipe) {
-					if (is_resource($pipe)) fclose($pipe);
-				}
-				proc_close($process);
-			}
+			$process?->abort();
 			if (is_file($ready)) unlink($ready);
 		}
 	}
 
 	// --- LabelCaptureService ---------------------------------------------------------------
 
+	/**
+	 * Returns a LabelCaptureService on the test connection, using $permissionCheck as its
+	 * permission check when given.
+	 */
 	private static function captures($permissionCheck = null): LabelCaptureService
 	{
 		return new LabelCaptureService(self::$db, $permissionCheck);
 	}
 
+	/** Returns how many rows label_captures holds. */
 	private static function captureRowCount(): int
 	{
 		return (int)self::$db->query('SELECT COUNT(*) FROM label_captures')->fetchColumn();
@@ -1621,6 +1700,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		self::assertSame($capture['digest'], $stored['digest'], 'The capture digest is durable');
 	}
 
+	/**
+	 * Proves that a sample capture is flagged as a sample, names no target and no label uid,
+	 * and still carries a value for location.name.
+	 */
 	public function testSampleCaptureNamesNoTargetAndNoIdentity(): void
 	{
 		$sample = self::captures()->Get(self::$sampleCaptureId);
@@ -1630,6 +1713,12 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		self::assertNotSame('', $sample['captured_fields']['location.name'], 'A sample carries something to lay out');
 	}
 
+	/**
+	 * Proves that Capture() refuses an unknown field, a caller lacking the field's permission,
+	 * a missing target, an unnamed required field, an over-long value and a timezone given as
+	 * an offset, and that reading a capture id nothing wrote is refused; none of them writes a
+	 * capture.
+	 */
 	public function testCaptureRefusals(): void
 	{
 		self::$db->exec("INSERT INTO locations(id, name, description) VALUES (9003, '', 'A shelf nobody named')");
@@ -1686,6 +1775,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 
 	// --- LabelWorkerAuthorization and worker credentials -----------------------------------
 
+	/** Returns a LabelWorkerAuthorization on the test connection. */
 	private static function authorization(): LabelWorkerAuthorization
 	{
 		return new LabelWorkerAuthorization(self::$db);
@@ -1707,6 +1797,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		return [$job, $attempt];
 	}
 
+	/** Inserts another declared label worker with a random name and returns its id. */
 	private static function secondWorker(): int
 	{
 		return (int)self::$db->query("INSERT INTO label_workers(name, configuration_mode) VALUES ('labelservices-other-" . bin2hex(random_bytes(4)) . "', 'declared') RETURNING id")->fetchColumn();
@@ -1730,6 +1821,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		self::assertTrue(true, 'An active worker is authorized on its own attempt, its own printer and the routes that name neither');
 	}
 
+	/**
+	 * Proves that the labels-pair route and an invented route name are both refused as
+	 * forbidden for a worker.
+	 */
 	public function testPairingIsNotAWorkerOperation(): void
 	{
 		self::assertRefused(static fn () => self::authorization()->Authorize('labels-pair', self::$worker),
@@ -1738,6 +1833,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'route', 'forbidden', 'A route name the authorization map does not carry');
 	}
 
+	/** Proves that a deactivated worker is refused as unauthorized on the claim route. */
 	public function testInactiveWorkerIsRefusedEverywhere(): void
 	{
 		$worker = self::secondWorker();
@@ -1746,6 +1842,11 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'worker', 'unauthorized', 'A deactivated worker');
 	}
 
+	/**
+	 * Proves that a worker is refused as forbidden when reporting on an attempt it does not
+	 * hold, heartbeating an attempt that does not exist, or reporting the status of a printer
+	 * assigned to another worker.
+	 */
 	public function testWorkerCannotActOnAnotherWorkersAttemptOrPrinter(): void
 	{
 		$other = self::secondWorker();
@@ -1811,6 +1912,11 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'Stale traffic on a superseded credential is not recorded as credential reuse');
 	}
 
+	/**
+	 * Proves that each declared credential authenticates as its own worker, that a worker is
+	 * refused as forbidden on an attempt held by another worker, and that an expired credential
+	 * authenticates nobody.
+	 */
 	public function testExpiredAndForeignCredentialsAreRefused(): void
 	{
 		$credentials = new LabelWorkerCredentialService(self::$db);
@@ -1833,11 +1939,16 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 
 	// --- PrintEvidenceService --------------------------------------------------------------
 
+	/** Returns a PrintEvidenceService on the test connection. */
 	private static function evidence(): PrintEvidenceService
 	{
 		return new PrintEvidenceService(self::$db);
 	}
 
+	/**
+	 * Returns a valid device-status evidence submission with a random submission id, with
+	 * $overrides applied.
+	 */
 	private static function deviceStatusEvidence(array $overrides = []): array
 	{
 		return array_merge(['submission_id' => bin2hex(random_bytes(8)), 'evidence_type' => 'device_status',
@@ -1867,6 +1978,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'A +02:00 observation is 12:30 UTC; reading 14:30 would mean the offset had been dropped');
 	}
 
+	/**
+	 * Proves that decoded-scan evidence is stored with the uid that was scanned and the
+	 * reported confidence.
+	 */
 	public function testDecodedScanEvidenceRecordsWhatWasRead(): void
 	{
 		[, $attempt] = self::attempt(self::$worker);
@@ -1878,6 +1993,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		self::assertSame(0.95, (float)$row['confidence'], 'The reported confidence is recorded');
 	}
 
+	/**
+	 * Proves that a worker submitting evidence for an attempt held by another worker is refused
+	 * as forbidden, and no evidence row is added.
+	 */
 	public function testEvidenceForAnAttemptThisWorkerDoesNotHoldIsRefused(): void
 	{
 		[, $attempt] = self::attempt(self::$worker);
@@ -1917,6 +2036,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/**
+	 * Proves that Submit() refuses each rejected evidence variant in the data set as out of
+	 * range for the expected field, and adds no evidence row.
+	 */
 	#[DataProvider('rejectedEvidence')]
 	public function testRejectedEvidenceFilesNothing(array $overrides, string $field): void
 	{
@@ -1952,6 +2075,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 
 	// --- PrinterStatusService --------------------------------------------------------------
 
+	/** Returns a PrinterStatusService on the test connection. */
 	private static function statusReport(): PrinterStatusService
 	{
 		return new PrinterStatusService(self::$db);
@@ -1983,6 +2107,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'A printer has one current status, not a pile of them');
 	}
 
+	/**
+	 * Proves that Report() refuses a device state that is not a string and a report from a
+	 * worker the printer is not assigned to, and that a refused report records no status.
+	 */
 	public function testPrinterStatusRefusals(): void
 	{
 		$other = self::secondWorker();
@@ -2256,6 +2384,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/**
+	 * Proves that IndexedPng::Facts() refuses each byte string in the data set as an invalid
+	 * artifact and that the refusal names the missing part of the form.
+	 */
 	#[DataProvider('malformedRasters')]
 	public function testRasterThatIsNotThisFormIsRefused(string $bytes, string $because): void
 	{
@@ -2271,6 +2403,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * Proves that a raster is refused when its image data does not inflate, has fewer scanlines
+	 * than the header declares, or uses an undefined filter type.
+	 */
 	public function testRasterWhosePixelsCannotBeReadIsRefused(): void
 	{
 		$palette = ['#ffffff', '#000000'];
@@ -2325,6 +2461,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/**
+	 * Proves that a settings schema outside the evaluable subset is refused as
+	 * schema_unevaluable at the given schema path.
+	 */
 	#[DataProvider('unevaluableSchemas')]
 	public function testUnevaluableSettingsSchemaIsRefused(string $json, string $path): void
 	{
@@ -2343,6 +2483,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 
 	// --- DriverRegistryService -------------------------------------------------------------
 
+	/** Returns a DriverRegistryService on the test connection. */
 	private static function drivers(): DriverRegistryService
 	{
 		return new DriverRegistryService(self::$db);
@@ -2389,6 +2530,11 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/**
+	 * Proves that ValidateDefinition() refuses each malformed driver definition in the data
+	 * set, naming the field: invalid_definition normally, and schema_unevaluable when the field
+	 * is a schema path.
+	 */
 	#[DataProvider('malformedDriverDefinitions')]
 	public function testMalformedDriverDefinitionIsRefusedByName(array $definition, string $field): void
 	{
@@ -2404,6 +2550,11 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		self::assertTrue(true, 'A real driver definition is accepted');
 	}
 
+	/**
+	 * Proves that Register() refuses a batch naming the same driver version twice, a definition
+	 * whose shape breaks the validator, and a deactivated worker, and that none of them writes
+	 * a driver.
+	 */
 	public function testDriverRegistrationRefusals(): void
 	{
 		$worker = self::secondWorker();
@@ -2513,6 +2664,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		(new PrinterStatusService(self::$db))->Report(self::$worker, self::$printer, ['device_state' => 'idle']);
 	}
 
+	/**
+	 * Proves that MediaProfileService::Get() for a profile id nothing derived is refused as not
+	 * found.
+	 */
 	public function testMediaProfileThatDoesNotExistIsRefused(): void
 	{
 		self::assertRefused(static fn () => (new MediaProfileService(self::$db))->Get(987654),
@@ -2530,6 +2685,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 
 	// --- LabelTemplateService --------------------------------------------------------------
 
+	/** Returns a LabelTemplateService on the test connection. */
 	private static function templates(): LabelTemplateService
 	{
 		return new LabelTemplateService(self::$db);
@@ -2602,6 +2758,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 
 	// --- PrinterConfigurationService -------------------------------------------------------
 
+	/** Returns a PrinterConfigurationService on the test connection. */
 	private static function printers(): PrinterConfigurationService
 	{
 		return new PrinterConfigurationService(self::$db);
@@ -2637,6 +2794,11 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		];
 	}
 
+	/**
+	 * Proves that Save() refuses each rejected printer configuration in the data set with the
+	 * expected field and code, and saves no printer. A worker id of 0 stands for the fixture
+	 * worker.
+	 */
 	#[DataProvider('rejectedPrinters')]
 	public function testRejectedPrinterIsNotSaved(array $printer, string $field, string $code): void
 	{
@@ -2738,6 +2900,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 
 	// --- PrintJobPayload -------------------------------------------------------------------
 
+	/**
+	 * Accepts an artifact and builds the print job payload for the fixture label uid, capture,
+	 * printer, template and media profile.
+	 */
 	private static function jobPayload(): array
 	{
 		[, $artifact] = self::acceptArtifact();
@@ -2798,6 +2964,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 
 	// --- LabelOperationsService ------------------------------------------------------------
 
+	/** Returns a LabelOperationsService on the test connection acting as user 9000. */
 	private static function operations(): LabelOperationsService
 	{
 		return new LabelOperationsService(self::$db, null, 9000);
@@ -2818,6 +2985,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		return [self::$db->query('SELECT * FROM print_jobs WHERE id = ' . (int)$job['id'])->fetch(PDO::FETCH_ASSOC), $artifact];
 	}
 
+	/** Returns the uid of the live (not retired) label for location 9001. */
 	private static function liveUid(): string
 	{
 		return (string)self::$db->query("SELECT uid FROM labels WHERE kind = 'location' AND target_id = 9001 AND retired_at IS NULL")->fetchColumn();
@@ -2853,6 +3021,11 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'An artifact a job points at is retained');
 	}
 
+	/**
+	 * Proves that issuing a label is refused for an import epoch that has moved on, for a
+	 * template that paints red on a printer that cannot, and for a printer whose worker
+	 * advertises no such driver version, and that none of the refusals queues a print job.
+	 */
 	public function testIssuanceRefusals(): void
 	{
 		$before = (int)self::$db->query('SELECT COUNT(*) FROM print_jobs')->fetchColumn();
@@ -2948,6 +3121,11 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'A reprint queues no render; the renderer does not need to exist');
 	}
 
+	/**
+	 * Proves that Reprint() is refused for a job that does not exist, a job that never had an
+	 * artifact, a job whose label is not known, and bytes replayed on a printer they were not
+	 * rendered for.
+	 */
 	public function testReprintRefusals(): void
 	{
 		self::assertRefused(static fn () => self::tx(static fn () => self::operations()->Reprint(987654, null)),
@@ -3018,6 +3196,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'Promotion retains the artifact so the print can be reprinted exactly');
 	}
 
+	/**
+	 * Proves that PromotePreview() refuses an artifact that was never a preview and a preview
+	 * built from sample data, both as not promotable.
+	 */
 	public function testOnlyAnAuthoritativeLivePreviewCanBePromoted(): void
 	{
 		[, $production] = self::acceptArtifact('production');
@@ -3059,17 +3241,23 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 
 	// --- PrintAttemptService ---------------------------------------------------------------
 
+	/** Returns a PrintAttemptService on the test connection. */
 	private static function attempts(): \Victual\Services\Labels\PrintAttemptService
 	{
 		return new \Victual\Services\Labels\PrintAttemptService(self::$db);
 	}
 
+	/**
+	 * Proves that constructing a PrintAttemptService with the durations 300 and 60 throws
+	 * InvalidArgumentException.
+	 */
 	public function testLeaseDurationsMustBeCoherent(): void
 	{
 		$this->expectException(\InvalidArgumentException::class);
 		new \Victual\Services\Labels\PrintAttemptService(self::$db, 300, 60);
 	}
 
+	/** Proves that Claim() refuses a limit of 0 and a limit of 51 as out of range. */
 	public function testClaimLimitIsBounded(): void
 	{
 		self::assertRefused(static fn () => self::tx(static fn () => self::attempts()->Claim(self::$worker, 0)),
@@ -3139,6 +3327,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 
 	// --- LabelWorkerCredentialService --------------------------------------------------------
 
+	/**
+	 * Proves that constructing a LabelWorkerCredentialService with a duration of 0 throws
+	 * InvalidArgumentException.
+	 */
 	public function testCredentialDurationsMustBePositive(): void
 	{
 		$this->expectException(\InvalidArgumentException::class);
@@ -3173,6 +3365,11 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'worker_id', 'inactive_worker', 'A credential for a deactivated worker');
 	}
 
+	/**
+	 * Proves that Rotate() refuses a rotation request id that is not 32 bytes of hexadecimal, a
+	 * declared credential, which belongs to no session, a request id already used by another
+	 * credential, and a replay whose successor credential has been revoked.
+	 */
 	public function testRotationRefusals(): void
 	{
 		$credentials = new LabelWorkerCredentialService(self::$db);

@@ -6,6 +6,7 @@ use PDO;
 use PHPUnit\Framework\Attributes\Depends;
 use Victual\Services\DemoDataGeneratorService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\Subprocess;
 
 /**
  * The demo database, asserted through what a person opening a demo instance would see.
@@ -58,6 +59,10 @@ class DemoDataTest extends PgsqlSchemaTestCase
 	private static PDO $db;
 	private static string $Storage = '';
 
+	/**
+	 * Plants a sentinel file at every demo resource path under storage/, so any attempt by the
+	 * generator to download a resource would overwrite one.
+	 */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -83,6 +88,7 @@ class DemoDataTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** Runs a single-value SQL query and returns the result as an integer. */
 	private static function rows(string $sql): int
 	{
 		return (int)self::$db->query($sql)->fetchColumn();
@@ -124,6 +130,11 @@ class DemoDataTest extends PgsqlSchemaTestCase
 		self::assertSame(0, self::markerRows(), 'the marker is gone again');
 	}
 
+	/**
+	 * Running the generator against the migrated database records the run marker and creates
+	 * products, stock, ledger rows, chores, batteries, tasks, recipes, a meal plan, a shopping
+	 * list, several users, and localized location and quantity unit names.
+	 */
 	#[Depends('testTheSkipFlagRecordsTheRunWithoutGeneratingAnything')]
 	public function testTheGeneratorFillsAnEmptyDatabaseOnPostgres(): void
 	{
@@ -286,19 +297,10 @@ class DemoDataTest extends PgsqlSchemaTestCase
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
 
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/demodata-subprocess-helper.php'],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$environment
-		);
-
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		$status = proc_close($process);
+		$finished = Subprocess::Completed(Subprocess::run([PHP_BINARY, __DIR__ . '/demodata-subprocess-helper.php'], $environment));
+		$output = $finished['stdout'];
+		$errors = $finished['stderr'];
+		$status = $finished['exit'];
 
 		self::assertSame(0, $status, "the demo-mode helper failed.\nstdout: $output\nstderr: $errors");
 
