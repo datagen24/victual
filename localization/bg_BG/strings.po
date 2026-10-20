@@ -2279,9 +2279,6 @@ msgstr ""
 msgid "DD"
 msgstr "падежна дата"
 
-msgid "Print on label printer"
-msgstr "Печат на етикетен принтер"
-
 msgid "Default stock entry label"
 msgstr "Етикет за запис по подразбиране"
 
@@ -2296,13 +2293,6 @@ msgstr "Единичен етикет"
 
 msgid "Label per unit"
 msgstr "Етикет за единица"
-
-msgid "Error while executing WebHook"
-msgstr "Грешка при изпълнението на WebHook"
-
-# Example: Print *Product* Grocycode on label printer
-msgid "Print %s Grocycode on label printer"
-msgstr "Отпечатайте %s Grocycode на принтер за етикети"
 
 msgid "Open stock entry label in new window"
 msgstr "Отворете етикета за запис на склад в нов прозорец"

@@ -2262,9 +2262,6 @@ msgstr ""
 msgid "DD"
 msgstr "פג"
 
-msgid "Print on label printer"
-msgstr "הדפסה במדפסת מדבקות"
-
 msgid "Default stock entry label"
 msgstr "תווית רשומת מלאי כבררת מחדל"
 
@@ -2279,13 +2276,6 @@ msgstr "תווית בודדה"
 
 msgid "Label per unit"
 msgstr "תווית לכל יחידה"
-
-msgid "Error while executing WebHook"
-msgstr "שגיאה בהפעלת התליית רשת"
-
-# Example: Print *Product* Grocycode on label printer
-msgid "Print %s Grocycode on label printer"
-msgstr "הדפסת קוד ה־Grocy של %s במדפסת מדבקות"
 
 msgid "Open stock entry label in new window"
 msgstr "פתיחת תווית רשומת מלאי בחלון חדש"

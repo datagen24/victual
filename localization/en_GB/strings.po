@@ -2258,9 +2258,6 @@ msgstr ""
 msgid "DD"
 msgstr "DD"
 
-msgid "Print on label printer"
-msgstr "Print on label printer"
-
 msgid "Default stock entry label"
 msgstr "Default stock entry label"
 
@@ -2275,13 +2272,6 @@ msgstr "Single label"
 
 msgid "Label per unit"
 msgstr "Label per unit"
-
-msgid "Error while executing WebHook"
-msgstr "Error while executing WebHook"
-
-# Example: Print *Product* Grocycode on label printer
-msgid "Print %s Grocycode on label printer"
-msgstr "Print %s Grocycode on label printer"
 
 msgid "Open stock entry label in new window"
 msgstr "Open stock entry label in new window"

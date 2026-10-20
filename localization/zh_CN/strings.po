@@ -2114,9 +2114,6 @@ msgstr "Grocycode是Grocy实例中此%s的唯一引用，可以像其他条码�
 msgid "DD"
 msgstr "‎到期日期"
 
-msgid "Print on label printer"
-msgstr "打印"
-
 msgid "Default stock entry label"
 msgstr "默认的库存条目标签"
 
@@ -2131,13 +2128,6 @@ msgstr "单个标签"
 
 msgid "Label per unit"
 msgstr "每单位一个标签"
-
-msgid "Error while executing WebHook"
-msgstr "执行WebHook时出错"
-
-# Example: Print *Product* Grocycode on label printer
-msgid "Print %s Grocycode on label printer"
-msgstr "打印此%s的Grocycode"
 
 msgid "Open stock entry label in new window"
 msgstr "‎在新窗口中打开库存条目的标签"

@@ -2248,9 +2248,6 @@ msgstr ""
 msgid "DD"
 msgstr "KK"
 
-msgid "Print on label printer"
-msgstr "Prindi etiketi printeril"
-
 msgid "Default stock entry label"
 msgstr "Vaikimisi toote silt"
 
@@ -2265,13 +2262,6 @@ msgstr "Üks etikett"
 
 msgid "Label per unit"
 msgstr "Etikett ühiku kohta"
-
-msgid "Error while executing WebHook"
-msgstr "Viga WebHooki käivitamisel"
-
-# Example: Print *Product* Grocycode on label printer
-msgid "Print %s Grocycode on label printer"
-msgstr "Prindi %s Grocykood etiketi printeril"
 
 msgid "Open stock entry label in new window"
 msgstr "Ava toote silt uues aknas"

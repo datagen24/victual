@@ -2271,9 +2271,6 @@ msgstr ""
 msgid "DD"
 msgstr "VKP"
 
-msgid "Print on label printer"
-msgstr "Tulosta tarratulostimella"
-
 msgid "Default stock entry label"
 msgstr "Varastomerkintätarran oletusasetus"
 
@@ -2288,13 +2285,6 @@ msgstr "Yksi tarra"
 
 msgid "Label per unit"
 msgstr "Tarra per yksikkö"
-
-msgid "Error while executing WebHook"
-msgstr "Virhe suorittaessa WebHook-avainta"
-
-# Example: Print *Product* Grocycode on label printer
-msgid "Print %s Grocycode on label printer"
-msgstr "Tulosta %s GrocyKoodi tarratulostimella"
 
 msgid "Open stock entry label in new window"
 msgstr "Avaa varastomerkintätarra uudessa ikkunassa"
