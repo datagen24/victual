@@ -22,6 +22,11 @@ use Slim\Routing\RouteContext;
  */
 class LabelRenderApiController extends BaseApiController
 {
+    /**
+     * Serves the four render-worker routes: claim, result, invalid and failed. It checks the
+     * worker's authorization for the route, runs it in one request transaction, and answers a
+     * LabelValidationException with 422.
+     */
     public function Dispatch(Request $request, Response $response, array $args)
     {
         return $this->HandleApiCall($response, function () use ($request, $response, $args) {
@@ -46,11 +51,9 @@ class LabelRenderApiController extends BaseApiController
                     };
                 return $this->InRequestTransaction($request, function () use ($db, $response, $route, $args, $body, $worker, &$claimChanged) {
                     $authorization = new \Victual\Services\Labels\LabelWorkerAuthorization($db);
-                    $target = match ($route) {
-                        'labels-artifact-bytes' => (int)$args['artifactId'],
-                        default => null,
-                    };
-                    $authorization->Authorize($route, $worker, $target);
+                    // Only the four render routes reach Dispatch(); the two byte routes are
+                    // registered to Bytes(), so no route here carries a target id.
+                    $authorization->Authorize($route, $worker, null);
 
                     $requests = new RenderRequestService($db);
                     $result = match ($route) {
@@ -61,9 +64,6 @@ class LabelRenderApiController extends BaseApiController
                         default => throw new \LogicException('Unknown render route'),
                     };
 
-                    if ($route === 'labels-artifact-bytes' || $route === 'labels-asset-bytes') {
-                        return $result;
-                    }
                     return $this->ApiResponse($response, $result);
                 }, $changesData);
             } catch (LabelValidationException $error) {

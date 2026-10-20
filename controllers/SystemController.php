@@ -111,14 +111,9 @@ class SystemController extends BaseController
 	 */
 	private function GetEntryPageRelative()
 	{
-		if (defined('VICTUAL_ENTRY_PAGE'))
-		{
-			$entryPage = constant('VICTUAL_ENTRY_PAGE');
-		}
-		else
-		{
-			$entryPage = 'stock';
-		}
+		// Setting('ENTRY_PAGE', 'stock') in config-dist.php defines the constant on every path
+		// it takes (override file, environment, default), so it is always defined here.
+		$entryPage = VICTUAL_ENTRY_PAGE;
 
 		$mayView = fn (string $permission): bool => !defined('VICTUAL_USER_ID') || User::HasPermissions($permission);
 
