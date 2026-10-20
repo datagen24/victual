@@ -1,0 +1,2 @@
+product 1: stock 6 before, 9 after the purchase, 6 after its undo
+stock_log max id before the purchase 685; the purchase's first booking id 686 (transaction 04a8b3aeacc0e9198afac9914713ed58)

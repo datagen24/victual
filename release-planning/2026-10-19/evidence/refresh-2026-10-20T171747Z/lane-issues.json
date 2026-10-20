@@ -1,0 +1,160 @@
+[
+ {
+  "number": 1010,
+  "title": "Backup/restore drill against the v0.5.0 artifacts (release gate R5)",
+  "html_url": "https://github.com/datagen24/victual/issues/1010",
+  "state": "open",
+  "labels": [
+   {
+    "name": "documentation"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.1"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-20T13:14:08Z"
+ },
+ {
+  "number": 991,
+  "title": "Uploading a userfile under an existing unreferenced name reveals that the name exists",
+  "html_url": "https://github.com/datagen24/victual/issues/991",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "bug"
+   },
+   {
+    "name": "Low"
+   },
+   {
+    "name": "Security"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.1"
+  },
+  "closed_at": "2026-10-19T21:23:29Z",
+  "updated_at": "2026-10-19T21:23:29Z"
+ },
+ {
+  "number": 989,
+  "title": "Calendar API 500 includes the user-supplied event title in its body",
+  "html_url": "https://github.com/datagen24/victual/issues/989",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "bug"
+   },
+   {
+    "name": "php"
+   },
+   {
+    "name": "Low"
+   },
+   {
+    "name": "Security"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.1"
+  },
+  "closed_at": "2026-10-19T21:21:58Z",
+  "updated_at": "2026-10-19T21:21:58Z"
+ },
+ {
+  "number": 988,
+  "title": "prose-baseline-prune fails daily: it pushes to master, which requires a pull request",
+  "html_url": "https://github.com/datagen24/victual/issues/988",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "bug"
+   },
+   {
+    "name": "Low"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.1"
+  },
+  "closed_at": "2026-10-19T21:06:35Z",
+  "updated_at": "2026-10-19T21:06:35Z"
+ },
+ {
+  "number": 987,
+  "title": "Consume stores any integer recipe_id, including negative ids and ids no recipe has",
+  "html_url": "https://github.com/datagen24/victual/issues/987",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "bug"
+   },
+   {
+    "name": "php"
+   },
+   {
+    "name": "Low"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.1"
+  },
+  "closed_at": "2026-10-19T21:12:15Z",
+  "updated_at": "2026-10-19T21:12:15Z"
+ },
+ {
+  "number": 904,
+  "title": "Subprocess test helpers read stdout before stderr and deadlock on more than 64 KB of stderr",
+  "html_url": "https://github.com/datagen24/victual/issues/904",
+  "state": "open",
+  "labels": [
+   {
+    "name": "bug"
+   },
+   {
+    "name": "Low"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.1"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-20T13:14:07Z"
+ },
+ {
+  "number": 900,
+  "title": "ADR-0019 does not list the Resolve() validation refusal as a dead-letter cause",
+  "html_url": "https://github.com/datagen24/victual/issues/900",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "documentation"
+   },
+   {
+    "name": "Low"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.1"
+  },
+  "closed_at": "2026-10-20T13:27:16Z",
+  "updated_at": "2026-10-20T13:27:16Z"
+ },
+ {
+  "number": 252,
+  "title": "Code that coverage proved nothing can reach",
+  "html_url": "https://github.com/datagen24/victual/issues/252",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.1"
+  },
+  "closed_at": "2026-10-20T14:39:50Z",
+  "updated_at": "2026-10-20T14:39:50Z"
+ }
+]

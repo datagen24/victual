@@ -1,0 +1,5 @@
+source pod up (migrate + serve): 3.5 s
+ledger generation: 23.8 s
+pg_dump -Fc as victual_app: 0.2 s
+roles.sql + pg_restore as victual_migrate: 1.0 s
+victual-migrate on the restore: 0.9 s

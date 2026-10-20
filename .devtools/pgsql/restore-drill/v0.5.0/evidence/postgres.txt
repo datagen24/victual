@@ -1,0 +1,4 @@
+PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+pg_dump (PostgreSQL) 16.15 (Debian 16.15-1.pgdg13+2)
+pg_restore (PostgreSQL) 16.15 (Debian 16.15-1.pgdg13+2)
+-rw-r--r--. 1 root root 1434187 Oct 20 15:49 /tmp/victual.dump

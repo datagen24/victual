@@ -1,0 +1,8 @@
+same dump-sha256.txt
+same row-counts.txt
+same sequences.txt
+same stock-totals.txt
+same files-sha256.txt
+same migration.txt
+migrator changed nothing (dump-sha256.txt)
+same userfile bytes served
