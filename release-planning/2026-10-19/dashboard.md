@@ -1,6 +1,6 @@
 # Victual 0.5.1 release dashboard
 
-0.5.1: 4 of 8 issues closed. Latest release v0.5.0 (published 2026-10-19T12:28:41Z). Master `11ab0244`. 23 open issues and 0 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-20T13:07:59Z.
+0.5.1: 5 of 8 issues closed. Latest release v0.5.0 (published 2026-10-19T12:28:41Z). Master `e8e721ee`. 22 open issues and 1 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-20T13:28:09Z.
 
 [Interactive dashboard](dashboard.html) · [Structured source](release-data.json) · [Execution ledger](execution.md) · [Handoff](HANDOFF.md) · [0.5.0 release plan (frozen)](../2026-10-15/dashboard.md)
 
@@ -19,9 +19,9 @@
 | Issue | State | Priority | Size | Classification | Patch fit | Next action | PR |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | [#252 Code that coverage proved nothing can reach](https://github.com/datagen24/victual/issues/252) | open | P3 | M | investigation / record correction | Compatible removal of unreachable code, or a comment that keeps it as a deliberate guard. | WebhookRunner is already gone (0ea46c25) and ADR-0024 still says it stays. Maintainer picks the form of that record correction and rules on the ConfigurationValidator guard; then one code PR for the confirmed removals. | None |
-| [#900 ADR-0019 does not list the Resolve() validation refusal as a dead-letter cause](https://github.com/datagen24/victual/issues/900) | open | P2 | M | documentation / investigation | Documentation correction only. | Merge PR #1019 (ADR-0049 part 1 acceptance, lifecycle-only); then correct the PrintAttemptService.php:56-59 comment in its own PR. Part 2 stays out of 0.5.1. | https://github.com/datagen24/victual/pull/1019 |
 | [#904 Subprocess test helpers read stdout before stderr and deadlock on more than 64 KB of stderr](https://github.com/datagen24/victual/issues/904) | open | P2 | M | compatible fix (conditional) | Test infrastructure: no application change. | On the pushed branch -x5-b (91 files), merge master, migrate the post-2026-10-13 stragglers, run the full pgsql suite once, open one PR. | None |
 | [#1010 Backup/restore drill against the v0.5.0 artifacts (release gate R5)](https://github.com/datagen24/victual/issues/1010) | open | P2 | M | release evidence | Verification and documentation only: closes release gate R5. | Run the drill in its own session against the v0.5.0 digests; report at docs/releases/0.5.0-restore-drill.md; check the manual's php bin/victual-migrate step against the migrate image. | None |
+| [#900 ADR-0019 does not list the Resolve() validation refusal as a dead-letter cause](https://github.com/datagen24/victual/issues/900) | closed | P2 | M | documentation / investigation | Documentation correction only. | Merge PR #1020 (Claim() comment correction). Per the 2026-10-20 plan, #900 then closes and ADR-0049 part 2 gets its own issue, outside 0.5.1. | https://github.com/datagen24/victual/pull/1020 |
 | [#987 Consume stores any integer recipe_id, including negative ids and ids no recipe has](https://github.com/datagen24/victual/issues/987) | closed | P3 | S | bug | Compatible fix: invalid input is refused, valid input is unchanged. | Review and merge PR #1013. | https://github.com/datagen24/victual/pull/1013 |
 | [#988 prose-baseline-prune fails daily: it pushes to master, which requires a pull request](https://github.com/datagen24/victual/issues/988) | closed | P3 | S | ci | CI hygiene: no application change. | Merge PR #1012, enable 'Allow GitHub Actions to create and approve pull requests', then run the workflow by hand once. | https://github.com/datagen24/victual/pull/1012 |
 | [#989 Calendar API 500 includes the user-supplied event title in its body](https://github.com/datagen24/victual/issues/989) | closed | P3 | S | security | Low-severity disclosure fix: the response body changes only on the error path. | Review and merge PR #1015. | https://github.com/datagen24/victual/pull/1015 |
@@ -29,12 +29,12 @@
 
 ## Open milestones
 
-Observed 2026-10-20T13:07:59Z. Unassigned open issues: [#80](https://github.com/datagen24/victual/issues/80), [#86](https://github.com/datagen24/victual/issues/86), [#93](https://github.com/datagen24/victual/issues/93), [#133](https://github.com/datagen24/victual/issues/133), [#139](https://github.com/datagen24/victual/issues/139).
+Observed 2026-10-20T13:28:09Z. Unassigned open issues: [#80](https://github.com/datagen24/victual/issues/80), [#86](https://github.com/datagen24/victual/issues/86), [#93](https://github.com/datagen24/victual/issues/93), [#133](https://github.com/datagen24/victual/issues/133), [#139](https://github.com/datagen24/victual/issues/139).
 
 | Milestone | Open | Closed | Due | Description |
 | --- | --- | --- | --- | --- |
 | [0.6.0](https://github.com/datagen24/victual/milestone/6) | 8 | 0 | Unset | Later feature release: OAuth then federation; installation country, canonical/scoped barcode resolution and web onboarding, each behind its own design/ADR gates. Full API audit remains later work. These are not requirements for 0.5.0. |
-| [0.5.1](https://github.com/datagen24/victual/milestone/7) | 4 | 4 | Unset | Follow-ups found while building 0.5.0 that do not block the first production release: presentation residuals, low-severity disclosures and CI hygiene. Lands after 0.5.0 and before 0.6.0. |
+| [0.5.1](https://github.com/datagen24/victual/milestone/7) | 3 | 5 | Unset | Follow-ups found while building 0.5.0 that do not block the first production release: presentation residuals, low-severity disclosures and CI hygiene. Lands after 0.5.0 and before 0.6.0. |
 | [0.5.2](https://github.com/datagen24/victual/milestone/8) | 5 | 0 | Unset | Interm quality of life fixes |
 | [vNext](https://github.com/datagen24/victual/milestone/9) | 1 | 0 | Unset | Farther in the future Ideas and Concepts, not commited to a planned release |
 
@@ -71,7 +71,8 @@ Observed 2026-10-20T13:07:59Z. Unassigned open issues: [#80](https://github.com/
 | 2026-10-20 | [Posted the 2026-10-20 planning comment on #1010](https://github.com/datagen24/victual/issues/1010#issuecomment-6291700046) |
 | 2026-10-20 | [Pushed the local-only #904 branch claude/sonnet5_issue904-subprocess-migration-x5-b (e532e4f5) to origin](https://github.com/datagen24/victual/tree/claude/sonnet5_issue904-subprocess-migration-x5-b) |
 | 2026-10-20 | [Opened PR #1019, accepting ADR-0049 part 1](https://github.com/datagen24/victual/pull/1019) |
+| 2026-10-20 | [Opened PR #1020, correcting the Claim() dead-letter comment to ADR-0049 part 1](https://github.com/datagen24/victual/pull/1020) |
 
 ## Evidence
 
-The latest snapshot is in `evidence/refresh-2026-10-20T130759Z`, taken from the GitHub REST API via gh. Assessments are planning estimates, not validation results.
+The latest snapshot is in `evidence/refresh-2026-10-20T132809Z`, taken from the GitHub REST API via gh. Assessments are planning estimates, not validation results.
