@@ -18,39 +18,6 @@
  ],
  "items": [
   {
-   "number": 904,
-   "title": "Subprocess test helpers read stdout before stderr and deadlock on more than 64 KB of stderr",
-   "url": "https://github.com/datagen24/victual/issues/904",
-   "state": "open",
-   "labels": [
-    "bug",
-    "Low"
-   ],
-   "closed_at": null,
-   "priority": "P2",
-   "size": "M",
-   "fit": "Test infrastructure: no application change.",
-   "classification": "compatible fix (conditional)",
-   "next_action": "Merge PR #1027: -x5-b plus the nine post-2026-10-13 sites, every touched file documented to 80%, all 56 pgsql phases passing.",
-   "pr": "https://github.com/datagen24/victual/pull/1027"
-  },
-  {
-   "number": 1010,
-   "title": "Backup/restore drill against the v0.5.0 artifacts (release gate R5)",
-   "url": "https://github.com/datagen24/victual/issues/1010",
-   "state": "open",
-   "labels": [
-    "documentation"
-   ],
-   "closed_at": null,
-   "priority": "P2",
-   "size": "M",
-   "fit": "Verification and documentation only: closes release gate R5.",
-   "classification": "release evidence",
-   "next_action": "Merge PR #1028: R5 evidenced by docs/releases/0.5.0-restore-drill.md; backup-restore.md corrected (roles.sql before pg_restore, restore as victual_migrate).",
-   "pr": "https://github.com/datagen24/victual/pull/1028"
-  },
-  {
    "number": 252,
    "title": "Code that coverage proved nothing can reach",
    "url": "https://github.com/datagen24/victual/issues/252",
@@ -63,7 +30,7 @@
    "size": "M",
    "fit": "Compatible removal of unreachable code, or a comment that keeps it as a deliberate guard.",
    "classification": "record correction / cleanup",
-   "next_action": "Closed 2026-10-20. The CanonicalJson and StderrLogger fallbacks moved to #1026 in 0.5.2.",
+   "next_action": "Closed 2026-10-20 by PRs #1022 to #1025; the remaining fallbacks are #1026 (0.5.2).",
    "pr": "https://github.com/datagen24/victual/pull/1025"
   },
   {
@@ -80,8 +47,25 @@
    "size": "M",
    "fit": "Documentation correction only.",
    "classification": "documentation / investigation",
-   "next_action": "Merge PR #1020 (Claim() comment correction). Per the 2026-10-20 plan, #900 then closes and ADR-0049 part 2 gets its own issue, outside 0.5.1.",
+   "next_action": "Closed 2026-10-20 by PR #1020; ADR-0049 part 2 is #1021 (0.6.0).",
    "pr": "https://github.com/datagen24/victual/pull/1020"
+  },
+  {
+   "number": 904,
+   "title": "Subprocess test helpers read stdout before stderr and deadlock on more than 64 KB of stderr",
+   "url": "https://github.com/datagen24/victual/issues/904",
+   "state": "closed",
+   "labels": [
+    "bug",
+    "Low"
+   ],
+   "closed_at": "2026-10-20T18:03:12Z",
+   "priority": "P2",
+   "size": "M",
+   "fit": "Test infrastructure: no application change.",
+   "classification": "compatible fix (conditional)",
+   "next_action": "Closed 2026-10-20 by PR #1027.",
+   "pr": "https://github.com/datagen24/victual/pull/1027"
   },
   {
    "number": 987,
@@ -154,6 +138,22 @@
    "classification": "security",
    "next_action": "Review PR #1016. It corrects the planning premise: DELETE does not reveal the name.",
    "pr": "https://github.com/datagen24/victual/pull/1016"
+  },
+  {
+   "number": 1010,
+   "title": "Backup/restore drill against the v0.5.0 artifacts (release gate R5)",
+   "url": "https://github.com/datagen24/victual/issues/1010",
+   "state": "closed",
+   "labels": [
+    "documentation"
+   ],
+   "closed_at": "2026-10-20T18:15:45Z",
+   "priority": "P2",
+   "size": "M",
+   "fit": "Verification and documentation only: closes release gate R5.",
+   "classification": "release evidence",
+   "next_action": "Closed 2026-10-20 by PR #1028; gate R5 evidenced.",
+   "pr": "https://github.com/datagen24/victual/pull/1028"
   }
  ],
  "milestones": [
@@ -171,8 +171,8 @@
    "number": 7,
    "title": "0.5.1",
    "state": "open",
-   "open_issues": 2,
-   "closed_issues": 6,
+   "open_issues": 0,
+   "closed_issues": 8,
    "description": "Follow-ups found while building 0.5.0 that do not block the first production release: presentation residuals, low-severity disclosures and CI hygiene. Lands after 0.5.0 and before 0.6.0.",
    "html_url": "https://github.com/datagen24/victual/milestone/7",
    "due_on": null
@@ -199,14 +199,14 @@
   }
  ],
  "observation": {
-  "observed_at": "2026-10-20T17:17:47Z",
+  "observed_at": "2026-10-20T18:38:59Z",
   "source": "GitHub REST API via gh",
-  "evidence_directory": "evidence/refresh-2026-10-20T171747Z",
-  "master_sha": "e639389b9d7171f3b14309a71778f8fdc404ef94",
+  "evidence_directory": "evidence/refresh-2026-10-20T183859Z",
+  "master_sha": "64b7113f68e5ad841f6d237a7419504e4ef7dae1",
   "latest_release": "v0.5.0",
   "latest_release_published_at": "2026-10-19T12:28:41Z",
-  "open_issues": 23,
-  "open_prs": 1,
+  "open_issues": 21,
+  "open_prs": 0,
   "unassigned_open_issues": [
    80,
    86,
