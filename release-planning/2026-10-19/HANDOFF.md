@@ -1,6 +1,6 @@
 # 0.5.1 release handoff
 
-0.5.1: 5 of 8 issues closed. Latest release v0.5.0 (published 2026-10-19T12:28:41Z). Master `e8e721ee`. 22 open issues and 1 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-20T13:28:09Z.
+0.5.1: 5 of 8 issues closed. Latest release v0.5.0 (published 2026-10-19T12:28:41Z). Master `0e3a15ff`. 23 open issues and 0 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-20T13:47:21Z.
 
 ## Read first
 
@@ -23,6 +23,6 @@ refresh.py needs an authenticated `gh` and writes a new evidence directory; rend
 
 ## Open work
 
-- #252 (P3, M): WebhookRunner is already gone (0ea46c25) and ADR-0024 still says it stays. Maintainer picks the form of that record correction and rules on the ConfigurationValidator guard; then one code PR for the confirmed removals.
+- #252 (P3, M): Maintainer accepts or rejects ADR-0051 (Proposed) in a lifecycle-only PR; then one PR removes the webhook residue it lists. The other #252 items follow the review comment, in a separate PR.
 - #904 (P2, M): On the pushed branch -x5-b (91 files), merge master, migrate the post-2026-10-13 stragglers, run the full pgsql suite once, open one PR.
 - #1010 (P2, M): Run the drill in its own session against the v0.5.0 digests; report at docs/releases/0.5.0-restore-drill.md; check the manual's php bin/victual-migrate step against the migrate image.

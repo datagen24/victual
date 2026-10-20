@@ -29,9 +29,9 @@
    "priority": "P3",
    "size": "M",
    "fit": "Compatible removal of unreachable code, or a comment that keeps it as a deliberate guard.",
-   "classification": "investigation / record correction",
-   "next_action": "WebhookRunner is already gone (0ea46c25) and ADR-0024 still says it stays. Maintainer picks the form of that record correction and rules on the ConfigurationValidator guard; then one code PR for the confirmed removals.",
-   "pr": null
+   "classification": "record correction / cleanup",
+   "next_action": "Maintainer accepts or rejects ADR-0051 (Proposed) in a lifecycle-only PR; then one PR removes the webhook residue it lists. The other #252 items follow the review comment, in a separate PR.",
+   "pr": "https://github.com/datagen24/victual/pull/1022"
   },
   {
    "number": 904,
@@ -161,7 +161,7 @@
    "number": 6,
    "title": "0.6.0",
    "state": "open",
-   "open_issues": 8,
+   "open_issues": 9,
    "closed_issues": 0,
    "description": "Later feature release: OAuth then federation; installation country, canonical/scoped barcode resolution and web onboarding, each behind its own design/ADR gates. Full API audit remains later work. These are not requirements for 0.5.0.",
    "html_url": "https://github.com/datagen24/victual/milestone/6",
@@ -199,14 +199,14 @@
   }
  ],
  "observation": {
-  "observed_at": "2026-10-20T13:28:09Z",
+  "observed_at": "2026-10-20T13:47:21Z",
   "source": "GitHub REST API via gh",
-  "evidence_directory": "evidence/refresh-2026-10-20T132809Z",
-  "master_sha": "e8e721ee0523ec4d595cb1e6eb9f6aa70eaa9f3a",
+  "evidence_directory": "evidence/refresh-2026-10-20T134721Z",
+  "master_sha": "0e3a15ffbfbe75855b13b84de72ceef0229cf9d6",
   "latest_release": "v0.5.0",
   "latest_release_published_at": "2026-10-19T12:28:41Z",
-  "open_issues": 22,
-  "open_prs": 1,
+  "open_issues": 23,
+  "open_prs": 0,
   "unassigned_open_issues": [
    80,
    86,
@@ -341,6 +341,15 @@
    "issues": [
     900
    ]
+  },
+  {
+   "id": "P9",
+   "date": "2026-10-20",
+   "question": "How is ADR-0024's WebhookRunner claim corrected (#252)?",
+   "answer": "By a superseding record, ADR-0051, as the maintainer directed. The InfluxDB writer never called WebhookRunner (Guzzle directly since 296d99dd), so ADR-0019's original last-caller statement stands. ADR-0051 also proposes removing the webhook residue: three unused catalogue strings, one docstring and plan 20's curl row.",
+   "issues": [
+    252
+   ]
   }
  ],
  "github_writes": [
@@ -393,6 +402,11 @@
    "at": "2026-10-20",
    "action": "Opened PR #1020, correcting the Claim() dead-letter comment to ADR-0049 part 1",
    "url": "https://github.com/datagen24/victual/pull/1020"
+  },
+  {
+   "at": "2026-10-20",
+   "action": "Opened #1021 in 0.6.0: decide ADR-0049 part 2",
+   "url": "https://github.com/datagen24/victual/issues/1021"
   }
  ]
 }
