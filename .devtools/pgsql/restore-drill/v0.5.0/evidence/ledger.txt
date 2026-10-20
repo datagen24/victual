@@ -1,0 +1,1 @@
+stock_log=685 stock=142 stock_entry_origins=46 edits=42 undone=22 refused=0 caches=reconciled

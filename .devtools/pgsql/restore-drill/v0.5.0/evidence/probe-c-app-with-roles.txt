@@ -1,0 +1,5 @@
+pg_restore: error: could not execute query: ERROR:  permission denied for schema public
+Command was: CREATE COLLATION public.nocase (provider = icu, deterministic = false, locale = 'und-u-ks-level2');
+
+
+exit 1

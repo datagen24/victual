@@ -1,0 +1,4 @@
+pg_restore: error: could not execute query: ERROR:  must be owner of schema public
+Command was: ALTER SCHEMA public OWNER TO victual_migrate;
+
+exit 1

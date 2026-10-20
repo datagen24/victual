@@ -1,0 +1,95 @@
+15:48:50Z $ podman tag ghcr.io/datagen24/victual-migrate@sha256:0dd533652d32f8937274a72a8d83e33a5d6ad143fc4c9ff610e2387e02e75ecc localhost/victual-migrate:0.5.0
+15:48:50Z   exit 0
+15:48:50Z $ podman tag ghcr.io/datagen24/victual-app@sha256:c85a6e4074374c07a97c4a7218446aabf9f51789dbc286e0504257111fe8b55f localhost/victual-app:0.5.0
+15:48:50Z   exit 0
+15:48:50Z $ podman tag ghcr.io/datagen24/victual-web@sha256:b8bf0c282f8c3d4a6cae0f5e6b2d69c7d980db7ca5a8b830bb3d0a37dcb3b746 localhost/victual-web:0.5.0
+15:48:50Z   exit 0
+15:48:50Z $ podman run -d --name restore-drill-pg --memory 1536m -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=admin -e POSTGRES_DB=postgres -p 55440:5432 docker.io/library/postgres:16
+7435c60a6db24d11e1624e5637c18b1ae318d5d019a57f5ad498ac7be89bd221
+15:48:51Z   exit 0
+15:48:52Z $ psql_super postgres -c CREATE DATABASE victual_source
+15:48:52Z   exit 0
+15:48:52Z $ roles.sql -v db=victual_source
+15:48:53Z   exit 0
+15:48:53Z $ podman kube play deploy/podman/victual.yaml (VICTUAL_DB_NAME=victual_source)
+Secrets:
+91ae29d11481c8d68da355aaa
+378c7137da381c2ce428ab321
+02c832754f319e3c829dece71
+Pod:
+584bf11cbeecb92218c72cb7004e663f54572cdd39e49b41d4eae8e4da094d0a
+Containers:
+d82a7a161c40754600de05139345b9cf4aaf01c22cab0e7393d6aa6e4a69d9e2
+793c222ce28d808c4435783d6319b871083c8e7d17bcea9f4cbebe1a28cd4e00
+
+15:48:56Z   pod serving against victual_source
+source pod up (migrate + serve): 3.5 s
+15:48:56Z $ ledger-generator.php --products=25 --days=120 --seed=1010 --reconcile (in the migrate image)
+stock_log=685 stock=142 stock_entry_origins=46 edits=42 undone=22 refused=0 caches=reconciled
+ledger generation: 23.8 s
+15:49:20Z uploaded userfile 1 (40123 bytes)
+15:49:20Z uploaded userfile 2 (80123 bytes)
+15:49:20Z uploaded userfile 3 (120123 bytes)
+15:49:20Z $ podman pod rm -f victual
+584bf11cbeecb92218c72cb7004e663f54572cdd39e49b41d4eae8e4da094d0a
+15:49:20Z   exit 0
+15:49:22Z the source stores the three userfiles byte for byte
+15:49:22Z $ podman exec -e PGPASSWORD=victual-app restore-drill-pg sh -c pg_dump -Fc -h 127.0.0.1 -U victual_app victual_source > /tmp/victual.dump
+15:49:22Z   exit 0
+pg_dump -Fc as victual_app: 0.2 s
+15:49:22Z $ psql_super postgres -c DROP DATABASE IF EXISTS victual_restored WITH (FORCE)
+NOTICE:  database "victual_restored" does not exist, skipping
+15:49:22Z   exit 0
+15:49:22Z $ psql_super postgres -c CREATE DATABASE victual_restored
+15:49:22Z   exit 0
+15:49:22Z probe a-app-no-roles: pg_restore --exit-on-error as victual_app into an empty database, no roles.sql
+15:49:22Z   probe a-app-no-roles exit 1: pg_restore: error: could not execute query: ERROR:  must be owner of schema public
+15:49:22Z $ psql_super postgres -c DROP DATABASE IF EXISTS victual_restored WITH (FORCE)
+15:49:23Z   exit 0
+15:49:23Z $ psql_super postgres -c CREATE DATABASE victual_restored
+15:49:23Z   exit 0
+15:49:23Z probe b-migrate-no-roles: pg_restore --exit-on-error as victual_migrate into an empty database, no roles.sql
+15:49:23Z   probe b-migrate-no-roles exit 1: pg_restore: error: could not execute query: ERROR:  must be owner of schema public
+15:49:23Z $ psql_super postgres -c DROP DATABASE IF EXISTS victual_restored WITH (FORCE)
+15:49:23Z   exit 0
+15:49:23Z $ psql_super postgres -c CREATE DATABASE victual_restored
+15:49:23Z   exit 0
+15:49:23Z $ roles.sql -v db=victual_restored
+15:49:23Z   exit 0
+15:49:23Z probe c-app-with-roles: pg_restore --exit-on-error as victual_app after roles.sql
+15:49:23Z   probe c-app-with-roles exit 1: pg_restore: error: could not execute query: ERROR:  permission denied for schema public
+15:49:23Z $ psql_super postgres -c DROP DATABASE IF EXISTS victual_restored WITH (FORCE)
+15:49:23Z   exit 0
+15:49:23Z $ psql_super postgres -c CREATE DATABASE victual_restored
+15:49:24Z   exit 0
+15:49:24Z $ roles.sql -v db=victual_restored
+15:49:24Z   exit 0
+15:49:24Z probe d-migrate-with-roles: pg_restore --exit-on-error as victual_migrate after roles.sql
+15:49:24Z   probe d-migrate-with-roles exit 0: exit 0
+roles.sql + pg_restore as victual_migrate: 1.0 s
+victual-migrate on the restore: 0.9 s
+same dump-sha256.txt
+same row-counts.txt
+same sequences.txt
+same stock-totals.txt
+same files-sha256.txt
+same migration.txt
+migrator changed nothing (dump-sha256.txt)
+15:49:27Z $ podman kube play deploy/podman/victual.yaml (VICTUAL_DB_NAME=victual_restored)
+Secrets:
+360543c2991cea589e4c8e2bd
+a8bc57327ed90d77f4ff1af69
+df5c564bb2a9232213176402b
+Pod:
+fec15e8d2b0b0cf94ea810bfdd687f7f49991f8460e17110219252910278c308
+Containers:
+495d6f4cf654f0bf5f6c0944143fc01ce62b36adeb1d2844138d9eef628118f6
+54b819e6d92e7e2763f12615fd9f985d5d58781fd1355cb57b59822427a3cf9e
+
+15:49:28Z   pod serving against victual_restored
+product 1: stock 6 before, 9 after the purchase, 6 after its undo
+stock_log max id before the purchase 685; the purchase's first booking id 686 (transaction 04a8b3aeacc0e9198afac9914713ed58)
+15:49:30Z $ podman pod rm -f victual
+fec15e8d2b0b0cf94ea810bfdd687f7f49991f8460e17110219252910278c308
+15:49:30Z   exit 0
+15:49:30Z drill finished; results in /Users/speterson/.victual-restore-drill/2026-10-20

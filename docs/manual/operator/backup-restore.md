@@ -14,6 +14,9 @@ before relying on it for a household's data.
   pg_dump -Fc -h <DB_HOST> -p <DB_PORT> -U <DB_USER> <DB_NAME> > victual.dump
   ```
 
+  In the [two-role deployment](../../../deploy/README.md#two-database-roles), the application
+  role `victual_app` can take this dump: it reads every table and sequence.
+
   This is the reason [Configuration](../configuration.md#file-storage) recommends
   `FILE_STORAGE` `database` for a deployment that wants one backup stream rather than two
   that can disagree.
@@ -36,16 +39,39 @@ Stop the application, and stop the label workers with it. A worker never writes 
 database directly: it claims jobs and reports outcomes over Victual's HTTP API, and the
 application performs the writes. Stopping the application is what stops the writes, and
 stopping the workers is what stops them retrying against one that has gone away.
-Create an empty target database and configure Victual's `DB_*` settings to point to it.
-Do not run the migrator before restoring: the custom-format dump contains the schema, so
-pre-created tables cause "relation already exists" errors.
+
+Create an empty target database, then prepare it for the two roles before restoring.
+Roles belong to the PostgreSQL server, not to a database, so a dump does not carry them,
+and the dump includes a statement that gives the `public` schema to `victual_migrate`. Run
+[`deploy/postgres/roles.sql`](../../../deploy/postgres/roles.sql) against the new database
+as a superuser, with the passwords in psql's environment as its header describes:
 
 ```
-pg_restore --exit-on-error -h <DB_HOST> -p <DB_PORT> -U <DB_USER> -d <DB_NAME> victual.dump
+MIGRATE_PASSWORD=... APP_PASSWORD=... psql -v ON_ERROR_STOP=1 -h <DB_HOST> -p <DB_PORT> -U <superuser> -d <DB_NAME> -v db=<DB_NAME> -f deploy/postgres/roles.sql
 ```
+
+It creates either role if the server does not have it yet, makes `victual_migrate` the owner
+of the `public` schema, and gives `victual_app` its grants.
+
+Restore as `victual_migrate`, the role that owns the schema. The application role cannot do
+it, because it may not create objects in `public`. Do not run the migrator before restoring:
+the custom-format dump contains the schema, so pre-created tables cause "relation already
+exists" errors.
+
+```
+pg_restore --exit-on-error -h <DB_HOST> -p <DB_PORT> -U victual_migrate -d <DB_NAME> victual.dump
+```
+
+Without `roles.sql`, the restore stops with "must be owner of schema
+public". As `victual_app`, it stops with "permission denied for schema public". The
+[0.5.0 restore drill](../../releases/0.5.0-restore-drill.md) observed all three.
 
 Restore the storage directory (if used) to `<data path>/storage`, then apply any migrations
-required by the installed version:
+required by the installed version. Run the migrator as `victual_migrate`: from a source
+install with `php bin/victual-migrate`, or in the container deployment by starting the pod,
+whose `migrate` initContainer runs the same command from the `victual-migrate` image. On a
+restore of the same version it changes nothing and prints `Schema is up to date at
+migration <n>.`
 
 ```
 php bin/victual-migrate
