@@ -1269,7 +1269,9 @@ Full retirement of the webhook is the destination: every entity type prints thro
 path, `WebhookRunner` loses its last caller, and the four constants go. The steps have
 different prerequisites. *(Corrected by [ADR-0024](0024-the-fork-writes-its-own-clients.md),
 accepted 2026-09-15: plan 18's InfluxDB writer also calls `WebhookRunner`, so step 3 removes
-the label call sites and the class stays.)*
+the label call sites and the class stays.)* *(That correction is superseded by
+[ADR-0051](0051-webhookrunner-had-no-influxdb-caller-and-the-webhook-residue-goes.md), accepted 2026-10-20: the InfluxDB writer never called `WebhookRunner`,
+so the statement above stands.)*
 
 1. **Location labels first, in wave 3b.** [Plan 06](../plans/06-location-barcodes.md) is
    wave 3b in the [plans index](../plans/README.md) and locations have no `/printlabel`
