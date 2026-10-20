@@ -24,6 +24,6 @@ refresh.py needs an authenticated `gh` and writes a new evidence directory; rend
 ## Open work
 
 - #252 (P3, M): WebhookRunner is already gone (0ea46c25) and ADR-0024 still says it stays. Maintainer picks the form of that record correction and rules on the ConfigurationValidator guard; then one code PR for the confirmed removals.
-- #900 (P2, M): Maintainer accepts or rejects ADR-0049 (Proposed, PR #932) in a lifecycle-only PR; then correct the PrintAttemptService.php:56-59 comment. Part 2 stays out of 0.5.1.
+- #900 (P2, M): Merge PR #1019 (ADR-0049 part 1 acceptance, lifecycle-only); then correct the PrintAttemptService.php:56-59 comment in its own PR. Part 2 stays out of 0.5.1.
 - #904 (P2, M): On the pushed branch -x5-b (91 files), merge master, migrate the post-2026-10-13 stragglers, run the full pgsql suite once, open one PR.
 - #1010 (P2, M): Run the drill in its own session against the v0.5.0 digests; report at docs/releases/0.5.0-restore-drill.md; check the manual's php bin/victual-migrate step against the migrate image.

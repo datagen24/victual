@@ -47,8 +47,8 @@
    "size": "M",
    "fit": "Documentation correction only.",
    "classification": "documentation / investigation",
-   "next_action": "Maintainer accepts or rejects ADR-0049 (Proposed, PR #932) in a lifecycle-only PR; then correct the PrintAttemptService.php:56-59 comment. Part 2 stays out of 0.5.1.",
-   "pr": null
+   "next_action": "Merge PR #1019 (ADR-0049 part 1 acceptance, lifecycle-only); then correct the PrintAttemptService.php:56-59 comment in its own PR. Part 2 stays out of 0.5.1.",
+   "pr": "https://github.com/datagen24/victual/pull/1019"
   },
   {
    "number": 904,
@@ -332,6 +332,15 @@
     904,
     1010
    ]
+  },
+  {
+   "id": "P8",
+   "date": "2026-10-20",
+   "question": "Is ADR-0049 accepted?",
+   "answer": "Yes, part 1, on the maintainer's motion. Part 2 decides nothing and stays open, so #900 stays open until the comment correction lands. Acceptance is PR #1019, which carries only the lifecycle edits; its dashboard row lives here.",
+   "issues": [
+    900
+   ]
   }
  ],
  "github_writes": [
@@ -374,6 +383,11 @@
    "at": "2026-10-20",
    "action": "Pushed the local-only #904 branch claude/sonnet5_issue904-subprocess-migration-x5-b (e532e4f5) to origin",
    "url": "https://github.com/datagen24/victual/tree/claude/sonnet5_issue904-subprocess-migration-x5-b"
+  },
+  {
+   "at": "2026-10-20",
+   "action": "Opened PR #1019, accepting ADR-0049 part 1",
+   "url": "https://github.com/datagen24/victual/pull/1019"
   }
  ]
 }
