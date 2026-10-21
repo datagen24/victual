@@ -417,8 +417,11 @@
 					data-placement="right"
 					title="{{ $__t('Manage master data') }}">
 					<a class="nav-link nav-link-collapse discrete-link @if(!in_array($viewName, $masterDataViews)) collapsed @else active-page @endif"
+						role="button"
 						data-toggle="collapse"
-						href="#sub-nav-manage-master-data">
+						href="#sub-nav-manage-master-data"
+						aria-controls="sub-nav-manage-master-data"
+						aria-expanded="{{ in_array($viewName, $masterDataViews) ? 'true' : 'false' }}">
 						<i class="fa-solid fa-fw fa-table"></i>
 						<span class="nav-link-text">{{ $__t('Manage master data') }}</span>
 					</a>

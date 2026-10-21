@@ -228,6 +228,14 @@ function focusedTarget(page)
 		const kb = admin.page;
 		await kb.goto(BASE + OTHER_PAGE);
 		const toggle = kb.locator('#nav-medication > a');
+		// A mouse click leaves focus on the trigger but no focus highlight, which is for keyboard focus only.
+		await toggle.click();
+		await waitForList(kb, true);
+		await kb.mouse.move(900, 600);
+		assert.equal(await kb.evaluate(() => document.activeElement === document.querySelector('#nav-medication > a')), true, 'the trigger keeps focus after a click');
+		assert.equal(await toggle.evaluate(a => getComputedStyle(a).boxShadow), 'none', 'a mouse click leaves no focus highlight');
+		await toggle.click();
+		await waitForList(kb, false);
 		await toggle.focus();
 		assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
 		await kb.keyboard.press('Tab');

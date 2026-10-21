@@ -501,3 +501,10 @@ body.fixed-nav {
 		text-align: right;
 	}
 }
+
+/* A submenu trigger keeps focus after a click (see victual.js), so the focus highlight
+   above is limited to keyboard focus for it; other links lose focus on click. */
+.navbar-sidenav>li>a.nav-link-collapse:not(.active-page):focus:not(:focus-visible) {
+	box-shadow: none !important;
+	background-color: transparent !important;
+}
