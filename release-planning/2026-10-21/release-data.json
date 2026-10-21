@@ -121,8 +121,8 @@
    "size": "S",
    "fit": "Compatible: a request that stored an empty file now answers 415 and stores nothing; documented requests are unchanged.",
    "classification": "bug",
-   "next_action": "In progress: PR 4 (wave 1), branch claude/v0-5-2-files-415.",
-   "pr": null
+   "next_action": "In review: draft PR 1039 (wave 1 PR 4), branch claude/v0-5-2-files-415.",
+   "pr": "https://github.com/datagen24/victual/pull/1039"
   }
  ],
  "milestones": [
