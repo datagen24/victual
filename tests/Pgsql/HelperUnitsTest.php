@@ -1064,6 +1064,141 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertSame('{"stream":"a name"}', CanonicalJson::Encode(['stream' => 'a name']));
 	}
 
+	/**
+	 * Calls a private static method of the class under test and returns what it returns.
+	 *
+	 * The fallbacks #1026 removed sat inside private methods, so the cases that prove they
+	 * were dead have to reach those methods directly.
+	 */
+	private static function callPrivateStatic(string $class, string $method, array $arguments): mixed
+	{
+		return (new \ReflectionMethod($class, $method))->invokeArgs(null, $arguments);
+	}
+
+	/**
+	 * Proves the premise the removed ToUtf16Be() fallback rested on: mb_convert_encoding() with
+	 * a string subject and the single source encoding 'UTF-8' returns a string for every input
+	 * - well-formed, malformed, empty and large - and never false. Malformed UTF-8 is
+	 * substituted rather than refused, so the refusal for it still comes from EncodeString().
+	 * Runs on both supported interpreters (php-src PHP-8.4 and PHP-8.5 share the code path).
+	 */
+	public function testCanonicalJsonUtf16ConversionNeverFailsForAMemberName()
+	{
+		$inputs = [
+			'empty' => '',
+			'ascii' => 'name',
+			'bmp' => "K\u{E4}se",
+			'astral' => "\u{1F600}",
+			'noncharacter' => "\u{FFFE}\u{FFFF}",
+			'stray continuation byte' => "\x80",
+			'invalid lead byte' => "\xFF\xFE",
+			'overlong nul' => "\xC0\x80",
+			'encoded surrogate' => "\xED\xA0\x80",
+			'above U+10FFFF' => "\xF4\x90\x80\x80",
+			'truncated sequence' => "\xE2\x82",
+			'embedded nul' => "a\0b",
+			'large' => str_repeat("\u{1F600}x\xFF", 20000)
+		];
+
+		foreach ($inputs as $label => $input)
+		{
+			$converted = self::callPrivateStatic(CanonicalJson::class, 'ToUtf16Be', [$input]);
+
+			self::assertIsString($converted, $label . ': the conversion returned a string');
+		}
+
+		// A well-formed name converts to the expected UTF-16BE bytes
+		self::assertSame("\xD8\x3D\xDE\x00", self::callPrivateStatic(CanonicalJson::class, 'ToUtf16Be', ["\u{1F600}"]), 'an astral character is a surrogate pair');
+
+		// The malformed names above sort without failing in the converter and are then
+		// refused by the string check, so the document-level behaviour is unchanged
+		try
+		{
+			CanonicalJson::Encode(["\xFF" => 1, "\xFE" => 2]);
+			self::fail('a member name that is not UTF-8 was encoded');
+		}
+		catch (ECanonicalizationFailed $exception)
+		{
+			self::assertSame('String is not valid UTF-8', $exception->getMessage());
+		}
+	}
+
+	/**
+	 * Proves the premise the two removed EncodeDouble()/ShortestDigits() fallbacks rested on:
+	 * for every finite nonzero double, json_encode() under serialize_precision -1 returns a
+	 * string with no recorded error, ShortestDigits() returns a non-empty digit string whose
+	 * first digit is not zero, and the layout round-trips to the same double. The set is the
+	 * boundary doubles plus deterministic random bit patterns. Runs on both supported
+	 * interpreters.
+	 */
+	public function testCanonicalJsonEncodesEveryFiniteDoubleToANonEmptyDigitString()
+	{
+		$doubles = [
+			PHP_FLOAT_MAX, PHP_FLOAT_MIN, PHP_FLOAT_EPSILON, 5e-324, 2.2250738585072009e-308,
+			1e21, 1e-7, 123456789012345680000.0, 0.1, 1.0, 9007199254740993.0, 4.35
+		];
+
+		// An xorshift generator with a fixed seed: the same bit patterns on every interpreter
+		$state = 0x2545F4914F6CDD1D;
+
+		for ($index = 0; $index < 4000; $index++)
+		{
+			$state ^= ($state << 13);
+			$state ^= ($state >> 7) & 0x01FFFFFFFFFFFFFF;
+			$state ^= ($state << 17);
+
+			$candidate = unpack('d', pack('q', $state))[1];
+
+			if (is_finite($candidate) && $candidate !== 0.0)
+			{
+				$doubles[] = $candidate;
+			}
+		}
+
+		self::assertGreaterThan(3500, count($doubles), 'the generator produced a usable corpus');
+
+		$previous = ini_get('serialize_precision');
+		ini_set('serialize_precision', '-1');
+
+		try
+		{
+			foreach ($doubles as $double)
+			{
+				$positive = abs($double);
+
+				self::assertIsString(json_encode($positive), 'json_encode returned a string for ' . $positive);
+				self::assertSame(JSON_ERROR_NONE, json_last_error(), 'json_encode recorded no error for ' . $positive);
+
+				[$digits, $exponent] = self::callPrivateStatic(CanonicalJson::class, 'ShortestDigits', [$positive]);
+
+				self::assertMatchesRegularExpression('/^[1-9][0-9]*$/', $digits, 'a non-empty digit string with no leading zero for ' . $positive);
+				self::assertIsInt($exponent);
+				self::assertSame($positive, (float)CanonicalJson::Encode($positive), 'the canonical form round-trips for ' . $positive);
+			}
+		}
+		finally
+		{
+			ini_set('serialize_precision', (string)$previous);
+		}
+
+		// Zero never reaches the decomposition, and NaN and the infinities are refused before it
+		self::assertSame('0', CanonicalJson::Encode(0.0));
+		self::assertSame('0', CanonicalJson::Encode(-0.0));
+
+		foreach ([NAN, INF, -INF] as $refused)
+		{
+			try
+			{
+				CanonicalJson::Encode($refused);
+				self::fail('a non-finite double was encoded');
+			}
+			catch (ECanonicalizationFailed $exception)
+			{
+				self::assertSame('NaN and Infinity have no canonical form', $exception->getMessage());
+			}
+		}
+	}
+
 	// ========================================================= helpers/PrerequisiteChecker.php
 
 	/**
@@ -1594,6 +1729,57 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('{"route":"/api/stock","status":500,"name":"Käse"}', $lines[0], 'slashes and non-ASCII are left alone so the line stays readable');
 		self::assertStringEndsWith('WARNING: without context', $lines[1], 'no context means nothing is appended');
 		self::assertStringEndsWith('WARNING: with empty context', $lines[2], 'an empty context is the same as none');
+	}
+
+	/**
+	 * Proves the premise the removed '{"context":"unencodable"}' fallback rested on:
+	 * json_encode() with JSON_PARTIAL_OUTPUT_ON_ERROR returns a string for every context,
+	 * substituting the offending value and keeping the rest. Each hostile value below is one
+	 * that makes a plain json_encode() return false. Runs on both supported interpreters.
+	 */
+	public function testAnUnencodableContextValueIsSubstitutedNotDropped()
+	{
+		$recursive = ['name' => 'loop'];
+		$recursive['self'] = &$recursive;
+
+		$tooDeep = 'leaf';
+
+		for ($level = 0; $level < 600; $level++)
+		{
+			$tooDeep = [$tooDeep];
+		}
+
+		$handle = fopen('php://memory', 'r');
+
+		$hostile = [
+			'resource' => ['kept' => 'yes', 'stream' => $handle],
+			'invalid utf-8' => ['kept' => 'yes', 'text' => "bad \xFF byte"],
+			'nan' => ['kept' => 'yes', 'number' => NAN],
+			'infinity' => ['kept' => 'yes', 'number' => INF],
+			'recursion' => ['kept' => 'yes', 'loop' => $recursive],
+			'depth' => ['kept' => 'yes', 'deep' => $tooDeep]
+		];
+
+		try
+		{
+			foreach ($hostile as $label => $context)
+			{
+				self::assertFalse(json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $label . ': a plain json_encode() fails, so the case is a real one');
+
+				$encoded = self::callPrivateStatic(\Victual\Helpers\StderrLogger::class, 'EncodeContext', [$context]);
+
+				self::assertIsString($encoded, $label . ': the partial encoding is a string');
+				self::assertStringStartsWith('{"kept":"yes"', $encoded, $label . ': the members before the bad value survive');
+				self::assertStringNotContainsString('unencodable', $encoded, $label . ': there is no whole-context fallback marker');
+			}
+
+			self::assertSame('{"kept":"yes","stream":null}', self::callPrivateStatic(\Victual\Helpers\StderrLogger::class, 'EncodeContext', [$hostile['resource']]), 'a resource is substituted with null');
+			self::assertSame('{"kept":"yes","number":0}', self::callPrivateStatic(\Victual\Helpers\StderrLogger::class, 'EncodeContext', [$hostile['nan']]), 'NaN is substituted with 0');
+		}
+		finally
+		{
+			fclose($handle);
+		}
 	}
 
 	/**
