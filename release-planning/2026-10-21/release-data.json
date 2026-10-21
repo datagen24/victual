@@ -345,6 +345,21 @@
    "at": "2026-10-21",
    "action": "Posted the D6 decision comment on #948",
    "url": "https://github.com/datagen24/victual/issues/948#issuecomment-6321885204"
+  },
+  {
+   "at": "2026-10-21",
+   "action": "Closed Dependabot PR #1030 as superseded by PR #1037 (D8)",
+   "url": "https://github.com/datagen24/victual/pull/1030"
+  },
+  {
+   "at": "2026-10-21",
+   "action": "Closed Dependabot PR #1031 as superseded by PR #1037 (D8)",
+   "url": "https://github.com/datagen24/victual/pull/1031"
+  },
+  {
+   "at": "2026-10-21",
+   "action": "Closed Dependabot PR #1032 as superseded by PR #1037 (D8)",
+   "url": "https://github.com/datagen24/victual/pull/1032"
   }
  ]
 }
