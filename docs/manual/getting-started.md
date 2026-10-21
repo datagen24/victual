@@ -147,7 +147,10 @@ for the porting rules and the accepted behavioural differences between the two e
 
 ## Platform support
 
-- PHP: `composer.json` declares 8.5; the language floor the code actually needs is 8.4.
+- PHP: 8.4.27 or later on 8.4, 8.5.12 or later on 8.5, and 8.6 or later. Earlier releases
+  carry the PHP2Shell remote code execution flaws (GHSA-w8hw-w9fx-j79w,
+  GHSA-6wmf-4rv5-p3rp) and the application refuses to start on them, naming the minimum for
+  the branch it found. `composer.json` declares `~8.4.27 || ^8.5.12`; the images ship 8.5.12.
   Required extensions: `fileinfo`, `gd`, `ctype`, `intl`, `zlib`, `mbstring`, plus
   `pdo_pgsql`. `pdo_sqlite` is needed only for `bin/victual-db-import` and the differential
   test suite — the Nix migrate image carries it and the serving images do not.

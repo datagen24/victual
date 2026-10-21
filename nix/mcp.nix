@@ -49,9 +49,13 @@ let
         chmod u+w "$out/bin/node"
 
         # Every store path the binary names whose output is a headers or tools output.
+        # The second grep is wrapped because "no such reference" is a valid answer and
+        # grep exits 1 for it, which pipefail turns into a failed build: nixpkgs
+        # a5fc1be5 (php 8.5.12, #1043) ships a nodejs-slim with none, where the previous
+        # pin had several.
         grep -aoE '/nix/store/[a-z0-9]{32}-[^/"[:space:]]+' "$out/bin/node" \
           | sort -u \
-          | grep -aE -- '-(dev|bin)$' \
+          | { grep -aE -- '-(dev|bin)$' || true; } \
           | while read -r ref; do
               remove-references-to -t "$ref" "$out/bin/node"
             done

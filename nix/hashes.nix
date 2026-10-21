@@ -26,7 +26,7 @@
   # point: the vendor hash follows both Composer files, not the lockfile alone. Taken from
   # the `flake` job's fixed-output failure on 74d3b1a and 4c85722, which reported the same
   # value, per nix/README.md's "Bootstrapping the hashes"; this sandbox has no nix.
-  composerVendor = "sha256-SqYieyz5FkCNx/WRiBnMKlv/2ItNIRhMgKH4iDZVnQA=";
+  composerVendor = "sha256-TBtOYvgrfSD4i5ojyDH234ICRupjOYNW0QFTyn5rITA=";
 
   # Hash of the yarn offline mirror built from yarn.lock.
   #
