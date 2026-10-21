@@ -502,6 +502,18 @@ msgstr ""
 msgid "Edit user"
 msgstr ""
 
+msgid "Roles"
+msgstr ""
+
+msgid "The selected roles are given to the new user instead of the default roles"
+msgstr ""
+
+msgid "The user was created, but its roles were not set."
+msgstr ""
+
+msgid "Set the roles on the permissions page of the user"
+msgstr ""
+
 msgid "First name"
 msgstr ""
 

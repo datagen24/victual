@@ -61,9 +61,17 @@ class UsersController extends BaseController
 		if ($args['userId'] == 'new')
 		{
 			User::CheckPermission($request, User::PERMISSION_USERS_CREATE);
+			// The Roles picker is offered only to a caller that may set roles at all
+			// (PUT /users/{id}/roles needs USERS_EDIT), so a denied caller never sees a
+			// control whose save would fail. The defaults are pre-selected because the
+			// chosen roles replace what CreateUser assigns.
+			$canSetRoles = User::HasPermissions(User::PERMISSION_USERS_EDIT);
 			return $this->RenderPage($response, 'userform', [
 				'mode' => 'create',
-				'userfields' => UserfieldsService::GetInstance()->GetFields('users')
+				'userfields' => UserfieldsService::GetInstance()->GetFields('users'),
+				'canSetRoles' => $canSetRoles,
+				'roles' => $canSetRoles ? RolesService::GetInstance()->GetAssignableRoles($request) : [],
+				'defaultRoleIds' => $canSetRoles ? RolesService::GetInstance()->GetDefaultRoleIds() : []
 			]);
 		}
 		else
@@ -123,6 +131,9 @@ class UsersController extends BaseController
 		]);
 	}
 
+	/**
+	 * Serves the roles list view (route GET /roles). Requires the USERS_READ permission.
+	 */
 	public function RolesList(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_USERS_READ);
@@ -132,6 +143,10 @@ class UsersController extends BaseController
 		]);
 	}
 
+	/**
+	 * Serves the role create/edit form (route GET /role/{roleId}); roleId is a role id or the literal 'new'.
+	 * Requires the USERS_READ permission; the controls are editable only with USERS_EDIT.
+	 */
 	public function RoleEditForm(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_USERS_READ);

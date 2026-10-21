@@ -800,6 +800,12 @@ jobs:
         working-directory: .devtools/frontend
         run: node userform-password.js http://127.0.0.1:8085
 
+      # Issue #762. The Roles button label, the create form's Roles picker and the two-step
+      # create (POST /users, then PUT /users/{id}/roles) are browser-side behaviour.
+      - name: Run userform roles checks
+        working-directory: .devtools/frontend
+        run: node userform-roles.js http://127.0.0.1:8085
+
       # Issue #774. Whether the stock entry edit form sends back a price the user left alone
       # is a browser-side question: the server keeps a legacy-zero marker only when the
       # price is omitted, and PHPUnit never runs public/viewjs.

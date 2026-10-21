@@ -184,6 +184,22 @@ This is entirely a question of what the browser puts in the request body, which 
 PostgreSQL phase cannot see. CI runs it in `frontend-security` after the role workflow
 probe.
 
+## Userform roles (issue #762)
+
+`node userform-roles.js <url>` runs against a disposable authenticated admin or demo
+instance. It makes four checks.
+
+- The users list button reads "Roles" and has an aria-label.
+- The create form's Roles select is reachable by its label. The configured default roles are
+  pre-selected.
+- Choosing a role creates the user and replaces the defaults (POST, then PUT
+  `/api/users/{id}/roles`).
+- With the PUT forced to fail, a `role=alert` region says the user was created but the roles
+  were not set. It links to the permissions page.
+
+CI runs it
+in `frontend-security` after the userform password check.
+
 Externally managed (reverse-proxy) authentication, an embedded install and
 authentication disabled entirely all render no such checkbox in either mode - there is
 no local password to change - so this probe cannot exercise any of them, and

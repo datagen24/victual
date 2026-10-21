@@ -10,6 +10,8 @@ use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Psr7\Factory\StreamFactory;
 use Victual\Services\Time\Instant;
 use Victual\Controllers\BatteriesController;
+use Victual\Controllers\Api\RolesApiController;
+use Victual\Controllers\Api\UsersApiController;
 use Victual\Controllers\CalendarController;
 use Victual\Controllers\ChoresController;
 use Victual\Controllers\ConsumptionInboxController;
@@ -1216,6 +1218,83 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::render(fn () => self::$users->UserEditForm(self::request(), self::response(), ['userId' => 9000]), 'GET /user/9000 with USERS_EDIT_SELF');
 		$this->expectStatus(fn () => self::$users->UserEditForm(self::request(), self::response(), ['userId' => 9001]), 403, 'GET /user/9001 with USERS_EDIT_SELF only');
 		$this->expectStatus(fn () => self::$users->UserEditForm(self::request(), self::response(), ['userId' => 'new']), 403, 'GET /user/new with USERS_EDIT_SELF only');
+	}
+
+	/** The create form offers a labelled Roles picker with the default roles pre-selected, and the edit form does not carry it. */
+	public function testUserCreateFormOffersRolesPickerWithDefaultsPreselected(): void
+	{
+		$html = self::render(fn () => self::$users->UserEditForm(self::request(), self::response(), ['userId' => 'new']), 'GET /user/new');
+		self::assertMatchesRegularExpression('/<label for="user-roles">\s*Roles\s*<\/label>/', $html, 'the picker has an associated label');
+		self::assertMatchesRegularExpression('/<select id="user-roles"\s+multiple/', $html, 'the picker is a multi-select');
+		self::assertStringContainsString('role="alert"', $html, 'the partial-failure message is an alert region');
+
+		// VICTUAL_DEFAULT_ROLES is a process-fixed constant and is [] here (the shipped
+		// default), so nothing is pre-selected; the non-empty case runs in the rbac
+		// phase's CHILD subprocess scenario (rbac-subprocess-helper.php).
+		$defaults = \Victual\Services\RolesService::GetInstance()->GetDefaultRoleIds();
+		$all = array_map('intval', self::$db->query('SELECT id FROM roles')->fetchAll(PDO::FETCH_COLUMN));
+		self::assertNotSame([], $all, 'the fixture has roles to offer');
+		foreach ($all as $id)
+		{
+			self::assertStringContainsString('<option value="' . $id . '"', $html, "role $id is offered to an ADMIN caller");
+			$selected = (bool)preg_match('/<option value="' . $id . '"\s+selected\s*>/', $html);
+			self::assertSame(in_array($id, $defaults, true), $selected, "role $id is pre-selected exactly when it is a default role");
+		}
+
+		$edit = self::render(fn () => self::$users->UserEditForm(self::request(), self::response(), ['userId' => 9001]), 'GET /user/9001');
+		self::assertStringNotContainsString('id="user-roles"', $edit, 'edit mode keeps roles on the permissions page');
+	}
+
+	/** A caller holding only USERS_CREATE (which confers USERS_EDIT) is offered only the roles it may assign; a caller with no USERS_CREATE gets 403 and so never sees the picker. */
+	public function testUserCreateFormOffersOnlyTheRolesTheCallerMayAssign(): void
+	{
+		self::grant(['USERS_CREATE']);
+		self::assertTrue(\Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_USERS_EDIT), 'USERS_CREATE confers USERS_EDIT, which is what the picker is gated on');
+		$adminRole = (int)self::$db->query("SELECT id FROM roles WHERE code = 'ADMIN'")->fetchColumn();
+		$html = self::render(fn () => self::$users->UserEditForm(self::request(), self::response(), ['userId' => 'new']), 'GET /user/new with USERS_CREATE');
+		self::assertStringContainsString('id="user-roles"', $html);
+		self::assertStringNotContainsString('<option value="' . $adminRole . '"', $html, 'a role the caller could not assign is not offered');
+
+		self::grant(['USERS_EDIT']);
+		$this->expectStatus(fn () => self::$users->UserEditForm(self::request(), self::response(), ['userId' => 'new']), 403, 'GET /user/new with USERS_EDIT only');
+	}
+
+	/** The create flow the form performs: POST /users gives the defaults, PUT /users/{id}/roles then replaces them; a caller without USERS_EDIT is refused the second call and the user keeps its roles. */
+	public function testCreateThenSetRolesReplacesTheDefaultsAndIsRefusedWithoutUsersEdit(): void
+	{
+		$users = new UsersApiController(self::$container);
+		$roles = new RolesApiController(self::$container);
+		$created = [];
+		try
+		{
+			$response = $users->CreateUser(self::request('POST', [], ['username' => 'household-roles-new', 'password' => 'fixture password only'])->withHeader('Content-Type', 'application/json'), self::response(), []);
+			self::assertSame(204, $response->getStatusCode(), 'the create call succeeds with no body: ' . (string)$response->getBody());
+			// POST /users answers 204, so the form finds the new id by username, as this does.
+			$id = (int)self::$db->query("SELECT id FROM users WHERE username = 'household-roles-new'")->fetchColumn();
+			self::assertGreaterThan(0, $id, 'the user exists');
+			$created[] = $id;
+			$defaults = \Victual\Services\RolesService::GetInstance()->GetDefaultRoleIds();
+			$held = fn () => array_map('intval', self::$db->query("SELECT role_id FROM user_roles WHERE user_id = $id ORDER BY role_id")->fetchAll(PDO::FETCH_COLUMN));
+			$sorted = $defaults;
+			sort($sorted);
+			self::assertSame($sorted, $held(), 'CreateUser assigns exactly the default roles');
+
+			$guest = (int)self::$db->query("SELECT id FROM roles WHERE code = 'GUEST'")->fetchColumn();
+			$this->expectStatus(fn () => $roles->SetUserRoles(self::request('PUT', [], ['roles' => [$guest]]), self::response(), ['userId' => (string)$id]), 204, 'PUT roles with USERS_EDIT');
+			self::assertSame([$guest], $held(), 'the chosen roles replace the defaults');
+
+			// Denied: a caller without USERS_EDIT is refused, and the user keeps its roles.
+			self::grant(['USERS_EDIT_SELF', 'USERS_READ']);
+			$this->expectStatus(fn () => $roles->SetUserRoles(self::request('PUT', [], ['roles' => []]), self::response(), ['userId' => (string)$id]), 403, 'PUT roles without USERS_EDIT');
+			self::assertSame([$guest], $held(), 'the refusal changed nothing');
+		}
+		finally
+		{
+			foreach ($created as $id)
+			{
+				self::$db->exec("DELETE FROM user_roles WHERE user_id = $id; DELETE FROM user_permissions WHERE user_id = $id; DELETE FROM users WHERE id = $id");
+			}
+		}
 	}
 
 	/** The user form answers 403 with no grants for the create form, the caller's own record and another user's record, and leaves every table as it was. */

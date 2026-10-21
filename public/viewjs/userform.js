@@ -35,6 +35,59 @@ function SaveUserPicture(result, jsonData)
 	});
 }
 
+/**
+ * Create mode, failure of the roles step: the user already exists, so the form says
+ * exactly that - in an alert region that is announced and focused - and links to the
+ * user's permissions page (or to the users list when the new user's id is unknown)
+ * instead of offering a second POST. The save button stays disabled so a retry cannot
+ * create the same username again.
+ * @param {number|null} userId - id of the user that was created, or null when it could not be looked up
+ */
+function ShowUserRolesNotSet(userId)
+{
+	Victual.FrontendHelpers.EndUiBusy("user-form");
+	$("#save-user-button").prop("disabled", true);
+	$("#user-roles-error-link").attr("href", userId ? U('/user/' + userId + '/permissions') : U('/users'));
+	$("#user-roles-error").removeClass("d-none").trigger("focus");
+}
+
+/**
+ * Create mode, step two: when the form offers the Roles picker (the caller may set roles),
+ * replaces the roles CreateUser assigned with the chosen ones via PUT /users/{id}/roles,
+ * then carries on with SaveUserPicture(). POST /users answers 204 with no body, so the new
+ * user's id is looked up by its (unique) username first.
+ * @param {object} result - API response from the create call (empty: 204)
+ * @param {object} jsonData - the serialized form data (username is used for the lookup), passed through to SaveUserPicture()
+ */
+function SaveUserRoles(result, jsonData)
+{
+	var rolesSelect = $("#user-roles");
+	if (rolesSelect.length === 0)
+	{
+		SaveUserPicture(result, jsonData);
+		return;
+	}
+
+	var roleIds = (rolesSelect.val() || []).map(Number);
+	Victual.Api.Get('users?query%5B%5D=' + encodeURIComponent('username=' + jsonData.username),
+		function (users)
+		{
+			var created = (users || []).find((user) => user.username === jsonData.username);
+			if (!created)
+			{
+				ShowUserRolesNotSet(null);
+				return;
+			}
+
+			Victual.Api.Put('users/' + created.id + '/roles', { roles: roleIds },
+				() => SaveUserPicture({ created_object_id: created.id }, jsonData),
+				() => ShowUserRolesNotSet(created.id)
+			);
+		},
+		() => ShowUserRolesNotSet(null)
+	);
+}
+
 // Validates and submits the form: generates a randomized/sanitized file name for a newly
 // chosen picture, base64-encodes the password (password_base64, as the API expects) and
 // drops the raw password/confirm/change_password fields, then creates or updates the user
@@ -118,7 +171,7 @@ $('#save-user-button').on('click', function (e)
 	if (Victual.EditMode === 'create')
 	{
 		Victual.Api.Post('users', jsonData,
-			(result) => SaveUserPicture(result, jsonData),
+			(result) => SaveUserRoles(result, jsonData),
 			function (xhr)
 			{
 				Victual.FrontendHelpers.EndUiBusy("user-form");
