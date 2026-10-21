@@ -33,7 +33,7 @@ jobs:
       - name: Set up PHP and Psalm
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.5'
+          php-version: '8.5.12'
           extensions: pdo_sqlite, pdo_pgsql, gd, intl, zip, mbstring, fileinfo, ctype
           tools: composer:v2, psalm:6
           coverage: none

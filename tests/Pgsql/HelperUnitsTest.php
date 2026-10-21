@@ -3,11 +3,14 @@
 namespace Victual\Tests\Pgsql;
 
 use PDO;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Slim\Psr7\Factory\ServerRequestFactory;
 use Victual\Helpers\CachePaths;
 use Victual\Helpers\CanonicalJson;
 use Victual\Helpers\ECanonicalizationFailed;
+use Victual\Helpers\ERequirementNotMet;
 use Victual\Helpers\Grocycode;
+use Victual\Helpers\PrerequisiteChecker;
 use Victual\Services\ApiKeyService;
 use Victual\Services\ApplicationService;
 use Victual\Services\CalendarService;
@@ -1075,7 +1078,73 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		$verdict = self::runHelper(['task' => 'requirements']);
 
 		self::assertTrue($verdict['ok'], 'the checker refused a supported interpreter: ' . ($verdict['message'] ?? ''));
-		self::assertTrue(version_compare($verdict['result']['php_version'], '8.4.1', '>='), 'composer.json puts the floor at 8.4');
+		self::assertTrue(version_compare($verdict['result']['php_version'], '8.4.27', '>='), 'composer.json puts the floor at 8.4.27');
+	}
+
+	/**
+	 * The per-branch PHP floor (PHP2Shell, issue 1043): 8.4 from 8.4.27, 8.5 from 8.5.12,
+	 * anything newer accepted, anything older refused. Each boundary is probed on both sides.
+	 *
+	 */
+	#[DataProvider('phpVersionBoundaries')]
+	public function testThePhpVersionFloorIsPerBranch(string $version, bool $accepted)
+	{
+		try
+		{
+			PrerequisiteChecker::checkPhpVersion($version);
+			self::assertTrue($accepted, "PHP $version was accepted but is below its branch floor");
+		}
+		catch (ERequirementNotMet $e)
+		{
+			self::assertFalse($accepted, "PHP $version was refused but meets its branch floor: " . $e->getMessage());
+		}
+	}
+
+	/**
+	 * @return array<string, array{string, bool}> Version string and whether the checker accepts it
+	 */
+	public static function phpVersionBoundaries(): array
+	{
+		return [
+			'8.3.99 refused' => ['8.3.99', false],
+			'8.4.0 refused' => ['8.4.0', false],
+			'8.4.26 refused' => ['8.4.26', false],
+			'8.4.27 accepted' => ['8.4.27', true],
+			'8.4.28 accepted' => ['8.4.28', true],
+			'8.5.0 refused' => ['8.5.0', false],
+			'8.5.11 refused' => ['8.5.11', false],
+			'8.5.12 accepted' => ['8.5.12', true],
+			'8.6.0 accepted' => ['8.6.0', true],
+			'9.0.0 accepted' => ['9.0.0', true],
+		];
+	}
+
+	/**
+	 * A refusal names the minimum for the branch that is running, so an operator on 8.5.11
+	 * is told 8.5.12 rather than a figure that is only the floor of a different branch.
+	 */
+	public function testThePhpVersionRefusalNamesTheMinimumForTheRunningBranch()
+	{
+		try
+		{
+			PrerequisiteChecker::checkPhpVersion('8.5.11');
+			self::fail('PHP 8.5.11 was accepted');
+		}
+		catch (ERequirementNotMet $e)
+		{
+			self::assertStringContainsString('8.5.12', $e->getMessage());
+			self::assertStringContainsString('8.5.11', $e->getMessage());
+		}
+
+		try
+		{
+			PrerequisiteChecker::checkPhpVersion('8.4.26');
+			self::fail('PHP 8.4.26 was accepted');
+		}
+		catch (ERequirementNotMet $e)
+		{
+			self::assertStringContainsString('8.4.27', $e->getMessage());
+		}
 	}
 
 	/**

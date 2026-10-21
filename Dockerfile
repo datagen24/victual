@@ -20,15 +20,17 @@
 # `nix` workflow's boot test. `docs/plans/20-container-infrastructure.md` records what each
 # one became.
 #
-# PHP 8.5 even though composer.json pins 8.4: the fork's floor is 8.4 (so an 8.4 box can
-# still run it) while the shipped image stays current. See docs/plans/landed/15-deliberate-cleanup.md,
+# PHP 8.5 even though composer.json also admits 8.4: the fork's floor is 8.4.27 (so an
+# 8.4 box can still run it) while the shipped image stays current. The patch level is
+# pinned at the PHP2Shell fix (8.5.12; GHSA-w8hw-w9fx-j79w, GHSA-6wmf-4rv5-p3rp) and moves
+# with composer.json and PrerequisiteChecker. See docs/plans/landed/15-deliberate-cleanup.md,
 # question 4.
 
 
 # ---------------------------------------------------------------------------------------
 # Development and CI
 # ---------------------------------------------------------------------------------------
-FROM php:8.5-cli-bookworm AS dev
+FROM php:8.5.12-cli-bookworm AS dev
 
 # libpq-dev for building pdo_pgsql, the image libraries for gd, ICU for intl, and libzip
 # for zip. postgresql-client is separate and not optional: libpq-dev ships headers and the
@@ -78,8 +80,9 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 WORKDIR /app
 
 # Dependencies first, so editing source does not invalidate the vendor layer.
-# --ignore-platform-req=php keeps the image usable while composer.json still pins 8.5.*;
-# once 15-C7 lowers that pin to 8.4 the flag becomes a no-op and can be dropped.
+# --ignore-platform-req=php is now a no-op against this image's PHP (composer.json admits
+# ~8.4.27 || ^8.5.12 and the base is 8.5.12). It stays so that bumping the base image and
+# composer.json in separate commits cannot break the build.
 COPY composer.json composer.lock ./
 RUN composer install \
 		--no-interaction \
