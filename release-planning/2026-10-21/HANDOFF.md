@@ -24,9 +24,9 @@ refresh.py needs an authenticated `gh` and writes a new evidence directory; rend
 ## Open work
 
 - #737 (P2, M): Wave 3, after PR 5 (OpenAPI): fix in 0.5.2, 204 for every authorised request, rights before existence.
-- #762 (P2, S): Draft PR #1041 open (wave 1, PR 2): two-step create, roles replace defaults, labelled Roles button. Householdpages and rbac pass; waiting for review and CI.
+- #762 (P2, S): In progress: PR 2 (wave 1), branch claude/v0-5-2-762-user-roles: two-step create, roles replace defaults, labelled Roles button.
 - #912 (P2, M): Wave 2, after PR 1: option (a), throw, with a fixed fallback body in the error handler.
 - #948 (P3, S): Draft PR #1038 (wave 1, PR 3) describes each merge field per D6; review and merge.
 - #1007 (P3, M): Wave 2, after PR 2 (strings.pot): Medication presets, Medication inbox, Refills.
 - #1026 (P3, S): In progress: PR 1 (wave 1), branch claude/v0-5-2-1026-fallbacks. Lands before #912.
-- #1035 (P3, S): In progress: PR 4 (wave 1), branch claude/v0-5-2-files-415.
+- #1035 (P3, S): In review: draft PR 1039 (wave 1 PR 4), branch claude/v0-5-2-files-415.
