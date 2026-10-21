@@ -119,10 +119,10 @@
    "closed_at": null,
    "priority": "P3",
    "size": "S",
-   "fit": "Compatible: a request that stored an empty file now answers 415 and stores nothing; documented requests are unchanged.",
+   "fit": "Compatible: an upload whose JSON, form, XML or multipart type stored an empty file now answers 415 and stores nothing; every other type is unchanged.",
    "classification": "bug",
-   "next_action": "In progress: PR 4 (wave 1), branch claude/v0-5-2-files-415.",
-   "pr": null
+   "next_action": "In review: draft PR 1039 (wave 1 PR 4), branch claude/v0-5-2-files-415.",
+   "pr": "https://github.com/datagen24/victual/pull/1039"
   }
  ],
  "milestones": [
@@ -284,7 +284,7 @@
    "id": "D7",
    "date": "2026-10-21",
    "question": "Does the empty-file upload limitation from 0.5.1 join 0.5.2?",
-   "answer": "Accepted by the maintainer on 2026-10-21: yes, as a new issue. PUT /api/files/{group}/{name} answers 415 for any content type other than application/octet-stream instead of storing 0 bytes. Size S.",
+   "answer": "Amended by the maintainer on 2026-10-21: 415 only for types the body parser or PHP consumes (JSON/+json, form-urlencoded, XML/+xml, multipart/form-data); every other type, including application/pdf, is stored as today.",
    "issues": []
   },
   {
@@ -360,6 +360,11 @@
    "at": "2026-10-21",
    "action": "Closed Dependabot PR #1032 as superseded by PR #1037 (D8)",
    "url": "https://github.com/datagen24/victual/pull/1032"
+  },
+  {
+   "at": "2026-10-21",
+   "action": "Posted the amended D7 decision comment on #1035",
+   "url": "https://github.com/datagen24/victual/issues/1035#issuecomment-6322328246"
   }
  ]
 }

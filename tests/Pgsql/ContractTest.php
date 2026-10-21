@@ -175,6 +175,7 @@ class ContractTest extends PgsqlSchemaTestCase
 	/** @var array<string, int> Fixture ids created while building the graph. */
 	private static array $ids = [];
 
+	/** Connects to the test schema and builds the container the tests share. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -191,11 +192,13 @@ class ContractTest extends PgsqlSchemaTestCase
 	// Small helpers shared by every section below.
 	// ------------------------------------------------------------------------------
 
+	/** A controller of the given class, built over the shared container. */
 	private static function controller(string $class)
 	{
 		return self::$ControllerCache[$class] ??= new $class(self::$container);
 	}
 
+	/** A PSR-7 request with the given method, body and query. */
 	private static function request(string $method = 'GET', $body = null, array $query = [])
 	{
 		$uri = 'http://localhost/api' . (empty($query) ? '' : ('?' . http_build_query($query)));
@@ -207,6 +210,7 @@ class ContractTest extends PgsqlSchemaTestCase
 		return $request;
 	}
 
+	/** A PSR-7 request whose body is the given raw bytes under the given Content-Type. */
 	private static function requestWithRawBody(string $method, string $bytes, string $contentType)
 	{
 		$stream = (new StreamFactory())->createStream($bytes);
@@ -215,6 +219,7 @@ class ContractTest extends PgsqlSchemaTestCase
 			->withHeader('Content-Type', $contentType);
 	}
 
+	/** The id of the role with the given code. */
 	private static function roleId(string $code): int
 	{
 		$stmt = self::$db->prepare('SELECT id FROM roles WHERE code = ?');
@@ -222,12 +227,14 @@ class ContractTest extends PgsqlSchemaTestCase
 		return (int)$stmt->fetchColumn();
 	}
 
+	/** Replaces the calling user's roles and permissions with the ADMIN role. */
 	private static function grantAdmin(): void
 	{
 		self::$db->exec('DELETE FROM user_permissions WHERE user_id = 9000; DELETE FROM user_roles WHERE user_id = 9000');
 		self::$db->exec('INSERT INTO user_roles(user_id, role_id) VALUES (9000, ' . self::roleId('ADMIN') . ')');
 	}
 
+	/** Replaces the calling user's roles and permissions with the restricted child role. */
 	private static function grantChild(): void
 	{
 		self::$db->exec('DELETE FROM user_permissions WHERE user_id = 9000; DELETE FROM user_roles WHERE user_id = 9000');
@@ -293,6 +300,7 @@ class ContractTest extends PgsqlSchemaTestCase
 		return $decoded;
 	}
 
+	/** Invokes the call as Admin, recording its response under the route key in the Admin snapshot. */
 	private static function invokeAdmin(string $key, callable $call)
 	{
 		return self::invoke(self::$adminSnapshot, self::$adminBodies, $key, $call);
@@ -305,6 +313,7 @@ class ContractTest extends PgsqlSchemaTestCase
 	//    exactly what happened here by hand").
 	// ------------------------------------------------------------------------------
 
+	/** Every operation the specification names is a registered route, and the reverse. */
 	public function testRouteTableMatchesSpecification(): void
 	{
 		$spec = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), true);
@@ -350,6 +359,7 @@ class ContractTest extends PgsqlSchemaTestCase
 	// 2. R1 - the regression check the issue names by number.
 	// ------------------------------------------------------------------------------
 
+	/** The system config response still reports the stock feature flag. */
 	public function testSystemConfigRetainsFeatureFlagStock(): void
 	{
 		self::grantAdmin();
@@ -389,6 +399,7 @@ class ContractTest extends PgsqlSchemaTestCase
 	//    later read sweep needs.
 	// ------------------------------------------------------------------------------
 
+	/** Creates the master data the later operations read and edit. */
 	#[Depends('testSystemConfigRetainsFeatureFlagStock')]
 	public function testCreatesMasterData(): void
 	{
@@ -580,6 +591,7 @@ class ContractTest extends PgsqlSchemaTestCase
 		self::assertArrayHasKey('stock_entry', self::$ids, 'At least one stock entry exists for the rest of the suite to read');
 	}
 
+	/** Calls the recipe operations and records their responses. */
 	#[Depends('testStockOperations')]
 	public function testRecipesOperations(): void
 	{
@@ -618,6 +630,7 @@ class ContractTest extends PgsqlSchemaTestCase
 		self::assertGreaterThan(0, self::$ids['recipe'], 'Fixture recipe created');
 	}
 
+	/** Calls the recipe consumption operations and records their responses. */
 	#[Depends('testRecipesOperations')]
 	public function testConsumptionRecipeOperations(): void
 	{
@@ -663,6 +676,7 @@ class ContractTest extends PgsqlSchemaTestCase
 		self::assertGreaterThan(0, $recipeId, 'Fixture consumption recipe created');
 	}
 
+	/** Calls the consumption event operations and records their responses. */
 	#[Depends('testConsumptionRecipeOperations')]
 	public function testConsumptionEventOperations(): void
 	{
@@ -728,6 +742,7 @@ class ContractTest extends PgsqlSchemaTestCase
 		self::assertSame(2, (int)self::$db->query("SELECT count(*) FROM consumption_refill_fills WHERE recipe_id = $recipeId")->fetchColumn(), 'Fixture fills recorded');
 	}
 
+	/** Calls the chore operations and records their responses. */
 	#[Depends('testConsumptionRefillOperations')]
 	public function testChoresOperations(): void
 	{
@@ -767,6 +782,7 @@ class ContractTest extends PgsqlSchemaTestCase
 		self::assertGreaterThan(0, self::$ids['chore'], 'Fixture chore created');
 	}
 
+	/** Calls the battery operations and records their responses. */
 	#[Depends('testChoresOperations')]
 	public function testBatteriesOperations(): void
 	{
@@ -786,6 +802,7 @@ class ContractTest extends PgsqlSchemaTestCase
 		self::assertGreaterThan(0, self::$ids['battery'], 'Fixture battery created');
 	}
 
+	/** Calls the task operations and records their responses. */
 	#[Depends('testBatteriesOperations')]
 	public function testTasksOperations(): void
 	{
@@ -810,6 +827,7 @@ class ContractTest extends PgsqlSchemaTestCase
 		self::assertGreaterThan(0, self::$ids['task'], 'Fixture task created');
 	}
 
+	/** Calls the user and role operations and records their responses. */
 	#[Depends('testTasksOperations')]
 	public function testUsersAndRolesOperations(): void
 	{
@@ -849,6 +867,7 @@ class ContractTest extends PgsqlSchemaTestCase
 		self::assertGreaterThan(0, self::$ids['user'], 'Fixture user created');
 	}
 
+	/** Calls the file, system, calendar and print operations and records their responses. The upload names the one type it accepts, application/octet-stream. */
 	#[Depends('testUsersAndRolesOperations')]
 	public function testFilesAndSystemAndCalendarOperations(): void
 	{

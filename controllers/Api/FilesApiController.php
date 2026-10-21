@@ -10,6 +10,7 @@ use Victual\Services\FilesService;
 use Victual\Services\Storage\FileStorage;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use Slim\Exception\HttpException;
 use Slim\Psr7\Stream;
 
 /**
@@ -33,6 +34,12 @@ class FilesApiController extends BaseApiController
 	 * content really is one.
 	 */
 	const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+
+	/**
+	 * The media types whose body is read before UploadFile() runs: the parsers Slim's
+	 * BodyParsingMiddleware registers, plus multipart/form-data, which PHP reads itself.
+	 */
+	const CONSUMED_MEDIA_TYPES = ['application/json', 'application/x-www-form-urlencoded', 'application/xml', 'text/xml', 'multipart/form-data'];
 
 	/**
 	 * Which permission lets a caller upload to or delete from a group. Holding any one
@@ -367,7 +374,11 @@ class FilesApiController extends BaseApiController
 	 * streamed into the configured storage in 1 MB chunks. Fails when the file already
 	 * exists (exclusive create), when the extension is not one the group accepts, or when
 	 * a file stored under an image extension is not an image. Returns 204 on success, 413
-	 * when the body exceeds the effective upload limit, or a 400 error response.
+	 * when the body exceeds the effective upload limit, 415 when the request names a
+	 * Content-Type that is consumed before the body can be read (JSON, form, XML,
+	 * multipart; see CheckUploadMediaType()), or a 400 error response.
+	 *
+	 * Any other Content-Type, or none, stores the bytes as sent (issue #1035).
 	 */
 	public function UploadFile(Request $request, Response $response, array $args)
 	{
@@ -376,6 +387,8 @@ class FilesApiController extends BaseApiController
 			$this->CheckGroupIsKnown($args['group']);
 
 			$this->CheckGroupWritePermission($request, $args['group']);
+
+			$this->CheckUploadMediaType($request);
 
 			$fileName = $this->CheckFileName($args['fileName']);
 			$this->CheckFileExtension($args['group'], $fileName);
@@ -503,13 +516,46 @@ class FilesApiController extends BaseApiController
 	}
 
 	/**
+	 * Refuses, with 415 and nothing stored, an upload whose Content-Type is one that is
+	 * consumed before UploadFile() can read the body.
+	 *
+	 * The body parsing middleware reads a JSON, form encoded or XML body, and PHP reads a
+	 * multipart/form-data one, before GetRequestBodyStream() detaches the stream, so such an
+	 * upload used to answer 204 and store 0 bytes (issue #1035, found by the 0.5.0 restore
+	 * drill). Every other type, application/pdf and image/png included, was never affected
+	 * and keeps storing its bytes, as does an absent or empty header.
+	 *
+	 * The match is Slim's own (BodyParsingMiddleware::parseBody()): the media type without
+	 * its parameters, lowercased; when it is not one of the parsers registered by name, the
+	 * part after its last "+" is looked up as application/<suffix> (RFC 6839), so
+	 * "application/vnd.api+json" and "text/foo+xml" are consumed too.
+	 *
+	 * @throws HttpException 415 when the media type is one of those
+	 */
+	protected function CheckUploadMediaType(Request $request): void
+	{
+		$mediaType = self::MediaTypeOf($request);
+
+		if (!in_array($mediaType, self::CONSUMED_MEDIA_TYPES, true))
+		{
+			$parts = explode('+', $mediaType);
+			$mediaType = count($parts) >= 2 ? 'application/' . $parts[count($parts) - 1] : $mediaType;
+		}
+
+		if (in_array($mediaType, self::CONSUMED_MEDIA_TYPES, true))
+		{
+			throw new HttpException($request, 'Send the file as application/octet-stream; this content type is parsed as form or structured data.', 415);
+		}
+	}
+
+	/**
 	 * The request body as a readable stream, for the storage to consume.
 	 *
 	 * detach() hands over the underlying resource, which is php://input for a raw PUT.
 	 * Nothing downstream reads the request body again. When it has already been consumed
 	 * (the body parsing middleware does that for a form encoded or JSON content type) the
-	 * detached resource is at EOF and the stored file is empty, which is what happened
-	 * before this method existed too.
+	 * detached resource is at EOF and the stored file would be empty. UploadFile() refuses
+	 * those content types with a 415 (CheckUploadMediaType()) before it gets here.
 	 *
 	 * @return resource|string
 	 */
