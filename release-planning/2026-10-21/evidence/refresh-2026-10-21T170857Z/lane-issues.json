@@ -1,0 +1,183 @@
+[
+ {
+  "number": 1035,
+  "title": "File upload with a form content type answers 204 and stores an empty file",
+  "html_url": "https://github.com/datagen24/victual/issues/1035",
+  "state": "open",
+  "labels": [
+   {
+    "name": "bug"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T17:08:20Z"
+ },
+ {
+  "number": 1032,
+  "title": "chore(deps): bump hono from 4.13.8 to 4.13.13 in /mcp",
+  "html_url": "https://github.com/datagen24/victual/pull/1032",
+  "state": "open",
+  "labels": [
+   {
+    "name": "dependencies"
+   },
+   {
+    "name": "javascript"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T16:49:03Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1032",
+   "html_url": "https://github.com/datagen24/victual/pull/1032",
+   "diff_url": "https://github.com/datagen24/victual/pull/1032.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1032.patch",
+   "merged_at": null
+  }
+ },
+ {
+  "number": 1031,
+  "title": "chore(deps): bump @modelcontextprotocol/server from 2.0.0 to 2.3.1 in /mcp",
+  "html_url": "https://github.com/datagen24/victual/pull/1031",
+  "state": "open",
+  "labels": [
+   {
+    "name": "dependencies"
+   },
+   {
+    "name": "javascript"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T16:49:03Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1031",
+   "html_url": "https://github.com/datagen24/victual/pull/1031",
+   "diff_url": "https://github.com/datagen24/victual/pull/1031.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1031.patch",
+   "merged_at": null
+  }
+ },
+ {
+  "number": 1030,
+  "title": "chore(deps-dev): bump @modelcontextprotocol/client from 2.2.0 to 2.3.0 in /mcp",
+  "html_url": "https://github.com/datagen24/victual/pull/1030",
+  "state": "open",
+  "labels": [
+   {
+    "name": "dependencies"
+   },
+   {
+    "name": "javascript"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T16:49:02Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1030",
+   "html_url": "https://github.com/datagen24/victual/pull/1030",
+   "diff_url": "https://github.com/datagen24/victual/pull/1030.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1030.patch",
+   "merged_at": null
+  }
+ },
+ {
+  "number": 1026,
+  "title": "Prove or keep the CanonicalJson and StderrLogger fallbacks #252 left in place",
+  "html_url": "https://github.com/datagen24/victual/issues/1026",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T17:08:36Z"
+ },
+ {
+  "number": 1007,
+  "title": "UI: group medication features in a Medication flyout and clarify labels",
+  "html_url": "https://github.com/datagen24/victual/issues/1007",
+  "state": "open",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T17:08:41Z"
+ },
+ {
+  "number": 948,
+  "title": "Label designer: describe merge fields with names, explanations and example values",
+  "html_url": "https://github.com/datagen24/victual/issues/948",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T17:08:43Z"
+ },
+ {
+  "number": 912,
+  "title": "Decide whether ApiResponse encodes with JSON_THROW_ON_ERROR (from #844)",
+  "html_url": "https://github.com/datagen24/victual/issues/912",
+  "state": "open",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T17:08:38Z"
+ },
+ {
+  "number": 762,
+  "title": "Users: roles can't be set when creating a user, and the only entry point is an unlabeled lock icon",
+  "html_url": "https://github.com/datagen24/victual/issues/762",
+  "state": "open",
+  "labels": [
+   {
+    "name": "accessibility"
+   },
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T17:08:40Z"
+ },
+ {
+  "number": 737,
+  "title": "Consumption recipe sharing: answer a share request identically whether or not the user exists",
+  "html_url": "https://github.com/datagen24/victual/issues/737",
+  "state": "open",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T17:08:39Z"
+ }
+]

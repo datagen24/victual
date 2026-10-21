@@ -42,5 +42,9 @@
   # Filled 2026-09-19 (issue #86) from the first `nix build .#mcp` after the lockfile was
   # generated, the same fail-on-purpose loop as the two above. Changes whenever
   # mcp/package-lock.json does: re-run the build and take the "got:" value.
-  mcpNpmDeps = "sha256-7/MxycF8fRVRzfx39QIOTv/lxGM7MvtRJXdba1gjHO0=";
+  #
+  # Moved 2026-10-21 for the client 2.3.0 / server 2.3.1 / hono 4.13.13 bump. Computed with
+  # `nix run nixpkgs#prefetch-npm-deps -- mcp/package-lock.json`, which reproduces the
+  # previous value on the previous lockfile.
+  mcpNpmDeps = "sha256-+wlzN2SGoQUolLlJ7Slyo6W/uT/LLXjdQA1QB7khccQ=";
 }
