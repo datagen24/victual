@@ -175,6 +175,48 @@ async function saveDraft(page, templateId)
 		const refusal = await refused.json();
 		assert.equal(refusal.code, 'asset_unavailable', 'and the refusal names the asset: ' + JSON.stringify(refusal));
 
+		// Issue #948: a merge field is described by a name, an explanation and an example
+		// value, and the editor says which of those is sample data. The scratch template
+		// above carries a text element at (2mm, 2mm), 30x8mm - canvas px (8,8)-(128,40) - so
+		// selecting it needs no font upload, which a fresh install does not have.
+		await page.goto(base + '/labeltemplate/' + scratch.id);
+		await page.waitForFunction(() => window.fabric !== undefined, null, { timeout: 20000 });
+		await page.waitForFunction(() => document.querySelector('#canvas-width-mm').value !== '', null, { timeout: 20000 });
+		const scratchCanvas = page.locator('#label-canvas');
+		await scratchCanvas.scrollIntoViewIfNeeded();
+		const scratchBox = await scratchCanvas.boundingBox();
+		await page.mouse.click(scratchBox.x + 60, scratchBox.y + 24);
+		await page.waitForSelector('#field-help', { timeout: 10000 });
+
+		// The stored keys are what the select submits; only the labels are descriptive.
+		const options = await page.locator('#element-properties select').first().locator('option')
+			.evaluateAll(nodes => nodes.map(node => ({ value: node.value, label: node.textContent })));
+		assert.deepEqual(options.map(option => option.value),
+			['location.name', 'location.description', 'location.id', 'location.path', ''],
+			'the merge field keys are unchanged: ' + JSON.stringify(options));
+		assert.equal(options[0].label, 'Location name (location.name)', 'a field is named for a person, with its key beside it');
+		assert.equal(options[3].label, 'Location path (location.path)');
+
+		let help = await page.locator('#field-help').innerText();
+		assert.ok(help.includes('The name of the location.'), 'the explanation shows: ' + help);
+		assert.ok(help.includes('Example (sample data, not printed): Sample shelf'), 'the example is labelled as sample data: ' + help);
+		assert.ok(help.includes('replaced by the real value'), 'the printed value is distinguished from the example: ' + help);
+
+		await page.locator('#element-properties select').first().selectOption('location.path');
+		await page.waitForFunction(() => document.querySelector('#field-example').textContent.includes('Sample floor / Sample room / Sample shelf'), null, { timeout: 5000 });
+		await saveDraft(page, scratch.id);
+		const described = await (await page.request.get(base + '/api/labels/templates/' + scratch.id + '/draft')).json();
+		assert.equal(described.document.elements[0].field, 'location.path', 'choosing a described field stores its key');
+
+		await page.locator('#element-properties select').first().selectOption('');
+		await page.waitForFunction(() => document.querySelector('#field-help').textContent.includes('printed exactly as typed'), null, { timeout: 5000 });
+		assert.equal(await page.locator('#field-example').count(), 0, 'a fixed string has no example value');
+		assert.ok(await page.locator('#canvas-sample-note').isVisible(), 'the canvas says it draws example values');
+		assert.ok(await page.locator('#preview-sample-note').isVisible(), 'the preview says it is built from example values');
+
+		await page.goto(base + '/labeltemplate/' + templateId);
+		await page.waitForFunction(() => window.fabric !== undefined, null, { timeout: 20000 });
+		await page.waitForFunction(() => document.querySelector('#canvas-width-mm').value !== '', null, { timeout: 20000 });
 		await saveDraft(page, templateId);
 
 		const draft = await (await page.request.get(base + '/api/labels/templates/' + templateId + '/draft')).json();
