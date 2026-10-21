@@ -144,7 +144,12 @@ A share confers no permission. Recording a consumption also needs `STOCK_CONSUME
 needs `STOCK_EDIT`, and every action needs `STOCK_VIEW`; a share to a user who lacks the
 permission is accepted and does nothing until they hold it. A user with the *share* right can
 grant only rights they hold, never the *share* right itself, and cannot change a share that
-holds a right they lack. Anyone can remove their own share with **Remove my access**.
+holds a right they lack.
+
+Sharing answers the same whether or not the named user exists: a request to share with an
+unknown username or user id, or with the owner, is accepted with no error and writes nothing,
+so the answer never confirms that an account exists. After sharing, check that the user
+appears in the share list; a name that does not appear was not found. Anyone can remove their own share with **Remove my access**.
 
 The owner can **Make owner** a user who already holds a share. The previous owner then holds a
 share with every right, which the new owner can remove. Only the owner deletes a recipe.

@@ -94,6 +94,11 @@ same act needs elsewhere:
 | Share, or change a share | Share | `STOCK_VIEW` |
 | Delete, or transfer ownership | Ownership | `STOCK_VIEW` |
 
+Sharing a recipe does not reveal which accounts exist. `POST` and `PUT` on `/api/consumption/recipes/{id}/shares` answer
+`204` for every authorised caller, whether the target is a real user, an unknown username or user id,
+or the owner; only a real, shareable user gets a row. A right the caller lacks is refused with `403`
+whether or not the target exists.
+
 `ADMIN` and the `USERS_*` permissions give no access to a recipe. An account administrator who
 can change a user's password can sign in as that user
 ([ADR-0014](../../adr/0014-administering-a-user-is-a-subset-question.md)), which this model

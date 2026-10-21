@@ -33,6 +33,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 	private static int $organizerA;
 	private static int $organizerB;
 
+	/** Test fixture helper: set up before class. */
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -60,6 +61,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::$organizerB = (int)self::$db->query("INSERT INTO locations (name) VALUES ('CR organizer B') RETURNING id")->fetchColumn();
 	}
 
+	/** Test fixture helper: grant. */
 	private static function grant(int $userId, array $names): void
 	{
 		$statement = self::$db->prepare('INSERT INTO user_permissions (user_id, permission_id) SELECT ?, id FROM permission_hierarchy WHERE name = ?');
@@ -94,17 +96,20 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		return $id;
 	}
 
+	/** Test fixture helper: on hand. */
 	private static function onHand(int $productId, ?int $location = null): float
 	{
 		$sql = 'SELECT COALESCE(sum(amount), 0) FROM stock WHERE product_id = ' . $productId . ($location === null ? '' : ' AND location_id = ' . $location);
 		return (float)self::$db->query($sql)->fetchColumn();
 	}
 
+	/** Test fixture helper: line. */
 	private static function line(int $product, float $amount, ?int $qu = null): array
 	{
 		return ['product_id' => $product, 'amount' => $amount, 'qu_id' => $qu ?? self::$tablet];
 	}
 
+	/** Test fixture helper: expect refusal. */
 	private function expectRefusal(callable $work, int $status, string $code): void
 	{
 		try
@@ -120,6 +125,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::fail("expected a $status $code refusal");
 	}
 
+	/** Test fixture helper: recipe. */
 	private static function recipe(array $lines, string $name = 'Recipe', int $owner = self::OWNER): int
 	{
 		return self::$service->CreateRecipe($name . ' ' . bin2hex(random_bytes(3)), null, $lines, $owner);
@@ -127,6 +133,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 
 	// --- Reading: absent means absent -------------------------------------------------------
 
+	/** Asserts that only the owner and named members can see arecipe. */
 	public function testOnlyTheOwnerAndNamedMembersCanSeeARecipe(): void
 	{
 		$product = self::product('CR visibility', 10);
@@ -147,6 +154,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		$this->expectRefusal(fn() => self::$service->GetRecipe(987654, self::OWNER), 404, 'not_found');
 	}
 
+	/** Asserts that timestamps are rfc3339 in utc with six digits. */
 	public function testTimestampsAreRfc3339InUtcWithSixDigits(): void
 	{
 		$product = self::product('CR timestamps', 10);
@@ -161,6 +169,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::assertSame('2026-10-08T02:30:00.000000Z', $event['occurred_at'], 'the instant is stored and shown in UTC');
 	}
 
+	/** Asserts that the global permission is checked as well as the share. */
 	public function testTheGlobalPermissionIsCheckedAsWellAsTheShare(): void
 	{
 		$product = self::product('CR global', 10);
@@ -175,6 +184,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 
 	// --- Consuming ---------------------------------------------------------------------------
 
+	/** Asserts that amember with the consume right books every line and no recipe id reaches the ledger. */
 	public function testAMemberWithTheConsumeRightBooksEveryLineAndNoRecipeIdReachesTheLedger(): void
 	{
 		$a = self::product('CR line A', 10);
@@ -196,6 +206,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::assertCount(2, $event['lines']);
 	}
 
+	/** Asserts that amember without the consume right is refused and astranger sees nothing. */
 	public function testAMemberWithoutTheConsumeRightIsRefusedAndAStrangerSeesNothing(): void
 	{
 		$product = self::product('CR no consume', 10);
@@ -209,6 +220,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::assertSame(0, (int)self::$db->query("SELECT count(*) FROM consumption_events WHERE source_event_id IN ('r1', 'r2', 'r3')")->fetchColumn(), 'a refused consumption leaves no event');
 	}
 
+	/** Asserts that aline in boxes books ten tablets each. */
 	public function testALineInBoxesBooksTenTabletsEach(): void
 	{
 		$product = self::product('CR boxes', 40);
@@ -219,12 +231,14 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::assertSame(25.0, self::onHand($product), '1.5 boxes at 10 tablets per box');
 	}
 
+	/** Asserts that aunit with no entered conversion is refused when the recipe is written. */
 	public function testAUnitWithNoEnteredConversionIsRefusedWhenTheRecipeIsWritten(): void
 	{
 		$product = self::product('CR no conversion', 10, 0, false);
 		$this->expectRefusal(fn() => self::recipe([self::line($product, 1, self::$box)]), 422, 'no_conversion');
 	}
 
+	/** Asserts that aconversion removed afterwards refuses the consumption and books nothing. */
 	public function testAConversionRemovedAfterwardsRefusesTheConsumptionAndBooksNothing(): void
 	{
 		$product = self::product('CR conversion removed', 40);
@@ -236,6 +250,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::assertSame(40.0, self::onHand($product));
 	}
 
+	/** Asserts that alater line with too little stock rolls back the earlier ones. */
 	public function testALaterLineWithTooLittleStockRollsBackTheEarlierOnes(): void
 	{
 		$first = self::product('CR rollback first', 10);
@@ -249,6 +264,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::assertSame(0, (int)self::$db->query('SELECT count(*) FROM stock_log WHERE product_id IN (' . $first . ',' . $second . ") AND transaction_type = 'consume'")->fetchColumn());
 	}
 
+	/** Asserts that arepeated request id books once and another users id is independent. */
 	public function testARepeatedRequestIdBooksOnceAndAnotherUsersIdIsIndependent(): void
 	{
 		$product = self::product('CR replay', 10);
@@ -267,6 +283,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::assertSame(8.0, self::onHand($product), 'two bookings, not three');
 	}
 
+	/** Asserts that arequest id cannot replay different consumption inputs. */
 	public function testARequestIdCannotReplayDifferentConsumptionInputs(): void
 	{
 		$product = self::product('CR conflicting replay', 10);
@@ -286,6 +303,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::assertSame(9.0, self::onHand($product), 'legacy conflicts must not book again');
 	}
 
+	/** Asserts that alocation is never silently swapped for another. */
 	public function testALocationIsNeverSilentlySwappedForAnother(): void
 	{
 		$product = self::product('CR organizers', 5, 20);
@@ -298,6 +316,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::assertSame([5.0, 14.0], [self::onHand($product, self::$organizerA), self::onHand($product, self::$organizerB)]);
 	}
 
+	/** Asserts that alate event books the date written in its own offset. */
 	public function testALateEventBooksTheDateWrittenInItsOwnOffset(): void
 	{
 		$product = self::product('CR late', 10);
@@ -312,6 +331,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		$this->expectRefusal(fn() => self::$service->Consume($id, 'naive', null, '2026-10-09T10:00:00', self::OWNER), 422, 'invalid_occurred_at');
 	}
 
+	/** Asserts that event lines follow the bookings not the recipe lines. */
 	public function testEventLinesFollowTheBookingsNotTheRecipeLines(): void
 	{
 		$product = self::product('CR two rows', 0);
@@ -330,6 +350,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 
 	// --- Editing and history -----------------------------------------------------------------
 
+	/** Asserts that an edit leaves what past events booked untouched and undo uses the recorded bookings. */
 	public function testAnEditLeavesWhatPastEventsBookedUntouchedAndUndoUsesTheRecordedBookings(): void
 	{
 		$product = self::product('CR history', 20);
@@ -347,6 +368,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		$this->expectRefusal(fn() => self::$service->UndoConsumption($id, $event['id'], self::OWNER), 409, 'invalid_state');
 	}
 
+	/** Asserts that edit needs the edit right and astranger gets404. */
 	public function testEditNeedsTheEditRightAndAStrangerGets404(): void
 	{
 		$product = self::product('CR edit rights', 10);
@@ -360,6 +382,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::assertSame('by member', self::$service->GetRecipe($id, self::OWNER)['note']);
 	}
 
+	/** Asserts that undo through the recipe needs the undo right and only covers the callers own events. */
 	public function testUndoThroughTheRecipeNeedsTheUndoRightAndOnlyCoversTheCallersOwnEvents(): void
 	{
 		$product = self::product('CR undo rights', 10);
@@ -374,6 +397,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::assertSame(10.0, self::onHand($product));
 	}
 
+	/** Asserts that recipe undo after adirect stock undo only marks the event. */
 	public function testRecipeUndoAfterADirectStockUndoOnlyMarksTheEvent(): void
 	{
 		$product = self::product('CR direct undo', 10);
@@ -388,6 +412,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::assertSame(10.0, self::onHand($product), 'stock restored once');
 	}
 
+	/** Asserts that an event with one line undone directly is partially undone. */
 	public function testAnEventWithOneLineUndoneDirectlyIsPartiallyUndone(): void
 	{
 		$a = self::product('CR partial A', 10);
@@ -407,6 +432,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 
 	// --- Sharing -----------------------------------------------------------------------------
 
+	/** Asserts that revocation takes effect at once. */
 	public function testRevocationTakesEffectAtOnce(): void
 	{
 		$product = self::product('CR revoke', 10);
@@ -421,6 +447,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::assertSame(9.0, self::onHand($product));
 	}
 
+	/** Asserts that ashare holder grants only what they hold and never the share right. */
 	public function testAShareHolderGrantsOnlyWhatTheyHoldAndNeverTheShareRight(): void
 	{
 		$product = self::product('CR delegation', 10);
@@ -433,7 +460,8 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		$this->expectRefusal(fn() => self::$service->SetShare($id, self::OTHER, ['consume' => true, 'edit' => true], self::MEMBER), 403, 'right_missing');
 		$this->expectRefusal(fn() => self::$service->SetShare($id, self::OTHER, ['share' => true], self::MEMBER), 403, 'right_missing');
 		$this->expectRefusal(fn() => self::$service->SetShare($id, self::MEMBER, ['consume' => true], self::MEMBER), 403, 'right_missing');
-		$this->expectRefusal(fn() => self::$service->SetShare($id, self::OWNER, ['consume' => true], self::MEMBER), 422, 'invalid_user');
+		self::$service->SetShare($id, self::OWNER, ['consume' => true], self::MEMBER);
+		self::assertSame([], array_filter(self::$service->ListShares($id, self::OWNER), fn($s) => $s['user_id'] === self::OWNER), 'sharing with the owner writes nothing and does not refuse (#737)');
 
 		self::$service->SetShare($id, self::OTHER, ['consume' => true, 'edit' => true], self::OWNER);
 		$this->expectRefusal(fn() => self::$service->RemoveShare($id, self::OTHER, self::MEMBER), 403, 'right_missing');
@@ -444,18 +472,22 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		$this->expectRefusal(fn() => self::$service->ListShares($id, self::MANAGER), 404, 'not_found');
 	}
 
-	public function testAShareToAUserByNameNeedsAnExistingNonOwnerName(): void
+	/** Asserts that ashare to an unknown name or the owner writes nothing. */
+	public function testAShareToAnUnknownNameOrTheOwnerWritesNothing(): void
 	{
 		$product = self::product('CR by name', 10);
 		$id = self::recipe([self::line($product, 1)]);
 
 		self::$service->SetShare($id, 'cr-member', ['consume' => true], self::OWNER);
 		self::assertSame($id, self::$service->GetRecipe($id, self::MEMBER)['id']);
-		$this->expectRefusal(fn() => self::$service->SetShare($id, 'nobody-by-that-name', [], self::OWNER), 422, 'invalid_user');
-		$this->expectRefusal(fn() => self::$service->SetShare($id, 'cr-owner', [], self::OWNER), 422, 'invalid_user');
+		$before = count(self::$service->ListShares($id, self::OWNER));
+		self::$service->SetShare($id, 'nobody-by-that-name', [], self::OWNER);
+		self::$service->SetShare($id, 'cr-owner', [], self::OWNER);
+		self::assertCount($before, self::$service->ListShares($id, self::OWNER), 'an unknown name and the owner return normally and write nothing (#737)');
 		$this->expectRefusal(fn() => self::$service->SetShare($id, 'cr-member', [], self::OTHER), 404, 'not_found');
 	}
 
+	/** Asserts that an inert share is accepted and names no permission. */
 	public function testAnInertShareIsAcceptedAndNamesNoPermission(): void
 	{
 		$product = self::product('CR inert', 10);
@@ -467,6 +499,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::assertSame($before, \Victual\Controllers\Users\User::ResolvedPermissionNames(self::VIEWER), 'a share writes no permission');
 	}
 
+	/** Asserts that transfer needs ashare and leaves the old owner with every right. */
 	public function testTransferNeedsAShareAndLeavesTheOldOwnerWithEveryRight(): void
 	{
 		$product = self::product('CR transfer', 10);
@@ -485,6 +518,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		$this->expectRefusal(fn() => self::$service->GetRecipe($id, self::OWNER), 404, 'not_found');
 	}
 
+	/** Asserts that only the owner deletes and events outlive the recipe. */
 	public function testOnlyTheOwnerDeletesAndEventsOutliveTheRecipe(): void
 	{
 		$product = self::product('CR delete', 10);
@@ -503,6 +537,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::assertSame(9.0, self::onHand($product), 'stock history is unchanged');
 	}
 
+	/** Asserts that ashare read is never apermission read. */
 	public function testAShareReadIsNeverAPermissionRead(): void
 	{
 		$product = self::product('CR admin', 10);
@@ -517,6 +552,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::assertSame(10.0, self::onHand($product));
 	}
 
+	/** Asserts that validation refuses bad names lines and request ids. */
 	public function testValidationRefusesBadNamesLinesAndRequestIds(): void
 	{
 		$product = self::product('CR validation', 10);

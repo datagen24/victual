@@ -151,6 +151,9 @@
 				<p id="consumption-share-error"
 					class="mt-2"
 					role="alert"></p>
+				<p id="consumption-share-notice"
+					class="mt-2 text-muted"
+					role="status"></p>
 			</div>
 			<div class="modal-footer">
 				<button class="btn btn-secondary"

@@ -17,6 +17,7 @@ use Victual\Services\ConsumptionRecipeService;
  */
 class ConsumptionRecipesApiController extends BaseApiController
 {
+	/** Handles the service route and returns the JSON or empty response. */
 	private function Service(): ConsumptionRecipeService
 	{
 		return ConsumptionRecipeService::GetInstance();
@@ -39,6 +40,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 		});
 	}
 
+	/** Handles the recipe id route and returns the JSON or empty response. */
 	private static function RecipeId(array $args): int
 	{
 		return (int)$args['recipeId'];
@@ -50,6 +52,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 		return $this->GetParsedAndFilteredRequestBody($request) ?? [];
 	}
 
+	/** Handles the rights from route and returns the JSON or empty response. */
 	private static function RightsFrom(array $body): array
 	{
 		$rights = [];
@@ -61,6 +64,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 		return $rights;
 	}
 
+	/** Handles the list recipes route and returns the JSON or empty response. */
 	public function ListRecipes(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
@@ -68,6 +72,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 		return $this->Run($request, $response, fn() => $this->ApiResponse($response, $this->Service()->ListRecipes((int)VICTUAL_USER_ID)));
 	}
 
+	/** Handles the create recipe route and returns the JSON or empty response. */
 	public function CreateRecipe(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
@@ -82,6 +87,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 		});
 	}
 
+	/** Handles the get recipe route and returns the JSON or empty response. */
 	public function GetRecipe(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
@@ -89,6 +95,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 		return $this->Run($request, $response, fn() => $this->ApiResponse($response, $this->Service()->GetRecipe(self::RecipeId($args), (int)VICTUAL_USER_ID)));
 	}
 
+	/** Handles the update recipe route and returns the JSON or empty response. */
 	public function UpdateRecipe(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
@@ -102,6 +109,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 		});
 	}
 
+	/** Handles the delete recipe route and returns the JSON or empty response. */
 	public function DeleteRecipe(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
@@ -114,6 +122,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 		});
 	}
 
+	/** Handles the consume recipe route and returns the JSON or empty response. */
 	public function ConsumeRecipe(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
@@ -129,6 +138,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 		});
 	}
 
+	/** Handles the list events route and returns the JSON or empty response. */
 	public function ListEvents(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
@@ -136,6 +146,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 		return $this->Run($request, $response, fn() => $this->ApiResponse($response, $this->Service()->ListEvents(self::RecipeId($args), (int)VICTUAL_USER_ID)));
 	}
 
+	/** Handles the undo event route and returns the JSON or empty response. */
 	public function UndoEvent(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
@@ -144,6 +155,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 		return $this->Run($request, $response, fn() => $this->ApiResponse($response, $this->Service()->UndoConsumption(self::RecipeId($args), (int)$args['eventId'], (int)VICTUAL_USER_ID)));
 	}
 
+	/** Handles the list shares route and returns the JSON or empty response. */
 	public function ListShares(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
@@ -151,7 +163,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 		return $this->Run($request, $response, fn() => $this->ApiResponse($response, $this->Service()->ListShares(self::RecipeId($args), (int)VICTUAL_USER_ID)));
 	}
 
-	/** Adds a share for `user_id` or `username` in the body. */
+	/** Adds a share for `user_id` or `username` in the body. Answers 204 whether or not that user exists. */
 	public function AddShare(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
@@ -169,7 +181,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 			}
 			else
 			{
-				throw new ConsumptionException(422, 'invalid_user', 'A user_id or a username is required');
+				throw new ConsumptionException(400, 'invalid_request', 'A user_id or a username is required');
 			}
 
 			$this->Service()->SetShare(self::RecipeId($args), $target, self::RightsFrom($body), (int)VICTUAL_USER_ID);
@@ -178,6 +190,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 		});
 	}
 
+	/** Handles the set share rights route and returns the JSON or empty response. */
 	public function SetShareRights(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
@@ -191,6 +204,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 		});
 	}
 
+	/** Handles the remove share route and returns the JSON or empty response. */
 	public function RemoveShare(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
@@ -203,6 +217,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 		});
 	}
 
+	/** Handles the transfer ownership route and returns the JSON or empty response. */
 	public function TransferOwnership(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);

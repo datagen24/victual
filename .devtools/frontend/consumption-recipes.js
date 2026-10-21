@@ -132,7 +132,10 @@ const shownAsText = '<img src="x"';
 		]);
 		await page.locator('#consumption-share-username').fill('nobody-by-that-name-' + token);
 		await page.locator('#consumption-share-add').click();
-		await page.locator('#consumption-share-error').filter({ hasText: /\S/ }).waitFor();
+		// An unknown name answers 204 like a real one (#737): the dialog shows the neutral notice, no error, and no row for the typo.
+		await page.locator('#consumption-share-notice').filter({ hasText: /If that user exists/ }).waitFor();
+		assert.equal((await page.locator('#consumption-share-error').innerText()).trim(), '');
+		assert.equal(await page.locator('#consumption-share-rows tr').filter({ hasText: 'nobody-by-that-name-' + token }).count(), 0);
 		await shareRow.locator('.consumption-share-remove').click();
 		await shareRow.waitFor({ state: 'detached' });
 		await page.locator('#consumption-share-modal [data-dismiss=modal]').first().click();
