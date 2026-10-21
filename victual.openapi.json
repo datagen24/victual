@@ -12219,7 +12219,7 @@
 					"Consumption recipes"
 				],
 				"summary": "Share a consumption recipe with a user",
-				"description": "Requires STOCK_VIEW and the share right. Name the recipient by user_id or username. The owner can grant any right; a holder of the share right can grant only rights they hold, never the share right, and cannot change a share that holds a right they lack. The share is accepted whether or not the recipient holds the global permission a right needs, and does nothing until they do.",
+				"description": "Requires STOCK_VIEW and the share right. Name the recipient by user_id or username. The owner can grant any right; a holder of the share right can grant only rights they hold, never the share right, and cannot change a share that holds a right they lack. The share is accepted whether or not the recipient holds the global permission a right needs, and does nothing until they do. The answer is 204 whether or not the named user exists: an unknown username, an unknown user_id and the owner write nothing and answer the same as a real user, so 204 does not confirm that the user exists. A right the caller lacks is refused with 403 whether or not the user exists.",
 				"requestBody": {
 					"required": true,
 					"content": {
@@ -12262,16 +12262,6 @@
 							}
 						}
 					},
-					"422": {
-						"description": "The request cannot be acted on",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
-					},
 					"500": {
 						"$ref": "#/components/responses/ServerError"
 					},
@@ -12297,7 +12287,7 @@
 					"Consumption recipes"
 				],
 				"summary": "Set a user's share",
-				"description": "Requires STOCK_VIEW and the share right, within the rules of the POST. Replaces the user's rights, and creates the share when the user holds none.",
+				"description": "Requires STOCK_VIEW and the share right, within the rules of the POST. Replaces the user's rights, and creates the share when the user holds none. The answer is 204 whether or not the user exists; 204 does not confirm that the user exists, and nothing is written for an unknown user or the owner.",
 				"requestBody": {
 					"required": true,
 					"content": {
@@ -12332,16 +12322,6 @@
 					},
 					"404": {
 						"description": "No such consumption recipe, or no share on it. The two answers are the same.",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ConsumptionError"
-								}
-							}
-						}
-					},
-					"422": {
-						"description": "The request cannot be acted on",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -14386,7 +14366,7 @@
 					},
 					"error": {
 						"type": "string",
-						"description": "A stable token such as not_found, right_missing, permission_missing, stock_refused, no_conversion, invalid_user, invalid_request, same_version_different_payload, invalid_transition, invalid_mapping, invalid_link or future_occurred_at"
+						"description": "A stable token such as not_found, right_missing, permission_missing, stock_refused, no_conversion, invalid_request, same_version_different_payload, invalid_transition, invalid_mapping, invalid_link or future_occurred_at"
 					}
 				}
 			},

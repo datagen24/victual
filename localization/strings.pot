@@ -3032,6 +3032,9 @@ msgstr ""
 msgid "Transfer ownership to this user? You keep a share with every right, which the new owner can remove."
 msgstr ""
 
+msgid "If that user exists, the preset is now shared with them. Check the list below."
+msgstr ""
+
 msgid "Recorded"
 msgstr ""
 

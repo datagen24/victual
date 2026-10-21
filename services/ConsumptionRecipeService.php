@@ -47,11 +47,13 @@ class ConsumptionRecipeService extends BaseService
 		return "to_char($column AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') AS $alias";
 	}
 
+	/** Returns the PDO connection of the current database service. */
 	private function Db(): \PDO
 	{
 		return DatabaseService::GetInstance()->GetDbConnectionRaw();
 	}
 
+	/** Returns the given user id, or the current request user when it is null. */
 	private static function Actor(?int $userId): int
 	{
 		return $userId ?? (int)VICTUAL_USER_ID;
@@ -59,6 +61,7 @@ class ConsumptionRecipeService extends BaseService
 
 	// --- Authority ---------------------------------------------------------------------------
 
+	/** Throws a 403 unless the user holds every named global permission. */
 	private function RequireGlobal(int $userId, string ...$permissions): void
 	{
 		$statement = $this->Db()->prepare('SELECT 1 FROM user_permissions_resolved WHERE user_id = ? AND permission_name = ?');
@@ -176,6 +179,7 @@ class ConsumptionRecipeService extends BaseService
 		return $recipes;
 	}
 
+	/** Builds the rights array of a user from a recipe row joined with that user's share. */
 	private function RightsFromJoin(array $row, int $userId): array
 	{
 		if ((int)$row['owner_user_id'] === $userId)
@@ -187,6 +191,7 @@ class ConsumptionRecipeService extends BaseService
 			'share' => (bool)$row['can_share'], 'owner' => false];
 	}
 
+	/** Builds the list-level array for a recipe, with the caller's rights. */
 	private function Summary(array $recipe, array $rights): array
 	{
 		return [
@@ -201,6 +206,7 @@ class ConsumptionRecipeService extends BaseService
 		];
 	}
 
+	/** Returns one recipe with its lines and the caller's rights, or a 404 when the caller holds no share. */
 	public function GetRecipe(int $recipeId, ?int $userId = null): array
 	{
 		$userId = self::Actor($userId);
@@ -213,6 +219,7 @@ class ConsumptionRecipeService extends BaseService
 		});
 	}
 
+	/** Returns the lines of a recipe, ordered. */
 	private function Lines(int $recipeId): array
 	{
 		$statement = $this->Db()->prepare('SELECT l.position, l.product_id, p.name AS product_name, l.amount, l.qu_id
@@ -271,6 +278,7 @@ class ConsumptionRecipeService extends BaseService
 		});
 	}
 
+	/** Deletes a recipe; only its owner may. */
 	public function DeleteRecipe(int $recipeId, ?int $userId = null): void
 	{
 		$userId = self::Actor($userId);
@@ -289,6 +297,7 @@ class ConsumptionRecipeService extends BaseService
 		});
 	}
 
+	/** Validates and purifies a recipe name. */
 	private function CleanName(string $name): string
 	{
 		$name = trim($name);
@@ -300,6 +309,7 @@ class ConsumptionRecipeService extends BaseService
 		return $name;
 	}
 
+	/** Purifies a recipe note, or returns null when there is none. */
 	private function CleanNote($note): ?string
 	{
 		if ($note === null || trim((string)$note) === '')
@@ -346,6 +356,7 @@ class ConsumptionRecipeService extends BaseService
 		return $clean;
 	}
 
+	/** Replaces the lines of a recipe with the validated given lines. */
 	private function WriteLines(int $recipeId, array $lines): void
 	{
 		$statement = $this->Db()->prepare('INSERT INTO consumption_recipe_lines (recipe_id, position, product_id, amount, qu_id) VALUES (?, ?, ?, ?, ?)');
@@ -582,6 +593,7 @@ class ConsumptionRecipeService extends BaseService
 		}
 	}
 
+	/** Returns the stored consumption event for a request id, checking the payload hash for a replay. */
 	private function StoredManualEvent(int $userId, string $requestId, string $payloadHash): array
 	{
 		$statement = $this->Db()->prepare("SELECT id, payload_hash FROM consumption_events WHERE user_id = ? AND source_system = 'manual' AND source_event_id = ?");
@@ -600,6 +612,7 @@ class ConsumptionRecipeService extends BaseService
 		return $this->EventById((int)$stored['id']);
 	}
 
+	/** Returns one consumption event by id. */
 	private function EventById(int $eventId): array
 	{
 		$statement = $this->Db()->prepare('SELECT *, ' . self::Wire('occurred_at', 'occurred_wire') . ' FROM consumption_events WHERE id = ?');
@@ -783,7 +796,7 @@ class ConsumptionRecipeService extends BaseService
 	}
 
 	/**
-	 * Adds or changes a share for a user id, or for a username when `$target` is a string. The recipient need not hold the global permission a right needs:
+	 * Adds or changes a share for a user id, or for a username when `$target` is a string. A target that is not an existing user, or is the owner, writes nothing and returns normally, so the answer never confirms that a user exists (#737). The recipient need not hold the global permission a right needs:
 	 * the share is inert until they do, and refusing here would tell the grantor what the
 	 * recipient holds (ADR-0040 rule 3).
 	 *
@@ -802,13 +815,23 @@ class ConsumptionRecipeService extends BaseService
 		{
 			$this->RequireGlobal($userId, User::PERMISSION_STOCK_VIEW);
 			[$recipe, $actor] = $this->Authorise($recipeId, $userId, 'share', true);
-			$targetUserId = is_int($target) ? $target : $this->UserIdByUsername($target);
-
-			$exists = $this->Db()->prepare('SELECT 1 FROM users WHERE id = ?');
-			$exists->execute([$targetUserId]);
-			if ($exists->fetchColumn() === false || $targetUserId === (int)$recipe['owner_user_id'])
+			// Rights first, so a refusal never depends on whether the target exists.
+			if (!$actor['owner'])
 			{
-				throw new ConsumptionException(422, 'invalid_user', 'The recipient must be an existing user other than the owner');
+				foreach (self::RIGHTS as $right)
+				{
+					if ($wanted[$right] && (!$actor[$right] || $right === 'share'))
+					{
+						throw new ConsumptionException(403, 'right_missing', 'You can grant only rights you hold, and not the share right');
+					}
+				}
+			}
+
+			// An unknown user, and the owner, write nothing and answer as a real share does (#737).
+			$targetUserId = $this->ShareableUserId($target, (int)$recipe['owner_user_id']);
+			if ($targetUserId === null)
+			{
+				return;
 			}
 
 			if (!$actor['owner'])
@@ -818,20 +841,13 @@ class ConsumptionRecipeService extends BaseService
 					throw new ConsumptionException(403, 'right_missing', 'You cannot change your own share');
 				}
 
-				foreach (self::RIGHTS as $right)
-				{
-					if ($wanted[$right] && (!$actor[$right] || $right === 'share'))
-					{
-						throw new ConsumptionException(403, 'right_missing', 'You can grant only rights you hold, and not the share right');
-					}
-				}
-
 				$current = $this->Db()->prepare('SELECT * FROM consumption_recipe_shares WHERE recipe_id = ? AND user_id = ?');
 				$current->execute([$recipeId, $targetUserId]);
 				$existing = $current->fetch(\PDO::FETCH_ASSOC);
+				// A share the caller may not change is one ListShares hides from them. Answer it as an unknown user, so a guessed name or id cannot reveal it (#737).
 				if ($existing !== false && !$this->MayChangeShare($actor, $existing))
 				{
-					throw new ConsumptionException(403, 'right_missing', 'That share holds a right you do not hold');
+					return;
 				}
 			}
 
@@ -910,16 +926,32 @@ class ConsumptionRecipeService extends BaseService
 		});
 	}
 
-	/** Resolves a username for a share. Called only after the caller's `share` right was checked, and answers an unknown name as it answers the owner. */
-	private function UserIdByUsername(string $username): int
+	/**
+	 * Resolves the target of a share to an existing user id other than the owner, or null when there is none.
+	 * The caller answers null exactly as it answers a share that was written, so the response never says whether the user exists.
+	 */
+	private function ShareableUserId(int|string $target, int $ownerUserId): ?int
 	{
-		$statement = $this->Db()->prepare('SELECT id FROM users WHERE username = ?');
-		$statement->execute([$username]);
+		if (is_int($target))
+		{
+			// An id outside the column's range cannot exist; asking the database would raise a 500 instead of answering like any other unknown user.
+			if ($target < 1 || $target > 2147483647)
+			{
+				return null;
+			}
+
+			$statement = $this->Db()->prepare('SELECT id FROM users WHERE id = ?');
+		}
+		else
+		{
+			$statement = $this->Db()->prepare('SELECT id FROM users WHERE username = ?');
+		}
+		$statement->execute([$target]);
 		$id = $statement->fetchColumn();
 
-		if ($id === false)
+		if ($id === false || (int)$id === $ownerUserId)
 		{
-			throw new ConsumptionException(422, 'invalid_user', 'The recipient must be an existing user other than the owner');
+			return null;
 		}
 
 		return (int)$id;

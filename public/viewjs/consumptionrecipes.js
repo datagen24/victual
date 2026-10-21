@@ -299,6 +299,7 @@
 	{
 		sharing = id;
 		$('#consumption-share-error').text('');
+		$('#consumption-share-notice').text('');
 		var recipe = recipes.filter(function (r) { return r.id === id; })[0];
 		$('#consumption-share-title').text(recipe ? recipe.name : '');
 		$('#consumption-share-username').val('');
@@ -351,7 +352,7 @@
 	}
 
 	/** Shows the server's error text inside the share dialog. */
-	function ShareFailed(xhr) { $('#consumption-share-error').text(ErrorText(xhr)); }
+	function ShareFailed(xhr) { $('#consumption-share-notice').text(''); $('#consumption-share-error').text(ErrorText(xhr)); }
 
 	/** Shares the open preset with the named user and the ticked rights, then reloads the share rows. */
 	function AddShare()
@@ -363,7 +364,9 @@
 		};
 		Victual.Api.Post('consumption/recipes/' + sharing + '/shares', body, function ()
 		{
+			// The server answers 204 whether or not the user exists, so a typo is only visible as a row that does not appear in the list below.
 			$('#consumption-share-error').text('');
+			$('#consumption-share-notice').text(__t('If that user exists, the preset is now shared with them. Check the list below.'));
 			$('#consumption-share-username').val('');
 			LoadShares();
 		}, ShareFailed);
