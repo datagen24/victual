@@ -70,8 +70,10 @@
 						<a class="btn btn-info btn-sm"
 							href="{{ $U('/user/' . $user->id . '/permissions') }}"
 							data-toggle="tooltip"
-							title="{{ $__t('Configure user permissions') }}">
+							title="{{ $__t('Configure user permissions') }}"
+							aria-label="{{ $__t('Roles') }}: {{ $user->username }}">
 							<i class="fa-solid fa-lock"></i>
+							{{ $__t('Roles') }}
 						</a>
 						@endif
 						<a class="btn btn-danger btn-sm user-delete-button @if($user->id == VICTUAL_USER_ID) disabled @endif"

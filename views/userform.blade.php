@@ -155,6 +155,36 @@
 			'entity' => 'users'
 			))
 
+			@if($mode == 'create' && !empty($canSetRoles))
+			<div class="form-group">
+				<label for="user-roles">{{ $__t('Roles') }}</label>
+				<select id="user-roles"
+					multiple
+					class="form-control"
+					aria-describedby="user-roles-help">
+					@foreach($roles as $role)
+					<option value="{{ $role->id }}"
+						@if(in_array((int)$role->id, $defaultRoleIds, true)) selected @endif>{{ $role->name }}</option>
+					@endforeach
+				</select>
+				<small id="user-roles-help"
+					class="form-text text-muted">{{ $__t('The selected roles are given to the new user instead of the default roles') }}</small>
+			</div>
+
+			<div id="user-roles-error"
+				class="alert alert-danger d-none"
+				role="alert"
+				tabindex="-1">
+				{{ $__t('The user was created, but its roles were not set.') }}
+				<span id="user-picture-error"
+					class="d-none">{{ $__t('The picture could not be uploaded.') }}</span>
+				<a id="user-roles-error-link"
+					href="#"
+					data-text-permissions="{{ $__t('Set the roles on the permissions page of the user') }}"
+					data-text-list="{{ $__t('Back to the users list') }}"></a>
+			</div>
+			@endif
+
 			<button id="save-user-button"
 				class="btn btn-success">{{ $__t('Save') }}</button>
 

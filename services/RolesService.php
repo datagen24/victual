@@ -20,11 +20,45 @@ class RolesService extends BaseService
 		});
 	}
 
+	/**
+	 * All roles ordered by code.
+	 */
 	public function GetRoles()
 	{
 		return $this->DB->roles()->orderBy('code');
 	}
 
+	/**
+	 * The roles the current user may hand out: every role whose permissions the caller
+	 * holds in full (the same CheckMayAssign() test SetUserRoles() applies), so a picker
+	 * built from this list never offers a role that the save would refuse.
+	 *
+	 * @param \Psr\Http\Message\ServerRequestInterface $request The current request, for the refusal CheckMayAssign() raises
+	 * @return object[] Role rows ordered by code
+	 */
+	public function GetAssignableRoles($request): array
+	{
+		$roles = [];
+		foreach ($this->GetRoles() as $role)
+		{
+			try
+			{
+				$this->CheckMayAssign($request, [(int)$role->id]);
+				$roles[] = $role;
+			}
+			catch (\Victual\Controllers\Users\PermissionMissingException $e)
+			{
+				// Not assignable by this caller: left out of the list on purpose.
+			}
+		}
+		return $roles;
+	}
+
+	/**
+	 * Loads a role by id.
+	 * 
+	 * @throws EInvalidApiQuery When no such role exists
+	 */
 	public function RequireRole(int $id)
 	{
 		$role = $this->DB->roles($id);
@@ -35,11 +69,17 @@ class RolesService extends BaseService
 		return $role;
 	}
 
+	/**
+	 * The roles assigned to the given user, ordered by code.
+	 */
 	public function GetUserRoles(int $userId)
 	{
 		return $this->DB->roles()->where('id IN (SELECT role_id FROM user_roles WHERE user_id = ?)', $userId)->orderBy('code');
 	}
 
+	/**
+	 * The permission ids a role grants directly.
+	 */
 	public function GetPermissionIds(int $roleId): array
 	{
 		$ids = [];
@@ -50,6 +90,11 @@ class RolesService extends BaseService
 		return $ids;
 	}
 
+	/**
+	 * The ids of the roles named in VICTUAL_DEFAULT_ROLES, which CreateUser assigns to a new user.
+	 * 
+	 * @throws EInvalidApiQuery When a configured code names no role
+	 */
 	public function GetDefaultRoleIds(): array
 	{
 		$ids = [];
@@ -65,6 +110,11 @@ class RolesService extends BaseService
 		return array_values(array_unique($ids));
 	}
 
+	/**
+	 * Reads a list of positive integer ids from a request body key.
+	 * 
+	 * @throws EInvalidApiQuery When the key is missing or is not a list of positive integers
+	 */
 	public static function Ids($body, string $key): array
 	{
 		if (!is_array($body) || !isset($body[$key]) || !is_array($body[$key]) || !array_is_list($body[$key]))
@@ -81,6 +131,9 @@ class RolesService extends BaseService
 		return array_values(array_unique($body[$key]));
 	}
 
+	/**
+	 * Asserts that the caller holds everything the given roles confer.
+	 */
 	public function CheckMayAssign($request, array $ids): void
 	{
 		foreach ($ids as $id)
@@ -101,6 +154,9 @@ class RolesService extends BaseService
 		}
 	}
 
+	/**
+	 * Replaces the roles of a user with the given ones; needs USERS_EDIT and is bounded by what the caller may administer and assign.
+	 */
 	public function SetUserRoles($request, int $userId, array $ids): void
 	{
 		$this->Mutate($request, User::PERMISSION_USERS_EDIT, function () use ($request, $userId, $ids)
@@ -119,6 +175,9 @@ class RolesService extends BaseService
 		});
 	}
 
+	/**
+	 * Replaces the permissions of a role with the given ones; needs USERS_EDIT and is bounded by what the caller may grant.
+	 */
 	public function SetPermissions($request, int $id, array $ids): void
 	{
 		$this->Mutate($request, User::PERMISSION_USERS_EDIT, function () use ($request, $id, $ids)

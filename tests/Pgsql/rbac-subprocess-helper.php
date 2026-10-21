@@ -60,6 +60,9 @@ $roleApi = new RolesApiController($container);
 $userApi = new UsersApiController($container);
 $checks = 0;
 
+/**
+ * Counts a passed assertion, or throws with the message when the condition is false.
+ */
 function check(bool $ok, string $message): void
 {
 	global $checks;
@@ -67,11 +70,17 @@ function check(bool $ok, string $message): void
 	$checks++;
 }
 
+/**
+ * Builds a PSR-7 request with the given method and parsed body.
+ */
 function request(string $method = 'GET', $body = null)
 {
 	return (new ServerRequestFactory())->createServerRequest($method, 'http://localhost/api')->withParsedBody($body);
 }
 
+/**
+ * Runs the call, asserts the status of its response (or of the HttpException it throws) and returns the response.
+ */
 function status(callable $work, int $expected, string $message)
 {
 	try { $response = $work(); $actual = $response->getStatusCode(); }
@@ -80,6 +89,9 @@ function status(callable $work, int $expected, string $message)
 	return $response;
 }
 
+/**
+ * Replaces the caller's roles and permissions with exactly the named permissions.
+ */
 function grant(array $names): void
 {
 	global $pdo;
@@ -95,6 +107,21 @@ if ($code === 'CHILD')
 	$new = UsersService::GetInstance()->CreateUser('default-child', null, null, 'fixture');
 	check(in_array('STOCK_VIEW', User::ResolvedPermissionNames((int)$new->id)), 'Configured Child grants reads');
 	check(!in_array('STOCK_PURCHASE', User::ResolvedPermissionNames((int)$new->id)), 'Configured Child withholds purchase');
+
+	// Issue #762. The user form pre-selects the configured default roles and, on save,
+	// replaces them with the chosen ones through PUT /users/{id}/roles.
+	grant(['ADMIN']);
+	$childId = (int)$pdo->query("SELECT id FROM roles WHERE code = 'CHILD'")->fetchColumn();
+	$guestId = (int)$pdo->query("SELECT id FROM roles WHERE code = 'GUEST'")->fetchColumn();
+	$form = (string)(new Victual\Controllers\UsersController($container))->UserEditForm(request(), (new Slim\Http\Factory\DecoratedResponseFactory(new Slim\Psr7\Factory\ResponseFactory(), new Slim\Psr7\Factory\StreamFactory()))->createResponse(), ['userId' => 'new'])->getBody();
+	check(preg_match('/<option value="' . $childId . '"\s+selected\s*>/', $form) === 1, 'The create form pre-selects the default CHILD role');
+	check(preg_match('/<option value="' . $guestId . '"\s+selected\s*>/', $form) !== 1, 'and only the default roles');
+	status(fn() => $userApi->CreateUser(request('POST', ['username' => 'default-child-form', 'password' => 'fixture'])->withHeader('Content-Type', 'application/json'), new Response(), []), 204, 'Create user');
+	$formUserId = (int)$pdo->query("SELECT id FROM users WHERE username = 'default-child-form'")->fetchColumn();
+	$held = fn() => array_map('intval', $pdo->query("SELECT role_id FROM user_roles WHERE user_id = $formUserId ORDER BY role_id")->fetchAll(PDO::FETCH_COLUMN));
+	check($held() === [$childId], 'CreateUser assigns the default role');
+	status(fn() => $roleApi->SetUserRoles(request('PUT', ['roles' => [$guestId]]), new Response(), ['userId' => (string)$formUserId]), 204, 'Set roles after create');
+	check($held() === [$guestId], 'The chosen roles replace the default');
 }
 elseif ($code === 'ADMIN')
 {
