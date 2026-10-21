@@ -176,8 +176,12 @@
 				role="alert"
 				tabindex="-1">
 				{{ $__t('The user was created, but its roles were not set.') }}
+				<span id="user-picture-error"
+					class="d-none">{{ $__t('The picture could not be uploaded.') }}</span>
 				<a id="user-roles-error-link"
-					href="#">{{ $__t('Set the roles on the permissions page of the user') }}</a>
+					href="#"
+					data-text-permissions="{{ $__t('Set the roles on the permissions page of the user') }}"
+					data-text-list="{{ $__t('Back to the users list') }}"></a>
 			</div>
 			@endif
 

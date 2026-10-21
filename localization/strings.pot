@@ -514,6 +514,12 @@ msgstr ""
 msgid "Set the roles on the permissions page of the user"
 msgstr ""
 
+msgid "The picture could not be uploaded."
+msgstr ""
+
+msgid "Back to the users list"
+msgstr ""
+
 msgid "First name"
 msgstr ""
 

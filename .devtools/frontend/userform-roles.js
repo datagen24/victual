@@ -65,16 +65,32 @@ const assert = require('node:assert/strict');
 		const chosen = ['GUEST', 'CHILD', 'ADULT'].map(idOf).filter(id => !preselected.includes(id)).slice(0, 1);
 		assert.equal(chosen.length, 1, 'a non-default role exists to choose');
 		await select.selectOption(chosen);
-		const username = 'userform-roles-' + token;
+		// Characters the API's query filter value pattern drops (~ { } ] and a backtick): the id
+		// lookup must still find this user, so it cannot rely on that filter.
+		const username = 'userform-roles-' + token + '~b{c}]`';
 		await Promise.all([page.waitForURL('**/users'), fillAndSave(username)]);
 		const created = (await api('users')).find(user => user.username === username);
 		assert.ok(created, 'the user was created');
 		assert.deepEqual((await api('users/' + created.id + '/roles')).map(r => String(r.id)), chosen, 'the chosen roles replace the defaults');
 
+		// Empty selection: roles [] is sent and accepted, and the user ends with no roles.
+		await page.goto(base + '/user/new');
+		await page.getByLabel('Roles', { exact: true }).selectOption([]);
+		const emptyName = 'userform-roles-empty-' + token;
+		await Promise.all([page.waitForURL('**/users'), fillAndSave(emptyName)]);
+		const empty = (await api('users')).find(user => user.username === emptyName);
+		assert.ok(empty, 'the user with no roles was created');
+		assert.deepEqual(await api('users/' + empty.id + '/roles'), [], 'an empty selection leaves the user with no roles');
+
 		// 4. The PUT fails: the user exists, the page says the roles were not set.
 		await page.route('**/api/users/*/roles', route => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error_message":"forced"}' }));
 		await page.goto(base + '/user/new');
 		const failedName = 'userform-roles-fail-' + token;
+		let userPosts = 0;
+		page.on('request', request =>
+		{
+			if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/api/users')) userPosts++;
+		});
 		await fillAndSave(failedName);
 		const alert = page.locator('#user-roles-error[role=alert]');
 		await alert.waitFor({ state: 'visible' });
@@ -84,6 +100,24 @@ const assert = require('node:assert/strict');
 		assert.ok((await alert.locator('a').getAttribute('href')).endsWith('/user/' + failed.id + '/permissions'), 'the alert links to the permissions page');
 		assert.equal(await alert.evaluate(el => el === document.activeElement), true, 'the alert takes focus so it is announced');
 		assert.equal(await page.locator('#save-user-button').isDisabled(), true, 'a second save cannot create the user again');
+		assert.equal(await page.locator('#username').isDisabled(), true, 'the identity inputs are disabled');
+		assert.equal((await alert.locator('a').innerText()).trim().length > 0, true, 'the link has text');
+		assert.equal(await page.locator('#user-picture-error').isVisible(), false, 'no picture failure is claimed');
+		assert.equal(userPosts, 1, 'exactly one POST /api/users so far');
+
+		// Retry through the Enter handler and a direct click handler call, as a user (or a
+		// script) could: jQuery runs bound click handlers even on a disabled button.
+		await page.evaluate(() =>
+		{
+			$('#username').val('retry-' + $('#username').val());
+			const enter = $.Event('keydown');
+			enter.keyCode = 13;
+			$('#username').trigger(enter);
+			$('#save-user-button').trigger('click');
+		});
+		await page.waitForTimeout(1000);
+		assert.equal(userPosts, 1, 'Enter or click after the roles failure must not POST a second user');
+		assert.equal((await api('users')).filter(user => user.username.includes(token) && user.username.includes('fail')).length, 1, 'only one user was created');
 
 		console.log('USERFORM ROLES CHECKS PASSED');
 	}

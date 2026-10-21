@@ -2,14 +2,41 @@
 // and Victual.EditObjectId select POST vs PUT. Handles the optional profile picture upload/
 // removal and the password change checkbox in addition to the regular form fields.
 
+// Set once the user exists but the roles step failed. From then on the form is terminal:
+// the save handler returns early, so neither the button nor the Enter key can POST the
+// same username again.
+var UserCreatedRolesFailed = false;
+
+/**
+ * Terminal state after the roles step failed: the user already exists, so the form says
+ * exactly that - in an alert region that is announced and focused - names a failed
+ * picture upload when there was one, and offers only a link onward (the user's permissions
+ * page, or the users list when the new user's id is unknown). Every input is disabled.
+ * @param {number|null} userId - id of the user that was created, or null when it could not be looked up
+ * @param {boolean} pictureFailed - whether the picture upload also failed
+ */
+function ShowUserRolesNotSet(userId, pictureFailed)
+{
+	Victual.FrontendHelpers.EndUiBusy("user-form");
+	$("#user-form :input").prop("disabled", true);
+	var link = $("#user-roles-error-link");
+	link.attr("href", userId ? U('/user/' + userId + '/permissions') : U('/users'));
+	link.text(link.attr(userId ? "data-text-permissions" : "data-text-list"));
+	$("#user-picture-error").toggleClass("d-none", !pictureFailed);
+	$("#user-roles-error").removeClass("d-none").trigger("focus");
+}
+
 /**
  * Second step of saving a user: after the user object itself was created/updated, saves
  * userfields and then either uploads the newly chosen picture file (if any, and it wasn't
- * also flagged for deletion) or just redirects to the users list.
+ * also flagged for deletion) or just redirects to the users list. When the roles step
+ * failed (rolesFailedFor given) the userfields and picture are still saved, but the end of
+ * the flow shows the terminal alert instead of redirecting.
  * @param {object} result - API response from the create/update call (used for created_object_id)
  * @param {object} jsonData - the serialized form data (used for picture_file_name)
+ * @param {{userId: (number|null)}} [rolesFailedFor] - present when the roles step failed
  */
-function SaveUserPicture(result, jsonData)
+function SaveUserPicture(result, jsonData, rolesFailedFor)
 {
 	var userId = Victual.EditObjectId || result.created_object_id;
 	Victual.Components.UserfieldsForm.Save(() =>
@@ -19,14 +46,30 @@ function SaveUserPicture(result, jsonData)
 			Victual.Api.UploadFile($("#user-picture")[0].files[0], 'userpictures', jsonData.picture_file_name,
 				(result) =>
 				{
+					if (rolesFailedFor)
+					{
+						ShowUserRolesNotSet(rolesFailedFor.userId, false);
+						return;
+					}
+
 					window.location.href = U('/users');
 				},
 				(xhr) =>
 				{
+					if (rolesFailedFor)
+					{
+						ShowUserRolesNotSet(rolesFailedFor.userId, true);
+						return;
+					}
+
 					Victual.FrontendHelpers.EndUiBusy("user-form");
 					Victual.FrontendHelpers.ShowGenericError('Error while saving, probably this item already exists', xhr.response);
 				}
 			);
+		}
+		else if (rolesFailedFor)
+		{
+			ShowUserRolesNotSet(rolesFailedFor.userId, false);
 		}
 		else
 		{
@@ -36,26 +79,32 @@ function SaveUserPicture(result, jsonData)
 }
 
 /**
- * Create mode, failure of the roles step: the user already exists, so the form says
- * exactly that - in an alert region that is announced and focused - and links to the
- * user's permissions page (or to the users list when the new user's id is unknown)
- * instead of offering a second POST. The save button stays disabled so a retry cannot
- * create the same username again.
- * @param {number|null} userId - id of the user that was created, or null when it could not be looked up
+ * Create mode, roles step failed: locks the form against a second POST, then still runs
+ * the userfields and picture steps (when the new user's id is known) so only the roles are
+ * reported as not set.
+ * @param {object} jsonData - the serialized form data, passed through to SaveUserPicture()
+ * @param {number|null} userId - id of the created user, or null when it could not be looked up
  */
-function ShowUserRolesNotSet(userId)
+function RolesStepFailed(jsonData, userId)
 {
-	Victual.FrontendHelpers.EndUiBusy("user-form");
-	$("#save-user-button").prop("disabled", true);
-	$("#user-roles-error-link").attr("href", userId ? U('/user/' + userId + '/permissions') : U('/users'));
-	$("#user-roles-error").removeClass("d-none").trigger("focus");
+	UserCreatedRolesFailed = true;
+	if (userId)
+	{
+		SaveUserPicture({ created_object_id: userId }, jsonData, { userId: userId });
+	}
+	else
+	{
+		ShowUserRolesNotSet(null, false);
+	}
 }
 
 /**
  * Create mode, step two: when the form offers the Roles picker (the caller may set roles),
  * replaces the roles CreateUser assigned with the chosen ones via PUT /users/{id}/roles,
  * then carries on with SaveUserPicture(). POST /users answers 204 with no body, so the new
- * user's id is looked up by its (unique) username first.
+ * user's id is looked up by its (unique) username in the unfiltered user list: the query
+ * filter's value pattern drops some characters a username may contain, so an exact match
+ * is done here instead.
  * @param {object} result - API response from the create call (empty: 204)
  * @param {object} jsonData - the serialized form data (username is used for the lookup), passed through to SaveUserPicture()
  */
@@ -69,22 +118,22 @@ function SaveUserRoles(result, jsonData)
 	}
 
 	var roleIds = (rolesSelect.val() || []).map(Number);
-	Victual.Api.Get('users?query%5B%5D=' + encodeURIComponent('username=' + jsonData.username),
+	Victual.Api.Get('users',
 		function (users)
 		{
 			var created = (users || []).find((user) => user.username === jsonData.username);
 			if (!created)
 			{
-				ShowUserRolesNotSet(null);
+				RolesStepFailed(jsonData, null);
 				return;
 			}
 
 			Victual.Api.Put('users/' + created.id + '/roles', { roles: roleIds },
 				() => SaveUserPicture({ created_object_id: created.id }, jsonData),
-				() => ShowUserRolesNotSet(created.id)
+				() => RolesStepFailed(jsonData, created.id)
 			);
 		},
-		() => ShowUserRolesNotSet(null)
+		() => RolesStepFailed(jsonData, null)
 	);
 }
 
@@ -95,6 +144,11 @@ function SaveUserRoles(result, jsonData)
 $('#save-user-button').on('click', function (e)
 {
 	e.preventDefault();
+
+	if (UserCreatedRolesFailed)
+	{
+		return;
+	}
 
 	if (!Victual.FrontendHelpers.ValidateForm("user-form", true))
 	{

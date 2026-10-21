@@ -1283,6 +1283,11 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 			$this->expectStatus(fn () => $roles->SetUserRoles(self::request('PUT', [], ['roles' => [$guest]]), self::response(), ['userId' => (string)$id]), 204, 'PUT roles with USERS_EDIT');
 			self::assertSame([$guest], $held(), 'the chosen roles replace the defaults');
 
+			// An empty selection is sent as roles: [] and leaves the user with no roles.
+			$this->expectStatus(fn () => $roles->SetUserRoles(self::request('PUT', [], ['roles' => []]), self::response(), ['userId' => (string)$id]), 204, 'PUT empty roles with USERS_EDIT');
+			self::assertSame([], $held(), 'an empty selection leaves the user with no roles');
+			$this->expectStatus(fn () => $roles->SetUserRoles(self::request('PUT', [], ['roles' => [$guest]]), self::response(), ['userId' => (string)$id]), 204, 'PUT roles again');
+
 			// Denied: a caller without USERS_EDIT is refused, and the user keeps its roles.
 			self::grant(['USERS_EDIT_SELF', 'USERS_READ']);
 			$this->expectStatus(fn () => $roles->SetUserRoles(self::request('PUT', [], ['roles' => []]), self::response(), ['userId' => (string)$id]), 403, 'PUT roles without USERS_EDIT');
