@@ -28,5 +28,5 @@ refresh.py needs an authenticated `gh` and writes a new evidence directory; rend
 - #912 (P2, M): Wave 2, after PR 1: option (a), throw, with a fixed fallback body in the error handler.
 - #948 (P3, S): Draft PR #1038 (wave 1, PR 3) describes each merge field per D6; review and merge.
 - #1007 (P3, M): Wave 2, after PR 2 (strings.pot): Medication presets, Medication inbox, Refills.
-- #1026 (P3, S): Draft PR open (wave 1): all four fallbacks removed with php-src proof for 8.4 and 8.5. Lands before #912.
-- #1035 (P3, S): In progress: PR 4 (wave 1), branch claude/v0-5-2-files-415.
+- #1026 (P3, S): In progress: PR 1 (wave 1), branch claude/v0-5-2-1026-fallbacks. Lands before #912.
+- #1035 (P3, S): In review: draft PR 1039 (wave 1 PR 4), branch claude/v0-5-2-files-415.
