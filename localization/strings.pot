@@ -3554,3 +3554,121 @@ msgid "%s day supplied"
 msgid_plural "%s days supplied"
 msgstr[0] ""
 msgstr[1] ""
+
+# Label designer: merge field names, explanations and example values (#948)
+msgid "Location name"
+msgstr ""
+
+msgid "The name of the location."
+msgstr ""
+
+msgid "Location description"
+msgstr ""
+
+msgid "The description of the location; prints nothing when it has none."
+msgstr ""
+
+msgid "Location number"
+msgstr ""
+
+msgid "The internal number of the location."
+msgstr ""
+
+msgid "Location path"
+msgstr ""
+
+msgid "The location with every location it sits inside, outermost first."
+msgstr ""
+
+msgid "Product name"
+msgstr ""
+
+msgid "The name of the product."
+msgstr ""
+
+msgid "The description of the product; prints nothing when it has none."
+msgstr ""
+
+msgid "Product number"
+msgstr ""
+
+msgid "The internal number of the product."
+msgstr ""
+
+msgid "The name of the group the product belongs to; prints nothing when it has none."
+msgstr ""
+
+msgid "The name of the product this stock entry holds."
+msgstr ""
+
+msgid "The date the stock entry is due by; prints nothing when it never expires."
+msgstr ""
+
+msgid "How much of the product this stock entry holds."
+msgstr ""
+
+msgid "The quantity unit the product is stocked in."
+msgstr ""
+
+msgid "The date the stock entry was bought."
+msgstr ""
+
+msgid "The name of the location the stock entry is kept in; prints nothing when it has none."
+msgstr ""
+
+msgid "Stock entry number"
+msgstr ""
+
+msgid "The internal number of the stock entry."
+msgstr ""
+
+msgid "Recipe name"
+msgstr ""
+
+msgid "The name of the recipe."
+msgstr ""
+
+msgid "Recipe number"
+msgstr ""
+
+msgid "The internal number of the recipe."
+msgstr ""
+
+msgid "Chore name"
+msgstr ""
+
+msgid "The name of the chore."
+msgstr ""
+
+msgid "Chore number"
+msgstr ""
+
+msgid "The internal number of the chore."
+msgstr ""
+
+msgid "Battery name"
+msgstr ""
+
+msgid "The name of the battery."
+msgstr ""
+
+msgid "Battery number"
+msgstr ""
+
+msgid "The internal number of the battery."
+msgstr ""
+
+msgid "This text is printed exactly as typed."
+msgstr ""
+
+msgid "Example (sample data, not printed): %s"
+msgstr ""
+
+msgid "On a printed label this is replaced by the real value of the item it is printed for."
+msgstr ""
+
+msgid "A field is drawn here as its key. The explanation under Field says what a printed label shows in its place."
+msgstr ""
+
+msgid "The preview is built from example values, not from any real item, and cannot be printed."
+msgstr ""

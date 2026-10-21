@@ -133,9 +133,15 @@
 		<div class="border d-inline-block">
 			<canvas id="label-canvas"></canvas>
 		</div>
+		<small class="form-text text-muted" id="canvas-sample-note">
+			{{ $__t('A field is drawn here as its key. The explanation under Field says what a printed label shows in its place.') }}
+		</small>
 
 		<div class="mt-3">
 			<h5>{{ $__t('Authoritative preview') }}</h5>
+			<small class="form-text text-muted mb-2" id="preview-sample-note">
+				{{ $__t('The preview is built from example values, not from any real item, and cannot be printed.') }}
+			</small>
 			<div id="preview-holder"
 				class="border d-inline-block p-2">
 				<span class="text-muted">{{ $__t('Not rendered yet') }}</span>

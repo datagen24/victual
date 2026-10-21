@@ -17,8 +17,9 @@
 
 	// Mirrors services/Labels/FieldCatalogue.php by hand - there is no runtime fetch of the
 	// catalogue (plan 06 question 5 fixed the same defect this way, for location.path). Plan
-	// 32 widened this from a location-only ternary to all six kinds.
-	var FIELDS_BY_KIND = {
+	// 32 widened this from a location-only ternary to all six kinds. The keys are stored in
+	// templates and must not change.
+	var FIELD_KEYS_BY_KIND = {
 		'location': ['location.name', 'location.description', 'location.id', 'location.path'],
 		'product': ['product.name', 'product.description', 'product.id', 'product.group'],
 		'stock_entry': ['stock_entry.product_name', 'stock_entry.best_before_date', 'stock_entry.amount',
@@ -28,14 +29,94 @@
 		'battery': ['battery.name', 'battery.id']
 	};
 
+	var fieldDescriptionCache = null;
+
+	/**
+	 * The description of every merge field, keyed by field key: a name, a one-line
+	 * explanation and an example value. The example is FieldCatalogue::SampleFor() verbatim,
+	 * because it is what the editor's authoritative preview prints for that field. Built on
+	 * demand rather than at load so the translated strings are looked up after the
+	 * localisation is in place, and once only: in dev mode every untranslated __t() call
+	 * posts to the server, and the panel asks for a description on every redraw.
+	 */
+	function fieldDescriptions()
+	{
+		if (fieldDescriptionCache !== null)
+		{
+			return fieldDescriptionCache;
+		}
+		fieldDescriptionCache = {
+			'location.name': { name: __t('Location name'), explanation: __t('The name of the location.'), example: 'Sample shelf' },
+			'location.description': { name: __t('Location description'), explanation: __t('The description of the location; prints nothing when it has none.'), example: 'Sample data, not a real location' },
+			'location.id': { name: __t('Location number'), explanation: __t('The internal number of the location.'), example: '0' },
+			'location.path': { name: __t('Location path'), explanation: __t('The location with every location it sits inside, outermost first.'), example: 'Sample floor / Sample room / Sample shelf' },
+			'product.name': { name: __t('Product name'), explanation: __t('The name of the product.'), example: 'Sample product' },
+			'product.description': { name: __t('Product description'), explanation: __t('The description of the product; prints nothing when it has none.'), example: 'Sample data, not a real product' },
+			'product.id': { name: __t('Product number'), explanation: __t('The internal number of the product.'), example: '0' },
+			'product.group': { name: __t('Product group'), explanation: __t('The name of the group the product belongs to; prints nothing when it has none.'), example: 'Sample group' },
+			'stock_entry.product_name': { name: __t('Product name'), explanation: __t('The name of the product this stock entry holds.'), example: 'Sample product' },
+			'stock_entry.best_before_date': { name: __t('Best before date'), explanation: __t('The date the stock entry is due by; prints nothing when it never expires.'), example: '2099-12-31' },
+			'stock_entry.amount': { name: __t('Amount'), explanation: __t('How much of the product this stock entry holds.'), example: '1' },
+			'stock_entry.qu_name': { name: __t('Unit'), explanation: __t('The quantity unit the product is stocked in.'), example: 'piece' },
+			'stock_entry.purchased_date': { name: __t('Purchased date'), explanation: __t('The date the stock entry was bought.'), example: '2099-01-01' },
+			'stock_entry.location_name': { name: __t('Location name'), explanation: __t('The name of the location the stock entry is kept in; prints nothing when it has none.'), example: 'Sample shelf' },
+			'stock_entry.id': { name: __t('Stock entry number'), explanation: __t('The internal number of the stock entry.'), example: '0' },
+			'recipe.name': { name: __t('Recipe name'), explanation: __t('The name of the recipe.'), example: 'Sample recipe' },
+			'recipe.id': { name: __t('Recipe number'), explanation: __t('The internal number of the recipe.'), example: '0' },
+			'chore.name': { name: __t('Chore name'), explanation: __t('The name of the chore.'), example: 'Sample chore' },
+			'chore.id': { name: __t('Chore number'), explanation: __t('The internal number of the chore.'), example: '0' },
+			'battery.name': { name: __t('Battery name'), explanation: __t('The name of the battery.'), example: 'Sample battery' },
+			'battery.id': { name: __t('Battery number'), explanation: __t('The internal number of the battery.'), example: '0' }
+		};
+		return fieldDescriptionCache;
+	}
+
+	/**
+	 * The description of one merge field, or null for a key this editor does not know (for
+	 * example one a later version of the catalogue added).
+	 */
+	function describeField(key)
+	{
+		var descriptions = fieldDescriptions();
+		return Object.prototype.hasOwnProperty.call(descriptions, key) ? descriptions[key] : null;
+	}
+
+	/**
+	 * The explanation under the Field select: what the selected merge field is, its example,
+	 * and a plain statement of which of the two is printed. For a fixed string it says the
+	 * text is printed as typed.
+	 */
+	function fieldHelp(key)
+	{
+		var help = document.createElement('small');
+		help.className = 'form-text text-muted mb-3';
+		help.id = 'field-help';
+		var description = key ? describeField(key) : null;
+		if (description === null)
+		{
+			help.appendChild(document.createTextNode(key ? key : __t('This text is printed exactly as typed.')));
+			return help;
+		}
+		help.appendChild(document.createTextNode(description.explanation + ' '));
+		var example = document.createElement('span');
+		example.id = 'field-example';
+		example.appendChild(document.createTextNode(__t('Example (sample data, not printed): %s', description.example)));
+		help.appendChild(example);
+		help.appendChild(document.createElement('br'));
+		help.appendChild(document.createTextNode(__t('On a printed label this is replaced by the real value of the item it is printed for.')));
+		return help;
+	}
+
 	var state = { document: null, revisionToken: null, selectedId: null };
 	var canvas = null;
 
+	/** Looks an element of the editor page up by its id. */
 	function region(id)
 	{
 		return document.getElementById(id);
 	}
 
+	/** Shows a message in the status area under the buttons, replacing the previous one. `kind` is a Bootstrap alert colour. */
 	function report(kind, text)
 	{
 		var holder = region('template-message');
@@ -77,6 +158,7 @@
 		return __t('The server did not answer');
 	}
 
+	/** Parses a typed number, returning `fallback` when it is not one. */
 	function millimetres(value, fallback)
 	{
 		var number = parseFloat(value);
@@ -87,6 +169,9 @@
 
 	function draw()
 	{
+		// canvas.clear() fires selection:cleared, which would drop the selection and, with
+		// it, the properties panel (and so the description of the merge field just chosen).
+		var selectedBefore = state.selectedId;
 		var width = state.document.canvas.width_mm;
 		var height = state.document.canvas.height_mm || state.document.canvas.max_height_mm || 60;
 
@@ -108,16 +193,23 @@
 			shape.set({ victualId: element.id, lockRotation: true });
 			shape.setControlVisible('mtr', false);
 			canvas.add(shape);
+			if (element.id === selectedBefore)
+			{
+				canvas.setActiveObject(shape);
+			}
 		});
 
+		state.selectedId = selectedBefore !== null && find(selectedBefore) !== null ? selectedBefore : null;
 		canvas.renderAll();
 	}
 
+	/** Maps a document colour name to the CSS colour the canvas draws it in. */
 	function paint(colour)
 	{
 		return colour === 'red' ? '#dc3545' : (colour === 'white' ? '#ffffff' : '#000000');
 	}
 
+	/** Builds the Fabric object that draws one document element, at the drawing scale. */
 	function shapeFor(element)
 	{
 		// fabric 7.0.0 changed the default origin from top-left to centre (issue #126, fabric
@@ -231,11 +323,13 @@
 		}
 	}
 
+	/** Rounds to a tenth of a millimetre and never below zero. */
 	function round(value)
 	{
 		return Math.max(0, Math.round(value * 10) / 10);
 	}
 
+	/** Returns the document element with the given id, or null. */
 	function find(id)
 	{
 		for (var i = 0; i < state.document.elements.length; i++)
@@ -296,6 +390,7 @@
 		return group;
 	}
 
+	/** Rebuilds the properties panel for the selected element from the document. */
 	function properties()
 	{
 		var holder = region('element-properties');
@@ -320,9 +415,14 @@
 
 		if (element.type === 'text')
 		{
-			var fields = FIELDS_BY_KIND[Victual.LabelTemplate.EntityKind] || [];
+			var fields = FIELD_KEYS_BY_KIND[Victual.LabelTemplate.EntityKind] || [];
 			holder.appendChild(field(__t('Field'), element.field, function(v) { element.field = v || null; element.literal = element.field ? null : (element.literal || 'Text'); },
-				fields.map(function(f) { return { value: f, label: f }; }).concat([{ value: '', label: __t('a fixed string') }])));
+				fields.map(function(f)
+				{
+					var description = describeField(f);
+					return { value: f, label: description === null ? f : description.name + ' (' + f + ')' };
+				}).concat([{ value: '', label: __t('a fixed string') }])));
+			holder.appendChild(fieldHelp(element.field));
 			if (!element.field)
 			{
 				holder.appendChild(field(__t('Fixed text'), element.literal || '', function(v) { element.literal = v; }));
@@ -400,6 +500,7 @@
 		return prefix + n;
 	}
 
+	/** Adds an element of the given kind to the document with defaults for that kind. */
 	function add(kind)
 	{
 		var element = { type: kind, id: nextId(kind), x_mm: 2, y_mm: 2, color: 'black' };
@@ -460,6 +561,7 @@
 		state.document.canvas.max_height_mm = max === '' ? null : millimetres(max, null);
 	}
 
+	/** Loads the stored draft from the server into the editor state and draws it. */
 	function load()
 	{
 		Victual.Api.Get('labels/templates/' + Victual.LabelTemplate.Id + '/draft',
@@ -476,6 +578,7 @@
 			function(xhr) { report('danger', refusal(xhr)); });
 	}
 
+	/** Saves the draft to the server, then calls `onSaved` once it is stored. */
 	function save(onSaved)
 	{
 		absorbCanvasSize();
