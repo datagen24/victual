@@ -17,7 +17,7 @@ use Victual\Services\ConsumptionRecipeService;
  */
 class ConsumptionRecipesApiController extends BaseApiController
 {
-	/** Handles the service route and returns the JSON or empty response. */
+	/** Returns the consumption recipe service instance. */
 	private function Service(): ConsumptionRecipeService
 	{
 		return ConsumptionRecipeService::GetInstance();
@@ -40,7 +40,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 		});
 	}
 
-	/** Handles the recipe id route and returns the JSON or empty response. */
+	/** Returns the recipeId route argument as an int. */
 	private static function RecipeId(array $args): int
 	{
 		return (int)$args['recipeId'];
@@ -52,7 +52,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 		return $this->GetParsedAndFilteredRequestBody($request) ?? [];
 	}
 
-	/** Handles the rights from route and returns the JSON or empty response. */
+	/** Reads the consume, edit, undo and share booleans from a request body into a rights array. */
 	private static function RightsFrom(array $body): array
 	{
 		$rights = [];
@@ -163,6 +163,18 @@ class ConsumptionRecipesApiController extends BaseApiController
 		return $this->Run($request, $response, fn() => $this->ApiResponse($response, $this->Service()->ListShares(self::RecipeId($args), (int)VICTUAL_USER_ID)));
 	}
 
+	/** Turns a body user_id into an int id; a value that is not a whole number inside the user id range becomes 0, which no user holds, so it is answered like any unknown user. */
+	private static function TargetUserId(mixed $value): int
+	{
+		$number = is_int($value) ? $value : (float)$value;
+		if (is_float($number) && (!is_finite($number) || $number != floor($number) || abs($number) > 2147483647))
+		{
+			return 0;
+		}
+
+		return (int)$number;
+	}
+
 	/** Adds a share for `user_id` or `username` in the body. Answers 204 whether or not that user exists. */
 	public function AddShare(Request $request, Response $response, array $args)
 	{
@@ -173,7 +185,7 @@ class ConsumptionRecipesApiController extends BaseApiController
 		{
 			if (isset($body['user_id']) && is_numeric($body['user_id']))
 			{
-				$target = (int)$body['user_id'];
+				$target = self::TargetUserId($body['user_id']);
 			}
 			elseif (isset($body['username']) && is_string($body['username']) && $body['username'] !== '')
 			{

@@ -47,13 +47,13 @@ class ConsumptionRecipeService extends BaseService
 		return "to_char($column AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') AS $alias";
 	}
 
-	/** Implements db for the consumption recipe service. */
+	/** Returns the PDO connection of the current database service. */
 	private function Db(): \PDO
 	{
 		return DatabaseService::GetInstance()->GetDbConnectionRaw();
 	}
 
-	/** Implements actor for the consumption recipe service. */
+	/** Returns the given user id, or the current request user when it is null. */
 	private static function Actor(?int $userId): int
 	{
 		return $userId ?? (int)VICTUAL_USER_ID;
@@ -61,7 +61,7 @@ class ConsumptionRecipeService extends BaseService
 
 	// --- Authority ---------------------------------------------------------------------------
 
-	/** Implements require global for the consumption recipe service. */
+	/** Throws a 403 unless the user holds every named global permission. */
 	private function RequireGlobal(int $userId, string ...$permissions): void
 	{
 		$statement = $this->Db()->prepare('SELECT 1 FROM user_permissions_resolved WHERE user_id = ? AND permission_name = ?');
@@ -179,7 +179,7 @@ class ConsumptionRecipeService extends BaseService
 		return $recipes;
 	}
 
-	/** Implements rights from join for the consumption recipe service. */
+	/** Builds the rights array of a user from a recipe row joined with that user's share. */
 	private function RightsFromJoin(array $row, int $userId): array
 	{
 		if ((int)$row['owner_user_id'] === $userId)
@@ -191,7 +191,7 @@ class ConsumptionRecipeService extends BaseService
 			'share' => (bool)$row['can_share'], 'owner' => false];
 	}
 
-	/** Implements summary for the consumption recipe service. */
+	/** Builds the list-level array for a recipe, with the caller's rights. */
 	private function Summary(array $recipe, array $rights): array
 	{
 		return [
@@ -206,7 +206,7 @@ class ConsumptionRecipeService extends BaseService
 		];
 	}
 
-	/** Implements get recipe for the consumption recipe service. */
+	/** Returns one recipe with its lines and the caller's rights, or a 404 when the caller holds no share. */
 	public function GetRecipe(int $recipeId, ?int $userId = null): array
 	{
 		$userId = self::Actor($userId);
@@ -219,7 +219,7 @@ class ConsumptionRecipeService extends BaseService
 		});
 	}
 
-	/** Implements lines for the consumption recipe service. */
+	/** Returns the lines of a recipe, ordered. */
 	private function Lines(int $recipeId): array
 	{
 		$statement = $this->Db()->prepare('SELECT l.position, l.product_id, p.name AS product_name, l.amount, l.qu_id
@@ -278,7 +278,7 @@ class ConsumptionRecipeService extends BaseService
 		});
 	}
 
-	/** Implements delete recipe for the consumption recipe service. */
+	/** Deletes a recipe; only its owner may. */
 	public function DeleteRecipe(int $recipeId, ?int $userId = null): void
 	{
 		$userId = self::Actor($userId);
@@ -297,7 +297,7 @@ class ConsumptionRecipeService extends BaseService
 		});
 	}
 
-	/** Implements clean name for the consumption recipe service. */
+	/** Validates and purifies a recipe name. */
 	private function CleanName(string $name): string
 	{
 		$name = trim($name);
@@ -309,7 +309,7 @@ class ConsumptionRecipeService extends BaseService
 		return $name;
 	}
 
-	/** Implements clean note for the consumption recipe service. */
+	/** Purifies a recipe note, or returns null when there is none. */
 	private function CleanNote($note): ?string
 	{
 		if ($note === null || trim((string)$note) === '')
@@ -356,7 +356,7 @@ class ConsumptionRecipeService extends BaseService
 		return $clean;
 	}
 
-	/** Implements write lines for the consumption recipe service. */
+	/** Replaces the lines of a recipe with the validated given lines. */
 	private function WriteLines(int $recipeId, array $lines): void
 	{
 		$statement = $this->Db()->prepare('INSERT INTO consumption_recipe_lines (recipe_id, position, product_id, amount, qu_id) VALUES (?, ?, ?, ?, ?)');
@@ -593,7 +593,7 @@ class ConsumptionRecipeService extends BaseService
 		}
 	}
 
-	/** Implements stored manual event for the consumption recipe service. */
+	/** Returns the stored consumption event for a request id, checking the payload hash for a replay. */
 	private function StoredManualEvent(int $userId, string $requestId, string $payloadHash): array
 	{
 		$statement = $this->Db()->prepare("SELECT id, payload_hash FROM consumption_events WHERE user_id = ? AND source_system = 'manual' AND source_event_id = ?");
@@ -612,7 +612,7 @@ class ConsumptionRecipeService extends BaseService
 		return $this->EventById((int)$stored['id']);
 	}
 
-	/** Implements event by id for the consumption recipe service. */
+	/** Returns one consumption event by id. */
 	private function EventById(int $eventId): array
 	{
 		$statement = $this->Db()->prepare('SELECT *, ' . self::Wire('occurred_at', 'occurred_wire') . ' FROM consumption_events WHERE id = ?');
@@ -844,9 +844,10 @@ class ConsumptionRecipeService extends BaseService
 				$current = $this->Db()->prepare('SELECT * FROM consumption_recipe_shares WHERE recipe_id = ? AND user_id = ?');
 				$current->execute([$recipeId, $targetUserId]);
 				$existing = $current->fetch(\PDO::FETCH_ASSOC);
+				// A share the caller may not change is one ListShares hides from them. Answer it as an unknown user, so a guessed name or id cannot reveal it (#737).
 				if ($existing !== false && !$this->MayChangeShare($actor, $existing))
 				{
-					throw new ConsumptionException(403, 'right_missing', 'That share holds a right you do not hold');
+					return;
 				}
 			}
 

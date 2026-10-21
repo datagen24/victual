@@ -223,14 +223,14 @@ class ConsumptionRecipeApiTest extends PgsqlSchemaTestCase
 		$id = self::createRecipe('owner', self::product(10));
 		$targets = [
 			'known' => ['username' => 'api-stranger'], 'unknown name' => ['username' => 'api-no-such-user'],
-			'unknown id' => ['user_id' => 987654], 'huge id' => ['user_id' => 99999999999], 'owner' => ['username' => 'api-owner'],
+			'unknown id' => ['user_id' => 987654], 'huge id' => ['user_id' => 99999999999], 'float id' => ['user_id' => 1e30], 'fraction id' => ['user_id' => 1.5], 'owner' => ['username' => 'api-owner'],
 		];
 
 		$answers = [];
 		foreach ($targets as $label => $target)
 		{
 			$post = self::send('POST', "/api/consumption/recipes/$id/shares", 'owner', $target + ['consume' => true]);
-			$answers[$label] = [$post['status'], $post['body']];
+			$answers[$label] = [$post['status'], $post['body'], self::stableHeaders($post['headers'] ?? [])];
 		}
 		self::assertSame(204, $answers['known'][0]);
 		self::assertCount(1, array_unique(array_map('serialize', $answers)), json_encode($answers));
@@ -240,11 +240,46 @@ class ConsumptionRecipeApiTest extends PgsqlSchemaTestCase
 		foreach ([self::$users['viewer'], 987654, 99999999999, self::$users['owner']] as $userId)
 		{
 			$put = self::send('PUT', "/api/consumption/recipes/$id/shares/$userId", 'owner', ['consume' => true]);
-			$puts[] = [$put['status'], $put['body']];
+			$puts[] = [$put['status'], $put['body'], self::stableHeaders($put['headers'] ?? [])];
 		}
 		self::assertCount(1, array_unique(array_map('serialize', $puts)), json_encode($puts));
 		self::assertSame(204, $puts[0][0]);
 		self::assertSame(2, (int)self::$db->query("SELECT count(*) FROM consumption_recipe_shares WHERE recipe_id = $id")->fetchColumn(), 'only the two known users hold a row');
+	}
+
+	/**
+	 * Returns the response headers minus the ones that differ per request (date, length, request id), for comparing two answers.
+	 */
+	private static function stableHeaders(array $headers): array
+	{
+		$kept = array_change_key_case($headers, CASE_LOWER);
+		unset($kept['date'], $kept['content-length'], $kept['x-request-id'], $kept['set-cookie']);
+		ksort($kept);
+
+		return $kept;
+	}
+
+	/**
+	 * A share holder who may not change a hidden share (it holds a right they lack) gets the answer an unknown user gets on POST and PUT, and nothing is written (#737).
+	 */
+	public function testAShareHolderCannotProbeForAShareTheyCannotSee(): void
+	{
+		$id = self::createRecipe('owner', self::product(10));
+		self::assertSame(204, self::send('POST', "/api/consumption/recipes/$id/shares", 'owner', ['username' => 'api-member', 'consume' => true, 'share' => true])['status']);
+		self::assertSame(204, self::send('POST', "/api/consumption/recipes/$id/shares", 'owner', ['username' => 'api-viewer', 'edit' => true, 'share' => true])['status']);
+		$before = self::$db->query("SELECT user_id, can_consume, can_edit, can_share FROM consumption_recipe_shares WHERE recipe_id = $id ORDER BY user_id")->fetchAll(PDO::FETCH_ASSOC);
+
+		$answers = [];
+		foreach ([['POST', "/api/consumption/recipes/$id/shares", ['username' => 'api-viewer']], ['POST', "/api/consumption/recipes/$id/shares", ['username' => 'api-no-such-user']],
+			['POST', "/api/consumption/recipes/$id/shares", ['user_id' => self::$users['viewer']]], ['POST', "/api/consumption/recipes/$id/shares", ['user_id' => 987654]],
+			['PUT', "/api/consumption/recipes/$id/shares/" . self::$users['viewer'], []], ['PUT', "/api/consumption/recipes/$id/shares/987654", []]] as [$method, $path, $body])
+		{
+			$response = self::send($method, $path, 'member', $body);
+			$answers[] = [$response['status'], $response['body'], self::stableHeaders($response['headers'] ?? [])];
+		}
+		self::assertSame(204, $answers[0][0], json_encode($answers));
+		self::assertCount(1, array_unique(array_map('serialize', $answers)), json_encode($answers));
+		self::assertSame($before, self::$db->query("SELECT user_id, can_consume, can_edit, can_share FROM consumption_recipe_shares WHERE recipe_id = $id ORDER BY user_id")->fetchAll(PDO::FETCH_ASSOC), 'nothing is written');
 	}
 
 	/**
@@ -259,7 +294,7 @@ class ConsumptionRecipeApiTest extends PgsqlSchemaTestCase
 		foreach ([['username' => 'api-viewer'], ['username' => 'api-no-such-user'], ['user_id' => self::$users['viewer']], ['user_id' => 987654]] as $target)
 		{
 			$response = self::send('POST', "/api/consumption/recipes/$id/shares", 'member', $target + ['edit' => true]);
-			$refused[] = [$response['status'], $response['body']];
+			$refused[] = [$response['status'], $response['body'], self::stableHeaders($response['headers'] ?? [])];
 		}
 		self::assertSame(403, $refused[0][0]);
 		self::assertCount(1, array_unique(array_map('serialize', $refused)), json_encode($refused));
@@ -268,7 +303,7 @@ class ConsumptionRecipeApiTest extends PgsqlSchemaTestCase
 		foreach ([['username' => 'api-viewer'], ['username' => 'api-no-such-user']] as $target)
 		{
 			$response = self::send('POST', "/api/consumption/recipes/$id/shares", 'member', $target + ['consume' => true]);
-			$allowed[] = [$response['status'], $response['body']];
+			$allowed[] = [$response['status'], $response['body'], self::stableHeaders($response['headers'] ?? [])];
 		}
 		self::assertSame(204, $allowed[0][0]);
 		self::assertCount(1, array_unique(array_map('serialize', $allowed)), json_encode($allowed));
