@@ -36,6 +36,11 @@ $(".navbar-sidenav .nav-link-collapse").click(function(e)
 	e.preventDefault();
 	$("body").removeClass("sidenav-toggled");
 	window.localStorage.setItem("sidebar_state", "expanded");
+
+	// The shared click handler in victual.js blurs every clicked link once this one has run.
+	// A submenu trigger is a disclosure control: a keyboard user who opens it continues from it.
+	var trigger = this;
+	setTimeout(function() { trigger.focus(); }, 0);
 });
 
 // A collapsible submenu trigger is a link, which the browser activates on Enter only.

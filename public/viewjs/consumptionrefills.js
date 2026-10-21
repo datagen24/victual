@@ -435,6 +435,7 @@
 
 	// --- The forms -------------------------------------------------------------------------------
 
+	/** Reads and validates the fill form, returning the request body or null after showing the problem. */
 	function FillBody()
 	{
 		var date = String($('#refill-fill-date').val() || '').trim();
