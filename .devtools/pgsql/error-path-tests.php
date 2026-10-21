@@ -47,6 +47,7 @@ class RecordingLogger extends AbstractLogger
 {
 	public array $Records = [];
 
+	/** Keeps the record instead of writing it. */
 	public function log($level, $message, array $context = []): void
 	{
 		$this->Records[] = ['level' => (string)$level, 'message' => (string)$message, 'context' => $context];
@@ -55,6 +56,7 @@ class RecordingLogger extends AbstractLogger
 
 $checks = 0;
 
+/** Counts a passed assertion; throws with $message when $ok is false. */
 function check(bool $ok, string $message): void
 {
 	global $checks;
@@ -67,6 +69,7 @@ function check(bool $ok, string $message): void
 	$checks++;
 }
 
+/** A GET server request for $path on localhost. */
 function request(string $path)
 {
 	return (new ServerRequestFactory())->createServerRequest('GET', 'http://localhost' . $path);
@@ -75,6 +78,7 @@ function request(string $path)
 // The failure this is all about, as the driver actually raises it. Constructed rather
 // than provoked, because provoking it means waiting for a connect timeout and the
 // handler cannot tell the difference.
+/** The PDOException a failed PostgreSQL connect raises. */
 function connectFailure(): \PDOException
 {
 	return new \PDOException('SQLSTATE[08006] [7] connection to server at "postgres" port 5432 failed: timeout expired');
@@ -114,6 +118,14 @@ check($response->getStatusCode() === 500, 'An API route answers 500, got ' . $re
 check($response->getHeaderLine('Content-Type') === 'application/json', 'The production API 500 is JSON');
 check(is_array($payload) && array_keys($payload) === ['error_message'], 'The production API 500 carries only error_message');
 check(!str_contains($payload['error_message'], 'SQLSTATE'), 'The API 500 does not quote the driver');
+
+// Issue #912: an error body that cannot be JSON-encoded (an exception message holding
+// invalid UTF-8) gets the fixed literal, not an empty body or an escaping exception.
+$response = $controller(request('/api/stock'), new RuntimeException("bad \xFF byte"), false, true, true);
+
+check($response->getStatusCode() === 500, 'An unencodable API error body answers 500, got ' . $response->getStatusCode());
+check($response->getHeaderLine('Content-Type') === 'application/json', 'The fixed API error body is JSON');
+check((string)$response->getBody() === '{"error_message":"The error response could not be encoded as JSON"}', 'The fixed API error body is the literal');
 
 // A 404 goes through the same rendering path, so it is the case where the page that
 // cannot be rendered is not an error page about the server at all.

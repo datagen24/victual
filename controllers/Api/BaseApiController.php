@@ -35,16 +35,48 @@ class BaseApiController extends BaseController
 
 	/**
 	 * Writes $data JSON-encoded to the response body; with $cache = true a 30 day Cache-Control header is added.
+	 *
+	 * A body with no JSON form (INF, NAN, invalid UTF-8, a resource) throws
+	 * EResponseNotEncodable, which becomes the standard 500 error body - HandleApiCall() and
+	 * ExceptionController both answer it - instead of an empty 200. Nothing has been written
+	 * to the response when it throws. Work the request already committed stays committed;
+	 * only what the client sees changes (issue #912, decision D2). The success bytes are
+	 * those json_encode() always produced, since JSON_THROW_ON_ERROR changes no output.
+	 *
+	 * @throws EResponseNotEncodable
 	 */
 	protected function ApiResponse(Response $response, $data, $cache = false)
 	{
+		try
+		{
+			$encoded = json_encode($data, JSON_THROW_ON_ERROR);
+		}
+		catch (\JsonException $ex)
+		{
+			$this->ResponseEncodingLogger()->error('An API response body could not be encoded as JSON: ' . $ex->getMessage(), [
+				'json_error_code' => $ex->getCode(),
+				'body_type' => get_debug_type($data)
+			]);
+
+			throw new EResponseNotEncodable(EResponseNotEncodable::CLIENT_MESSAGE, 500, $ex);
+		}
+
 		if ($cache)
 		{
 			$response = $response->withHeader('Cache-Control', 'max-age=2592000');
 		}
 
-		$response->getBody()->write(json_encode($data));
+		$response->getBody()->write($encoded);
 		return $response;
+	}
+
+	/**
+	 * Where the cause of an unencodable body is recorded. A method so a test can substitute
+	 * a recording logger.
+	 */
+	protected function ResponseEncodingLogger(): \Psr\Log\LoggerInterface
+	{
+		return new \Victual\Helpers\StderrLogger();
 	}
 
 	/**
@@ -192,7 +224,8 @@ class BaseApiController extends BaseController
 	 * |---|---|
 	 * | HttpSpecializedException (403, 404, 405, ...) | its own code - this is how PermissionMissingException becomes a 403 |
 	 * | HttpException | its own code, clamped to 4xx/5xx |
-	 * | EObjectNotFound | 404 |
+	 * | EResponseNotEncodable | 500, a body with no JSON form (issue #912) |
+ * | EObjectNotFound | 404 |
 	 * | EInvalidApiQuery | 400 |
 	 * | FileTooLargeException | 413 |
 	 * | PDOException | 400, with the driver's own words replaced |
@@ -225,6 +258,11 @@ class BaseApiController extends BaseController
 			$status = $ex->getCode();
 
 			return $this->GenericErrorResponse($response, $ex->getMessage(), ($status >= 400 && $status <= 599) ? $status : 500);
+		}
+		catch (EResponseNotEncodable $ex)
+		{
+			// Before the generic \Exception catch, which would answer this server fault 400
+			return $this->GenericErrorResponse($response, $ex->getMessage(), 500);
 		}
 		catch (EObjectNotFound $ex)
 		{

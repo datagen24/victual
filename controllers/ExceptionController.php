@@ -95,7 +95,14 @@ class ExceptionController extends BaseApiController
 				];
 			}
 
-			return $this->ApiResponse($response->withStatus($status)->withHeader('Content-Type', 'application/json'), $data);
+			try
+			{
+				return $this->ApiResponse($response->withStatus($status)->withHeader('Content-Type', 'application/json'), $data);
+			}
+			catch (Throwable $encodeFailure)
+			{
+				return $this->FixedApiErrorResponse($encodeFailure);
+			}
 		}
 
 		if ($exception instanceof HttpNotFoundException)
@@ -139,6 +146,38 @@ class ExceptionController extends BaseApiController
 				'systemInfo' => ApplicationService::GetInstance()->GetSystemInfo($request)
 			];
 		});
+	}
+
+	/** The body of the API answer for when the error body itself cannot be encoded. */
+	private const FIXED_API_ERROR_BODY = '{"error_message":"The error response could not be encoded as JSON"}';
+
+	/**
+	 * The API error answer for when the error body could not be JSON-encoded: a hard-coded
+	 * literal written straight into a fresh response, depending on nothing that can fail
+	 * again. ApiResponse() throws on an unencodable body (issue #912), and the body here
+	 * carries an exception message that can hold invalid UTF-8, so without this the handler
+	 * would escape with nothing sent. Always 500: the original status is only known to be
+	 * unrepresentable alongside its message. A fresh response because PSR-7 clones share a
+	 * body stream.
+	 */
+	private function FixedApiErrorResponse(Throwable $encodeFailure)
+	{
+		if ($this->ActiveLogger !== null)
+		{
+			$this->ActiveLogger->error('The API error body could not be encoded: ' . $encodeFailure->getMessage(), [
+				'exception' => get_class($encodeFailure)
+			]);
+		}
+		else
+		{
+			error_log('Victual: the API error body could not be encoded: ' . $encodeFailure->getMessage());
+		}
+
+		$response = $this->ResponseFactory->createResponse(500)
+			->withHeader('Content-Type', 'application/json');
+		$response->getBody()->write(self::FIXED_API_ERROR_BODY);
+
+		return $response;
 	}
 
 	/**
