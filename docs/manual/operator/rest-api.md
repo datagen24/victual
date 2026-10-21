@@ -42,10 +42,10 @@ by deleting your MCP keys, without touching the keys your other clients use.
   making the request, its key type, whether it is read-only, and the permissions its user
   holds.
 
-## Consumption recipes
+## Medication presets
 
-The routes under `/api/consumption/recipes` serve private consumption recipes
-([Consumption recipes](../using-victual/consumption-recipes.md)). They are not exposed
+The routes under `/api/consumption/recipes` serve private medication presets
+([Medication presets](../using-victual/consumption-recipes.md)). They are not exposed
 entities: `/api/objects/consumption_recipes` and its sibling tables answer `400`. A recipe the
 key's user holds no share on is absent from lists and answers `404` on a direct request,
 the same as a recipe that does not exist; a user who can see a recipe but lacks the right
@@ -69,13 +69,13 @@ number and a `location_id` an integer, and a numeric string is refused with `400
 [External consumption events](external-consumption.md) for the states, the error tokens and
 what the server fixtures do and do not show.
 
-## Prescription refills
+## Refills
 
 The routes under `/api/consumption/recipes/{recipeId}/refill`, `/api/refills`,
 `/api/refills/notices` and `/api/refills/notices/ack` hold fills, orders, reorder rules and
-notices for a consumption recipe. A recipe the key's user cannot read answers `404`. Reads need
+notices for a medication preset. A recipe the key's user cannot read answers `404`. Reads need
 `STOCK_VIEW` and a read share, and writes need the edit share. Every read takes an optional
-`as_of` calendar date. See [Prescription refills](prescription-refills.md) for the routes, the
+`as_of` calendar date. See [Refills](prescription-refills.md) for the routes, the
 estimate and the notices. Victual sends nothing; a client polls the notices route.
 
 ## What a key can do

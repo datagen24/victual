@@ -1,8 +1,8 @@
-# Consumption recipes
+# Medication presets
 
-A consumption recipe is a list of product quantities that you consume together, such as a
+A medication preset is a list of product quantities that you consume together, such as a
 prescription you have entered. **`/consumptionrecipes`** lists the recipes you own or that someone
-shared with you. It needs only the `STOCK_VIEW` permission to open. The menu entry appears when
+shared with you. It needs only the `STOCK_VIEW` permission to open. The Medication menu, which holds this page, appears when
 `FEATURE_FLAG_STOCK` is on, which it is by default. As for the other stock pages, the page
 itself stays reachable by its address when the flag is off. What you can do on a recipe depends
 on your rights on it (see [Sharing](#sharing)).
@@ -33,7 +33,7 @@ that for a household instance.
 
 ## Creating and editing
 
-Choose **New consumption recipe**, give it a name, and add one line per product. A line has a
+Choose **New medication preset**, give it a name, and add one line per product. A line has a
 product, an amount and a unit. The units offered for a product are its stock unit and every
 unit with a conversion to the stock unit, which you enter under the product's quantity unit
 conversions. Victual does not guess a conversion: a unit with none is not offered, and a
@@ -103,7 +103,7 @@ particular organizer through the stock route sends `location_id`.
 
 The location, product and stock entry labels an organizer household prints carry the fields in the
 label field catalogue: names, dates, amounts and location names. A scan answers with the target's
-id, name and path. None of them includes a consumption recipe, its note, a consumption event or a
+id, name and path. None of them includes a medication preset, its note, a consumption event or a
 refill date, whatever the stock has been through, and a reader with only `STOCK_VIEW` sees the
 same. `OrganizerLabelDisclosureTest` and `OrganizerApiTest` check this for captures, live and
 sample previews, print jobs, scans, context reads and the snapshot a retired label keeps.
@@ -154,7 +154,7 @@ Deleting a user's account deletes the recipes that user owns.
 ## Events from other apps
 
 An app can report consumption on your behalf. Events that could not book wait in the
-[consumption inbox](consumption-events.md).
+[medication inbox](consumption-events.md).
 
 ## The API
 

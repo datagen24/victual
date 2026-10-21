@@ -1,8 +1,8 @@
-# Consumption inbox
+# Medication inbox
 
 Another app can report that you consumed something, for example a phone app that reads dose
 events from Apple Health. Victual books each report against stock once, after you approved a
-mapping for that medication. The events it could not book wait in the **consumption inbox** at
+mapping for that medication. The events it could not book wait in the **medication inbox** at
 `/consumptioninbox`. The page needs the `STOCK_VIEW` permission to open. Resolving an event also
 needs `STOCK_CONSUME`. Without it the buttons are disabled and the page says why.
 

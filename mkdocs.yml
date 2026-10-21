@@ -75,9 +75,9 @@ nav:
           - Stock: manual/using-victual/stock.md
           - Shopping lists: manual/using-victual/shopping-lists.md
           - Recipes and meal plan: manual/using-victual/recipes-and-meal-plan.md
-          - Consumption recipes: manual/using-victual/consumption-recipes.md
-          - Consumption inbox: manual/using-victual/consumption-events.md
-          - Prescription refills: manual/using-victual/prescription-refills.md
+          - Medication presets: manual/using-victual/consumption-recipes.md
+          - Medication inbox: manual/using-victual/consumption-events.md
+          - Refills: manual/using-victual/prescription-refills.md
           - Chores: manual/using-victual/chores.md
           - Batteries: manual/using-victual/batteries.md
           - Tasks: manual/using-victual/tasks.md
@@ -90,7 +90,7 @@ nav:
           - Barcodes and scanning: manual/operator/barcodes-scanning.md
           - Label printing: manual/operator/label-printing.md
           - External consumption events: manual/operator/external-consumption.md
-          - Prescription refills: manual/operator/prescription-refills.md
+          - Refills: manual/operator/prescription-refills.md
           - Home Assistant and MQTT: manual/operator/home-assistant-mqtt.md
           - Roles and permissions: manual/operator/roles-permissions.md
           - Updating and migrations: manual/operator/updating-migrations.md
