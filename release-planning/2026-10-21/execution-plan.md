@@ -28,10 +28,19 @@ Shared files set the order:
 | 1 | 4 | #1035 empty-upload 415 | `claude/v0-5-2-files-415` | php-pro (sonnet) | files, storagefiles, httpboot, openapidocument, wirecontract | D7 |
 | 2 | 5 | #912 | `claude/v0-5-2-912-json-throw` | php-pro (sonnet) | errors, wirecontract, contract, openapidocument, helperunits | PR 1, D2 |
 | 2 | 6 | #1007 | `claude/v0-5-2-1007-medication-flyout` | frontend-developer (sonnet) | consumption, mealplan, consumption-* probes, routes-smoke | PR 2, D5 |
+| 2 | 8 | #1043 PHP2Shell floor (P1) | `claude/v0-5-2-1043-php-floor` | devops-engineer (sonnet) | helperunits, httpboot, rootentry; `nix flake check`, image build, app image PHP 8.5.12 | D9 |
 | 3 | 7 | #737 | `claude/v0-5-2-737-share-oracle` | php-pro (sonnet) | consumption, contract, wirecontract, openapidocument, openapisecurity | PR 5 (OpenAPI), D3 |
 | Each | — | Review of every PR | — | code-reviewer (sonnet) | Reads the diff against the issue's decision; checks `gh pr checks` before ready | Its PR |
 
 Research and status checks (refresh.py, CI reads, issue reads) use Haiku agents.
+
+## Progress
+
+- **Wave 1: merged 2026-10-21.** #1037 (`/mcp` bumps), #1038 (#948), #1039 (#1035), #1040 (#1026)
+  and #1041 (#762). The planning PR #1036 merged with #1037. The planning files of every
+  parallel PR conflicted at each merge, which led to decision D10.
+- **Wave 2: in progress.** #912 and #1007, plus #1043 (D9), added after PHP2Shell was published.
+- **Wave 3:** #737, after #912.
 
 ## Machine limits
 
@@ -45,9 +54,9 @@ Research and status checks (refresh.py, CI reads, issue reads) use Haiku agents.
 ## What every code brief carries
 
 - The issue, the maintainer's decision on it, and the files this plan names.
-- The standing rules: update release-data.json, append to execution.md and re-run
-  render.py in the same PR; docstring coverage at or above 80% for every function in every
-  touched file, counted before the first push.
+- Do not touch release-planning/. The coordinator records each wave in its own planning PR
+  after the wave merges (decision D10). Docstring coverage at or above 80% for every function
+  in every touched file, counted before the first push.
 - The named phases, run on a fresh database, with results in the PR body.
 - No push to `master`, no merge, no milestone or issue writes.
 
@@ -63,7 +72,9 @@ Research and status checks (refresh.py, CI reads, issue reads) use Haiku agents.
 4. Run all 56 phases of `run-tests.sh` on the release branch, then the CI helper checks
    that the 0.5.1 record lists.
 5. Open the release PR. Read `gh pr checks` before calling it ready.
-6. The maintainer places the signed tag `v0.5.2` on the merge commit. `release.yml`
+6. The release record gets a security section for #1043 (GHSA-w8hw-w9fx-j79w, GHSA-6wmf-4rv5-p3rp) and
+   states that the v0.5.0 and v0.5.1 images run PHP 8.5.10.
+7. The maintainer places the signed tag `v0.5.2` on the merge commit. `release.yml`
    publishes the images and the chart.
 
 ## GitHub writes
