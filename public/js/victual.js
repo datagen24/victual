@@ -1220,8 +1220,12 @@ $('[data-toggle="tooltip"][data-html="true"]').on("shown.bs.tooltip", function (
 
 $(document).on("click", '.btn, a, button', function (e)
 {
-	// Remove focus and hide any tooltips after click
-	document.activeElement.blur();
+	// Remove focus and hide any tooltips after click. A sidebar submenu trigger keeps its
+	// focus: it is a disclosure control, and a keyboard user who opens it continues from it
+	if (!$(this).is('.navbar-sidenav .nav-link-collapse'))
+	{
+		document.activeElement.blur();
+	}
 	$(".tooltip").tooltip("hide");
 });
 

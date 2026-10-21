@@ -21,6 +21,7 @@
 	var bulkChoices = [];
 	var mappingRefs = [];
 
+	/** Tells whether the signed-in user holds the named permission. */
 	function HasPermission(name)
 	{
 		return (Victual.UserPermissions || []).some(function (p) { return p.permission_name === name && Number(p.has_permission) === 1; });
@@ -28,6 +29,7 @@
 
 	var canResolve = HasPermission('STOCK_CONSUME');
 
+	/** Returns the server's error_message from a failed request, or a generic sentence when the body has none. */
 	function ErrorText(xhr)
 	{
 		try
@@ -39,16 +41,22 @@
 		return __t('The request could not be completed.');
 	}
 
+	/** Shows a status message in the page's live region; no argument clears it. */
 	function Message(text) { $('#inbox-message').text(text || ''); }
+	/** Shows an error in the page's alert region; no argument clears it. */
 	function ErrorMessage(text) { $('#inbox-error').text(text || ''); }
+	/** Shows the server's error text for a failed request. */
 	function Failed(xhr) { ErrorMessage(xhr && xhr.responseText ? ErrorText(xhr) : __t('The request could not be completed.')); }
 
+	/** Returns the source system and source event id that identify an event. */
 	function Key(event) { return event.source_system + '/' + event.source_event_id; }
 
+	/** Formats a stored instant as a local date and time. */
 	function Instant(value) { return moment(value).format('YYYY-MM-DD HH:mm'); }
 
 	// --- Words -------------------------------------------------------------------------------
 
+	/** Describes an event's state, and for a review state the reason, in plain words. */
 	function StateWords(state, reason)
 	{
 		if (state === 'needs_mapping') return __t('Not booked: no mapping for this medication');
@@ -64,7 +72,7 @@
 			insufficient_stock: __t('Not booked: not enough stock at the chosen location'),
 			unit_unconfirmed: __t('Not booked: the unit has not been confirmed'),
 			quantity_missing: __t('Not booked: the event has no quantity and the mapping has no default quantity'),
-			recipe_unavailable: __t('Not booked: the mapped consumption recipe is not available'),
+			recipe_unavailable: __t('Not booked: the mapped medication preset is not available'),
 			partially_undone: __t('Some of the bookings were undone and some remain'),
 			changed_after_undo: __t('The source changed this record after its booking was undone; nothing was booked'),
 			undo_refused: __t('Not changed: the stock refused to undo the earlier booking'),
@@ -75,6 +83,7 @@
 		return reasons[reason] || __t('Needs review');
 	}
 
+	/** Translates the reason token a source gave for removing a record. */
 	function RemovalWords(token)
 	{
 		var words = {
@@ -84,6 +93,7 @@
 		return words[token] || token;
 	}
 
+	/** Returns the label of a resolve action. */
 	function ActionLabel(action)
 	{
 		var labels = {
@@ -95,6 +105,7 @@
 
 	// --- What each state allows (ADR-0041 rule 8) --------------------------------------------
 
+	/** Returns the resolve actions the server allows for an event in its state and reason. */
 	function AllowedActions(event)
 	{
 		var state = event.state;
@@ -131,6 +142,7 @@
 
 	// --- Reference data ----------------------------------------------------------------------
 
+	/** Loads products, locations and quantity units so booked lines show names, then calls back. */
 	function LoadReferenceData(done)
 	{
 		Victual.Api.Get('objects/products', function (rows)
@@ -151,9 +163,12 @@
 		}, Failed);
 	}
 
+	/** Returns a product's name, or its id when the product is unknown. */
 	function ProductName(id) { return productsById[id] ? productsById[id].name : String(id); }
+	/** Returns a location's name, or its id when the location is unknown. */
 	function LocationName(id) { return locationsById[id] ? locationsById[id].name : String(id); }
 
+	/** Describes one booked line as amount, unit, product and location. */
 	function LineText(line)
 	{
 		var product = productsById[line.product_id];
@@ -165,8 +180,10 @@
 
 	// --- The list ----------------------------------------------------------------------------
 
+	/** Tells whether the list also shows undone events. */
 	function ShowUndone() { return $('#inbox-show-undone').prop('checked'); }
 
+	/** Loads the unresolved events and the booked events with possible duplicates, then renders the list; a later call supersedes an earlier one in flight. */
 	function LoadEvents()
 	{
 		var sequence = ++loadSequence;
@@ -184,8 +201,10 @@
 		}, Failed);
 	}
 
+	/** Returns an event's medication reference, or an empty string. */
 	function MedicationOf(event) { return event.medication_ref || ''; }
 
+	/** Rebuilds the medication filter and the bulk field's suggestions from the listed events and the user's mappings. */
 	function RefreshMedicationFilter()
 	{
 		var select = $('#inbox-medication');
@@ -204,6 +223,7 @@
 		Object.keys(suggested).sort().forEach(function (name) { list.append($('<option>').attr('value', name)); });
 	}
 
+	/** Rebuilds the bulk form's list of source systems from the listed events. */
 	function RefreshBulkSystems()
 	{
 		var select = $('#inbox-bulk-system');
@@ -215,8 +235,10 @@
 		if (chosen && systems[chosen]) select.val(chosen);
 	}
 
+	/** Appends one line of detail text to a cell. */
 	function Detail(row, text) { row.append($('<div class="inbox-detail">').text(text)); }
 
+	/** Builds the details cell of an event: its lines and the facts that explain its state. */
 	function DetailsCell(event)
 	{
 		var cell = $('<td class="inbox-details">');
@@ -249,6 +271,7 @@
 		return cell;
 	}
 
+	/** Builds the button for one action on an event, disabled when the user may not resolve events. */
 	function ActionButton(event, action)
 	{
 		var button = $('<button type="button">').addClass('btn btn-sm btn-outline-primary mr-1 inbox-action inbox-action-' + action).attr('data-action', action).text(ActionLabel(action));
@@ -265,6 +288,7 @@
 		return button;
 	}
 
+	/** Renders the event rows for the chosen medication, ordered by medication and newest first. */
 	function Render()
 	{
 		RefreshMedicationFilter();
@@ -297,6 +321,7 @@
 
 	// --- One event ---------------------------------------------------------------------------
 
+	/** Sends one resolve action for an event, reports the new state and reloads the list. */
 	function Resolve(event, action, transactionId, onFailure)
 	{
 		Message('');
@@ -317,6 +342,7 @@
 		});
 	}
 
+	/** Opens the dialog that links an event to an existing consumption. */
 	function OpenLink(event)
 	{
 		linking = event;
@@ -334,6 +360,7 @@
 		$('#inbox-link-modal').modal('show');
 	}
 
+	/** Links the event to the chosen or entered transaction. */
 	function ConfirmLink()
 	{
 		var other = String($('#inbox-link-other').val() || '').trim();
@@ -345,6 +372,7 @@
 
 	// --- Many events -------------------------------------------------------------------------
 
+	/** Fills the bulk form's state list and its dependent action list. */
 	function FillBulkStates()
 	{
 		bulkChoices = BuildBulkChoices();
@@ -353,6 +381,7 @@
 		FillBulkActions();
 	}
 
+	/** Fills the bulk action list with the actions that apply to the chosen state. */
 	function FillBulkActions()
 	{
 		var choice = bulkChoices[Number($('#inbox-bulk-state').val())];
@@ -361,6 +390,7 @@
 		choice.actions.forEach(function (action) { select.append($('<option>').attr('value', action).text(ActionLabel(action))); });
 	}
 
+	/** Applies one action to every matching event of one medication, repeating until none match or a round makes no progress. */
 	function RunBulk()
 	{
 		var choice = bulkChoices[Number($('#inbox-bulk-state').val())];
@@ -378,6 +408,7 @@
 		var tally = { handled: 0, refused: 0, previousRemaining: null };
 		$('#inbox-bulk-result').text('');
 
+		/** Reports the bulk totals and reloads the list. */
 		var finish = function (remaining, note)
 		{
 			var text = __t('Handled %1$s events; %2$s refused; %3$s still match.', tally.handled, tally.refused, remaining);
@@ -385,6 +416,7 @@
 			LoadEvents();
 		};
 
+		/** Sends one bulk request and decides whether another round is needed. */
 		var round = function (rounds)
 		{
 			Victual.Api.Post('consumption/events/resolve', { action: action, filter: filter }, function (result)

@@ -1,6 +1,6 @@
 @extends('layout.default')
 
-@section('title', $__t('Prescription refills'))
+@section('title', $__t('Refills'))
 
 @section('content')
 <div class="row">
@@ -57,7 +57,7 @@
 			<tbody id="refill-rows"></tbody>
 		</table>
 		<p id="refill-empty"
-			class="text-muted d-none">{{ $__t('You have no prescriptions. Create one on the consumption recipes page.') }}</p>
+			class="text-muted d-none">{{ $__t('You have no prescriptions. Create one on the Medication presets page.') }}</p>
 
 		<section id="refill-detail"
 			class="d-none mt-4"

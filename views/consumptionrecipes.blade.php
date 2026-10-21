@@ -1,15 +1,15 @@
 @extends('layout.default')
 
-@section('title', $__t('Consumption recipes'))
+@section('title', $__t('Medication presets'))
 
 @section('content')
 <div class="row">
 	<div class="col">
 		<h2 class="title">@yield('title')</h2>
-		<p>{{ $__t('A consumption recipe lists product quantities that are consumed together. Only you and the users you share it with can see it. Stock, and every consumption booking, stays visible to everyone who can see stock.') }}</p>
+		<p>{{ $__t('A medication preset lists product quantities that are consumed together. Only you and the users you share it with can see it. Stock, and every consumption booking, stays visible to everyone who can see stock.') }}</p>
 		<button id="consumption-new"
 			class="btn btn-primary"
-			type="button">{{ $__t('New consumption recipe') }}</button>
+			type="button">{{ $__t('New medication preset') }}</button>
 		<p id="consumption-message"
 			class="mt-2"
 			role="status"></p>
@@ -116,7 +116,7 @@
 					class="modal-title"></h4>
 			</div>
 			<div class="modal-body">
-				<p>{{ $__t('A share lets a user see this recipe and use the rights you give. It does not change what that user may do elsewhere.') }}</p>
+				<p>{{ $__t('A share lets a user see this preset and use the rights you give. It does not change what that user may do elsewhere.') }}</p>
 				<table class="table table-sm">
 					<thead>
 						<tr>
@@ -171,7 +171,7 @@
 					class="modal-title"></h4>
 			</div>
 			<div class="modal-body">
-				<p>{{ $__t('Your own recorded consumptions of this recipe. What each one booked does not change when the recipe changes.') }}</p>
+				<p>{{ $__t('Your own recorded consumptions of this preset. What each one booked does not change when the preset changes.') }}</p>
 				<table class="table table-sm">
 					<thead>
 						<tr>
