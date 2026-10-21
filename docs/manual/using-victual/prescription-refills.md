@@ -1,8 +1,8 @@
-# Prescription refills
+# Refills
 
 **`/consumptionrefills`** shows the estimated reorder date of each prescription you can see, the fills
 and orders you recorded for it, and the notices you have not yet marked as seen. A prescription is a
-[consumption recipe](consumption-recipes.md). The page needs only the `STOCK_VIEW` permission to open,
+[medication preset](consumption-recipes.md). The page needs only the `STOCK_VIEW` permission to open,
 and what you can change on a prescription depends on your rights on it.
 
 The estimate is a date worked out from the fills you enter. It does not say that a pharmacy or an
@@ -16,7 +16,7 @@ lists the notices; an app such as `victual-kit` can show its own.
 Only the owner of a prescription and the users it is shared with can see its refill dates, fills and
 orders. Reading them needs the read right on the prescription, and recording or changing them needs the
 edit right. A member who can only read sees the dates and no forms. An administrator has no automatic
-access. The operator page [Prescription refills](../operator/prescription-refills.md) lists the routes.
+access. The operator page [Refills](../operator/prescription-refills.md) lists the routes.
 
 ## Recording a fill
 

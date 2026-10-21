@@ -75,9 +75,9 @@ role holds `STOCK_VIEW`, so only an account with custom direct grants is affecte
 form checks both permissions before it looks the barcode up, so a caller that lacks either gets
 `403` whether or not the barcode exists.
 
-## Consumption recipes
+## Medication presets
 
-A [consumption recipe](../using-victual/consumption-recipes.md) is visible only to its owner
+A [medication preset](../using-victual/consumption-recipes.md) is visible only to its owner
 and the users it is shared with. A share names a user and the rights they hold on that one
 recipe (view, record consumption, edit, undo, share). It confers no permission and changes
 no one's effective permissions, so it needs no entry in the permission tree and the rules for
@@ -109,7 +109,7 @@ read or act on them, and another user's event answers `404`.
 |---|---|
 | Read events, mappings and capabilities | `STOCK_VIEW` |
 | Report, delete or resolve an event; write or delete a mapping | `STOCK_VIEW` and `STOCK_CONSUME` |
-| Map to a consumption recipe | The right to record consumption on that recipe |
+| Map to a medication preset | The right to record consumption on that recipe |
 | Link an event to a transaction that another user recorded | `STOCK_EDIT` as well |
 
 The bookings an event makes are stock bookings made as the signed-in user, and anyone who can
@@ -189,7 +189,7 @@ account that holds `MASTER_DATA_EDIT` can also edit it and add conversions. Such
 record a dose or save a consumption mapping unless it also holds `STOCK_VIEW` and `STOCK_CONSUME`.
 
 Master data is shared by every account, and the permission covers every product, not only the
-ones its holder added. A consumption recipe's owner has no extra right to the products on it.
+ones its holder added. A medication preset's owner has no extra right to the products on it.
 
 To let a client map a new medication:
 

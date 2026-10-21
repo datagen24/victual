@@ -1,4 +1,4 @@
-// The consumption recipes page (ADR-0040, ADR-0041). Every row comes from the JSON API, which
+// The medication presets page (ADR-0040, ADR-0041). Every row comes from the JSON API, which
 // applies the share and ownership rules; a recipe the user holds no share on is not in any
 // response. Text from the server reaches the page only through .text(), never as markup.
 (function ()
@@ -16,6 +16,7 @@
 	var sharing = null;
 	var viewing = null;
 
+	/** Returns the server's error_message from a failed request, or a generic sentence when the body has none. */
 	function ErrorText(xhr)
 	{
 		try
@@ -27,12 +28,14 @@
 		return __t('The request could not be completed.');
 	}
 
+	/** Shows a status message in the page's live region; no argument clears it. */
 	function Message(text) { $('#consumption-message').text(text || ''); }
 
 	// The browser's own offset, so the booked date is the user's local date. The server runs in UTC
 	// and uses the date as written in the offset it receives.
 	function LocalInstant(date)
 	{
+		/** Left-pads a number to two digits. */
 		var pad = function (n) { return String(n).padStart(2, '0'); };
 		var offset = -date.getTimezoneOffset();
 		var sign = offset >= 0 ? '+' : '-';
@@ -41,12 +44,14 @@
 			+ sign + pad(Math.floor(offset / 60)) + ':' + pad(offset % 60);
 	}
 
+	/** Returns a fresh idempotency key for one consumption request. */
 	function RequestId()
 	{
 		if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
 		return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2);
 	}
 
+	/** Lists the rights a user holds on a preset as a comma-separated sentence fragment. */
 	function RightsText(rights)
 	{
 		var parts = [__t('View')];
@@ -57,6 +62,7 @@
 		return parts.join(', ');
 	}
 
+	/** Builds a small button with a text label, a style class and a click handler. */
 	function Button(label, className, handler)
 	{
 		return $('<button type="button">').addClass('btn btn-sm ' + className + ' mr-1').text(label).on('click', handler);
@@ -64,6 +70,7 @@
 
 	// --- Reference data ----------------------------------------------------------------------
 
+	/** Loads the active products, active locations and quantity units that every dialog needs, then calls back. */
 	function LoadReferenceData(done)
 	{
 		Victual.Api.Get('objects/products', function (rows)
@@ -84,10 +91,12 @@
 		}, Failed);
 	}
 
+	/** Shows the server's error text for a failed list or reference-data request. */
 	function Failed(xhr) { Message(xhr && xhr.responseText ? ErrorText(xhr) : __t('The request could not be completed.')); }
 
 	// --- The list ----------------------------------------------------------------------------
 
+	/** Loads the presets the user can see and renders one row per preset with the actions the user's rights allow. */
 	function LoadRecipes()
 	{
 		Victual.Api.Get('consumption/recipes', function (rows)
@@ -113,20 +122,23 @@
 		}, Failed);
 	}
 
+	/** Asks for confirmation, then deletes a preset the user owns and reloads the list. */
 	function DeleteRecipe(recipe)
 	{
-		if (!window.confirm(__t('Delete this consumption recipe and its shares? Past consumptions stay in the stock history.'))) return;
-		Victual.Api.Delete('consumption/recipes/' + recipe.id, {}, function () { Message(__t('Consumption recipe deleted.')); LoadRecipes(); }, Failed);
+		if (!window.confirm(__t('Delete this medication preset and its shares? Past consumptions stay in the stock history.'))) return;
+		Victual.Api.Delete('consumption/recipes/' + recipe.id, {}, function () { Message(__t('Medication preset deleted.')); LoadRecipes(); }, Failed);
 	}
 
+	/** Asks for confirmation, then removes the current user's own share of a preset and reloads the list. */
 	function LeaveRecipe(recipe)
 	{
-		if (!window.confirm(__t('Remove your own access to this consumption recipe?'))) return;
+		if (!window.confirm(__t('Remove your own access to this medication preset?'))) return;
 		Victual.Api.Delete('consumption/recipes/' + recipe.id + '/shares/' + Victual.UserId, {}, function () { Message(__t('Your access was removed.')); LoadRecipes(); }, Failed);
 	}
 
 	// --- Create and edit ---------------------------------------------------------------------
 
+	/** Builds a product drop-down for one line, with the given product selected. */
 	function ProductSelect(selected)
 	{
 		var select = $('<select class="form-control consumption-line-product">');
@@ -146,6 +158,7 @@
 		ConversionsOf(productId, function (rows)
 		{
 			var seen = {};
+			/** Appends a unit option once per unit id. */
 			var add = function (id, name)
 			{
 				if (seen[id]) return;
@@ -158,6 +171,7 @@
 		});
 	}
 
+	/** Calls back with the unit conversions of one product, sharing one request among all lines for that product. */
 	function ConversionsOf(productId, done)
 	{
 		var request = conversionRequests[productId];
@@ -175,6 +189,7 @@
 		});
 	}
 
+	/** Appends one product, amount and unit row to the edit dialog, filled from a saved line when one is given. */
 	function AddLine(line)
 	{
 		var row = $('<div class="form-row align-items-end mb-2 consumption-line">');
@@ -190,6 +205,7 @@
 		$('#consumption-lines').append(row);
 	}
 
+	/** Opens the edit dialog empty for a new preset when id is null, or filled from the stored preset. */
 	function OpenEdit(id)
 	{
 		conversionRequests = {};
@@ -198,7 +214,7 @@
 		editing = id;
 		if (id === null)
 		{
-			$('#consumption-edit-title').text(__t('New consumption recipe'));
+			$('#consumption-edit-title').text(__t('New medication preset'));
 			$('#consumption-name').val('');
 			$('#consumption-note').val('');
 			AddLine(null);
@@ -208,7 +224,7 @@
 
 		Victual.Api.Get('consumption/recipes/' + id, function (recipe)
 		{
-			$('#consumption-edit-title').text(__t('Edit consumption recipe'));
+			$('#consumption-edit-title').text(__t('Edit medication preset'));
 			$('#consumption-name').val(recipe.name);
 			$('#consumption-note').val(recipe.note || '');
 			recipe.lines.forEach(function (line) { AddLine(line); });
@@ -216,6 +232,7 @@
 		}, Failed);
 	}
 
+	/** Reads the dialog's line rows into the API's line objects. */
 	function CollectLines()
 	{
 		var lines = [];
@@ -227,17 +244,21 @@
 		return lines;
 	}
 
+	/** Creates or updates the preset from the edit dialog and reloads the list. */
 	function Save()
 	{
 		var body = { name: $('#consumption-name').val(), note: $('#consumption-note').val(), lines: CollectLines() };
+		/** Shows the server's error text inside the edit dialog. */
 		var failed = function (xhr) { $('#consumption-edit-error').text(ErrorText(xhr)); };
-		var done = function () { $('#consumption-edit-modal').modal('hide'); Message(__t('Consumption recipe saved.')); LoadRecipes(); };
+		/** Closes the edit dialog, reports the save and reloads the list. */
+		var done = function () { $('#consumption-edit-modal').modal('hide'); Message(__t('Medication preset saved.')); LoadRecipes(); };
 		if (editing === null) Victual.Api.Post('consumption/recipes', body, done, failed);
 		else Victual.Api.Put('consumption/recipes/' + editing, body, done, failed);
 	}
 
 	// --- Recording a consumption -------------------------------------------------------------
 
+	/** Opens the dialog that records a consumption of one preset, listing its lines and the locations to take from. */
 	function OpenConsume(id)
 	{
 		$('#consumption-consume-error').text('');
@@ -258,6 +279,7 @@
 		}, Failed);
 	}
 
+	/** Records one consumption of the chosen preset at the browser's local time, optionally from one location. */
 	function Consume()
 	{
 		var body = { request_id: RequestId(), occurred_at: LocalInstant(new Date()) };
@@ -272,6 +294,7 @@
 
 	// --- Sharing -----------------------------------------------------------------------------
 
+	/** Opens the share dialog for one preset and loads its shares. */
 	function OpenShare(id)
 	{
 		sharing = id;
@@ -285,6 +308,7 @@
 		$('#consumption-share-modal').modal('show');
 	}
 
+	/** Loads and renders the share rows of the preset open in the share dialog. */
 	function LoadShares()
 	{
 		var recipe = recipes.filter(function (r) { return r.id === sharing; })[0];
@@ -326,8 +350,10 @@
 		}, ShareFailed);
 	}
 
+	/** Shows the server's error text inside the share dialog. */
 	function ShareFailed(xhr) { $('#consumption-share-error').text(ErrorText(xhr)); }
 
+	/** Shares the open preset with the named user and the ticked rights, then reloads the share rows. */
 	function AddShare()
 	{
 		var body = {
@@ -345,6 +371,7 @@
 
 	// --- History -----------------------------------------------------------------------------
 
+	/** Opens the history dialog for one preset and loads its recorded consumptions. */
 	function OpenHistory(id)
 	{
 		viewing = id;
@@ -355,6 +382,7 @@
 		$('#consumption-history-modal').modal('show');
 	}
 
+	/** Loads and renders the recorded consumptions of the preset open in the history dialog. */
 	function LoadHistory()
 	{
 		var recipe = recipes.filter(function (r) { return r.id === viewing; })[0];

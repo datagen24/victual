@@ -1,4 +1,4 @@
-# Prescription refills
+# Refills
 
 Victual records when a prescription was filled and for how many days, estimates when to reorder
 it, and exposes that state and its notices through an authenticated API. It sends nothing.
@@ -16,7 +16,7 @@ record ([ADR-0015](../../adr/0015-medication-records-never-advises.md)).
 
 ## What is recorded
 
-A prescription is a [private consumption recipe](../using-victual/consumption-recipes.md). All refill records belong
+A prescription is a [private medication preset](../using-victual/consumption-recipes.md). All refill records belong
 to one recipe, so the recipe's owner and the members it is shared with can see them, and nobody
 else can. An account administrator holds no implicit access.
 

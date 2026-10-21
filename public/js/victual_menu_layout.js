@@ -15,7 +15,7 @@ $("#sidenavToggler").click(function(e)
 {
 	e.preventDefault();
 	$("body").toggleClass("sidenav-toggled");
-	$(".navbar-sidenav .nav-link-collapse").addClass("collapsed");
+	$(".navbar-sidenav .nav-link-collapse").addClass("collapsed").attr("aria-expanded", "false");
 	$(".navbar-sidenav .sidenav-second-level, .navbar-sidenav .sidenav-third-level").removeClass("show");
 
 	if ($("body").hasClass("sidenav-toggled"))
@@ -36,6 +36,17 @@ $(".navbar-sidenav .nav-link-collapse").click(function(e)
 	e.preventDefault();
 	$("body").removeClass("sidenav-toggled");
 	window.localStorage.setItem("sidebar_state", "expanded");
+});
+
+// A collapsible submenu trigger is a link, which the browser activates on Enter only.
+// Space activates it as well, as it does for the button role the trigger announces.
+$(".navbar-sidenav .nav-link-collapse").on("keydown", function(e)
+{
+	if (e.key === " " || e.key === "Spacebar")
+	{
+		e.preventDefault();
+		this.click();
+	}
 });
 
 // Restore the persisted collapsed state on page load

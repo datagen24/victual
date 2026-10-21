@@ -296,36 +296,46 @@
 						<span class="nav-link-text">{{ $__t('Consume') }}</span>
 					</a>
 				</li>
-				<li class="nav-item nav-item-sidebar permission-STOCK_VIEW @if($viewName == 'consumptionrecipes') active-page @endif"
+				{{-- Medication flyout (D5, issue 1007): one parent over the presets, inbox and refills pages. Each child keeps the
+				     gate it had as a top-level entry; the parent renders when at least one child does. The flyout is the same
+				     Bootstrap collapse the "Manage master data" entry uses, expanded when the current page is one of its children. --}}
+				@php
+				$medicationChildren = array_filter([
+				['view' => 'consumptionrecipes', 'url' => '/consumptionrecipes', 'label' => $__t('Medication presets'), 'visible' => \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_STOCK_VIEW), 'permissionClass' => 'permission-STOCK_VIEW'],
+				['view' => 'consumptioninbox', 'url' => '/consumptioninbox', 'label' => $__t('Medication inbox'), 'visible' => \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_STOCK_VIEW), 'permissionClass' => 'permission-STOCK_VIEW'],
+				['view' => 'consumptionrefills', 'url' => '/consumptionrefills', 'label' => $__t('Refills'), 'visible' => \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_STOCK_VIEW), 'permissionClass' => 'permission-STOCK_VIEW'],
+				], fn($child) => $child['visible']);
+				$medicationOpen = in_array($viewName, array_column($medicationChildren, 'view'));
+				@endphp
+				@if(count($medicationChildren) > 0)
+				<li class="nav-item nav-item-sidebar"
+					id="nav-medication"
 					data-toggle="tooltip"
 					data-placement="right"
-					title="{{ $__t('Consumption recipes') }}">
-					<a class="nav-link discrete-link"
-						href="{{ $U('/consumptionrecipes') }}">
+					title="{{ $__t('Medication') }}">
+					<a class="nav-link nav-link-collapse discrete-link @if(!$medicationOpen) collapsed @else active-page @endif"
+						role="button"
+						data-toggle="collapse"
+						href="#sub-nav-medication"
+						aria-controls="sub-nav-medication"
+						aria-expanded="{{ $medicationOpen ? 'true' : 'false' }}">
 						<i class="fa-solid fa-fw fa-pills"></i>
-						<span class="nav-link-text">{{ $__t('Consumption recipes') }}</span>
+						<span class="nav-link-text">{{ $__t('Medication') }}</span>
 					</a>
+					<ul id="sub-nav-medication"
+						class="sidenav-second-level collapse @if($medicationOpen) show @endif">
+						@foreach($medicationChildren as $child)
+						<li class="{{ $child['permissionClass'] }} @if($viewName == $child['view']) active-page @endif">
+							<a class="nav-link discrete-link"
+								href="{{ $U($child['url']) }}"
+								@if($viewName == $child['view']) aria-current="page" @endif>
+								<span class="nav-link-text">{{ $child['label'] }}</span>
+							</a>
+						</li>
+						@endforeach
+					</ul>
 				</li>
-				<li class="nav-item nav-item-sidebar permission-STOCK_VIEW @if($viewName == 'consumptioninbox') active-page @endif"
-					data-toggle="tooltip"
-					data-placement="right"
-					title="{{ $__t('Consumption inbox') }}">
-					<a class="nav-link discrete-link"
-						href="{{ $U('/consumptioninbox') }}">
-						<i class="fa-solid fa-fw fa-inbox"></i>
-						<span class="nav-link-text">{{ $__t('Consumption inbox') }}</span>
-					</a>
-				</li>
-				<li class="nav-item nav-item-sidebar permission-STOCK_VIEW @if($viewName == 'consumptionrefills') active-page @endif"
-					data-toggle="tooltip"
-					data-placement="right"
-					title="{{ $__t('Prescription refills') }}">
-					<a class="nav-link discrete-link"
-						href="{{ $U('/consumptionrefills') }}">
-						<i class="fa-solid fa-fw fa-calendar-check"></i>
-						<span class="nav-link-text">{{ $__t('Prescription refills') }}</span>
-					</a>
-				</li>
+				@endif
 				@if(VICTUAL_FEATURE_FLAG_STOCK_LOCATION_TRACKING)
 				<li class="nav-item nav-item-sidebar permission-STOCK_TRANSFER @if($viewName == 'transfer') active-page @endif"
 					data-toggle="tooltip"
@@ -407,8 +417,11 @@
 					data-placement="right"
 					title="{{ $__t('Manage master data') }}">
 					<a class="nav-link nav-link-collapse discrete-link @if(!in_array($viewName, $masterDataViews)) collapsed @else active-page @endif"
+						role="button"
 						data-toggle="collapse"
-						href="#sub-nav-manage-master-data">
+						href="#sub-nav-manage-master-data"
+						aria-controls="sub-nav-manage-master-data"
+						aria-expanded="{{ in_array($viewName, $masterDataViews) ? 'true' : 'false' }}">
 						<i class="fa-solid fa-fw fa-table"></i>
 						<span class="nav-link-text">{{ $__t('Manage master data') }}</span>
 					</a>

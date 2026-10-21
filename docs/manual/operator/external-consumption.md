@@ -48,7 +48,7 @@ All routes are under `/api/consumption`. Reads need `STOCK_VIEW`. Writes need `S
 
 | Route | Purpose |
 |---|---|
-| `GET /capabilities` | The contract version and the features this server implements. A client tests membership of `features` instead of guessing from the server version. The refill features `refill` and `refill_notices` are listed there too; see [Prescription refills](prescription-refills.md). |
+| `GET /capabilities` | The contract version and the features this server implements. A client tests membership of `features` instead of guessing from the server version. The refill features `refill` and `refill_notices` are listed there too; see [Refills](prescription-refills.md). |
 | `PUT /events/{source_system}/{source_event_id}` | Create or update an event. `201` for a new row, `200` otherwise. |
 | `GET /events/{source_system}/{source_event_id}` | Read one event. |
 | `DELETE /events/{source_system}/{source_event_id}?reason=` | The source no longer holds the event. |
@@ -57,7 +57,7 @@ All routes are under `/api/consumption`. Reads need `STOCK_VIEW`. Writes need `S
 | `POST /events/batch` | Up to 50 independent events. |
 | `POST /events/resolve` | One action on up to 50 events, by list or by filter. |
 | `PUT`, `GET`, `DELETE /mappings/{source_system}/{medication_ref}` and `GET /mappings` | The mappings the person approved. |
-| `POST /recipes/{recipeId}/consume` | Manual consumption of a consumption recipe. |
+| `POST /recipes/{recipeId}/consume` | Manual consumption of a medication preset. |
 
 A stored event answers `200` or `201` even when it did not book. The `state` and `reason`
 fields report the outcome. The error responses are `400 invalid_request`, `404 not_found`,
@@ -70,7 +70,7 @@ An event books only through a mapping that the same user approved for its `sourc
 `medication_ref`. Victual does not guess a product from a medication name, a conversion from a
 strength, or a location from a schedule. A mapping holds:
 
-- **A target.** One consumption recipe the user may consume, or one product. A product target
+- **A target.** One medication preset the user may consume, or one product. A product target
   can name `qu_id`, the unit the event quantity is in, and a `quantity_factor`. A unit other
   than the product's stock unit needs a conversion to the stock unit that the household entered,
   or the mapping is refused with `422 invalid_mapping`. The stock unit itself needs none. The

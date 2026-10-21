@@ -1,4 +1,4 @@
-// Prescription refills (ADR-0042, ADR-0015). Every row comes from /api/refills and
+// Refills (ADR-0042, ADR-0015). Every row comes from /api/refills and
 // /api/consumption/recipes/{id}/refill with the user's session; the server renders no refill data into the
 // page. Text a person typed (a prescription name, a fill note, a void reason) reaches the page only through
 // .text(), and markup is built as nodes, never by concatenating a value into a string (AGENTS.md, frontend
@@ -21,6 +21,7 @@
 	var detailSequence = 0;
 	var busy = false;
 
+	/** Left-pads a number to two digits. */
 	function Pad(n) { return (n < 10 ? '0' : '') + n; }
 
 	// The date on this device, written YYYY-MM-DD. It is read at every request so a page left open past midnight
@@ -31,8 +32,10 @@
 		return now.getFullYear() + '-' + Pad(now.getMonth() + 1) + '-' + Pad(now.getDate());
 	}
 
+	/** Returns the as_of query parameter for the device's calendar date. */
 	function AsOf() { return 'as_of=' + encodeURIComponent(LocalToday()); }
 
+	/** Returns the server's error_message from a failed request, or a generic sentence when the body has none. */
 	function ErrorText(xhr)
 	{
 		try
@@ -44,9 +47,13 @@
 		return __t('The request could not be completed.');
 	}
 
+	/** Shows a status message in the page's live region; no argument clears it. */
 	function Message(text) { $('#refill-message').text(text || ''); }
+	/** Shows an error in the page's alert region; no argument clears it. */
 	function ErrorMessage(text) { $('#refill-error').text(text || ''); }
+	/** Shows the server's error text for a failed request. */
 	function Failed(xhr) { ErrorMessage(xhr && xhr.responseText ? ErrorText(xhr) : __t('The request could not be completed.')); }
+	/** Clears the status message and the error. */
 	function Clear() { Message(''); ErrorMessage(''); }
 
 	// A refused write: show the server's sentence, then read the list and the open prescription again, because
@@ -57,6 +64,7 @@
 		LoadAll(ReloadDetail);
 	}
 
+	/** Closes the detail section and forgets the selected prescription. */
 	function HideDetail()
 	{
 		selectedId = null;
@@ -64,6 +72,7 @@
 		$('#refill-detail').addClass('d-none');
 	}
 
+	/** Tells whether the text is a whole number within the inclusive range. */
 	function IsWholeNumber(text, minimum, maximum)
 	{
 		if (!/^-?\d+$/.test(text)) return false;
@@ -73,6 +82,7 @@
 
 	// --- Words (ADR-0015: facts and estimates, never instructions) -----------------------------
 
+	/** Describes a refill status in plain words, with the days overdue when the reorder date has passed. */
 	function StatusWords(status, daysOverdue)
 	{
 		if (status === 'ok') return __t('Reorder date not reached');
@@ -84,6 +94,7 @@
 		return __t('Reorder date reached');
 	}
 
+	/** Describes why no estimate exists. */
 	function ReasonWords(reason)
 	{
 		var words = {
@@ -95,6 +106,7 @@
 		return words[reason] || reason;
 	}
 
+	/** Says where an estimated reorder date comes from: the entered date, the default or a rule. */
 	function SourceWords(source, rule)
 	{
 		if (source === 'explicit') return __t('The date you entered');
@@ -106,6 +118,7 @@
 		return '';
 	}
 
+	/** Short form of the date's source, used inside a notice. */
 	function FromWords(source)
 	{
 		if (source === 'explicit') return __t('from the date you entered');
@@ -113,12 +126,14 @@
 		return __t('from the rule you set for this prescription');
 	}
 
+	/** Describes one notice in plain words. */
 	function NoticeWords(notice)
 	{
 		if (notice.kind === 'due') return __t('Reorder date reached: estimated %1$s (%2$s)', notice.reorder_date, FromWords(notice.source));
 		return __t('Estimated reorder date %1$s (%2$s)', notice.reorder_date, FromWords(notice.source));
 	}
 
+	/** Returns the help sentence for a reorder rule kind. */
 	function RuleHelp(kind)
 	{
 		if (kind === 'days_before_end') return __t('The estimate falls this many days before the supply ends (0 to 730).');
@@ -127,6 +142,7 @@
 		return __t('Without a rule the estimate is the fill date plus the days supplied, minus 14 days.');
 	}
 
+	/** Returns the minimum and maximum value a reorder rule kind accepts. */
 	function RuleRange(kind)
 	{
 		if (kind === 'days_before_end') return [0, 730];
@@ -134,6 +150,7 @@
 		return [1, 99];
 	}
 
+	/** Returns the badge style for a refill status. */
 	function BadgeClass(status)
 	{
 		if (status === 'approaching') return 'badge-warning';
@@ -143,19 +160,24 @@
 		return 'badge-secondary';
 	}
 
+	/** Returns the placeholder shown for a missing value. */
 	function Dash() { return '\u2014'; }
 
+	/** Describes an open order with its date and age. */
 	function OrderWords(order)
 	{
 		var age = order.age_days === 0 ? __t('today') : __n(order.age_days, '%s day ago', '%s days ago');
 		return __t('Ordered on %1$s (%2$s)', order.ordered_on, age);
 	}
 
+	/** Returns a prescription's name, or its id when it is not in the list. */
 	function RecipeName(id) { return recipes[id] ? recipes[id].name : String(id); }
+	/** Tells whether the user holds the edit right on a prescription. */
 	function CanEdit(id) { return !!(recipes[id] && recipes[id].rights && recipes[id].rights.edit); }
 
 	// --- The list and the notices --------------------------------------------------------------
 
+	/** Loads the presets, refill states and notices, then renders the list and notices; a later call supersedes an earlier one in flight. */
 	function LoadAll(done)
 	{
 		var sequence = ++loadSequence;
@@ -179,6 +201,7 @@
 		}, Failed);
 	}
 
+	/** Renders one row per prescription with its status, estimated date and source. */
 	function RenderList()
 	{
 		var body = $('#refill-rows').empty();
@@ -204,6 +227,7 @@
 		$('#refill-table').toggleClass('d-none', states.length === 0);
 	}
 
+	/** Renders the notices the person has not marked as seen. */
 	function RenderNotices(notices)
 	{
 		var list = $('#refill-notices').empty();
@@ -225,6 +249,7 @@
 		$('#refill-notices-empty').toggleClass('d-none', notices.length > 0);
 	}
 
+	/** Marks one notice as seen and reloads the page data. */
 	function Acknowledge(notice)
 	{
 		Clear();
@@ -237,6 +262,7 @@
 
 	// --- The default advance warning -------------------------------------------------------------
 
+	/** Loads the person's default advance warning into its field. */
 	function LoadDefaultLead()
 	{
 		Victual.Api.Get('user/settings/' + LEAD_SETTING, function (result)
@@ -245,6 +271,7 @@
 		}, Failed);
 	}
 
+	/** Validates and saves the person's default advance warning. */
 	function SaveDefaultLead()
 	{
 		Clear();
@@ -259,6 +286,7 @@
 
 	// --- One prescription --------------------------------------------------------------------------
 
+	/** Opens one prescription: loads its state and renders the detail section. */
 	function Select(id, focus, keepMessages)
 	{
 		selectedId = id;
@@ -274,13 +302,16 @@
 		}, function (xhr) { Failed(xhr); HideDetail(); LoadAll(); });
 	}
 
+	/** Reads the open prescription again without resetting what the person typed. */
 	function ReloadDetail() { if (selectedId !== null) Select(selectedId, false, true); }
 
+	/** Builds a term and description pair for the summary list. */
 	function Row(label, value)
 	{
 		return [$('<dt class="col-sm-4">').text(label), $('<dd class="col-sm-8">').text(value)];
 	}
 
+	/** Renders the open prescription's summary, forms, fills and orders. */
 	function RenderDetail(focus, resetForms)
 	{
 		var d = detail;
@@ -390,6 +421,7 @@
 		Victual.Api[verb](path, body, function (result) { Settled(); success(result); }, function (xhr) { Settled(); failure(xhr); });
 	}
 
+	/** Re-enables the forms after a write has finished. */
 	function Settled()
 	{
 		busy = false;
@@ -398,10 +430,12 @@
 		UpdateRuleHelp();
 	}
 
+	/** Returns the API path of the open prescription's refill resource. */
 	function Base() { return 'consumption/recipes/' + encodeURIComponent(selectedId) + '/refill'; }
 
 	// --- The forms -------------------------------------------------------------------------------
 
+	/** Reads and validates the fill form, returning the request body or null after showing the problem. */
 	function FillBody()
 	{
 		var date = String($('#refill-fill-date').val() || '').trim();
@@ -417,6 +451,7 @@
 		return body;
 	}
 
+	/** Records a fill from the fill form. */
 	function RecordFill(event)
 	{
 		event.preventDefault();
@@ -426,6 +461,7 @@
 		Write('Post', Base() + '/fills?' + AsOf(), body, Applied(__t('Fill recorded.')), Refused);
 	}
 
+	/** Receives the open order and records its fill from the fill form. */
 	function ReceiveOrder()
 	{
 		Clear();
@@ -434,6 +470,7 @@
 		Write('Post', Base() + '/orders/' + detail.open_order.id + '/receive?' + AsOf(), body, Applied(__t('Order received and fill recorded.')), Refused);
 	}
 
+	/** Validates and saves the reorder rule of the open prescription. */
 	function SaveRule(event)
 	{
 		event.preventDefault();
@@ -451,6 +488,7 @@
 		Write('Put', Base() + '?' + AsOf(), { rule: rule }, Applied(__t('Rule saved.')), Refused);
 	}
 
+	/** Saves the reorder date the person chose. */
 	function SetDate(event)
 	{
 		event.preventDefault();
@@ -460,12 +498,14 @@
 		Write('Put', Base() + '?' + AsOf(), { explicit_reorder_date: date }, Applied(__t('Reorder date saved.')), Refused);
 	}
 
+	/** Removes the reorder date the person chose. */
 	function ClearDate()
 	{
 		Clear();
 		Write('Put', Base() + '?' + AsOf(), { explicit_reorder_date: null }, Applied(__t('Reorder date removed.')), Refused);
 	}
 
+	/** Validates and saves the advance warning of the open prescription. */
 	function SaveLead(event)
 	{
 		event.preventDefault();
@@ -475,12 +515,14 @@
 		Write('Put', Base() + '?' + AsOf(), { warning_lead_days: parseInt(text, 10) }, Applied(__t('Advance warning saved.')), Refused);
 	}
 
+	/** Removes the prescription's own advance warning so the person's default applies. */
 	function ClearLead()
 	{
 		Clear();
 		Write('Put', Base() + '?' + AsOf(), { warning_lead_days: null }, Applied(__t('Advance warning saved.')), Refused);
 	}
 
+	/** Records an order with the entered date. */
 	function RecordOrder(event)
 	{
 		event.preventDefault();
@@ -490,6 +532,7 @@
 		Write('Post', Base() + '/orders?' + AsOf(), { ordered_on: date }, Applied(__t('Order recorded.')), Refused);
 	}
 
+	/** Cancels the open order. */
 	function CancelOrder()
 	{
 		Clear();
@@ -497,6 +540,7 @@
 		Write('Post', Base() + '/orders/' + detail.open_order.id + '/cancel?' + AsOf(), {}, Applied(__t('Order cancelled.')), Refused);
 	}
 
+	/** Updates the rule help text and the value field's limits for the chosen rule kind. */
 	function UpdateRuleHelp()
 	{
 		var kind = $('#refill-rule-kind').val() || '';
@@ -515,6 +559,7 @@
 
 	// --- Voiding a fill ----------------------------------------------------------------------------
 
+	/** Opens the dialog that voids one fill. */
 	function OpenVoid(fill)
 	{
 		voidingFill = fill;
@@ -524,6 +569,7 @@
 		$('#refill-void-modal').modal('show');
 	}
 
+	/** Voids the fill with the entered reason and closes the dialog. */
 	function ConfirmVoid()
 	{
 		var reason = String($('#refill-void-reason').val() || '').trim();

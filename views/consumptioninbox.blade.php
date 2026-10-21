@@ -1,6 +1,6 @@
 @extends('layout.default')
 
-@section('title', $__t('Consumption inbox'))
+@section('title', $__t('Medication inbox'))
 
 @section('content')
 <div class="row">
