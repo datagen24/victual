@@ -185,7 +185,7 @@ async function saveDraft(page, templateId)
 		const scratchCanvas = page.locator('#label-canvas');
 		await scratchCanvas.scrollIntoViewIfNeeded();
 		const scratchBox = await scratchCanvas.boundingBox();
-		await page.mouse.click(scratchBox.x + 60, scratchBox.y + 24);
+		await page.mouse.click(scratchBox.x + 60, scratchBox.y + 16);
 		await page.waitForSelector('#field-help', { timeout: 10000 });
 
 		// The stored keys are what the select submits; only the labels are descriptive.
