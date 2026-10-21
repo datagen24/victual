@@ -57,6 +57,9 @@ class CanonicalJson
 	/** Recursion is bounded so a cyclic or pathological document fails rather than the process. */
 	private const MAX_DEPTH = 64;
 
+	/**
+	 * Encodes one value of any supported type, tracking nesting depth against MAX_DEPTH.
+	 */
 	private static function EncodeValue($value, int $depth): string
 	{
 		if ($depth > self::MAX_DEPTH)
@@ -114,6 +117,9 @@ class CanonicalJson
 		return array_is_list($value);
 	}
 
+	/**
+	 * Encodes a list as a JSON array, members in their given order.
+	 */
 	private static function EncodeList(array $value, int $depth): string
 	{
 		$parts = [];
@@ -126,6 +132,9 @@ class CanonicalJson
 		return '[' . implode(',', $parts) . ']';
 	}
 
+	/**
+	 * Encodes a map as a JSON object, members ordered by UTF-16 code unit of their names.
+	 */
 	private static function EncodeObject(array $members, int $depth): string
 	{
 		$keys = [];
@@ -163,14 +172,25 @@ class CanonicalJson
 		return strcmp(self::ToUtf16Be($left), self::ToUtf16Be($right));
 	}
 
+	/**
+	 * A member name as UTF-16BE, for the byte comparison CompareByCodeUnit() makes.
+	 *
+	 * mb_convert_encoding() is declared `array|string|false`, but with a string subject and
+	 * one source encoding it cannot return false: php-src PHP-8.4 and PHP-8.5
+	 * ext/mbstring/mbstring.c hands the single-encoding case to php_mb_convert_encoding_ex(),
+	 * which returns mb_fast_convert()'s result, and that function's only return is
+	 * mb_convert_buf_result(). NULL, hence false, comes only from the encoding-detection
+	 * branch, which a one-element source list never enters; an unknown encoding name throws
+	 * a ValueError instead. Malformed UTF-8 is not a failure either - it is substituted
+	 * ('?'), which is harmless here because EncodeString() refuses the same name with
+	 * 'String is not valid UTF-8' once the sort has run. The removed branch was therefore
+	 * dead, and removing it changes no output. Pinned on both interpreters by
+	 * HelperUnitsTest::testCanonicalJsonUtf16ConversionNeverFailsForAMemberName() (#1026, D1).
+	 */
 	private static function ToUtf16Be(string $value): string
 	{
+		/** @var string $converted */
 		$converted = mb_convert_encoding($value, 'UTF-16BE', 'UTF-8');
-
-		if ($converted === false)
-		{
-			throw new ECanonicalizationFailed('Member name is not valid UTF-8');
-		}
 
 		return $converted;
 	}
@@ -304,16 +324,20 @@ class CanonicalJson
 
 		try
 		{
+			// json_encode() returns false only when the encoder recorded an error and
+			// JSON_PARTIAL_OUTPUT_ON_ERROR is off (php-src PHP-8.4 and PHP-8.5
+			// ext/json/json.c, PHP_FUNCTION(json_encode)). For a double the only error is
+			// PHP_JSON_ERROR_INF_OR_NAN (ext/json/json_encoder.c, the IS_DOUBLE case), and
+			// EncodeDouble() has already refused NaN and the infinities, so a finite double
+			// always yields a string. Pinned on both interpreters by
+			// HelperUnitsTest::testCanonicalJsonEncodesEveryFiniteDoubleToANonEmptyDigitString()
+			// (#1026, D1).
+			/** @var string $repr */
 			$repr = json_encode($value);
 		}
 		finally
 		{
 			ini_set('serialize_precision', (string)$previous);
-		}
-
-		if (!is_string($repr))
-		{
-			throw new ECanonicalizationFailed('Double has no shortest representation');
 		}
 
 		$exponent = 0;
@@ -349,11 +373,10 @@ class CanonicalJson
 
 		$digits = rtrim($digits, '0');
 
-		if ($digits === '')
-		{
-			// Only reachable for a zero, which EncodeDouble() has already answered.
-			throw new ECanonicalizationFailed('Double decomposed to no significant digits');
-		}
+		// $digits is never empty here. The argument is a positive finite double - EncodeDouble()
+		// answers zero before calling, and this method is private - and the shortest
+		// round-trip representation of a nonzero double must contain a nonzero digit, or it
+		// would parse back as zero. Pinned on both interpreters by the same test as above.
 
 		return [$digits, $n];
 	}
