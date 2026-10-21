@@ -1,6 +1,6 @@
 # 0.5.2 release handoff
 
-0.5.2: 4 of 8 issues closed. Latest release v0.5.1 (published 2026-10-20T19:11:29Z). Master `4a51909b`. 21 open issues and 0 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-21T19:43:35Z.
+0.5.2: 7 of 8 issues closed. Latest release v0.5.1 (published 2026-10-20T19:11:29Z). Master `9c8a9835`. 19 open issues and 0 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-21T21:11:05Z.
 
 ## Read first
 
@@ -23,7 +23,4 @@ refresh.py needs an authenticated `gh` and writes a new evidence directory; rend
 
 ## Open work
 
-- #737 (P2, M): Wave 3, after #912 (both edit the OpenAPI document): fix per D3.
-- #912 (P2, M): Wave 2 in progress: branch claude/v0-5-2-912-json-throw, option (a) per D2.
-- #1007 (P3, M): Wave 2 in progress: branch claude/v0-5-2-1007-medication-flyout, names per D5.
-- #1043 (P1, M): In progress: branch claude/v0-5-2-1043-php-floor per D9. Lands before the 0.5.2 tag.
+- #737 (P2, M): Wave 3 in progress: branch claude/v0-5-2-737-share-oracle, per D3.
