@@ -75,8 +75,8 @@
    "size": "S",
    "fit": "Compatible after the D6 split: merge-field names, explanations and example values as client strings; no API or schema change.",
    "classification": "UI / copy",
-   "next_action": "Split per D6. This issue keeps the merge-field descriptions only: PR 3 (wave 1), branch claude/v0-5-2-948-field-descriptions.",
-   "pr": null
+   "next_action": "Draft PR #1038 (wave 1, PR 3) describes each merge field per D6; review and merge.",
+   "pr": "#1038"
   },
   {
    "number": 1007,
