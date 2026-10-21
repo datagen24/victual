@@ -28,52 +28,7 @@
    "size": "M",
    "fit": "Not clearly compatible: POST and PUT /shares stop answering a documented 422 and answer 204, and the existence check moves after the rights check to close the 403/422 second oracle.",
    "classification": "security (low, authenticated)",
-   "next_action": "Wave 3, after #912 (both edit the OpenAPI document): fix per D3.",
-   "pr": null
-  },
-  {
-   "number": 912,
-   "title": "Decide whether ApiResponse encodes with JSON_THROW_ON_ERROR (from #844)",
-   "url": "https://github.com/datagen24/victual/issues/912",
-   "state": "open",
-   "labels": [],
-   "closed_at": null,
-   "priority": "P2",
-   "size": "M",
-   "fit": "Success bodies unchanged. Option (a) changes the 500 body from empty to the standard JSON error, the same kind of error-path change #989 made in 0.5.1. ExceptionController needs a fallback that does not recurse through ApiResponse.",
-   "classification": "decision, then compatible fix",
-   "next_action": "Wave 2 in progress: branch claude/v0-5-2-912-json-throw, option (a) per D2.",
-   "pr": null
-  },
-  {
-   "number": 1007,
-   "title": "UI: group medication features in a Medication flyout and clarify labels",
-   "url": "https://github.com/datagen24/victual/issues/1007",
-   "state": "open",
-   "labels": [],
-   "closed_at": null,
-   "priority": "P3",
-   "size": "M",
-   "fit": "Compatible: navigation and labels only; URLs, permissions and API unchanged. About 4 to 7 msgids change in strings.pot.",
-   "classification": "UI / wording",
-   "next_action": "Wave 2 in progress: branch claude/v0-5-2-1007-medication-flyout, names per D5.",
-   "pr": null
-  },
-  {
-   "number": 1043,
-   "title": "PHP2Shell: raise the PHP floor to 8.4.27 / 8.5.12 and rebuild the images on 8.5.12",
-   "url": "https://github.com/datagen24/victual/issues/1043",
-   "state": "open",
-   "labels": [
-    "php",
-    "Security"
-   ],
-   "closed_at": null,
-   "priority": "P1",
-   "size": "M",
-   "fit": "Compatible for supported deployments: it raises the PHP floor to the patched releases and rebuilds the images. An installation on PHP 8.4.1 to 8.4.26 or 8.5.0 to 8.5.11 is refused at startup until PHP is updated.",
-   "classification": "security",
-   "next_action": "In progress: branch claude/v0-5-2-1043-php-floor per D9. Lands before the 0.5.2 tag.",
+   "next_action": "Wave 3 in progress: branch claude/v0-5-2-737-share-oracle, per D3.",
    "pr": null
   },
   {
@@ -94,6 +49,20 @@
    "pr": "https://github.com/datagen24/victual/pull/1041"
   },
   {
+   "number": 912,
+   "title": "Decide whether ApiResponse encodes with JSON_THROW_ON_ERROR (from #844)",
+   "url": "https://github.com/datagen24/victual/issues/912",
+   "state": "closed",
+   "labels": [],
+   "closed_at": "2026-10-21T21:10:22Z",
+   "priority": "P2",
+   "size": "M",
+   "fit": "Success bodies unchanged. Option (a) changes the 500 body from empty to the standard JSON error, the same kind of error-path change #989 made in 0.5.1. ExceptionController needs a fallback that does not recurse through ApiResponse.",
+   "classification": "decision, then compatible fix",
+   "next_action": "Closed 2026-10-21 by PR #1046, merged as 710607a1 (D2 as amended).",
+   "pr": "https://github.com/datagen24/victual/pull/1046"
+  },
+  {
    "number": 948,
    "title": "Label designer: describe merge fields with names, explanations and example values",
    "url": "https://github.com/datagen24/victual/issues/948",
@@ -108,6 +77,20 @@
    "classification": "UI / copy",
    "next_action": "Closed 2026-10-21 by PR #1038, merged as 8c9d131e; the rest is #1033 and #1034 (0.6.0).",
    "pr": "https://github.com/datagen24/victual/pull/1038"
+  },
+  {
+   "number": 1007,
+   "title": "UI: group medication features in a Medication flyout and clarify labels",
+   "url": "https://github.com/datagen24/victual/issues/1007",
+   "state": "closed",
+   "labels": [],
+   "closed_at": "2026-10-21T21:10:24Z",
+   "priority": "P3",
+   "size": "M",
+   "fit": "Compatible: navigation and labels only; URLs, permissions and API unchanged. About 4 to 7 msgids change in strings.pot.",
+   "classification": "UI / wording",
+   "next_action": "Closed 2026-10-21 by PR #1048, merged as 9c8a9835.",
+   "pr": "https://github.com/datagen24/victual/pull/1048"
   },
   {
    "number": 1026,
@@ -140,6 +123,23 @@
    "classification": "bug",
    "next_action": "Closed 2026-10-21 by PR #1039, merged as c9c4bcd1 (D7 as amended).",
    "pr": "https://github.com/datagen24/victual/pull/1039"
+  },
+  {
+   "number": 1043,
+   "title": "PHP2Shell: raise the PHP floor to 8.4.27 / 8.5.12 and rebuild the images on 8.5.12",
+   "url": "https://github.com/datagen24/victual/issues/1043",
+   "state": "closed",
+   "labels": [
+    "php",
+    "Security"
+   ],
+   "closed_at": "2026-10-21T21:09:01Z",
+   "priority": "P1",
+   "size": "M",
+   "fit": "Compatible for supported deployments: it raises the PHP floor to the patched releases and rebuilds the images. An installation on PHP 8.4.1 to 8.4.26 or 8.5.0 to 8.5.11 is refused at startup until PHP is updated.",
+   "classification": "security",
+   "next_action": "Closed 2026-10-21 by PR #1045, merged as 56144682. Images build on PHP 8.5.12.",
+   "pr": "https://github.com/datagen24/victual/pull/1045"
   }
  ],
  "milestones": [
@@ -147,7 +147,7 @@
    "number": 6,
    "title": "0.6.0",
    "state": "open",
-   "open_issues": 11,
+   "open_issues": 12,
    "closed_issues": 0,
    "description": "Later feature release: OAuth then federation; installation country, canonical/scoped barcode resolution and web onboarding, each behind its own design/ADR gates. Full API audit remains later work. These are not requirements for 0.5.0.",
    "html_url": "https://github.com/datagen24/victual/milestone/6",
@@ -157,8 +157,8 @@
    "number": 8,
    "title": "0.5.2",
    "state": "open",
-   "open_issues": 4,
-   "closed_issues": 7,
+   "open_issues": 1,
+   "closed_issues": 10,
    "description": "Interm quality of life fixes",
    "html_url": "https://github.com/datagen24/victual/milestone/8",
    "due_on": null
@@ -175,13 +175,13 @@
   }
  ],
  "observation": {
-  "observed_at": "2026-10-21T19:43:35Z",
+  "observed_at": "2026-10-21T21:11:05Z",
   "source": "GitHub REST API via gh",
-  "evidence_directory": "evidence/refresh-2026-10-21T194335Z",
-  "master_sha": "4a51909bddad3fe6e582a6418af5ba47cc1589d2",
+  "evidence_directory": "evidence/refresh-2026-10-21T211105Z",
+  "master_sha": "9c8a98352868b431307aea96d82f111b214868cb",
   "latest_release": "v0.5.1",
   "latest_release_published_at": "2026-10-20T19:11:29Z",
-  "open_issues": 21,
+  "open_issues": 19,
   "open_prs": 0,
   "unassigned_open_issues": [
    80,
@@ -256,7 +256,7 @@
    "id": "D2",
    "date": "2026-10-21",
    "question": "Does ApiResponse encode with JSON_THROW_ON_ERROR (#912)?",
-   "answer": "Accepted by the maintainer on 2026-10-21: (a) throw, so an unencodable body gives the standard JSON 500 with a logged cause; the error handler gets a fixed fallback body. Alternative (b): keep the empty 500 and close the issue as a decision.",
+   "answer": "Amended by the maintainer on 2026-10-21: option (a). An unencodable body answers the standard JSON 500 with a logged cause. Inside InRequestTransaction the write rolls back; outside, earlier writes stay committed. GenericErrorResponse keeps the original status with a fixed literal; ExceptionController has a fixed fallback.",
    "issues": [
     912
    ]
@@ -418,6 +418,26 @@
    "at": "2026-10-21",
    "action": "Closed #948 with a summary comment (PR #1038)",
    "url": "https://github.com/datagen24/victual/issues/948"
+  },
+  {
+   "at": "2026-10-21",
+   "action": "Posted the amended D2 decision comment on #912",
+   "url": "https://github.com/datagen24/victual/issues/912#issuecomment-6325246814"
+  },
+  {
+   "at": "2026-10-21",
+   "action": "Opened #1047 in 0.6.0: route the remaining direct json_encode writes through a checked encode",
+   "url": "https://github.com/datagen24/victual/issues/1047"
+  },
+  {
+   "at": "2026-10-21",
+   "action": "Closed #912 with a summary comment (PR #1046)",
+   "url": "https://github.com/datagen24/victual/issues/912"
+  },
+  {
+   "at": "2026-10-21",
+   "action": "Closed #1007 with a summary comment (PR #1048)",
+   "url": "https://github.com/datagen24/victual/issues/1007"
   }
  ]
 }
