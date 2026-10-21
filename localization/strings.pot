@@ -3667,7 +3667,7 @@ msgstr ""
 msgid "On a printed label this is replaced by the real value of the item it is printed for."
 msgstr ""
 
-msgid "Text that comes from a field is drawn here with an example value. A printed label uses the real value of the item it is printed for."
+msgid "A field is drawn here as its key. The explanation under Field says what a printed label shows in its place."
 msgstr ""
 
 msgid "The preview is built from example values, not from any real item, and cannot be printed."

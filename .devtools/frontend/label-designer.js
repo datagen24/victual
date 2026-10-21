@@ -214,6 +214,33 @@ async function saveDraft(page, templateId)
 		assert.ok(await page.locator('#canvas-sample-note').isVisible(), 'the canvas says it draws example values');
 		assert.ok(await page.locator('#preview-sample-note').isVisible(), 'the preview says it is built from example values');
 
+		// Dragging a text element writes the Fabric textbox's height back into the document
+		// (absorb()), and a textbox's height depends on how its text wraps. The canvas draws a
+		// field as its key, as it always has, so a field whose key fits on one line saves the
+		// same one-line height whichever field it is. Drawing the example value instead
+		// ("Sample floor / Sample room / Sample shelf" wraps in 30mm) changed height_mm, and
+		// with it the document and its digest, for every template that was merely dragged.
+		const pair = JSON.parse(JSON.stringify(orphan));
+		pair.elements = [
+			Object.assign({}, orphan.elements[0], { id: 'a', y_mm: 2, field: 'location.name' }),
+			Object.assign({}, orphan.elements[0], { id: 'b', y_mm: 20, field: 'location.path' }),
+		];
+		const pairDraft = await (await page.request.get(base + '/api/labels/templates/' + scratch.id + '/draft')).json();
+		await page.request.put(base + '/api/labels/templates/' + scratch.id + '/draft',
+			{ data: { document: pair, revision_token: pairDraft.revision_token } });
+		await page.goto(base + '/labeltemplate/' + scratch.id);
+		await page.waitForFunction(() => window.fabric !== undefined, null, { timeout: 20000 });
+		await page.waitForFunction(() => document.querySelector('#canvas-width-mm').value !== '', null, { timeout: 20000 });
+		await selectAndDrag(page, page.locator('#label-canvas'), { x: 60, y: 16 }, { x: 80, y: 24 });
+		await selectAndDrag(page, page.locator('#label-canvas'), { x: 60, y: 88 }, { x: 80, y: 96 });
+		await saveDraft(page, scratch.id);
+		const dragged = (await (await page.request.get(base + '/api/labels/templates/' + scratch.id + '/draft')).json()).document.elements;
+		const byId = id => dragged.find(element => element.id === id);
+		assert.ok(byId('a').x_mm > 2 && byId('b').x_mm > 2, 'both text elements moved: ' + JSON.stringify(dragged));
+		assert.equal(byId('b').height_mm, byId('a').height_mm,
+			'dragging a location.path field saves the same height as dragging location.name: ' + JSON.stringify(dragged));
+		assert.ok(byId('b').height_mm < 6, 'and it is the one-line height of the key, not a wrapped example: ' + byId('b').height_mm);
+
 		await page.goto(base + '/labeltemplate/' + templateId);
 		await page.waitForFunction(() => window.fabric !== undefined, null, { timeout: 20000 });
 		await page.waitForFunction(() => document.querySelector('#canvas-width-mm').value !== '', null, { timeout: 20000 });

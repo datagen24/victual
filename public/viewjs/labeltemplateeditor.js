@@ -82,20 +82,6 @@
 	}
 
 	/**
-	 * What the canvas draws for a text element: the example value of its merge field, the
-	 * fixed text, or the bare key when the field is not one this editor knows.
-	 */
-	function canvasText(element)
-	{
-		if (!element.field)
-		{
-			return element.literal || '';
-		}
-		var description = describeField(element.field);
-		return description === null ? element.field : description.example;
-	}
-
-	/**
 	 * The explanation under the Field select: what the selected merge field is, its example,
 	 * and a plain statement of which of the two is printed. For a fixed string it says the
 	 * text is printed as typed.
@@ -249,7 +235,7 @@
 			// drawing scale. It is an approximation of the printed size on purpose - the
 			// device has two resolutions and this screen has one, which is exactly why the
 			// authoritative preview exists.
-			return new fabric.Textbox(canvasText(element), Object.assign(common, {
+			return new fabric.Textbox(element.field || element.literal || '', Object.assign(common, {
 				width: element.width_mm * MM_PER_PX,
 				fontSize: element.size_pt * MM_PER_PX * 25.4 / 72,
 				textAlign: element.align || 'left'

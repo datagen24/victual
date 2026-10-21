@@ -134,7 +134,7 @@
 			<canvas id="label-canvas"></canvas>
 		</div>
 		<small class="form-text text-muted" id="canvas-sample-note">
-			{{ $__t('Text that comes from a field is drawn here with an example value. A printed label uses the real value of the item it is printed for.') }}
+			{{ $__t('A field is drawn here as its key. The explanation under Field says what a printed label shows in its place.') }}
 		</small>
 
 		<div class="mt-3">
