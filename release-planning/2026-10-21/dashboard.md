@@ -1,12 +1,12 @@
 # Victual 0.5.2 release dashboard
 
-0.5.2: 0 of 7 issues closed. Latest release v0.5.1 (published 2026-10-20T19:11:29Z). Master `8b2ec3fc`. 24 open issues and 3 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-21T17:08:57Z.
+0.5.2: 4 of 8 issues closed. Latest release v0.5.1 (published 2026-10-20T19:11:29Z). Master `4a51909b`. 21 open issues and 0 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-21T19:43:35Z.
 
 [Interactive dashboard](dashboard.html) · [Structured source](release-data.json) · [Execution ledger](execution.md) · [Handoff](HANDOFF.md) · [0.5.1 release plan (frozen)](../2026-10-19/dashboard.md)
 
 ## Standing rules
 
-- Every PR that changes a 0.5.2 issue updates release-data.json, appends a row to execution.md and re-runs render.py in the same PR.
+- Implementation PRs do not touch release-planning/. After a wave's PRs merge, one planning PR records them: ledger rows, PR links, decisions and GitHub writes, then refresh.py and render.py (maintainer rule, 2026-10-21: per-PR dashboard edits made every parallel PR conflict).
 - Every PR keeps docstring coverage at or above 80% for the functions in each file it creates or edits, counted before the first push.
 - Run refresh.py before render.py whenever GitHub milestones or issue states have changed. refresh.py reads GitHub only and never writes to it.
 
@@ -18,22 +18,23 @@
 
 | Issue | State | Priority | Size | Classification | Patch fit | Next action | PR |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| [#737 Consumption recipe sharing: answer a share request identically whether or not the user exists](https://github.com/datagen24/victual/issues/737) | open | P2 | M | security (low, authenticated) | Not clearly compatible: POST and PUT /shares stop answering a documented 422 and answer 204, and the existence check moves after the rights check to close the 403/422 second oracle. | Wave 3, after PR 5 (OpenAPI): fix in 0.5.2, 204 for every authorised request, rights before existence. | None |
-| [#762 Users: roles can't be set when creating a user, and the only entry point is an unlabeled lock icon](https://github.com/datagen24/victual/issues/762) | open | P2 | S | accessibility / UI | Compatible with option (a), a client-side two-step create (POST /users then PUT /users/{id}/roles). Option (b), an optional roles field on POST /users, is an additive API change. | In progress: PR 2 (wave 1), branch claude/v0-5-2-762-user-roles: two-step create, roles replace defaults, labelled Roles button. | None |
-| [#912 Decide whether ApiResponse encodes with JSON_THROW_ON_ERROR (from #844)](https://github.com/datagen24/victual/issues/912) | open | P2 | M | decision, then compatible fix | Success bodies unchanged. Option (a) changes the 500 body from empty to the standard JSON error, the same kind of error-path change #989 made in 0.5.1. ExceptionController needs a fallback that does not recurse through ApiResponse. | Wave 2, after PR 1: option (a), throw, with a fixed fallback body in the error handler. | None |
-| [#948 Label designer: describe merge fields with names, explanations and example values](https://github.com/datagen24/victual/issues/948) | open | P3 | S | UI / copy | Compatible after the D6 split: merge-field names, explanations and example values as client strings; no API or schema change. | Draft PR #1038 (wave 1, PR 3) describes each merge field per D6; review and merge. | #1038 |
-| [#1007 UI: group medication features in a Medication flyout and clarify labels](https://github.com/datagen24/victual/issues/1007) | open | P3 | M | UI / wording | Compatible: navigation and labels only; URLs, permissions and API unchanged. About 4 to 7 msgids change in strings.pot. | Wave 2, after PR 2 (strings.pot): Medication presets, Medication inbox, Refills. | None |
-| [#1026 Prove or keep the CanonicalJson and StderrLogger fallbacks #252 left in place](https://github.com/datagen24/victual/issues/1026) | open | P3 | S | cleanup / record | Compatible: removes unreachable guards or keeps them with a comment; no wire change. CanonicalJson output feeds stored label template digests, so output must not change. | In progress: PR 1 (wave 1), branch claude/v0-5-2-1026-fallbacks. Lands before #912. | None |
-| [#1035 File upload with a form content type answers 204 and stores an empty file](https://github.com/datagen24/victual/issues/1035) | open | P3 | S | bug | Compatible: an upload whose JSON, form, XML or multipart type stored an empty file now answers 415 and stores nothing; every other type is unchanged. | In review: draft PR 1039 (wave 1 PR 4), branch claude/v0-5-2-files-415. | https://github.com/datagen24/victual/pull/1039 |
+| [#737 Consumption recipe sharing: answer a share request identically whether or not the user exists](https://github.com/datagen24/victual/issues/737) | open | P2 | M | security (low, authenticated) | Not clearly compatible: POST and PUT /shares stop answering a documented 422 and answer 204, and the existence check moves after the rights check to close the 403/422 second oracle. | Wave 3, after #912 (both edit the OpenAPI document): fix per D3. | None |
+| [#912 Decide whether ApiResponse encodes with JSON_THROW_ON_ERROR (from #844)](https://github.com/datagen24/victual/issues/912) | open | P2 | M | decision, then compatible fix | Success bodies unchanged. Option (a) changes the 500 body from empty to the standard JSON error, the same kind of error-path change #989 made in 0.5.1. ExceptionController needs a fallback that does not recurse through ApiResponse. | Wave 2 in progress: branch claude/v0-5-2-912-json-throw, option (a) per D2. | None |
+| [#1007 UI: group medication features in a Medication flyout and clarify labels](https://github.com/datagen24/victual/issues/1007) | open | P3 | M | UI / wording | Compatible: navigation and labels only; URLs, permissions and API unchanged. About 4 to 7 msgids change in strings.pot. | Wave 2 in progress: branch claude/v0-5-2-1007-medication-flyout, names per D5. | None |
+| [#1043 PHP2Shell: raise the PHP floor to 8.4.27 / 8.5.12 and rebuild the images on 8.5.12](https://github.com/datagen24/victual/issues/1043) | open | P1 | M | security | Compatible for supported deployments: it raises the PHP floor to the patched releases and rebuilds the images. An installation on PHP 8.4.1 to 8.4.26 or 8.5.0 to 8.5.11 is refused at startup until PHP is updated. | In progress: branch claude/v0-5-2-1043-php-floor per D9. Lands before the 0.5.2 tag. | None |
+| [#762 Users: roles can't be set when creating a user, and the only entry point is an unlabeled lock icon](https://github.com/datagen24/victual/issues/762) | closed | P2 | S | accessibility / UI | Compatible with option (a), a client-side two-step create (POST /users then PUT /users/{id}/roles). Option (b), an optional roles field on POST /users, is an additive API change. | Closed 2026-10-21 by PR #1041, merged as 4a51909b. | https://github.com/datagen24/victual/pull/1041 |
+| [#948 Label designer: describe merge fields with names, explanations and example values](https://github.com/datagen24/victual/issues/948) | closed | P3 | S | UI / copy | Compatible after the D6 split: merge-field names, explanations and example values as client strings; no API or schema change. | Closed 2026-10-21 by PR #1038, merged as 8c9d131e; the rest is #1033 and #1034 (0.6.0). | https://github.com/datagen24/victual/pull/1038 |
+| [#1026 Prove or keep the CanonicalJson and StderrLogger fallbacks #252 left in place](https://github.com/datagen24/victual/issues/1026) | closed | P3 | S | cleanup / record | Compatible: removes unreachable guards or keeps them with a comment; no wire change. CanonicalJson output feeds stored label template digests, so output must not change. | Closed 2026-10-21 by PR #1040, merged as 1ea89625. | https://github.com/datagen24/victual/pull/1040 |
+| [#1035 File upload with a form content type answers 204 and stores an empty file](https://github.com/datagen24/victual/issues/1035) | closed | P3 | S | bug | Compatible: an upload whose JSON, form, XML or multipart type stored an empty file now answers 415 and stores nothing; every other type is unchanged. | Closed 2026-10-21 by PR #1039, merged as c9c4bcd1 (D7 as amended). | https://github.com/datagen24/victual/pull/1039 |
 
 ## Open milestones
 
-Observed 2026-10-21T17:08:57Z. Unassigned open issues: [#80](https://github.com/datagen24/victual/issues/80), [#86](https://github.com/datagen24/victual/issues/86), [#93](https://github.com/datagen24/victual/issues/93), [#133](https://github.com/datagen24/victual/issues/133), [#139](https://github.com/datagen24/victual/issues/139).
+Observed 2026-10-21T19:43:35Z. Unassigned open issues: [#80](https://github.com/datagen24/victual/issues/80), [#86](https://github.com/datagen24/victual/issues/86), [#93](https://github.com/datagen24/victual/issues/93), [#133](https://github.com/datagen24/victual/issues/133), [#139](https://github.com/datagen24/victual/issues/139).
 
 | Milestone | Open | Closed | Due | Description |
 | --- | --- | --- | --- | --- |
 | [0.6.0](https://github.com/datagen24/victual/milestone/6) | 11 | 0 | Unset | Later feature release: OAuth then federation; installation country, canonical/scoped barcode resolution and web onboarding, each behind its own design/ADR gates. Full API audit remains later work. These are not requirements for 0.5.0. |
-| [0.5.2](https://github.com/datagen24/victual/milestone/8) | 10 | 0 | Unset | Interm quality of life fixes |
+| [0.5.2](https://github.com/datagen24/victual/milestone/8) | 4 | 7 | Unset | Interm quality of life fixes |
 | [vNext](https://github.com/datagen24/victual/milestone/9) | 1 | 0 | Unset | Farther in the future Ideas and Concepts, not commited to a planned release |
 
 ## Gates carried from 0.5.0
@@ -55,6 +56,8 @@ Observed 2026-10-21T17:08:57Z. Unassigned open issues: [#80](https://github.com/
 | D6 | 2026-10-21 | How is #948 scoped? | Accepted by the maintainer on 2026-10-21: split it. Merge-field descriptions as client strings in 0.5.2. Alignment, guides and grid as a 0.6.0 issue. Orientation, rotation and starter fonts as a 0.6.0 issue that needs a template-document schema decision. | [#948](https://github.com/datagen24/victual/issues/948) |
 | D7 | 2026-10-21 | Does the empty-file upload limitation from 0.5.1 join 0.5.2? | Amended by the maintainer on 2026-10-21: 415 only for types the body parser or PHP consumes (JSON/+json, form-urlencoded, XML/+xml, multipart/form-data); every other type, including application/pdf, is stored as today. | None |
 | D8 | 2026-10-21 | How do the three /mcp Dependabot PRs land? | Accepted by the maintainer on 2026-10-21: one PR with all three bumps and a recomputed nix/hashes.nix mcpNpmDeps; close #1030 to #1032. Each one fails flake on its own because the lockfile hash is stale, and the three conflict on the lockfile. hono 4.13.13 includes GHSA-5r4p-p66f-jhc7; mcp/ does not use serveStatic. | None |
+| D9 | 2026-10-21 | How does 0.5.2 respond to PHP2Shell (GHSA-w8hw-w9fx-j79w, GHSA-6wmf-4rv5-p3rp)? | Accepted by the maintainer on 2026-10-21: floor ~8.4.27 \|\| ^8.5.12 in composer.json and PrerequisiteChecker; Dockerfile and CI pinned to those releases; flake.lock moved to a nixpkgs master commit with php85 8.5.12. The v0.5.0 and v0.5.1 images run the affected 8.5.10. | [#1043](https://github.com/datagen24/victual/issues/1043) |
+| D10 | 2026-10-21 | Where do planning records live while PRs run in parallel? | In one planning PR per wave, after the wave merges. Implementation PRs do not touch release-planning/. #1040 and #1041 were reset to master's planning files to unblock them. | None |
 
 ## GitHub writes made by planning
 
@@ -74,7 +77,11 @@ Observed 2026-10-21T17:08:57Z. Unassigned open issues: [#80](https://github.com/
 | 2026-10-21 | [Closed Dependabot PR #1031 as superseded by PR #1037 (D8)](https://github.com/datagen24/victual/pull/1031) |
 | 2026-10-21 | [Closed Dependabot PR #1032 as superseded by PR #1037 (D8)](https://github.com/datagen24/victual/pull/1032) |
 | 2026-10-21 | [Posted the amended D7 decision comment on #1035](https://github.com/datagen24/victual/issues/1035#issuecomment-6322328246) |
+| 2026-10-21 | [Opened #1043 in 0.5.2: PHP2Shell, raise the PHP floor to 8.4.27 / 8.5.12 (D9)](https://github.com/datagen24/victual/issues/1043) |
+| 2026-10-21 | [Closed #1026 with a summary comment (PR #1040)](https://github.com/datagen24/victual/issues/1026) |
+| 2026-10-21 | [Closed #762 with a summary comment (PR #1041)](https://github.com/datagen24/victual/issues/762) |
+| 2026-10-21 | [Closed #948 with a summary comment (PR #1038)](https://github.com/datagen24/victual/issues/948) |
 
 ## Evidence
 
-The latest snapshot is in `evidence/refresh-2026-10-21T170857Z`, taken from the GitHub REST API via gh. Assessments are planning estimates, not validation results.
+The latest snapshot is in `evidence/refresh-2026-10-21T194335Z`, taken from the GitHub REST API via gh. Assessments are planning estimates, not validation results.

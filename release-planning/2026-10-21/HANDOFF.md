@@ -1,6 +1,6 @@
 # 0.5.2 release handoff
 
-0.5.2: 0 of 7 issues closed. Latest release v0.5.1 (published 2026-10-20T19:11:29Z). Master `8b2ec3fc`. 24 open issues and 3 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-21T17:08:57Z.
+0.5.2: 4 of 8 issues closed. Latest release v0.5.1 (published 2026-10-20T19:11:29Z). Master `4a51909b`. 21 open issues and 0 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-21T19:43:35Z.
 
 ## Read first
 
@@ -8,7 +8,7 @@ Read the repository AGENTS.md, then docs/constitution.md, then [execution.md](ex
 
 ## Standing rules
 
-- Every PR that changes a 0.5.2 issue updates release-data.json, appends a row to execution.md and re-runs render.py in the same PR.
+- Implementation PRs do not touch release-planning/. After a wave's PRs merge, one planning PR records them: ledger rows, PR links, decisions and GitHub writes, then refresh.py and render.py (maintainer rule, 2026-10-21: per-PR dashboard edits made every parallel PR conflict).
 - Every PR keeps docstring coverage at or above 80% for the functions in each file it creates or edits, counted before the first push.
 - Run refresh.py before render.py whenever GitHub milestones or issue states have changed. refresh.py reads GitHub only and never writes to it.
 
@@ -23,10 +23,7 @@ refresh.py needs an authenticated `gh` and writes a new evidence directory; rend
 
 ## Open work
 
-- #737 (P2, M): Wave 3, after PR 5 (OpenAPI): fix in 0.5.2, 204 for every authorised request, rights before existence.
-- #762 (P2, S): In progress: PR 2 (wave 1), branch claude/v0-5-2-762-user-roles: two-step create, roles replace defaults, labelled Roles button.
-- #912 (P2, M): Wave 2, after PR 1: option (a), throw, with a fixed fallback body in the error handler.
-- #948 (P3, S): Draft PR #1038 (wave 1, PR 3) describes each merge field per D6; review and merge.
-- #1007 (P3, M): Wave 2, after PR 2 (strings.pot): Medication presets, Medication inbox, Refills.
-- #1026 (P3, S): In progress: PR 1 (wave 1), branch claude/v0-5-2-1026-fallbacks. Lands before #912.
-- #1035 (P3, S): In review: draft PR 1039 (wave 1 PR 4), branch claude/v0-5-2-files-415.
+- #737 (P2, M): Wave 3, after #912 (both edit the OpenAPI document): fix per D3.
+- #912 (P2, M): Wave 2 in progress: branch claude/v0-5-2-912-json-throw, option (a) per D2.
+- #1007 (P3, M): Wave 2 in progress: branch claude/v0-5-2-1007-medication-flyout, names per D5.
+- #1043 (P1, M): In progress: branch claude/v0-5-2-1043-php-floor per D9. Lands before the 0.5.2 tag.
