@@ -105,8 +105,8 @@
    "size": "S",
    "fit": "Compatible: removes unreachable guards or keeps them with a comment; no wire change. CanonicalJson output feeds stored label template digests, so output must not change.",
    "classification": "cleanup / record",
-   "next_action": "In progress: PR 1 (wave 1), branch claude/v0-5-2-1026-fallbacks. Lands before #912.",
-   "pr": null
+   "next_action": "Draft PR open (wave 1): all four fallbacks removed with php-src proof for 8.4 and 8.5. Lands before #912.",
+   "pr": "https://github.com/datagen24/victual/pull/1040"
   },
   {
    "number": 1035,
