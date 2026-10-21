@@ -39,9 +39,12 @@ class BaseApiController extends BaseController
 	 * A body with no JSON form (INF, NAN, invalid UTF-8, a resource) throws
 	 * EResponseNotEncodable, which becomes the standard 500 error body - HandleApiCall() and
 	 * ExceptionController both answer it - instead of an empty 200. Nothing has been written
-	 * to the response when it throws. Work the request already committed stays committed;
-	 * only what the client sees changes (issue #912, decision D2). The success bytes are
-	 * those json_encode() always produced, since JSON_THROW_ON_ERROR changes no output.
+	 * to the response when it throws, and no header is set. Called inside
+	 * InRequestTransaction() (16 controller paths do), the throw rolls the transaction back,
+	 * so the database and the client agree: 500 and no write. Called outside a transaction,
+	 * writes made earlier in the request stay committed (issue #912, decision D2 as amended
+	 * 2026-10-21). The success bytes are those json_encode() always produced, since
+	 * JSON_THROW_ON_ERROR changes no output.
 	 *
 	 * @throws EResponseNotEncodable
 	 */
@@ -128,10 +131,25 @@ class BaseApiController extends BaseController
 	{
 		$response = $response->withStatus($status);
 
-		return $this->ApiResponse($response, [
-			'error_message' => self::WithoutDriverText($errorMessage)
-		]);
+		try
+		{
+			return $this->ApiResponse($response, [
+				'error_message' => self::WithoutDriverText($errorMessage)
+			]);
+		}
+		catch (EResponseNotEncodable $ex)
+		{
+			// The message itself has no JSON form (an EInvalidApiQuery echoing a query value
+			// that is not valid UTF-8). The throw would otherwise escape the catch block that
+			// called this and turn a 400 into a 500, so the original status is kept and the
+			// body is a fixed literal. ApiResponse() has already logged the cause.
+			$response->getBody()->write(self::FIXED_ERROR_BODY);
+			return $response;
+		}
 	}
+
+	/** The body of an error answer whose own message could not be JSON-encoded. */
+	protected const FIXED_ERROR_BODY = '{"error_message":"The error message could not be encoded as JSON"}';
 
 	/**
 	 * The message to put on the wire in place of a database driver's own, and with the

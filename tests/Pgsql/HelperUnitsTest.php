@@ -2762,6 +2762,23 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 				return $this->HandleApiCall($response, $work);
 			}
 
+			/**
+			 * A test-only route body: inserts a row inside InRequestTransaction() and then
+			 * answers with $data, the way the label, generic-entity and consumption routes do.
+			 */
+			public function WriteThenRespond($request, $response, $data)
+			{
+				return $this->HandleApiCall($response, function () use ($request, $response, $data)
+				{
+					return $this->InRequestTransaction($request, function () use ($response, $data)
+					{
+						\Victual\Services\DatabaseService::GetInstance()->GetDbConnectionRaw()->exec('INSERT INTO helperunits_rollback_probe(id) VALUES (1)');
+
+						return $this->ApiResponse($response, $data);
+					});
+				});
+			}
+
 			/** The recording logger in place of StderrLogger. */
 			protected function ResponseEncodingLogger(): \Psr\Log\LoggerInterface
 			{
@@ -2848,6 +2865,16 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 			self::assertSame('', (string)$base->getBody(), 'nothing was written before the throw');
 		}
 
+		try
+		{
+			$probe->Respond($base, ['value' => NAN], true);
+			self::fail('an unencodable cached body must throw');
+		}
+		catch (\Victual\Controllers\Api\EResponseNotEncodable $cachedEx)
+		{
+			self::assertSame([], $base->getHeaders(), 'no header was set on the response before the throw');
+		}
+
 		$container = new \DI\Container();
 		$container->set('view', new \Victual\Helpers\SlimBladeView(VICTUAL_ROOT_PATH . '/views', VICTUAL_VIEWCACHE_PATH));
 		$handler = new \Victual\Controllers\ExceptionController($container, new \Slim\Psr7\Factory\ResponseFactory(), $logger);
@@ -2914,5 +2941,69 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 
 		self::assertSame('{"id":1,"name":"Milk \/ \"2%\"","amount":1.5}', (string)$response->getBody(), 'the literal bytes, slash escaped as before');
 		self::assertSame('max-age=2592000', $response->getHeaderLine('Cache-Control'));
+	}
+
+	/**
+	 * Issue #912, decision D2 as amended: an unencodable response inside
+	 * InRequestTransaction() rolls the write back and answers the standard 500, so the
+	 * database and the client agree. The control run with an encodable body commits.
+	 */
+	public function testAnUnencodableResponseInsideARequestTransactionRollsTheWriteBack()
+	{
+		$pdo = self::Pdo();
+		$pdo->exec('CREATE TABLE helperunits_rollback_probe (id integer PRIMARY KEY)');
+
+		try
+		{
+			$probe = self::responseProbe(self::recordingLogger());
+			$request = (new ServerRequestFactory())->createServerRequest('POST', 'http://localhost/api/probe');
+			$base = (new \Slim\Psr7\Factory\ResponseFactory())->createResponse(200);
+
+			$response = $probe->WriteThenRespond($request, $base, ['value' => NAN]);
+
+			self::assertSame(500, $response->getStatusCode());
+			self::assertSame(['error_message' => 'The response could not be encoded as JSON'], json_decode((string)$response->getBody(), true));
+			self::assertSame(0, (int)$pdo->query('SELECT COUNT(*) FROM helperunits_rollback_probe')->fetchColumn(), 'the insert was rolled back');
+			self::assertFalse($pdo->inTransaction(), 'no transaction is left open');
+
+			$base = (new \Slim\Psr7\Factory\ResponseFactory())->createResponse(200);
+			$response = $probe->WriteThenRespond($request, $base, ['value' => 1]);
+
+			self::assertSame(200, $response->getStatusCode());
+			self::assertSame('{"value":1}', (string)$response->getBody());
+			self::assertSame(1, (int)$pdo->query('SELECT COUNT(*) FROM helperunits_rollback_probe')->fetchColumn(), 'with an encodable body the insert commits');
+		}
+		finally
+		{
+			$pdo->exec('DROP TABLE helperunits_rollback_probe');
+		}
+	}
+
+	/**
+	 * An error whose own message is not valid UTF-8 (an EInvalidApiQuery echoing a bad query
+	 * value) keeps its status: 400 with a fixed, valid JSON body, not a 500.
+	 */
+	public function testAnErrorWithAnUnencodableMessageKeepsItsStatus()
+	{
+		$logger = self::recordingLogger();
+		$probe = self::responseProbe($logger);
+
+		foreach ([
+			[new \Victual\Controllers\Api\EInvalidApiQuery("bad \xFF value"), 400],
+			[new \Victual\Controllers\Api\EObjectNotFound("missing \xFF"), 404],
+			[new \RuntimeException("plain \xFF"), 400]
+		] as [$exception, $status])
+		{
+			$base = (new \Slim\Psr7\Factory\ResponseFactory())->createResponse(200);
+			$response = $probe->Handle($base, function () use ($exception)
+			{
+				throw $exception;
+			});
+
+			self::assertSame($status, $response->getStatusCode(), get_class($exception));
+			self::assertSame(['error_message' => 'The error message could not be encoded as JSON'], json_decode((string)$response->getBody(), true), get_class($exception) . ': valid JSON');
+		}
+
+		self::assertNotEmpty($logger->Records, 'the cause is logged');
 	}
 }
