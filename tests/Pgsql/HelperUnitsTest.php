@@ -1181,6 +1181,50 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 			ini_set('serialize_precision', (string)$previous);
 		}
 
+		// ShortestDigits() must not depend on the serialize_precision the process happens to
+		// run with: it forces -1 itself. Compare a subset (the boundary doubles and every
+		// twentieth random one) under 17 and 0, the settings that change json_encode(), with
+		// the answer at -1 taken first.
+		$subset = [];
+
+		foreach ($doubles as $position => $double)
+		{
+			if ($position < 12 || $position % 20 === 0)
+			{
+				$subset[] = abs($double);
+			}
+		}
+
+		$expected = [];
+
+		foreach ($subset as $position => $positive)
+		{
+			$expected[$position] = [self::callPrivateStatic(CanonicalJson::class, 'ShortestDigits', [$positive]), CanonicalJson::Encode($positive)];
+		}
+
+		$original = ini_get('serialize_precision');
+
+		try
+		{
+			foreach (['17', '0'] as $setting)
+			{
+				ini_set('serialize_precision', $setting);
+
+				foreach ($subset as $position => $positive)
+				{
+					self::assertSame($expected[$position][0], self::callPrivateStatic(CanonicalJson::class, 'ShortestDigits', [$positive]), 'ShortestDigits for ' . $positive . ' under serialize_precision ' . $setting);
+					self::assertSame($expected[$position][1], CanonicalJson::Encode($positive), 'Encode for ' . $positive . ' under serialize_precision ' . $setting);
+					self::assertSame($setting, ini_get('serialize_precision'), 'the caller\'s setting is restored after each call');
+				}
+			}
+		}
+		finally
+		{
+			ini_set('serialize_precision', (string)$original);
+		}
+
+		self::assertGreaterThan(200, count($subset), 'the subset is large enough to mean something');
+
 		// Zero never reaches the decomposition, and NaN and the infinities are refused before it
 		self::assertSame('0', CanonicalJson::Encode(0.0));
 		self::assertSame('0', CanonicalJson::Encode(-0.0));
@@ -1772,6 +1816,23 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 				self::assertStringStartsWith('{"kept":"yes"', $encoded, $label . ': the members before the bad value survive');
 				self::assertStringNotContainsString('unencodable', $encoded, $label . ': there is no whole-context fallback marker');
 			}
+
+			// A depth overrun is recorded but substitutes nothing: the whole structure is emitted
+			$deep = self::callPrivateStatic(\Victual\Helpers\StderrLogger::class, 'EncodeContext', [$hostile['depth']]);
+			$decoded = json_decode($deep, true, 1000);
+
+			self::assertIsArray($decoded, 'the deep context still decodes');
+			self::assertSame('yes', $decoded['kept']);
+
+			$node = $decoded['deep'];
+
+			for ($level = 0; $level < 600; $level++)
+			{
+				self::assertIsArray($node, 'level ' . $level . ' of the deep structure is kept');
+				$node = $node[0];
+			}
+
+			self::assertSame('leaf', $node, 'the leaf at the bottom of 600 levels is kept');
 
 			self::assertSame('{"kept":"yes","stream":null}', self::callPrivateStatic(\Victual\Helpers\StderrLogger::class, 'EncodeContext', [$hostile['resource']]), 'a resource is substituted with null');
 			self::assertSame('{"kept":"yes","number":0}', self::callPrivateStatic(\Victual\Helpers\StderrLogger::class, 'EncodeContext', [$hostile['nan']]), 'NaN is substituted with 0');

@@ -17,8 +17,8 @@ use Psr\Log\LogLevel;
  *
  * The record is written as `[timestamp] LEVEL: message {context}`. Context is encoded as
  * JSON on the same line so that a log collector keeps one event as one record; a value it
- * cannot encode is substituted (null, or 0 for NaN and the infinities) rather than
- * dropping the whole line.
+ * cannot encode is substituted (null, or 0 for NaN and the infinities; a depth
+ * overrun is kept in full) rather than dropping the whole line.
  */
 class StderrLogger extends AbstractLogger
 {
@@ -107,8 +107,10 @@ class StderrLogger extends AbstractLogger
 		// false only when an error was recorded and that flag is off (php-src PHP-8.4 and
 		// PHP-8.5 ext/json/json.c, PHP_FUNCTION(json_encode)), and otherwise ends in
 		// RETURN_STR(). What the flag does instead is substitute the offending value - null
-		// for a resource, an invalid UTF-8 string, a recursion or a depth overrun, 0 for NaN
-		// and the infinities - and keep the rest of the document. Pinned on both interpreters
+		// for a resource, an invalid UTF-8 string or a recursion, 0 for NaN and the infinities -
+		// and keep the rest of the document. A depth overrun substitutes nothing: the error
+		// ("Maximum stack depth exceeded") is recorded and the structure is still emitted in
+		// full (checked on 8.5.10 and 8.4.25). Pinned on both interpreters
 		// by HelperUnitsTest::testAnUnencodableContextValueIsSubstitutedNotDropped() (#1026, D1).
 		/** @var string $encoded */
 		$encoded = json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
