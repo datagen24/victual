@@ -71,4 +71,4 @@ Research and status checks (refresh.py, CI reads, issue reads) use Haiku agents.
 Made on 2026-10-21 and recorded in [release-data.json](release-data.json): #1033 and #1034
 opened in 0.6.0 from #948, which keeps the merge-field descriptions under a new title; #1035
 opened in 0.5.2 for the empty upload; a decision comment on each of the six issues.
-Still to do: close #1030, #1031 and #1032 in favour of PR 0 once it is open (D8).
+#1030, #1031 and #1032 were closed in favour of PR #1037 once its `flake` job passed (D8).
