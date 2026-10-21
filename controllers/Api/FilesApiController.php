@@ -36,6 +36,12 @@ class FilesApiController extends BaseApiController
 	const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
 
 	/**
+	 * The media types whose body is read before UploadFile() runs: the parsers Slim's
+	 * BodyParsingMiddleware registers, plus multipart/form-data, which PHP reads itself.
+	 */
+	const CONSUMED_MEDIA_TYPES = ['application/json', 'application/x-www-form-urlencoded', 'application/xml', 'text/xml', 'multipart/form-data'];
+
+	/**
 	 * Which permission lets a caller upload to or delete from a group. Holding any one
 	 * of the listed permissions is enough. These mirror the permission that governs the
 	 * record the file hangs off: equipment manuals follow equipment, recipe pictures
@@ -369,11 +375,10 @@ class FilesApiController extends BaseApiController
 	 * exists (exclusive create), when the extension is not one the group accepts, or when
 	 * a file stored under an image extension is not an image. Returns 204 on success, 413
 	 * when the body exceeds the effective upload limit, 415 when the request names a
-	 * Content-Type other than application/octet-stream, or a 400 error response.
+	 * Content-Type that is consumed before the body can be read (JSON, form, XML,
+	 * multipart; see CheckUploadMediaType()), or a 400 error response.
 	 *
-	 * A request that names no Content-Type at all is accepted as raw bytes: the body parser
-	 * leaves it unread, the documented type is the only one the body can be, and refusing it
-	 * would break a client that works today (issue #1035).
+	 * Any other Content-Type, or none, stores the bytes as sent (issue #1035).
 	 */
 	public function UploadFile(Request $request, Response $response, array $args)
 	{
@@ -511,24 +516,35 @@ class FilesApiController extends BaseApiController
 	}
 
 	/**
-	 * Refuses an upload whose Content-Type is anything but application/octet-stream, with
-	 * 415 and nothing stored.
+	 * Refuses, with 415 and nothing stored, an upload whose Content-Type is one that is
+	 * consumed before UploadFile() can read the body.
 	 *
-	 * The body parsing middleware consumes a form encoded or JSON body before
-	 * GetRequestBodyStream() detaches the stream, so such an upload used to answer 204 and
-	 * store 0 bytes (issue #1035, found by the 0.5.0 restore drill). The type is compared
-	 * by its media type alone (MediaTypeOf()), so "application/octet-stream; charset=x" is
-	 * still accepted. An absent or empty header is accepted: nothing consumed the body then.
+	 * The body parsing middleware reads a JSON, form encoded or XML body, and PHP reads a
+	 * multipart/form-data one, before GetRequestBodyStream() detaches the stream, so such an
+	 * upload used to answer 204 and store 0 bytes (issue #1035, found by the 0.5.0 restore
+	 * drill). Every other type, application/pdf and image/png included, was never affected
+	 * and keeps storing its bytes, as does an absent or empty header.
 	 *
-	 * @throws HttpException 415 when another media type is named
+	 * The match is Slim's own (BodyParsingMiddleware::parseBody()): the media type without
+	 * its parameters, lowercased; when it is not one of the parsers registered by name, the
+	 * part after its last "+" is looked up as application/<suffix> (RFC 6839), so
+	 * "application/vnd.api+json" and "text/foo+xml" are consumed too.
+	 *
+	 * @throws HttpException 415 when the media type is one of those
 	 */
 	protected function CheckUploadMediaType(Request $request): void
 	{
 		$mediaType = self::MediaTypeOf($request);
 
-		if ($mediaType !== '' && $mediaType !== 'application/octet-stream')
+		if (!in_array($mediaType, self::CONSUMED_MEDIA_TYPES, true))
 		{
-			throw new HttpException($request, 'Unsupported Content-Type: send the file as application/octet-stream', 415);
+			$parts = explode('+', $mediaType);
+			$mediaType = count($parts) >= 2 ? 'application/' . $parts[count($parts) - 1] : $mediaType;
+		}
+
+		if (in_array($mediaType, self::CONSUMED_MEDIA_TYPES, true))
+		{
+			throw new HttpException($request, 'Send the file as application/octet-stream; this content type is parsed as form or structured data.', 415);
 		}
 	}
 

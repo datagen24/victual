@@ -24,7 +24,7 @@
 | [#948 Label designer: describe merge fields with names, explanations and example values](https://github.com/datagen24/victual/issues/948) | open | P3 | S | UI / copy | Compatible after the D6 split: merge-field names, explanations and example values as client strings; no API or schema change. | Split per D6. This issue keeps the merge-field descriptions only: PR 3 (wave 1), branch claude/v0-5-2-948-field-descriptions. | None |
 | [#1007 UI: group medication features in a Medication flyout and clarify labels](https://github.com/datagen24/victual/issues/1007) | open | P3 | M | UI / wording | Compatible: navigation and labels only; URLs, permissions and API unchanged. About 4 to 7 msgids change in strings.pot. | Wave 2, after PR 2 (strings.pot): Medication presets, Medication inbox, Refills. | None |
 | [#1026 Prove or keep the CanonicalJson and StderrLogger fallbacks #252 left in place](https://github.com/datagen24/victual/issues/1026) | open | P3 | S | cleanup / record | Compatible: removes unreachable guards or keeps them with a comment; no wire change. CanonicalJson output feeds stored label template digests, so output must not change. | In progress: PR 1 (wave 1), branch claude/v0-5-2-1026-fallbacks. Lands before #912. | None |
-| [#1035 File upload with a form content type answers 204 and stores an empty file](https://github.com/datagen24/victual/issues/1035) | open | P3 | S | bug | Compatible: a request that stored an empty file now answers 415 and stores nothing; documented requests are unchanged. | In review: draft PR 1039 (wave 1 PR 4), branch claude/v0-5-2-files-415. | https://github.com/datagen24/victual/pull/1039 |
+| [#1035 File upload with a form content type answers 204 and stores an empty file](https://github.com/datagen24/victual/issues/1035) | open | P3 | S | bug | Compatible: an upload whose JSON, form, XML or multipart type stored an empty file now answers 415 and stores nothing; every other type is unchanged. | In review: draft PR 1039 (wave 1 PR 4), branch claude/v0-5-2-files-415. | https://github.com/datagen24/victual/pull/1039 |
 
 ## Open milestones
 
@@ -53,7 +53,7 @@ Observed 2026-10-21T17:08:57Z. Unassigned open issues: [#80](https://github.com/
 | D4 | 2026-10-21 | How does #762 save roles at creation, and how is the entry point labelled? | Accepted by the maintainer on 2026-10-21: (a) client-side two-step, no API change; the chosen roles replace the defaults; a visible "Roles" text button with an aria-label. | [#762](https://github.com/datagen24/victual/issues/762) |
 | D5 | 2026-10-21 | What are the Medication flyout names (#1007), and when does the parent entry show? | Accepted by the maintainer on 2026-10-21: Medication presets, Medication inbox and Refills, as the issue proposes; the parent shows when at least one child is visible. | [#1007](https://github.com/datagen24/victual/issues/1007) |
 | D6 | 2026-10-21 | How is #948 scoped? | Accepted by the maintainer on 2026-10-21: split it. Merge-field descriptions as client strings in 0.5.2. Alignment, guides and grid as a 0.6.0 issue. Orientation, rotation and starter fonts as a 0.6.0 issue that needs a template-document schema decision. | [#948](https://github.com/datagen24/victual/issues/948) |
-| D7 | 2026-10-21 | Does the empty-file upload limitation from 0.5.1 join 0.5.2? | Accepted by the maintainer on 2026-10-21: yes, as a new issue. PUT /api/files/{group}/{name} answers 415 for any content type other than application/octet-stream instead of storing 0 bytes. Size S. | None |
+| D7 | 2026-10-21 | Does the empty-file upload limitation from 0.5.1 join 0.5.2? | Amended by the maintainer on 2026-10-21: 415 only for types the body parser or PHP consumes (JSON/+json, form-urlencoded, XML/+xml, multipart/form-data); every other type, including application/pdf, is stored as today. | None |
 | D8 | 2026-10-21 | How do the three /mcp Dependabot PRs land? | Accepted by the maintainer on 2026-10-21: one PR with all three bumps and a recomputed nix/hashes.nix mcpNpmDeps; close #1030 to #1032. Each one fails flake on its own because the lockfile hash is stale, and the three conflict on the lockfile. hono 4.13.13 includes GHSA-5r4p-p66f-jhc7; mcp/ does not use serveStatic. | None |
 
 ## GitHub writes made by planning
@@ -73,6 +73,7 @@ Observed 2026-10-21T17:08:57Z. Unassigned open issues: [#80](https://github.com/
 | 2026-10-21 | [Closed Dependabot PR #1030 as superseded by PR #1037 (D8)](https://github.com/datagen24/victual/pull/1030) |
 | 2026-10-21 | [Closed Dependabot PR #1031 as superseded by PR #1037 (D8)](https://github.com/datagen24/victual/pull/1031) |
 | 2026-10-21 | [Closed Dependabot PR #1032 as superseded by PR #1037 (D8)](https://github.com/datagen24/victual/pull/1032) |
+| 2026-10-21 | [Posted the amended D7 decision comment on #1035](https://github.com/datagen24/victual/issues/1035#issuecomment-6322328246) |
 
 ## Evidence
 

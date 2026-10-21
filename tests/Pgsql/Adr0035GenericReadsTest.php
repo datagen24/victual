@@ -55,7 +55,7 @@ class Adr0035GenericReadsTest extends PgsqlSchemaTestCase
 		// ASCII only: the request helper json_encode()s the body, which refuses other bytes.
 		self::$manualBytes = "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF";
 		$upload = self::send('PUT', '/api/files/equipmentmanuals/' . base64_encode(self::MANUAL_NAME), self::$sessions[self::ADMIN_USER], [
-			'headers' => ['Content-Type' => 'application/octet-stream'],
+			'headers' => ['Content-Type' => 'application/pdf'],
 			'rawBody' => self::$manualBytes,
 		]);
 		self::assertSame(204, $upload['status'], 'fixture manual uploaded: ' . $upload['body']);

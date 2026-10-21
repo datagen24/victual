@@ -1742,7 +1742,7 @@
 						}
 					},
 					"415": {
-						"description": "The request names a Content-Type other than `application/octet-stream`, for example `application/x-www-form-urlencoded` or `application/json`. Nothing is stored. A request that names no Content-Type is read as raw bytes. Before 0.5.2 such a request answered 204 and stored an empty file (issue #1035).",
+						"description": "The request names a Content-Type that is parsed as form or structured data before the upload can read it: `application/json` and any `+json` type, `application/x-www-form-urlencoded`, `application/xml`, `text/xml` and any `+xml` type, or `multipart/form-data`. Nothing is stored. Send the file as `application/octet-stream`. Every other type, for example `application/pdf` or `image/png`, and a request with no Content-Type, stores the bytes as sent. Before 0.5.2 a refused type answered 204 and stored an empty file (issue #1035).",
 						"content": {
 							"application/json": {
 								"schema": {

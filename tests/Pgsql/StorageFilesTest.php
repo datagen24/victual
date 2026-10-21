@@ -970,11 +970,11 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * A Content-Type other than application/octet-stream is a 415 with the standard error
-	 * body, and nothing is stored: not a file, and not an empty one under the name. A form
-	 * encoded or JSON body is the case the body parser consumes first, so the upload used to
-	 * answer 204 and keep 0 bytes (issue #1035). The octet-stream path, with or without a
-	 * parameter, and a request that names no type at all, are unchanged.
+	 * A Content-Type the body parser or PHP consumes before the upload can read it (JSON and
+	 * +json, form encoded, XML and +xml, multipart) is a 415 with the standard error body,
+	 * and nothing is stored: not a file, and not an empty one under the name. Such an upload
+	 * used to answer 204 and keep 0 bytes (issue #1035). Every other type, a file's own
+	 * type included, and a request that names no type at all, still store their full bytes.
 	 */
 	#[DataProvider('backends')]
 	public function testAnUploadWithAnotherContentTypeAnswers415AndStoresNothing(string $backend): void
@@ -982,24 +982,27 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 		self::Storage($backend, ['userfiles']);
 		self::grant(['MASTER_DATA_EDIT']);
 
-		foreach (['application/x-www-form-urlencoded', 'application/json', 'application/json; charset=utf-8', 'text/plain', 'multipart/form-data; boundary=x'] as $i => $type)
+		$refused = [
+			'application/x-www-form-urlencoded', 'application/json', 'application/json; charset=utf-8', 'Application/JSON',
+			'application/vnd.api+json', 'application/xml', 'text/xml', 'application/atom+xml', 'text/foo+xml',
+			'multipart/form-data; boundary=x',
+		];
+		foreach ($refused as $i => $type)
 		{
 			$name = "wrong-type-$i.txt";
 			$request = self::requestWithRawBody('PUT', 'a=b', $type);
-			if (str_starts_with($type, 'application/x-www-form-urlencoded') || str_starts_with($type, 'application/json'))
-			{
-				// What Slim's body parsing middleware leaves behind: parsed, and the stream at EOF
-				$request->getBody()->getContents();
-				$request = $request->withParsedBody(['a' => 'b']);
-			}
+			// What Slim's body parsing middleware leaves behind: parsed, and the stream at EOF
+			$request->getBody()->getContents();
+			$request = $request->withParsedBody(['a' => 'b']);
 
 			$response = $this->expectStatus(fn () => self::$files->UploadFile($request, new Response(), ['group' => 'userfiles', 'fileName' => base64_encode($name)]), 415, "$type refused");
-			self::assertSame(['error_message' => 'Unsupported Content-Type: send the file as application/octet-stream'], json_decode((string)$response->getBody(), true), 'with the standard error body');
+			self::assertSame(['error_message' => 'Send the file as application/octet-stream; this content type is parsed as form or structured data.'], json_decode((string)$response->getBody(), true), 'with the standard error body');
 			self::assertNull(self::DurableBytes($backend, 'userfiles', $name), "$type stored nothing");
 			self::assertNotContains($name, self::DurableNames($backend, 'userfiles'), "and no empty file under the name for $type");
 		}
 
-		foreach (['application/octet-stream', 'Application/Octet-Stream; charset=binary', null] as $i => $type)
+		$stored = ['application/octet-stream', 'Application/Octet-Stream; charset=binary', 'application/pdf', 'image/png', 'text/plain; charset=utf-8', 'application/vnd.api', null];
+		foreach ($stored as $i => $type)
 		{
 			$name = "right-type-$i.txt";
 			$this->expectStatus(fn () => self::$files->UploadFile(self::requestWithRawBody('PUT', 'the bytes', $type), new Response(), ['group' => 'userfiles', 'fileName' => base64_encode($name)]), 204, ($type ?? 'no Content-Type') . ' accepted');

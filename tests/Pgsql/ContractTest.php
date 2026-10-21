@@ -880,7 +880,7 @@ class ContractTest extends PgsqlSchemaTestCase
 		// needs no extra grant beyond what Admin holds.
 		$pdfBytes = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF";
 		$fileName = base64_encode('contract-manual.pdf');
-		self::invokeAdmin('PUT /api/files/{group}/{fileName}', fn() => $files->UploadFile(self::requestWithRawBody('PUT', $pdfBytes, 'application/octet-stream'), new Response(), ['group' => 'equipmentmanuals', 'fileName' => $fileName]));
+		self::invokeAdmin('PUT /api/files/{group}/{fileName}', fn() => $files->UploadFile(self::requestWithRawBody('PUT', $pdfBytes, 'application/pdf'), new Response(), ['group' => 'equipmentmanuals', 'fileName' => $fileName]));
 		self::invokeAdmin('GET /api/files/{group}/{fileName}', fn() => $files->ServeFile(self::request(), new Response(), ['group' => 'equipmentmanuals', 'fileName' => $fileName]));
 		self::invokeAdmin('DELETE /api/files/{group}/{fileName}', fn() => $files->DeleteFile(self::request('DELETE'), new Response(), ['group' => 'equipmentmanuals', 'fileName' => $fileName]));
 
