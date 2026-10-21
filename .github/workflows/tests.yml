@@ -45,8 +45,18 @@ jobs:
           fetch-depth: 0
 
       - uses: shivammathur/setup-php@v2
+        env:
+          update: true
         with:
-          php-version: '8.4.27'
+          php-version: '8.4'
+
+      # setup-php installs the newest patch of a major.minor only with update: true, and
+      # cannot pin one, so assert the PHP2Shell floor (#1043): ~8.4.27 || ^8.5.12.
+      - name: Check the PHP floor
+        run: |
+          php -v
+          php -r 'exit(version_compare(PHP_VERSION, PHP_MINOR_VERSION === 4 ? "8.4.27" : "8.5.12", ">=") ? 0 : 1);' \
+            || { echo "::error::PHP $(php -r 'echo PHP_VERSION;') is below the PHP2Shell floor (#1043)"; exit 1; }
 
       # check_deploy_manifest.py parses YAML, so it needs PyYAML (pure Python, no build
       # step). check_openapi_document.py validates against a JSON Schema, so it needs
@@ -199,12 +209,22 @@ jobs:
       # 8.4 is the fork's real language floor, and composer.json/PrerequisiteChecker
       # declare it too since 15-C7.
       - uses: shivammathur/setup-php@v2
+        env:
+          update: true
         with:
-          php-version: '8.4.27'
+          php-version: '8.4'
           extensions: pdo_sqlite, pdo_pgsql, gd, intl, zip, mbstring, fileinfo, ctype
           # pcov rather than the default none, so the run below can report what the
           # suite reached. It only collects when a process asks it to.
           coverage: pcov
+
+      # setup-php installs the newest patch of a major.minor only with update: true, and
+      # cannot pin one, so assert the PHP2Shell floor (#1043): ~8.4.27 || ^8.5.12.
+      - name: Check the PHP floor
+        run: |
+          php -v
+          php -r 'exit(version_compare(PHP_VERSION, PHP_MINOR_VERSION === 4 ? "8.4.27" : "8.5.12", ">=") ? 0 : 1);' \
+            || { echo "::error::PHP $(php -r 'echo PHP_VERSION;') is below the PHP2Shell floor (#1043)"; exit 1; }
 
       - name: Cache Composer packages
         uses: actions/cache@v6
@@ -491,10 +511,20 @@ jobs:
       - uses: actions/checkout@v7
 
       - uses: shivammathur/setup-php@v2
+        env:
+          update: true
         with:
-          php-version: '8.4.27'
+          php-version: '8.4'
           extensions: pdo_sqlite, pdo_pgsql, gd, intl, zip, mbstring, fileinfo, ctype
           coverage: none
+
+      # setup-php installs the newest patch of a major.minor only with update: true, and
+      # cannot pin one, so assert the PHP2Shell floor (#1043): ~8.4.27 || ^8.5.12.
+      - name: Check the PHP floor
+        run: |
+          php -v
+          php -r 'exit(version_compare(PHP_VERSION, PHP_MINOR_VERSION === 4 ? "8.4.27" : "8.5.12", ">=") ? 0 : 1);' \
+            || { echo "::error::PHP $(php -r 'echo PHP_VERSION;') is below the PHP2Shell floor (#1043)"; exit 1; }
 
       - name: Cache Composer packages
         uses: actions/cache@v6
@@ -557,13 +587,23 @@ jobs:
       # public/index.php, where PrerequisiteChecker enforces the per-branch PHP floor
       # (PHP_VERSION_FLOORS: 8.4.27 / 8.5.12, since 0.5.2) - 8.5 is what the serving image
       # actually ships (plan 15-C7 Q4), and this job matches that rather than the declared
-      # floor. setup-php resolves '8.5.12' to the 8.5 branch and installs its latest patch
-      # (it does not pin the patch), so a runner whose package source still lags the fixed
-      # release fails this boot against the checker instead of passing on a vulnerable PHP.
+      # floor. setup-php cannot pin a patch; `update: true` makes it install the 8.5
+      # branch's latest, and the floor check below, plus this boot against the checker,
+      # fail the job if the runner's package source still lags the fixed release.
       - uses: shivammathur/setup-php@v2
+        env:
+          update: true
         with:
-          php-version: '8.5.12'
+          php-version: '8.5'
           extensions: pdo_pgsql, gd, intl, zip, mbstring, fileinfo, ctype
+
+      # setup-php installs the newest patch of a major.minor only with update: true, and
+      # cannot pin one, so assert the PHP2Shell floor (#1043): ~8.4.27 || ^8.5.12.
+      - name: Check the PHP floor
+        run: |
+          php -v
+          php -r 'exit(version_compare(PHP_VERSION, PHP_MINOR_VERSION === 4 ? "8.4.27" : "8.5.12", ">=") ? 0 : 1);' \
+            || { echo "::error::PHP $(php -r 'echo PHP_VERSION;') is below the PHP2Shell floor (#1043)"; exit 1; }
 
       - name: Cache Composer packages
         uses: actions/cache@v6
