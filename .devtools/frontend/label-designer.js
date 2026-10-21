@@ -175,6 +175,75 @@ async function saveDraft(page, templateId)
 		const refusal = await refused.json();
 		assert.equal(refusal.code, 'asset_unavailable', 'and the refusal names the asset: ' + JSON.stringify(refusal));
 
+		// Issue #948: a merge field is described by a name, an explanation and an example
+		// value, and the editor says which of those is sample data. The scratch template
+		// above carries a text element at (2mm, 2mm), 30x8mm - canvas px (8,8)-(128,40) - so
+		// selecting it needs no font upload, which a fresh install does not have.
+		await page.goto(base + '/labeltemplate/' + scratch.id);
+		await page.waitForFunction(() => window.fabric !== undefined, null, { timeout: 20000 });
+		await page.waitForFunction(() => document.querySelector('#canvas-width-mm').value !== '', null, { timeout: 20000 });
+		const scratchCanvas = page.locator('#label-canvas');
+		await scratchCanvas.scrollIntoViewIfNeeded();
+		const scratchBox = await scratchCanvas.boundingBox();
+		await page.mouse.click(scratchBox.x + 60, scratchBox.y + 16);
+		await page.waitForSelector('#field-help', { timeout: 10000 });
+
+		// The stored keys are what the select submits; only the labels are descriptive.
+		const options = await page.locator('#element-properties select').first().locator('option')
+			.evaluateAll(nodes => nodes.map(node => ({ value: node.value, label: node.textContent })));
+		assert.deepEqual(options.map(option => option.value),
+			['location.name', 'location.description', 'location.id', 'location.path', ''],
+			'the merge field keys are unchanged: ' + JSON.stringify(options));
+		assert.equal(options[0].label, 'Location name (location.name)', 'a field is named for a person, with its key beside it');
+		assert.equal(options[3].label, 'Location path (location.path)');
+
+		let help = await page.locator('#field-help').innerText();
+		assert.ok(help.includes('The name of the location.'), 'the explanation shows: ' + help);
+		assert.ok(help.includes('Example (sample data, not printed): Sample shelf'), 'the example is labelled as sample data: ' + help);
+		assert.ok(help.includes('replaced by the real value'), 'the printed value is distinguished from the example: ' + help);
+
+		await page.locator('#element-properties select').first().selectOption('location.path');
+		await page.waitForFunction(() => document.querySelector('#field-example').textContent.includes('Sample floor / Sample room / Sample shelf'), null, { timeout: 5000 });
+		await saveDraft(page, scratch.id);
+		const described = await (await page.request.get(base + '/api/labels/templates/' + scratch.id + '/draft')).json();
+		assert.equal(described.document.elements[0].field, 'location.path', 'choosing a described field stores its key');
+
+		await page.locator('#element-properties select').first().selectOption('');
+		await page.waitForFunction(() => document.querySelector('#field-help').textContent.includes('printed exactly as typed'), null, { timeout: 5000 });
+		assert.equal(await page.locator('#field-example').count(), 0, 'a fixed string has no example value');
+		assert.ok(await page.locator('#canvas-sample-note').isVisible(), 'the canvas says it draws example values');
+		assert.ok(await page.locator('#preview-sample-note').isVisible(), 'the preview says it is built from example values');
+
+		// Dragging a text element writes the Fabric textbox's height back into the document
+		// (absorb()), and a textbox's height depends on how its text wraps. The canvas draws a
+		// field as its key, as it always has, so a field whose key fits on one line saves the
+		// same one-line height whichever field it is. Drawing the example value instead
+		// ("Sample floor / Sample room / Sample shelf" wraps in 30mm) changed height_mm, and
+		// with it the document and its digest, for every template that was merely dragged.
+		const pair = JSON.parse(JSON.stringify(orphan));
+		pair.elements = [
+			Object.assign({}, orphan.elements[0], { id: 'a', y_mm: 2, field: 'location.name' }),
+			Object.assign({}, orphan.elements[0], { id: 'b', y_mm: 20, field: 'location.path' }),
+		];
+		const pairDraft = await (await page.request.get(base + '/api/labels/templates/' + scratch.id + '/draft')).json();
+		await page.request.put(base + '/api/labels/templates/' + scratch.id + '/draft',
+			{ data: { document: pair, revision_token: pairDraft.revision_token } });
+		await page.goto(base + '/labeltemplate/' + scratch.id);
+		await page.waitForFunction(() => window.fabric !== undefined, null, { timeout: 20000 });
+		await page.waitForFunction(() => document.querySelector('#canvas-width-mm').value !== '', null, { timeout: 20000 });
+		await selectAndDrag(page, page.locator('#label-canvas'), { x: 60, y: 16 }, { x: 80, y: 24 });
+		await selectAndDrag(page, page.locator('#label-canvas'), { x: 60, y: 88 }, { x: 80, y: 96 });
+		await saveDraft(page, scratch.id);
+		const dragged = (await (await page.request.get(base + '/api/labels/templates/' + scratch.id + '/draft')).json()).document.elements;
+		const byId = id => dragged.find(element => element.id === id);
+		assert.ok(byId('a').x_mm > 2 && byId('b').x_mm > 2, 'both text elements moved: ' + JSON.stringify(dragged));
+		assert.equal(byId('b').height_mm, byId('a').height_mm,
+			'dragging a location.path field saves the same height as dragging location.name: ' + JSON.stringify(dragged));
+		assert.ok(byId('b').height_mm < 6, 'and it is the one-line height of the key, not a wrapped example: ' + byId('b').height_mm);
+
+		await page.goto(base + '/labeltemplate/' + templateId);
+		await page.waitForFunction(() => window.fabric !== undefined, null, { timeout: 20000 });
+		await page.waitForFunction(() => document.querySelector('#canvas-width-mm').value !== '', null, { timeout: 20000 });
 		await saveDraft(page, templateId);
 
 		const draft = await (await page.request.get(base + '/api/labels/templates/' + templateId + '/draft')).json();
