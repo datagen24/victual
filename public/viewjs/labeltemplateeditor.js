@@ -29,16 +29,23 @@
 		'battery': ['battery.name', 'battery.id']
 	};
 
+	var fieldDescriptionCache = null;
+
 	/**
 	 * The description of every merge field, keyed by field key: a name, a one-line
 	 * explanation and an example value. The example is FieldCatalogue::SampleFor() verbatim,
 	 * because it is what the editor's authoritative preview prints for that field. Built on
 	 * demand rather than at load so the translated strings are looked up after the
-	 * localisation is in place.
+	 * localisation is in place, and once only: in dev mode every untranslated __t() call
+	 * posts to the server, and the panel asks for a description on every redraw.
 	 */
 	function fieldDescriptions()
 	{
-		return {
+		if (fieldDescriptionCache !== null)
+		{
+			return fieldDescriptionCache;
+		}
+		fieldDescriptionCache = {
 			'location.name': { name: __t('Location name'), explanation: __t('The name of the location.'), example: 'Sample shelf' },
 			'location.description': { name: __t('Location description'), explanation: __t('The description of the location; prints nothing when it has none.'), example: 'Sample data, not a real location' },
 			'location.id': { name: __t('Location number'), explanation: __t('The internal number of the location.'), example: '0' },
@@ -61,6 +68,7 @@
 			'battery.name': { name: __t('Battery name'), explanation: __t('The name of the battery.'), example: 'Sample battery' },
 			'battery.id': { name: __t('Battery number'), explanation: __t('The internal number of the battery.'), example: '0' }
 		};
+		return fieldDescriptionCache;
 	}
 
 	/**
@@ -175,6 +183,9 @@
 
 	function draw()
 	{
+		// canvas.clear() fires selection:cleared, which would drop the selection and, with
+		// it, the properties panel (and so the description of the merge field just chosen).
+		var selectedBefore = state.selectedId;
 		var width = state.document.canvas.width_mm;
 		var height = state.document.canvas.height_mm || state.document.canvas.max_height_mm || 60;
 
@@ -196,8 +207,13 @@
 			shape.set({ victualId: element.id, lockRotation: true });
 			shape.setControlVisible('mtr', false);
 			canvas.add(shape);
+			if (element.id === selectedBefore)
+			{
+				canvas.setActiveObject(shape);
+			}
 		});
 
+		state.selectedId = selectedBefore !== null && find(selectedBefore) !== null ? selectedBefore : null;
 		canvas.renderAll();
 	}
 

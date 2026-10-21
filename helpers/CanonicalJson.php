@@ -57,6 +57,9 @@ class CanonicalJson
 	/** Recursion is bounded so a cyclic or pathological document fails rather than the process. */
 	private const MAX_DEPTH = 64;
 
+	/**
+	 * Encodes one value of any supported type, tracking nesting depth against MAX_DEPTH.
+	 */
 	private static function EncodeValue($value, int $depth): string
 	{
 		if ($depth > self::MAX_DEPTH)
@@ -114,6 +117,9 @@ class CanonicalJson
 		return array_is_list($value);
 	}
 
+	/**
+	 * Encodes a list as a JSON array, members in their given order.
+	 */
 	private static function EncodeList(array $value, int $depth): string
 	{
 		$parts = [];
@@ -126,6 +132,9 @@ class CanonicalJson
 		return '[' . implode(',', $parts) . ']';
 	}
 
+	/**
+	 * Encodes a map as a JSON object, members ordered by UTF-16 code unit of their names.
+	 */
 	private static function EncodeObject(array $members, int $depth): string
 	{
 		$keys = [];

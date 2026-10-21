@@ -79,6 +79,9 @@ class StderrLogger extends AbstractLogger
 		@fclose($stream);
 	}
 
+	/**
+	 * Whether a level is at or above the configured minimum; an unknown level is kept.
+	 */
 	private function IsAtLeastMinimumLevel(string $level): bool
 	{
 		$position = array_search($level, self::LEVEL_ORDER, true);
@@ -94,6 +97,9 @@ class StderrLogger extends AbstractLogger
 		return $position >= $minimum;
 	}
 
+	/**
+	 * Encodes a log context as single-line JSON, substituting any value JSON cannot hold.
+	 */
 	private static function EncodeContext(array $context): string
 	{
 		$encoded = json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
