@@ -70,6 +70,9 @@ Observed 2026-10-21T17:08:57Z. Unassigned open issues: [#80](https://github.com/
 | 2026-10-21 | [Posted the D4 decision comment on #762](https://github.com/datagen24/victual/issues/762#issuecomment-6321884476) |
 | 2026-10-21 | [Posted the D5 decision comment on #1007](https://github.com/datagen24/victual/issues/1007#issuecomment-6321884829) |
 | 2026-10-21 | [Posted the D6 decision comment on #948](https://github.com/datagen24/victual/issues/948#issuecomment-6321885204) |
+| 2026-10-21 | [Closed Dependabot PR #1030 as superseded by PR #1037 (D8)](https://github.com/datagen24/victual/pull/1030) |
+| 2026-10-21 | [Closed Dependabot PR #1031 as superseded by PR #1037 (D8)](https://github.com/datagen24/victual/pull/1031) |
+| 2026-10-21 | [Closed Dependabot PR #1032 as superseded by PR #1037 (D8)](https://github.com/datagen24/victual/pull/1032) |
 
 ## Evidence
 
