@@ -105,6 +105,11 @@ class PrerequisiteChecker
 		}
 	}
 
+	/**
+	 * Checks that the Composer autoloader is present.
+	 *
+	 * @throws ERequirementNotMet When the Composer packages are not installed
+	 */
 	private function checkForComposer()
 	{
 		if (!file_exists(__DIR__ . '/../packages/autoload.php'))
@@ -113,6 +118,11 @@ class PrerequisiteChecker
 		}
 	}
 
+	/**
+	 * Checks that config-dist.php is present.
+	 *
+	 * @throws ERequirementNotMet When config-dist.php is missing
+	 */
 	private function checkForConfigDistFile()
 	{
 		if (!file_exists(__DIR__ . '/../config-dist.php'))
@@ -138,6 +148,11 @@ class PrerequisiteChecker
 	 * which is what it always was.
 	 */
 
+	/**
+	 * Checks that every extension in REQUIRED_PHP_EXTENSIONS is loaded.
+	 *
+	 * @throws ERequirementNotMet Naming the first missing extension
+	 */
 	private function checkForPhpExtensions()
 	{
 		$loadedExtensions = get_loaded_extensions();
@@ -197,6 +212,11 @@ class PrerequisiteChecker
 		}
 	}
 
+	/**
+	 * Reads the SQLite library version through a throwaway in-memory connection.
+	 *
+	 * @return string The version, e.g. 3.40.0
+	 */
 	private function getSqlVersionAsString()
 	{
 		$dbh = new \PDO('sqlite::memory:');
