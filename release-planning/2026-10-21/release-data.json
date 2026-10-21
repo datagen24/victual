@@ -45,8 +45,8 @@
    "size": "S",
    "fit": "Compatible with option (a), a client-side two-step create (POST /users then PUT /users/{id}/roles). Option (b), an optional roles field on POST /users, is an additive API change.",
    "classification": "accessibility / UI",
-   "next_action": "In progress: PR 2 (wave 1), branch claude/v0-5-2-762-user-roles: two-step create, roles replace defaults, labelled Roles button.",
-   "pr": null
+   "next_action": "Draft PR #1041 open (wave 1, PR 2): two-step create, roles replace defaults, labelled Roles button. Householdpages and rbac pass; waiting for review and CI.",
+   "pr": "https://github.com/datagen24/victual/pull/1041"
   },
   {
    "number": 912,
