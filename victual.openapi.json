@@ -1741,6 +1741,16 @@
 							}
 						}
 					},
+					"415": {
+						"description": "The request names a Content-Type other than `application/octet-stream`, for example `application/x-www-form-urlencoded` or `application/json`. Nothing is stored. A request that names no Content-Type is read as raw bytes. Before 0.5.2 such a request answered 204 and stored an empty file (issue #1035).",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					},
 					"500": {
 						"$ref": "#/components/responses/ServerError"
 					},

@@ -970,6 +970,57 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 	}
 
 	/**
+	 * A Content-Type other than application/octet-stream is a 415 with the standard error
+	 * body, and nothing is stored: not a file, and not an empty one under the name. A form
+	 * encoded or JSON body is the case the body parser consumes first, so the upload used to
+	 * answer 204 and keep 0 bytes (issue #1035). The octet-stream path, with or without a
+	 * parameter, and a request that names no type at all, are unchanged.
+	 */
+	#[DataProvider('backends')]
+	public function testAnUploadWithAnotherContentTypeAnswers415AndStoresNothing(string $backend): void
+	{
+		self::Storage($backend, ['userfiles']);
+		self::grant(['MASTER_DATA_EDIT']);
+
+		foreach (['application/x-www-form-urlencoded', 'application/json', 'application/json; charset=utf-8', 'text/plain', 'multipart/form-data; boundary=x'] as $i => $type)
+		{
+			$name = "wrong-type-$i.txt";
+			$request = self::requestWithRawBody('PUT', 'a=b', $type);
+			if (str_starts_with($type, 'application/x-www-form-urlencoded') || str_starts_with($type, 'application/json'))
+			{
+				// What Slim's body parsing middleware leaves behind: parsed, and the stream at EOF
+				$request->getBody()->getContents();
+				$request = $request->withParsedBody(['a' => 'b']);
+			}
+
+			$response = $this->expectStatus(fn () => self::$files->UploadFile($request, new Response(), ['group' => 'userfiles', 'fileName' => base64_encode($name)]), 415, "$type refused");
+			self::assertSame(['error_message' => 'Unsupported Content-Type: send the file as application/octet-stream'], json_decode((string)$response->getBody(), true), 'with the standard error body');
+			self::assertNull(self::DurableBytes($backend, 'userfiles', $name), "$type stored nothing");
+			self::assertNotContains($name, self::DurableNames($backend, 'userfiles'), "and no empty file under the name for $type");
+		}
+
+		foreach (['application/octet-stream', 'Application/Octet-Stream; charset=binary', null] as $i => $type)
+		{
+			$name = "right-type-$i.txt";
+			$this->expectStatus(fn () => self::$files->UploadFile(self::requestWithRawBody('PUT', 'the bytes', $type), new Response(), ['group' => 'userfiles', 'fileName' => base64_encode($name)]), 204, ($type ?? 'no Content-Type') . ' accepted');
+			self::assertSame('the bytes', self::DurableBytes($backend, 'userfiles', $name), 'and the bytes arrive whole');
+		}
+	}
+
+	/**
+	 * The 415 is documented on the operation, with the same error schema as its 413.
+	 */
+	public function testTheDocumentCarriesThe415OnTheUpload(): void
+	{
+		$document = json_decode((string)file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), true);
+		$put = $document['paths']['/files/{group}/{fileName}']['put'];
+
+		self::assertArrayHasKey('415', $put['responses']);
+		self::assertSame($put['responses']['413']['content'], $put['responses']['415']['content'], 'in the error body the 413 uses');
+		self::assertSame(['application/octet-stream'], array_keys($put['requestBody']['content']), 'and the one request type is the one that is accepted');
+	}
+
+	/**
 	 * Every route refuses a file name that is not one before a backend sees it, which is
 	 * what keeps the traversal the filesystem backend would otherwise perform out of reach
 	 * of the files API.
@@ -1443,10 +1494,12 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 	}
 
 	/** A PSR-7 request whose body is the given raw bytes. */
-	private static function requestWithRawBody(string $method, string $bytes)
+	private static function requestWithRawBody(string $method, string $bytes, ?string $contentType = null)
 	{
-		return (new ServerRequestFactory())->createServerRequest($method, 'http://localhost/api')
+		$request = (new ServerRequestFactory())->createServerRequest($method, 'http://localhost/api')
 			->withBody((new StreamFactory())->createStream($bytes));
+
+		return $contentType === null ? $request : $request->withHeader('Content-Type', $contentType);
 	}
 
 	/** Replaces the caller's permissions and roles with the named permissions. */

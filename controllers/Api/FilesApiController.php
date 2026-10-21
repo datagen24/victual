@@ -10,6 +10,7 @@ use Victual\Services\FilesService;
 use Victual\Services\Storage\FileStorage;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use Slim\Exception\HttpException;
 use Slim\Psr7\Stream;
 
 /**
@@ -367,7 +368,12 @@ class FilesApiController extends BaseApiController
 	 * streamed into the configured storage in 1 MB chunks. Fails when the file already
 	 * exists (exclusive create), when the extension is not one the group accepts, or when
 	 * a file stored under an image extension is not an image. Returns 204 on success, 413
-	 * when the body exceeds the effective upload limit, or a 400 error response.
+	 * when the body exceeds the effective upload limit, 415 when the request names a
+	 * Content-Type other than application/octet-stream, or a 400 error response.
+	 *
+	 * A request that names no Content-Type at all is accepted as raw bytes: the body parser
+	 * leaves it unread, the documented type is the only one the body can be, and refusing it
+	 * would break a client that works today (issue #1035).
 	 */
 	public function UploadFile(Request $request, Response $response, array $args)
 	{
@@ -376,6 +382,8 @@ class FilesApiController extends BaseApiController
 			$this->CheckGroupIsKnown($args['group']);
 
 			$this->CheckGroupWritePermission($request, $args['group']);
+
+			$this->CheckUploadMediaType($request);
 
 			$fileName = $this->CheckFileName($args['fileName']);
 			$this->CheckFileExtension($args['group'], $fileName);
@@ -503,13 +511,35 @@ class FilesApiController extends BaseApiController
 	}
 
 	/**
+	 * Refuses an upload whose Content-Type is anything but application/octet-stream, with
+	 * 415 and nothing stored.
+	 *
+	 * The body parsing middleware consumes a form encoded or JSON body before
+	 * GetRequestBodyStream() detaches the stream, so such an upload used to answer 204 and
+	 * store 0 bytes (issue #1035, found by the 0.5.0 restore drill). The type is compared
+	 * by its media type alone (MediaTypeOf()), so "application/octet-stream; charset=x" is
+	 * still accepted. An absent or empty header is accepted: nothing consumed the body then.
+	 *
+	 * @throws HttpException 415 when another media type is named
+	 */
+	protected function CheckUploadMediaType(Request $request): void
+	{
+		$mediaType = self::MediaTypeOf($request);
+
+		if ($mediaType !== '' && $mediaType !== 'application/octet-stream')
+		{
+			throw new HttpException($request, 'Unsupported Content-Type: send the file as application/octet-stream', 415);
+		}
+	}
+
+	/**
 	 * The request body as a readable stream, for the storage to consume.
 	 *
 	 * detach() hands over the underlying resource, which is php://input for a raw PUT.
 	 * Nothing downstream reads the request body again. When it has already been consumed
 	 * (the body parsing middleware does that for a form encoded or JSON content type) the
-	 * detached resource is at EOF and the stored file is empty, which is what happened
-	 * before this method existed too.
+	 * detached resource is at EOF and the stored file would be empty. UploadFile() refuses
+	 * those content types with a 415 (CheckUploadMediaType()) before it gets here.
 	 *
 	 * @return resource|string
 	 */

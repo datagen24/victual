@@ -724,7 +724,7 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 	 *
 	 * @return array{status: int, body: string, headers: array<string, string>, json: mixed}
 	 */
-	private static function Send(string $method, string $path, ?array $body = null, ?string $key = null, ?string $rawBody = null): array
+	private static function Send(string $method, string $path, ?array $body = null, ?string $key = null, ?string $rawBody = null, array $headers = []): array
 	{
 		$spec = ['method' => $method, 'path' => $path];
 
@@ -736,6 +736,11 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		if ($key !== null)
 		{
 			$spec['headers'] = ['VICTUAL-API-KEY' => $key];
+		}
+
+		if ($headers !== [])
+		{
+			$spec['headers'] = array_merge($spec['headers'] ?? [], $headers);
 		}
 
 		if ($body !== null)
@@ -1122,6 +1127,23 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 		self::assertSame(['error_message'], array_keys($response['json']));
 		self::assertStringContainsString('FILE_STORAGE_MAX_SIZE_MB', $response['json']['error_message']);
 		self::AssertMatchesDocumentedResponse($response['json'], 'PUT', '/files/{group}/{fileName}', 413);
+	}
+
+	/**
+	 * An upload that names a form content type answers 415 with an ApiError, matching the
+	 * documented response, and keeps nothing (issue #1035).
+	 */
+	public function testAnUploadWithAFormContentTypeAnswers415AnApiError(): void
+	{
+		$name = base64_encode('form-typed.txt');
+		$response = self::Send('PUT', '/api/files/userfiles/' . $name, null, self::$adminKey, 'a=b', ['Content-Type' => 'application/x-www-form-urlencoded']);
+
+		self::assertSame(415, $response['status'], substr($response['body'], 0, 300));
+		self::assertSame(['error_message'], array_keys($response['json']));
+		self::AssertMatchesDocumentedResponse($response['json'], 'PUT', '/files/{group}/{fileName}', 415);
+
+		$served = self::Send('GET', '/api/files/userfiles/' . $name, null, self::$adminKey);
+		self::assertSame(404, $served['status'], 'and no file was stored under the name');
 	}
 
 	/**
