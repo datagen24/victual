@@ -1,0 +1,446 @@
+[
+ {
+  "number": 1035,
+  "title": "File upload with a form content type answers 204 and stores an empty file",
+  "html_url": "https://github.com/datagen24/victual/issues/1035",
+  "state": "open",
+  "labels": [
+   {
+    "name": "bug"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T17:08:20Z"
+ },
+ {
+  "number": 1034,
+  "title": "Label designer: centre, centre guides and snap-to-grid (split from #948)",
+  "html_url": "https://github.com/datagen24/victual/issues/1034",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T17:08:19Z"
+ },
+ {
+  "number": 1033,
+  "title": "Label designer: landscape/portrait orientation, element rotation and starter fonts (split from #948)",
+  "html_url": "https://github.com/datagen24/victual/issues/1033",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T17:08:17Z"
+ },
+ {
+  "number": 1032,
+  "title": "chore(deps): bump hono from 4.13.8 to 4.13.13 in /mcp",
+  "html_url": "https://github.com/datagen24/victual/pull/1032",
+  "state": "open",
+  "labels": [
+   {
+    "name": "dependencies"
+   },
+   {
+    "name": "javascript"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T16:49:03Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1032",
+   "html_url": "https://github.com/datagen24/victual/pull/1032",
+   "diff_url": "https://github.com/datagen24/victual/pull/1032.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1032.patch",
+   "merged_at": null
+  }
+ },
+ {
+  "number": 1031,
+  "title": "chore(deps): bump @modelcontextprotocol/server from 2.0.0 to 2.3.1 in /mcp",
+  "html_url": "https://github.com/datagen24/victual/pull/1031",
+  "state": "open",
+  "labels": [
+   {
+    "name": "dependencies"
+   },
+   {
+    "name": "javascript"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T16:49:03Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1031",
+   "html_url": "https://github.com/datagen24/victual/pull/1031",
+   "diff_url": "https://github.com/datagen24/victual/pull/1031.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1031.patch",
+   "merged_at": null
+  }
+ },
+ {
+  "number": 1030,
+  "title": "chore(deps-dev): bump @modelcontextprotocol/client from 2.2.0 to 2.3.0 in /mcp",
+  "html_url": "https://github.com/datagen24/victual/pull/1030",
+  "state": "open",
+  "labels": [
+   {
+    "name": "dependencies"
+   },
+   {
+    "name": "javascript"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T16:49:02Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1030",
+   "html_url": "https://github.com/datagen24/victual/pull/1030",
+   "diff_url": "https://github.com/datagen24/victual/pull/1030.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1030.patch",
+   "merged_at": null
+  }
+ },
+ {
+  "number": 1026,
+  "title": "Prove or keep the CanonicalJson and StderrLogger fallbacks #252 left in place",
+  "html_url": "https://github.com/datagen24/victual/issues/1026",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T17:08:36Z"
+ },
+ {
+  "number": 1021,
+  "title": "Decide ADR-0049 part 2: when a label print job becomes unclaimable or dead-lettered",
+  "html_url": "https://github.com/datagen24/victual/issues/1021",
+  "state": "open",
+  "labels": [
+   {
+    "name": "documentation"
+   }
+  ],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-20T13:42:22Z"
+ },
+ {
+  "number": 1007,
+  "title": "UI: group medication features in a Medication flyout and clarify labels",
+  "html_url": "https://github.com/datagen24/victual/issues/1007",
+  "state": "open",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T17:08:41Z"
+ },
+ {
+  "number": 948,
+  "title": "Label designer: describe merge fields with names, explanations and example values",
+  "html_url": "https://github.com/datagen24/victual/issues/948",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T17:08:43Z"
+ },
+ {
+  "number": 912,
+  "title": "Decide whether ApiResponse encodes with JSON_THROW_ON_ERROR (from #844)",
+  "html_url": "https://github.com/datagen24/victual/issues/912",
+  "state": "open",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T17:08:38Z"
+ },
+ {
+  "number": 909,
+  "title": "Battery and equipment rework: residual battery authorization findings",
+  "html_url": "https://github.com/datagen24/victual/issues/909",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "vNext"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-19T20:44:18Z"
+ },
+ {
+  "number": 796,
+  "title": "Audit and bring the REST API specification into full OpenAPI 3.2 compliance",
+  "html_url": "https://github.com/datagen24/victual/issues/796",
+  "state": "open",
+  "labels": [],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-15T15:30:49Z"
+ },
+ {
+  "number": 771,
+  "title": "Design: external identity provider (OIDC and SAML) with Authentik as the reference IdP",
+  "html_url": "https://github.com/datagen24/victual/issues/771",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-14T21:20:42Z"
+ },
+ {
+  "number": 770,
+  "title": "Design: OAuth 2.1 access tokens for API and MCP, replacing static API keys as the primary credential",
+  "html_url": "https://github.com/datagen24/victual/issues/770",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-14T21:20:41Z"
+ },
+ {
+  "number": 762,
+  "title": "Users: roles can't be set when creating a user, and the only entry point is an unlabeled lock icon",
+  "html_url": "https://github.com/datagen24/victual/issues/762",
+  "state": "open",
+  "labels": [
+   {
+    "name": "accessibility"
+   },
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T17:08:40Z"
+ },
+ {
+  "number": 737,
+  "title": "Consumption recipe sharing: answer a share request identically whether or not the user exists",
+  "html_url": "https://github.com/datagen24/victual/issues/737",
+  "state": "open",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-21T17:08:39Z"
+ },
+ {
+  "number": 655,
+  "title": "Implement Home Assistant add-on version upgrades independently of Grocy import",
+  "html_url": "https://github.com/datagen24/victual/issues/655",
+  "state": "open",
+  "labels": [],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-19T16:16:30Z"
+ },
+ {
+  "number": 654,
+  "title": "Feature Request: Target as Home Assistant Addon",
+  "html_url": "https://github.com/datagen24/victual/issues/654",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-19T16:16:30Z"
+ },
+ {
+  "number": 486,
+  "title": "Installation country setting (environment variable and onboarding)",
+  "html_url": "https://github.com/datagen24/victual/issues/486",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   },
+   {
+    "name": "php"
+   }
+  ],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-14T21:20:41Z"
+ },
+ {
+  "number": 484,
+  "title": "Planning: web setup flow — upload a grocy database and bring the app up",
+  "html_url": "https://github.com/datagen24/victual/issues/484",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   },
+   {
+    "name": "php"
+   }
+  ],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-14T21:20:40Z"
+ },
+ {
+  "number": 483,
+  "title": "Planning: canonical, symbology-tagged barcode storage and one inbound scan resolver",
+  "html_url": "https://github.com/datagen24/victual/issues/483",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   },
+   {
+    "name": "php"
+   }
+  ],
+  "milestone": {
+   "title": "0.6.0"
+  },
+  "closed_at": null,
+  "updated_at": "2026-10-14T21:20:39Z"
+ },
+ {
+  "number": 139,
+  "title": "Plan 18 — run the Home Assistant verifications (2, the HA half of 4, and 8)",
+  "html_url": "https://github.com/datagen24/victual/issues/139",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": null,
+  "closed_at": null,
+  "updated_at": "2026-09-14T01:49:02Z"
+ },
+ {
+  "number": 133,
+  "title": "Plan 20 — pieces 2, 4, 5 and the credential split (piece 4 is also #93's last gate)",
+  "html_url": "https://github.com/datagen24/victual/issues/133",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": null,
+  "closed_at": null,
+  "updated_at": "2026-10-06T21:25:25Z"
+ },
+ {
+  "number": 93,
+  "title": "Verify K3S operation (label worker, SIGTERM on a cluster)",
+  "html_url": "https://github.com/datagen24/victual/issues/93",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": null,
+  "closed_at": null,
+  "updated_at": "2026-10-06T21:25:28Z"
+ },
+ {
+  "number": 86,
+  "title": "MCP sidecar: deployment, Inspector, real-client checks and two-replica soak",
+  "html_url": "https://github.com/datagen24/victual/issues/86",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": null,
+  "closed_at": null,
+  "updated_at": "2026-10-12T17:58:25Z"
+ },
+ {
+  "number": 80,
+  "title": "Wave 3b (deferred) — Plan 09: US barcode lookup sources",
+  "html_url": "https://github.com/datagen24/victual/issues/80",
+  "state": "open",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": null,
+  "closed_at": null,
+  "updated_at": "2026-10-12T17:58:26Z"
+ }
+]
