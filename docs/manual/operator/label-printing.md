@@ -25,7 +25,8 @@ than re-running whatever booking produced it.
   1.1). You can also upload your own TTF or OTF. Label width is always across the roll and
   label length along the tape. **Reading orientation** sets which edge is the top of the
   design: turned 90°, the tape length runs across the canvas, so a long label can be read
-  sideways. The rendered preview shows the label as it leaves the printer.
+  sideways. Each element except a line can also be rotated in 90° steps from its properties.
+  The rendered preview shows the label as it leaves the printer.
 - **`/labelprinters`** — register and edit workers and printers, issue credentials or
   pairing material, and revoke worker credentials. Requires `ADMIN`.
 - **`/labelprintjobs`** — the job queue, with the printer each job targets. States include

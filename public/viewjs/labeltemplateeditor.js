@@ -197,6 +197,7 @@
 			// is now a per-control call rather than a constructor-style flag.
 			shape.set({ victualId: element.id, lockRotation: true });
 			shape.setControlVisible('mtr', false);
+			placeTurned(shape, element);
 			canvas.add(shape);
 			if (element.id === selectedBefore)
 			{
@@ -285,6 +286,39 @@
 		return null;
 	}
 
+	/** The element's unturned width and height in millimetres, as its own frame draws it. */
+	function localSize(element)
+	{
+		if (element.type === 'qr')
+		{
+			var side = (21 + 2 * (element.quiet_zone_modules || 4)) * element.module_mm;
+			return { w: side, h: side };
+		}
+		return { w: element.width_mm, h: element.height_mm };
+	}
+
+	/**
+	 * Turns a shape by the element's rotation_deg and places it so its footprint's top-left
+	 * corner is (x_mm, y_mm). fabric turns clockwise about the left/top origin pinned in
+	 * shapeFor(), which carries the unturned top-left corner to the footprint's top-right at
+	 * 90 - the same corner TemplateDocument's convention puts it in.
+	 */
+	function placeTurned(shape, element)
+	{
+		var turn = element.rotation_deg || 0;
+		if (turn === 0 || element.type === 'line')
+		{
+			return;
+		}
+		var size = localSize(element);
+		var offset = { 90: [size.h, 0], 180: [size.w, size.h], 270: [0, size.w] }[turn];
+		shape.set({
+			angle: turn,
+			left: (element.x_mm + offset[0]) * MM_PER_PX,
+			top: (element.y_mm + offset[1]) * MM_PER_PX
+		});
+	}
+
 	/** A drag or a resize writes millimetres back into the document, which is the state. */
 	function absorb(shape)
 	{
@@ -311,21 +345,24 @@
 			return;
 		}
 
-		element.x_mm = round(shape.left / MM_PER_PX);
-		element.y_mm = round(shape.top / MM_PER_PX);
+		if (element.type !== 'qr')
+		{
+			// Scaled width and height are the unturned box's, whatever the angle.
+			if (typeof element.width_mm === 'number')
+			{
+				element.width_mm = round(shape.getScaledWidth() / MM_PER_PX);
+			}
+			if (typeof element.height_mm === 'number')
+			{
+				element.height_mm = round(shape.getScaledHeight() / MM_PER_PX);
+			}
+		}
 
-		if (element.type === 'qr')
-		{
-			return;
-		}
-		if (typeof element.width_mm === 'number')
-		{
-			element.width_mm = round(shape.getScaledWidth() / MM_PER_PX);
-		}
-		if (typeof element.height_mm === 'number')
-		{
-			element.height_mm = round(shape.getScaledHeight() / MM_PER_PX);
-		}
+		// left/top is the turned origin; the document stores the footprint's top-left.
+		var size = localSize(element);
+		var offset = { 0: [0, 0], 90: [size.h, 0], 180: [size.w, size.h], 270: [0, size.w] }[element.rotation_deg || 0];
+		element.x_mm = round(shape.left / MM_PER_PX - offset[0]);
+		element.y_mm = round(shape.top / MM_PER_PX - offset[1]);
 	}
 
 	/** Rounds to a tenth of a millimetre and never below zero. */
@@ -477,6 +514,30 @@
 			holder.appendChild(field(__t('Stroke (mm)'), element.stroke_mm, function(v) { element.stroke_mm = millimetres(v, element.stroke_mm); }));
 		}
 
+		if (element.type !== 'line')
+		{
+			// A button-like select rather than fabric's free rotate handle: the document admits
+			// quarter turns only, and a handle would invite angles it would refuse.
+			holder.appendChild(field(__t('Rotation'), String(element.rotation_deg || 0), function(v)
+			{
+				var turn = parseInt(v, 10) || 0;
+				if (turn === 0)
+				{
+					delete element.rotation_deg;
+				}
+				else
+				{
+					element.rotation_deg = turn;
+				}
+				absorbCanvasSize();
+			}, [
+				{ value: '0', label: __t('None') },
+				{ value: '90', label: __t('90° clockwise') },
+				{ value: '180', label: __t('180°') },
+				{ value: '270', label: __t('90° counter-clockwise') }
+			]));
+		}
+
 		holder.appendChild(field(__t('Colour'), element.color, function(v) { element.color = v; },
 			[{ value: 'black', label: __t('Black') }, { value: 'red', label: __t('Red') }, { value: 'white', label: __t('White') }]));
 
@@ -565,19 +626,19 @@
 		var max = region('canvas-max-height-mm').value;
 		state.document.canvas.max_height_mm = max === '' ? null : millimetres(max, null);
 
-		// Orientation is the one schema 2 feature, so an upright design stays schema 1 and
-		// keeps validating exactly as it always has.
+		// Turning, of the canvas or of an element, is what schema 2 adds, so a design with no
+		// turn anywhere stays schema 1 and keeps validating exactly as it always has.
 		var turn = parseInt(region('canvas-orientation').value, 10) || 0;
+		var turnedElement = state.document.elements.some(function(e) { return (e.rotation_deg || 0) !== 0; });
 		if (turn === 0)
 		{
-			state.document.schema_version = 1;
 			delete state.document.canvas.orientation_deg;
 		}
 		else
 		{
-			state.document.schema_version = 2;
 			state.document.canvas.orientation_deg = turn;
 		}
+		state.document.schema_version = turn !== 0 || turnedElement ? 2 : 1;
 	}
 
 	/** Loads the stored draft from the server into the editor state and draws it. */

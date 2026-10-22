@@ -46,14 +46,15 @@ runLabelTests(function (PDO $db, string $schema) use ($binary, $font) {
 	$asset = tx($db, fn () => (new LabelAssetService($db))->Store('agreement-font', 'font', 'font/ttf', file_get_contents($font), 'SIL Open Font License 1.1', 'Test fixture only'));
 	check($asset['font_family'] !== null, 'The font decodes to a family rather than a declared type');
 
-	// Schema 1, then every turn schema 2 allows (#1033). A quarter turn is the case where the
-	// two implementations could disagree about direction, or about which dpi each reading
-	// axis takes, and both still pass their own tests.
-	foreach ([null, 0, 90, 180, 270] as $orientation)
+	// Schema 1, then every canvas turn schema 2 allows, then the QR turned on its own and
+	// inside a turned canvas (#1033). A quarter turn is the case where the two
+	// implementations could disagree about direction, or about which dpi each axis takes, and
+	// both still pass their own tests.
+	foreach ([[null, 0], [0, 0], [90, 0], [180, 0], [270, 0], [0, 90], [90, 270], [180, 180]] as [$orientation, $qrTurn])
 	{
 		$quarter = $orientation === 90 || $orientation === 270;
-		$label = $orientation === null ? 'schema 1' : 'orientation ' . $orientation;
-		$template = tx($db, fn () => $templates->Create('Agreement label ' . $orientation, null, 'location', null));
+		$label = ($orientation === null ? 'schema 1' : 'orientation ' . $orientation) . ($qrTurn ? ', QR turned ' . $qrTurn : '');
+		$template = tx($db, fn () => $templates->Create('Agreement label ' . $label, null, 'location', null));
 		$draft = $templates->GetDraft((int)$template['id']);
 		$canvas = ['width_mm' => 58.9, 'height_mm' => 30.0, 'max_height_mm' => null,
 			'margins_mm' => ['top' => 1.0, 'right' => 1.0, 'bottom' => 1.0, 'left' => 1.0]];
@@ -65,7 +66,8 @@ runLabelTests(function (PDO $db, string $schema) use ($binary, $font) {
 			'canvas' => $canvas,
 			'elements' => [
 				['type' => 'qr', 'id' => 'code', 'x_mm' => 2.0, 'y_mm' => 2.0, 'module_mm' => 0.6,
-					'ec_level' => 'M', 'quiet_zone_modules' => 4, 'color' => 'black', 'source' => 'label.payload'],
+					'ec_level' => 'M', 'quiet_zone_modules' => 4, 'color' => 'black', 'source' => 'label.payload']
+					+ ($qrTurn ? ['rotation_deg' => $qrTurn] : []),
 				['type' => 'text', 'id' => 'name', 'x_mm' => $quarter ? 2.0 : 24.0, 'y_mm' => $quarter ? 22.0 : 4.0, 'width_mm' => $quarter ? 26.0 : 32.0, 'height_mm' => 12.0,
 					'field' => 'location.name', 'font_asset' => 'agreement-font', 'size_pt' => 11.0,
 					'align' => 'left', 'valign' => 'top', 'wrap' => true, 'line_spacing' => 1.2, 'overflow' => 'error', 'color' => 'black'],
@@ -79,7 +81,7 @@ runLabelTests(function (PDO $db, string $schema) use ($binary, $font) {
 
 		// The renderer fetches assets over its own authorized route in production; offline it is
 		// handed paths, which is the only difference between the two modes.
-		$directory = sys_get_temp_dir() . '/' . $schema . '-' . ($orientation ?? 'v1');
+		$directory = sys_get_temp_dir() . '/' . $schema . '-' . ($orientation ?? 'v1') . '-' . $qrTurn;
 		mkdir($directory, 0700, true);
 		foreach ($input['assets'] as $index => $stored)
 		{

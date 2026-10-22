@@ -301,32 +301,42 @@ class ArtifactService extends LabelService
                 continue;
             }
             $matrix = $input['qr'][$element['id']];
-            $modulePxX = MediaProfileService::PixelsFromMm($element['module_mm'], $readingDpiX);
-            $modulePxY = MediaProfileService::PixelsFromMm($element['module_mm'], $readingDpiY);
+
+            // The symbol is drawn unturned in a frame of its own, each axis at the dpi of the
+            // reading axis it lands on, then turned by the element's own rotation_deg and
+            // placed with its footprint's top-left at (x_mm, y_mm) - the same rule, one level
+            // in, as the canvas turn below.
+            $turn = (int)($element['rotation_deg'] ?? 0);
+            $elementQuarter = $turn === 90 || $turn === 270;
+            $localDpiX = $elementQuarter ? $readingDpiY : $readingDpiX;
+            $localDpiY = $elementQuarter ? $readingDpiX : $readingDpiY;
+            $modulePxX = MediaProfileService::PixelsFromMm($element['module_mm'], $localDpiX);
+            $modulePxY = MediaProfileService::PixelsFromMm($element['module_mm'], $localDpiY);
 
             if ($modulePxX < 1 || $modulePxY < 1) {
                 $this->Refuse('elements.' . $element['id'], 'qr_too_small', 'A module of ' . $element['module_mm'] . ' mm is under one device pixel on this profile');
             }
 
-            $originX = MediaProfileService::PixelsFromMm($element['x_mm'], $readingDpiX) + $element['quiet_zone_modules'] * $modulePxX;
-            $originY = MediaProfileService::PixelsFromMm($element['y_mm'], $readingDpiY) + $element['quiet_zone_modules'] * $modulePxY;
+            $span = $matrix['size'] + 2 * $element['quiet_zone_modules'];
+            $localWidth = $span * $modulePxX;
+            $localHeight = $span * $modulePxY;
+            $footX = MediaProfileService::PixelsFromMm($element['x_mm'], $readingDpiX);
+            $footY = MediaProfileService::PixelsFromMm($element['y_mm'], $readingDpiY);
 
             for ($row = 0; $row < $matrix['size']; $row++) {
                 for ($column = 0; $column < $matrix['size']; $column++) {
                     // The centre of the module, so a half-pixel of rounding either way in
                     // the renderer does not turn agreement into a failure.
-                    $readingX = $originX + (int)($column * $modulePxX + intdiv($modulePxX, 2));
-                    $readingY = $originY + (int)($row * $modulePxY + intdiv($modulePxY, 2));
+                    $localX = ($element['quiet_zone_modules'] + $column) * $modulePxX + intdiv($modulePxX, 2);
+                    $localY = ($element['quiet_zone_modules'] + $row) * $modulePxY + intdiv($modulePxY, 2);
+                    [$turnedX, $turnedY] = self::TurnPoint($localX, $localY, $localWidth, $localHeight, $turn);
+                    $readingX = $footX + $turnedX;
+                    $readingY = $footY + $turnedY;
 
                     if ($readingY >= $readingHeight || $readingX >= $readingWidth) {
                         $this->Refuse('elements.' . $element['id'], 'qr_outside_artifact', 'The QR symbol extends past the artifact at module ' . $row . ',' . $column);
                     }
-                    [$x, $y] = match ($orientation) {
-                        90 => [$readingHeight - 1 - $readingY, $readingX],
-                        180 => [$readingWidth - 1 - $readingX, $readingHeight - 1 - $readingY],
-                        270 => [$readingY, $readingWidth - 1 - $readingX],
-                        default => [$readingX, $readingY],
-                    };
+                    [$x, $y] = self::TurnPoint($readingX, $readingY, $readingWidth, $readingHeight, $orientation);
 
                     $dark = $pixels[$y][$x] === $darkIndex;
                     if ($dark !== ($matrix['modules'][$row][$column] === '1')) {
@@ -335,5 +345,21 @@ class ArtifactService extends LabelService
                 }
             }
         }
+    }
+
+    /**
+     * Where pixel (x, y) of a W x H image lands when the image is turned clockwise by
+     * `degrees`: TemplateDocument's convention, shared by the canvas turn and an element's.
+     *
+     * @return array{0: int, 1: int}
+     */
+    private static function TurnPoint(int $x, int $y, int $width, int $height, int $degrees): array
+    {
+        return match ($degrees) {
+            90 => [$height - 1 - $y, $x],
+            180 => [$width - 1 - $x, $height - 1 - $y],
+            270 => [$y, $width - 1 - $x],
+            default => [$x, $y],
+        };
     }
 }

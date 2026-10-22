@@ -30,6 +30,11 @@ namespace Victual\Services\Labels;
  * physical (H-1-y, x) for 90, (W-1-x, H-1-y) for 180 and (y, W-1-x) for 270; the renderer,
  * ArtifactService's QR sampler and the editor each implement that one sentence. A schema 1
  * document is validated and re-emitted as schema 1, so a published digest never moves.
+ *
+ * A schema 2 text, qr, image or rect element may carry `rotation_deg` from the same set. It
+ * turns the element by the same rule inside the reading frame: drawn unturned in a frame of
+ * its own `width_mm` x `height_mm`, turned clockwise, and placed so that the footprint's
+ * top-left corner is (`x_mm`, `y_mm`). A quarter-turned footprint is `height_mm` wide.
  */
 class TemplateDocument
 {
@@ -52,11 +57,11 @@ class TemplateDocument
     private const DOCUMENT_KEYS = ['schema_version', 'entity_kind', 'canvas', 'elements'];
 
     private const TEXT_KEYS = ['type', 'id', 'x_mm', 'y_mm', 'width_mm', 'height_mm', 'field', 'literal',
-        'font_asset', 'size_pt', 'align', 'valign', 'wrap', 'line_spacing', 'overflow', 'min_size_pt', 'color'];
-    private const QR_KEYS = ['type', 'id', 'x_mm', 'y_mm', 'source', 'module_mm', 'ec_level', 'quiet_zone_modules', 'color'];
-    private const IMAGE_KEYS = ['type', 'id', 'x_mm', 'y_mm', 'width_mm', 'height_mm', 'asset', 'fit', 'color'];
+        'font_asset', 'size_pt', 'align', 'valign', 'wrap', 'line_spacing', 'overflow', 'min_size_pt', 'color', 'rotation_deg'];
+    private const QR_KEYS = ['type', 'id', 'x_mm', 'y_mm', 'source', 'module_mm', 'ec_level', 'quiet_zone_modules', 'color', 'rotation_deg'];
+    private const IMAGE_KEYS = ['type', 'id', 'x_mm', 'y_mm', 'width_mm', 'height_mm', 'asset', 'fit', 'color', 'rotation_deg'];
     private const LINE_KEYS = ['type', 'id', 'x1_mm', 'y1_mm', 'x2_mm', 'y2_mm', 'stroke_mm', 'color'];
-    private const RECT_KEYS = ['type', 'id', 'x_mm', 'y_mm', 'width_mm', 'height_mm', 'stroke_mm', 'fill', 'color'];
+    private const RECT_KEYS = ['type', 'id', 'x_mm', 'y_mm', 'width_mm', 'height_mm', 'stroke_mm', 'fill', 'color', 'rotation_deg'];
 
     private const OVERFLOW = ['error', 'ellipsis', 'shrink_to_fit'];
     private const EC_LEVELS = ['L', 'M', 'Q', 'H'];
@@ -120,13 +125,30 @@ class TemplateDocument
             }
             $seen[$id] = true;
 
-            $normalized[] = match ($type) {
+            // A schema 2 element other than a line may be turned too (phase 2 of #1033): the
+            // same quarter turns, about the footprint, as TemplateDocument's docblock states.
+            if (array_key_exists('rotation_deg', $element)) {
+                if ($schema < 2) {
+                    self::Refuse("elements.$id.rotation_deg", 'unknown_property', 'rotation_deg is a schema_version 2 property');
+                }
+                if (!in_array($element['rotation_deg'], self::ORIENTATIONS, true)) {
+                    self::Refuse("elements.$id.rotation_deg", 'invalid_value', 'rotation_deg is one of ' . implode(', ', self::ORIENTATIONS));
+                }
+            }
+
+            $resolved = match ($type) {
                 'text' => self::ValidateText($element, $id, $bounds, $catalogue, $assets, $fields, $usesRed),
                 'qr' => self::ValidateQr($element, $id, $bounds, $usesRed),
                 'image' => self::ValidateImage($element, $id, $bounds, $assets, $usesRed),
                 'line' => self::ValidateLine($element, $id, $bounds, $usesRed),
                 'rect' => self::ValidateRect($element, $id, $bounds, $usesRed),
             };
+            // Kept only when stated, so a schema 2 document written before element rotation
+            // existed normalizes to the same bytes, and the same digest, as it did then.
+            if (array_key_exists('rotation_deg', $element)) {
+                $resolved['rotation_deg'] = $element['rotation_deg'];
+            }
+            $normalized[] = $resolved;
         }
 
         // The capability the document requires is derived from what it draws, never declared:
@@ -394,10 +416,13 @@ class TemplateDocument
         $w = self::Millimetres($e['width_mm'] ?? null, "elements.$id.width_mm", false);
         $h = self::Millimetres($e['height_mm'] ?? null, "elements.$id.height_mm", false);
 
-        if ($x + $w > $canvas['width_mm'] + 0.0001) {
+        // Bounded by its footprint: a quarter-turned box is as wide as it is tall.
+        $turn = $e['rotation_deg'] ?? 0;
+        [$across, $down] = $turn === 90 || $turn === 270 ? [$h, $w] : [$w, $h];
+        if ($x + $across > $canvas['width_mm'] + 0.0001) {
             self::Refuse("elements.$id.width_mm", 'element_outside_canvas', 'The element extends past the canvas width');
         }
-        if ($canvas['height_mm'] !== null && $y + $h > $canvas['height_mm'] + 0.0001) {
+        if ($canvas['height_mm'] !== null && $y + $down > $canvas['height_mm'] + 0.0001) {
             self::Refuse("elements.$id.height_mm", 'element_outside_canvas', 'The element extends past the roll, which is the canvas height when the design is turned');
         }
         return ['x_mm' => $x, 'y_mm' => $y, 'width_mm' => $w, 'height_mm' => $h];
