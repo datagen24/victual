@@ -12361,7 +12361,7 @@
 					"Consumption recipes"
 				],
 				"summary": "Remove a user's share",
-				"description": "Requires STOCK_VIEW. Any user can remove their own share; the owner, or a holder of the share right within the rules of the POST, can remove another's. A share the caller is not allowed to remove answers 404, exactly as a user with no share does, and nothing is removed.",
+				"description": "Requires STOCK_VIEW. Any user can remove their own share; the owner, or a holder of the share right within the rules of the POST, can remove another's. A share the caller is not allowed to remove answers exactly as a share that does not exist, and nothing is removed.",
 				"responses": {
 					"204": {
 						"description": "Success"
@@ -12379,7 +12379,7 @@
 						"description": "Global permission missing"
 					},
 					"404": {
-						"description": "No such consumption recipe, no share on it, or a share the caller may not remove. The answers are the same.",
+						"description": "No such consumption recipe, no share on it, or a share the caller may not remove. A share the caller may not remove answers exactly as a missing share does. A caller without the share right gets the missing-recipe answer for all three; a share holder is told the recipe exists but the share does not.",
 						"content": {
 							"application/json": {
 								"schema": {
