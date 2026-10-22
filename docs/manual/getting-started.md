@@ -96,6 +96,15 @@ If the password line was lost before anybody logged in, empty the database and m
 with `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD` set; the seeding happens only when the database is
 empty.
 
+## Quantity units
+
+A new installation has two quantity units, Piece and Pack, and no conversions between units.
+For a US household, `.devtools/seed/seed_units.py` adds the US customary kitchen units, the
+metric units printed on US labels, and the conversions between them, through the REST API.
+Run it once after the first login. The
+[seed README](https://github.com/datagen24/victual/blob/master/.devtools/seed/README.md) lists
+the units and says how to run it.
+
 ## PostgreSQL
 
 `DB_DRIVER` is `pgsql`; there is no other supported value. Set `DB_HOST`, `DB_PORT`,
