@@ -566,6 +566,18 @@
 		return prefix + n;
 	}
 
+	/**
+	 * The field a new text element starts on: the first in this kind's catalogue list, which
+	 * is its name-like field. Never `<kind>.name` built by hand - a stock entry has no name of
+	 * its own, its field is stock_entry.product_name, and the server refuses a key it does not
+	 * have.
+	 */
+	function defaultField()
+	{
+		var fields = FIELD_KEYS_BY_KIND[Victual.LabelTemplate.EntityKind] || [];
+		return fields.length > 0 ? fields[0] : null;
+	}
+
 	/** Adds an element of the given kind to the document with defaults for that kind. */
 	function add(kind)
 	{
@@ -580,7 +592,7 @@
 				return;
 			}
 			Object.assign(element, {
-				width_mm: 30, height_mm: 8, field: Victual.LabelTemplate.EntityKind + '.name', literal: null,
+				width_mm: 30, height_mm: 8, field: defaultField(), literal: null,
 				font_asset: font.name, size_pt: 11, align: 'left', valign: 'top', wrap: true,
 				line_spacing: 1.2, overflow: 'error', min_size_pt: null
 			});

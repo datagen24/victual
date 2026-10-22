@@ -71,6 +71,18 @@ class LabelEditorFieldCatalogueTest extends TestCase
     /**
      * The editor describes no field the server does not have.
      */
+    /**
+     * A new text element starts on a field the catalogue has. Building `<kind>.name` by hand
+     * gave stock entries "stock_entry.name", which the server refused on save.
+     */
+    public function testANewTextElementStartsOnACatalogueField(): void
+    {
+        $source = self::EditorSource();
+        self::assertStringNotContainsString("EntityKind + '.", $source, 'the editor composes no field key from the entity kind');
+        self::assertMatchesRegularExpression('/field: defaultField\(\)/', $source, 'a new text element takes defaultField()');
+        self::assertMatchesRegularExpression('/function defaultField\(\)\s*\{[^}]*FIELD_KEYS_BY_KIND\[Victual\.LabelTemplate\.EntityKind\][^}]*fields\[0\]/s', $source, 'which is the first key of the kind\'s catalogue list');
+    }
+
     public function testEditorDescribesNoUnknownField(): void
     {
         preg_match_all("/^\\t\\t\\t'([a-z_]+\\.[a-z_]+)': \\{ name:/m", self::EditorSource(), $described);
