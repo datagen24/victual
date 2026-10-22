@@ -99,9 +99,9 @@ empty.
 ## Quantity units
 
 A new installation has two quantity units, Piece and Pack, and no conversions between units.
-For a US household, `.devtools/seed/seed_units.py` adds the US customary kitchen units, the
-metric units printed on US labels, and the conversions between them, through the REST API.
-Run it once after the first login. The
+`.devtools/seed/seed_units.py` adds a working set through the REST API. Its `--system` option
+picks US customary units, metric units, or both with the conversions between them, for a
+household that uses both. Run it once after the first login. The
 [seed README](https://github.com/datagen24/victual/blob/master/.devtools/seed/README.md) lists
 the units and says how to run it.
 
