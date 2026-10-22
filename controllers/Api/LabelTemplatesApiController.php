@@ -54,6 +54,7 @@ class LabelTemplatesApiController extends BaseApiController
                         'label-templates-archive' => $templates->Archive((int)$args['templateId']),
                         'label-assets-list' => $db->query('SELECT id,name,asset_kind,mime_type,byte_length,content_digest,width_px,height_px,font_family,font_style,licence,licence_notice,row_created_timestamp FROM label_assets ORDER BY id')->fetchAll(\PDO::FETCH_ASSOC),
                         'label-assets-create' => $this->StoreAsset($db, $body),
+                        'label-assets-starter-fonts' => (new LabelAssetService($db))->InstallStarterFonts(),
                         'label-preview' => $this->Preview($db, (int)$args['templateId'], $body, $user),
                         'label-render-status' => $this->RenderStatus($db, (int)$args['requestId']),
                         'label-renderer-credential' => (new \Victual\Services\Labels\LabelWorkerCredentialService($db))->IssueRenderer((int)$args['workerId'], $user ?? 0),

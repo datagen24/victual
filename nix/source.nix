@@ -31,6 +31,9 @@ let
     (fs.fileFilter (f: f.hasExt "php") (root + "/helpers"))
     (fs.fileFilter (f: f.hasExt "php") (root + "/middleware"))
     (fs.fileFilter (f: f.hasExt "php") (root + "/services"))
+    # The label starter fonts and their licence: read at runtime by
+    # LabelAssetService::InstallStarterFonts(), so not optional the way docs are.
+    (root + "/services/Labels/StarterFonts")
     (root + "/views")
     (root + "/localization")
     (root + "/plugins")

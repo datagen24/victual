@@ -745,6 +745,39 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		self::assertSame('Duplicate One', $rowsBefore['name'], 'The stored name is the one the first upload gave');
 	}
 
+	/**
+	 * Issue #1033: the bundled fonts install as ordinary assets with their licence, a second
+	 * press adds nothing, and a starter name already holding other bytes is refused rather
+	 * than redefined under the templates that pin it.
+	 */
+	public function testStarterFontsInstallOnceAndNeverRedefineAName(): void
+	{
+		$fonts = self::tx(static fn () => (new LabelAssetService(self::$db))->InstallStarterFonts());
+
+		self::assertSame(['Noto Sans', 'Noto Sans Bold', 'Noto Sans Mono'], array_column($fonts, 'name'), 'Each bundled font is stored under its starter name');
+		self::assertSame(['Noto Sans', 'Noto Sans', 'Noto Sans Mono'], array_column($fonts, 'font_family'), 'The family is decoded from each file, not assumed');
+		self::assertSame(['Regular', 'Bold', 'Regular'], array_column($fonts, 'font_style'), 'The style is decoded from each file');
+		foreach ($fonts as $font)
+		{
+			self::assertSame('SIL Open Font License 1.1', $font['licence'], 'A starter font records its licence like any upload');
+			self::assertSame(LabelAssetService::STARTER_FONTS[$font['name']]['sha256'], $font['content_digest'], 'The stored bytes are the pinned file');
+		}
+
+		$again = self::assertRowsUnchanged(static fn () => (new LabelAssetService(self::$db))->InstallStarterFonts());
+		self::assertSame(array_column($fonts, 'id'), array_column($again, 'id'), 'A second install returns the fonts already stored');
+
+		// Move the real Mono aside and put other bytes under its name.
+		self::tx(static fn () => self::$db->exec("UPDATE label_assets SET name = 'Noto Sans Mono moved' WHERE name = 'Noto Sans Mono'"));
+		self::tx(static fn () => (new LabelAssetService(self::$db))
+			->Store('Noto Sans Mono', 'font', 'font/ttf', self::sfnt(['Impostor Mono']), 'OFL-1.1', null));
+
+		$assets = self::assetRowCount();
+		self::assertRefused(
+			static fn () => self::tx(static fn () => (new LabelAssetService(self::$db))->InstallStarterFonts()),
+			'starter_fonts', 'name_taken', 'A starter name holding other bytes');
+		self::assertSame($assets, self::assetRowCount(), 'The refused install writes nothing');
+	}
+
 	/** Runs a store that must add nothing, and returns its result. */
 	private static function assertRowsUnchanged(callable $work): array
 	{

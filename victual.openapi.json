@@ -11071,6 +11071,47 @@
 				}
 			}
 		},
+		"/labels/assets/starter-fonts": {
+			"post": {
+				"tags": [
+					"Label templates"
+				],
+				"summary": "Add the starter fonts",
+				"description": "Stores the bundled Noto Sans, Noto Sans Bold and Noto Sans Mono fonts (SIL Open Font License 1.1) as assets, so text can be added without an upload. Idempotent: fonts already stored are returned as they are. Refused with name_taken when a starter name already holds a different file.",
+				"responses": {
+					"200": {
+						"description": "The asset row of each starter font",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"type": "object"
+									}
+								}
+							}
+						}
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
+					},
+					"422": {
+						"$ref": "#/components/responses/LabelRefused",
+						"description": "A refusal carrying a field and a code"
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
+					}
+				}
+			}
+		},
 		"/labels/assets/{assetId}/bytes": {
 			"get": {
 				"security": [

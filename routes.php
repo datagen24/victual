@@ -262,6 +262,7 @@ $app->group('/api', function (RouteCollectorProxy $group)
 	$group->post('/labels/templates/{templateId}/preview', [LabelTemplatesApiController::class, 'Dispatch'])->setName('label-preview');
 	$group->get('/labels/assets', [LabelTemplatesApiController::class, 'Dispatch'])->setName('label-assets-list');
 	$group->post('/labels/assets', [LabelTemplatesApiController::class, 'Dispatch'])->setName('label-assets-create');
+	$group->post('/labels/assets/starter-fonts', [LabelTemplatesApiController::class, 'Dispatch'])->setName('label-assets-starter-fonts');
 	$group->get('/labels/renders/{requestId}', [LabelTemplatesApiController::class, 'Dispatch'])->setName('label-render-status');
 	$group->get('/labels/artifacts/{artifactId}/image', [LabelTemplatesApiController::class, 'PreviewImage'])->setName('label-artifact-image');
 	$group->post('/labels/workers/{workerId}/renderer-credentials', [LabelTemplatesApiController::class, 'Dispatch'])->setName('label-renderer-credential');

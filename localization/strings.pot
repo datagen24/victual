@@ -2617,6 +2617,15 @@ msgstr ""
 msgid "Width runs across the roll, under the print head; length runs along the tape to the cut. A 32 mm cut on a 60 mm printable roll is width 60 and length 32, and the canvas then shows the long edge on top."
 msgstr ""
 
+msgid "Add starter fonts"
+msgstr ""
+
+msgid "Noto Sans, Noto Sans Bold and Noto Sans Mono, under the SIL Open Font License 1.1."
+msgstr ""
+
+msgid "Starter fonts are available"
+msgstr ""
+
 msgid "Save draft"
 msgstr ""
 
@@ -2689,7 +2698,7 @@ msgstr ""
 msgid "Upload"
 msgstr ""
 
-msgid "Upload a font before adding text: a template pins the font it prints with, and there is no default and no substitution."
+msgid "Add the starter fonts or upload a font before adding text: a template pins the font it prints with, and there is no default and no substitution."
 msgstr ""
 
 msgid "Published version %s"

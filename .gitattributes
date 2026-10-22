@@ -5,3 +5,7 @@
 # fixture that got line-ending normalisation applied to it would be a corrupt database that
 # fails somewhere far from the cause.
 *.db binary
+
+# Bundled label fonts. Binary: a normalised font is a corrupt font.
+*.ttf binary
+*.otf binary

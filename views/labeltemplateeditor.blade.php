@@ -93,6 +93,16 @@
 			</li>
 			@endforeach
 		</ul>
+		{{-- Bundled fonts, so a fresh installation can add text without finding and
+		uploading a font first. Stored as ordinary assets with their licence (issue #1033). --}}
+		<div class="form-group">
+			<button class="btn btn-outline-secondary btn-sm" id="starter-fonts-button">
+				<i class="fa-solid fa-font"></i>&nbsp;{{ $__t('Add starter fonts') }}
+			</button>
+			<small class="form-text text-muted">
+				{{ $__t('Noto Sans, Noto Sans Bold and Noto Sans Mono, under the SIL Open Font License 1.1.') }}
+			</small>
+		</div>
 		<div class="form-group">
 			<label for="asset-file">{{ $__t('Upload a font (TTF or OTF) or a PNG image') }}</label>
 			<input type="file" class="form-control-file" id="asset-file" accept=".ttf,.otf,.png">

@@ -23,6 +23,53 @@ class LabelAssetService extends LabelService
     /** Decoded pixels, not compressed bytes: the bound a decompression bomb is measured against. */
     private const MAX_IMAGE_PIXELS = 16000000;
 
+    /**
+     * The fonts bundled in StarterFonts/, by asset name, with the digest each file must have.
+     *
+     * Pinned here as well as in that directory's README so that a file swapped on disk is a
+     * refusal rather than a different font stored under a trusted name.
+     */
+    public const STARTER_FONTS = [
+        'Noto Sans' => ['file' => 'NotoSans-Regular.ttf', 'sha256' => '478c558ea716033cd60c03438f628dfa75694dcf6b5f6d505a2f05fd2b4f3823'],
+        'Noto Sans Bold' => ['file' => 'NotoSans-Bold.ttf', 'sha256' => '1df075a380fc7cb898acf64c1f7b3b4dd780de3caa860178bf929de35817a913'],
+        'Noto Sans Mono' => ['file' => 'NotoSansMono-Regular.ttf', 'sha256' => '65b5e2b2c4a1fba9ae8be1f026cb35b03dcb8886d9b2a4147054fde12f7e767d'],
+    ];
+
+    private const STARTER_LICENCE = 'SIL Open Font License 1.1';
+    private const STARTER_NOTICE = 'Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic). Licensed under the SIL Open Font License, Version 1.1: https://openfontlicense.org';
+
+    /**
+     * Stores the bundled starter fonts as ordinary assets, so text can be added to a label on
+     * a fresh installation without an upload (issue #1033).
+     *
+     * Idempotent: Store() returns the existing row for bytes already held, under whatever
+     * name they were stored. A starter name already used by *different* bytes is refused
+     * rather than overwritten, because templates pin fonts by name and replacing what a name
+     * means would change every label printed with it.
+     *
+     * @return array[] The asset row of each starter font, in STARTER_FONTS order
+     */
+    public function InstallStarterFonts(): array
+    {
+        $this->Transaction();
+
+        $stored = [];
+        foreach (self::STARTER_FONTS as $name => $font) {
+            $bytes = @file_get_contents(__DIR__ . '/StarterFonts/' . $font['file']);
+            if ($bytes === false || hash('sha256', $bytes) !== $font['sha256']) {
+                $this->Refuse('starter_fonts', 'asset_unavailable', 'The bundled font ' . $font['file'] . ' is missing or does not match its pinned digest');
+            }
+
+            $owner = $this->Query('SELECT content_digest FROM label_assets WHERE name=?', [$name])->fetchColumn();
+            if ($owner !== false && $owner !== $font['sha256']) {
+                $this->Refuse('starter_fonts', 'name_taken', 'An asset named "' . $name . '" already holds a different file; rename it to add the starter fonts');
+            }
+
+            $stored[] = $this->Store($name, 'font', 'font/ttf', $bytes, self::STARTER_LICENCE, self::STARTER_NOTICE);
+        }
+        return $stored;
+    }
+
     public function Store(string $name, string $kind, string $mimeType, string $bytes, string $licence, ?string $licenceNotice): array
     {
         $this->Transaction();
