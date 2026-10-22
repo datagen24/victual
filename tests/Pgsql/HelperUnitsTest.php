@@ -2057,6 +2057,35 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 	}
 
 	/**
+	 * Proves that GetAssetVersion() appends the build's asset token to the version, so a
+	 * redeploy of the same version still changes every `?v=` (assets are served immutable),
+	 * and falls back to the version alone without a token or with a malformed one.
+	 */
+	public function testTheAssetVersionCarriesTheBuildsTokenWhenThereIsOne()
+	{
+		$path = VICTUAL_ROOT_PATH . '/asset-token';
+		$before = is_file($path) ? file_get_contents($path) : null;
+		$fresh = static fn () => (new \ReflectionClass(ApplicationService::class))->newInstanceWithoutConstructor();
+		$version = ApplicationService::GetInstance()->GetInstalledVersion()->Version;
+
+		try
+		{
+			@unlink($path);
+			self::assertSame($version, $fresh()->GetAssetVersion(), 'without a token, the version alone');
+
+			file_put_contents($path, "0123456789ab\n");
+			self::assertSame($version . '.0123456789ab', $fresh()->GetAssetVersion(), 'with one, version and token');
+
+			file_put_contents($path, 'not a token');
+			self::assertSame($version, $fresh()->GetAssetVersion(), 'a malformed token is ignored rather than put in a URL');
+		}
+		finally
+		{
+			$before === null ? @unlink($path) : file_put_contents($path, $before);
+		}
+	}
+
+	/**
 	 * Proves that GetSystemInfo() reports the PHP version, the client from the User-Agent header,
 	 * the PostgreSQL version, the highest applied migration and the operating system.
 	 */
