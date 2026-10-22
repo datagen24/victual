@@ -859,7 +859,7 @@ class ConsumptionRecipeService extends BaseService
 		});
 	}
 
-	/** Removes a share. Anyone may remove their own; the owner or a `share` holder (within rule 4) may remove another's. */
+	/** Removes a share. Anyone may remove their own; the owner or a `share` holder (within rule 4) may remove another's. A share the caller may not remove answers 404 exactly as a missing share does. */
 	public function RemoveShare(int $recipeId, int $targetUserId, ?int $userId = null): void
 	{
 		$userId = self::Actor($userId);
@@ -873,20 +873,17 @@ class ConsumptionRecipeService extends BaseService
 			$current->execute([$recipeId, $targetUserId]);
 			$share = $current->fetch(\PDO::FETCH_ASSOC);
 
-			if ($share === false)
+			// A share the caller may not remove is one they cannot see, so it answers exactly as no share does (#737, D3).
+			$removable = $share !== false && ($targetUserId === $userId || $actor['owner'] || ($actor['share'] && $this->MayChangeShare($actor, $share)));
+			if (!$removable)
 			{
-				// Only someone who can see the share list may learn that a share does not exist.
+				// Only someone who can see the share list may be told that the recipe exists but the share does not.
 				if (!$actor['share'])
 				{
 					throw new ConsumptionException(404, 'not_found', 'Consumption recipe does not exist');
 				}
 
 				throw new ConsumptionException(404, 'not_found', 'That user holds no share on this consumption recipe');
-			}
-
-			if ($targetUserId !== $userId && !$actor['owner'] && (!$actor['share'] || !$this->MayChangeShare($actor, $share)))
-			{
-				throw new ConsumptionException(403, 'right_missing', 'You cannot remove that share');
 			}
 
 			$this->Db()->prepare('DELETE FROM consumption_recipe_shares WHERE recipe_id = ? AND user_id = ?')->execute([$recipeId, $targetUserId]);

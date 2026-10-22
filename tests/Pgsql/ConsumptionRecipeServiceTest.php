@@ -464,7 +464,7 @@ class ConsumptionRecipeServiceTest extends PgsqlSchemaTestCase
 		self::assertSame([], array_filter(self::$service->ListShares($id, self::OWNER), fn($s) => $s['user_id'] === self::OWNER), 'sharing with the owner writes nothing and does not refuse (#737)');
 
 		self::$service->SetShare($id, self::OTHER, ['consume' => true, 'edit' => true], self::OWNER);
-		$this->expectRefusal(fn() => self::$service->RemoveShare($id, self::OTHER, self::MEMBER), 403, 'right_missing');
+		$this->expectRefusal(fn() => self::$service->RemoveShare($id, self::OTHER, self::MEMBER), 404, 'not_found');
 		self::assertCount(1, array_filter(self::$service->ListShares($id, self::OWNER), fn($s) => $s['user_id'] === self::OTHER && $s['rights']['edit']));
 		self::assertSame([], array_filter(self::$service->ListShares($id, self::MEMBER), fn($s) => $s['user_id'] === self::OTHER), 'a holder does not see a share they could not change');
 
