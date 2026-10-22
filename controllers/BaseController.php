@@ -67,8 +67,9 @@ class BaseController
 	{
 		$container = $this->AppContainer;
 
-		$versionInfo = ApplicationService::GetInstance()->GetInstalledVersion();
-		$this->View->set('version', $versionInfo->Version);
+		// Every `?v=` in the views is this value. It is the asset version rather than
+		// version.json's, so a redeploy that changes what is served changes the URL too.
+		$this->View->set('version', ApplicationService::GetInstance()->GetAssetVersion());
 
 		$localizationService = LocalizationService::GetInstance();
 		$this->View->set('__t', function (string $text, ...$placeholderValues) use ($localizationService)

@@ -14,6 +14,9 @@ class ApplicationService extends BaseService
 {
 	private $InstalledVersion;
 
+	/** GetAssetVersion()'s answer, computed once per instance. */
+	private ?string $AssetVersion = null;
+
 	/**
 	 * Parses the changelog/*.md files (named "<release number>_<version>_<release date>.md")
 	 * into a list sorted by newest release first.
@@ -76,6 +79,32 @@ class ApplicationService extends BaseService
 		}
 
 		return $this->InstalledVersion;
+	}
+
+	/**
+	 * The token that busts the browser cache for scripts and stylesheets: version.json's
+	 * version, plus the build's asset token when the image has one.
+	 *
+	 * The web tier serves assets as `public, immutable` for 30 days, keyed on the URL, so a
+	 * `?v=` that only moves with version.json leaves every browser on the old script after a
+	 * redeploy of the same version - which is how a master build's editor kept running the
+	 * previous release's JavaScript. nix/app.nix writes `asset-token`, a hash of the
+	 * application source and the frontend lock files, so the token moves exactly when what
+	 * the browser would fetch can have changed. A checkout without that file (development,
+	 * where nothing is cached as immutable) gets the version alone, as before.
+	 */
+	public function GetAssetVersion(): string
+	{
+		if ($this->AssetVersion === null)
+		{
+			$version = (string)$this->GetInstalledVersion()->Version;
+			$token = @file_get_contents(__DIR__ . '/../asset-token');
+			$this->AssetVersion = is_string($token) && preg_match('/^[0-9a-f]{12}$/D', trim($token))
+				? $version . '.' . trim($token)
+				: $version;
+		}
+
+		return $this->AssetVersion;
 	}
 
 	/**

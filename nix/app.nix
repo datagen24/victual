@@ -107,6 +107,14 @@ php.buildComposerProject2 (finalAttrs: {
 
     # Nothing writes here at runtime.
     chmod -R a-w "$VICTUAL_VIEWCACHE_PATH"
+
+    # The asset token ApplicationService::GetAssetVersion() appends to every `?v=`. The
+    # web tier serves assets as immutable for 30 days, so the token has to move whenever a
+    # served byte can: $src is content-addressed (any change to the application tree,
+    # public/ included, gives it a new store path), and the frontend packages are fixed by
+    # the two lock files hashed beside it.
+    printf '%s %s' "$src" "$(cat ${../package.json} ${../yarn.lock} | sha256sum)" \
+      | sha256sum | cut -c1-12 > "$root/asset-token"
   '';
 
   passthru = {
