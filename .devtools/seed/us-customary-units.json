@@ -1,0 +1,30 @@
+{
+  "comment": "US customary quantity units and the global conversions between them, loaded by seed_units.py. A unit with a dimension gets a conversion to every other unit of the same dimension; size is an exact decimal in that dimension's base unit (milliliter, gram, piece). Sizes are the NIST definitions: 1 US fluid ounce = 29.5735295625 mL, 1 avoirdupois pound = 453.59237 g. Volume and weight are never converted into each other: that depends on the product.",
+  "units": [
+    {"name": "Teaspoon", "name_plural": "Teaspoons", "description": "US customary volume (tsp)", "dimension": "volume", "size": "4.92892159375"},
+    {"name": "Tablespoon", "name_plural": "Tablespoons", "description": "US customary volume (tbsp), 3 teaspoons", "dimension": "volume", "size": "14.78676478125"},
+    {"name": "Fluid ounce", "name_plural": "Fluid ounces", "description": "US customary volume (fl oz), 2 tablespoons", "dimension": "volume", "size": "29.5735295625"},
+    {"name": "Cup", "name_plural": "Cups", "description": "US customary volume, 8 fluid ounces", "dimension": "volume", "size": "236.5882365"},
+    {"name": "Pint", "name_plural": "Pints", "description": "US customary liquid volume (pt), 2 cups", "dimension": "volume", "size": "473.176473"},
+    {"name": "Quart", "name_plural": "Quarts", "description": "US customary liquid volume (qt), 2 pints", "dimension": "volume", "size": "946.352946"},
+    {"name": "Gallon", "name_plural": "Gallons", "description": "US customary liquid volume (gal), 4 quarts", "dimension": "volume", "size": "3785.411784"},
+    {"name": "Milliliter", "name_plural": "Milliliters", "description": "Metric volume (mL), as printed on US labels", "dimension": "volume", "size": "1"},
+    {"name": "Liter", "name_plural": "Liters", "description": "Metric volume (L), as printed on US labels", "dimension": "volume", "size": "1000"},
+    {"name": "Ounce", "name_plural": "Ounces", "description": "US customary weight (oz, avoirdupois); not fluid ounce", "dimension": "weight", "size": "28.349523125"},
+    {"name": "Pound", "name_plural": "Pounds", "description": "US customary weight (lb, avoirdupois), 16 ounces", "dimension": "weight", "size": "453.59237"},
+    {"name": "Gram", "name_plural": "Grams", "description": "Metric weight (g), as printed on US labels", "dimension": "weight", "size": "1"},
+    {"name": "Kilogram", "name_plural": "Kilograms", "description": "Metric weight (kg), as printed on US labels", "dimension": "weight", "size": "1000"},
+    {"name": "Piece", "name_plural": "Pieces", "description": "One item", "dimension": "count", "size": "1"},
+    {"name": "Dozen", "name_plural": "Dozens", "description": "12 pieces", "dimension": "count", "size": "12"},
+    {"name": "Pack", "name_plural": "Packs", "description": "Pieces per pack depend on the product"},
+    {"name": "Can", "name_plural": "Cans", "description": "Contents depend on the product"},
+    {"name": "Bottle", "name_plural": "Bottles", "description": "Contents depend on the product"},
+    {"name": "Jar", "name_plural": "Jars", "description": "Contents depend on the product"},
+    {"name": "Box", "name_plural": "Boxes", "description": "Contents depend on the product"},
+    {"name": "Bag", "name_plural": "Bags", "description": "Contents depend on the product"},
+    {"name": "Carton", "name_plural": "Cartons", "description": "Contents depend on the product"},
+    {"name": "Bunch", "name_plural": "Bunches", "description": "Produce sold by the bunch"},
+    {"name": "Loaf", "name_plural": "Loaves", "description": "Bread"},
+    {"name": "Stick", "name_plural": "Sticks", "description": "Butter; a stick is 4 oz or 8 tbsp, set per product"}
+  ]
+}
