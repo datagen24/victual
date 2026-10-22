@@ -22,7 +22,10 @@ than re-running whatever booking produced it.
   entity kind it is for — one of the six above. A text element needs a stored font, because
   a template pins the font it prints with. **Add starter fonts**, under "Fonts and images",
   stores the bundled Noto Sans, Noto Sans Bold and Noto Sans Mono (SIL Open Font License
-  1.1). You can also upload your own TTF or OTF.
+  1.1). You can also upload your own TTF or OTF. Label width is always across the roll and
+  label length along the tape. **Reading orientation** sets which edge is the top of the
+  design: turned 90°, the tape length runs across the canvas, so a long label can be read
+  sideways. The rendered preview shows the label as it leaves the printer.
 - **`/labelprinters`** — register and edit workers and printers, issue credentials or
   pairing material, and revoke worker credentials. Requires `ADMIN`.
 - **`/labelprintjobs`** — the job queue, with the printer each job targets. States include

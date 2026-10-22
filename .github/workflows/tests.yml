@@ -382,7 +382,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: datagen24/victual-label-renderer
-          ref: f05c432f7857f976e0223296f968d641fa401254
+          ref: 893bfad824f1e4ea1ffd4d8a3968e863b9a3eef8
           path: .agreement
 
       - name: Build the pinned renderer

@@ -259,6 +259,14 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		return self::withElement(array_merge(self::textElement(), $overrides));
 	}
 
+	/** Returns $document as schema 2, read turned clockwise by $degrees onto the tape. */
+	private static function turned(array $document, int $degrees = 90): array
+	{
+		$document['schema_version'] = 2;
+		$document['canvas']['orientation_deg'] = $degrees;
+		return $document;
+	}
+
 	/** Returns the QR-only document with $overrides applied to its canvas. */
 	private static function withCanvas(array $overrides): array
 	{
@@ -415,6 +423,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'an unknown document property' => [array_merge(self::qrOnlyDocument(), ['nonsense' => 1]), 'document.nonsense', 'unknown_property'],
 			'an unknown schema version' => [array_merge(self::qrOnlyDocument(), ['schema_version' => 99]), 'schema_version', 'unsupported_version'],
 			'no schema version at all' => [array_diff_key(self::qrOnlyDocument(), ['schema_version' => null]), 'schema_version', 'unsupported_version'],
+			'an orientation on a schema 1 document' => [self::withCanvas(['orientation_deg' => 90]), 'canvas.orientation_deg', 'unknown_property'],
+			'an orientation that is not a quarter turn' => [self::turned(self::qrOnlyDocument(), 45), 'canvas.orientation_deg', 'invalid_value'],
+			'an element past the tape length on a turned design' => [self::turned(self::withText(['x_mm' => 2.0, 'y_mm' => 2.0, 'width_mm' => 40.0])), 'elements.title.width_mm', 'element_outside_canvas'],
+			'an element past the roll on a turned design' => [self::turned(self::withText(['x_mm' => 2.0, 'y_mm' => 55.0, 'width_mm' => 20.0])), 'elements.title.height_mm', 'element_outside_canvas'],
 			'a document for another entity kind' => [array_merge(self::qrOnlyDocument(), ['entity_kind' => 'product']), 'entity_kind', 'entity_kind_mismatch'],
 
 			// Canvas.
@@ -1261,6 +1273,18 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		$palette ??= $profile['pixel_policy']['palette'];
 		$height ??= self::pixels((float)($document['canvas']['height_mm'] ?? $document['canvas']['max_height_mm']), (int)$profile['dpi_y']);
 
+		// A turned design is painted in its reading frame - each axis at the dpi of the
+		// physical axis it becomes - and then permuted onto the raster, as the renderer does.
+		$orientation = (int)($document['canvas']['orientation_deg'] ?? 0);
+		$quarter = $orientation === 90 || $orientation === 270;
+		$physicalWidth = $width;
+		$physicalHeight = $height;
+		if ($quarter)
+		{
+			[$width, $height] = [$height, $width];
+			$profile = array_replace($profile, ['dpi_x' => $profile['dpi_y'], 'dpi_y' => $profile['dpi_x']]);
+		}
+
 		$white = (int)array_search('#ffffff', $palette, true);
 		$black = array_search('#000000', $palette, true);
 		$pixels = array_fill(0, $height, array_fill(0, $width, $white));
@@ -1299,6 +1323,25 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 					}
 				}
 			}
+		}
+
+		if ($orientation !== 0)
+		{
+			$turned = array_fill(0, $physicalHeight, array_fill(0, $physicalWidth, $white));
+			for ($y = 0; $y < $height; $y++)
+			{
+				for ($x = 0; $x < $width; $x++)
+				{
+					[$px, $py] = match ($orientation)
+					{
+						90 => [$height - 1 - $y, $x],
+						180 => [$width - 1 - $x, $height - 1 - $y],
+						default => [$y, $width - 1 - $x],
+					};
+					$turned[$py][$px] = $pixels[$y][$x];
+				}
+			}
+			[$pixels, $width, $height] = [$turned, $physicalWidth, $physicalHeight];
 		}
 
 		if ($mutate !== null)
@@ -1421,6 +1464,48 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'a QR symbol with one module painted the wrong way' => ['qr_flipped', 'qr_payload_mismatch'],
 			'a profile palette with no black to draw a QR in' => ['no_black', 'palette_mismatch'],
 		];
+	}
+
+	/**
+	 * Issue #1033: schema 2 adds orientation and nothing else. A turned design keeps its
+	 * physical canvas and states its turn; a schema 1 document comes back as schema 1, with no
+	 * orientation key, so the digest of everything already published stays where it was.
+	 */
+	public function testATurnedDesignValidatesAndSchemaOneIsUnchanged(): void
+	{
+		$turned = TemplateDocument::Validate(self::turned(self::qrOnlyDocument()), 'location')['document'];
+		self::assertSame(2, $turned['schema_version']);
+		self::assertSame(90, $turned['canvas']['orientation_deg']);
+		self::assertSame(58.9, $turned['canvas']['width_mm'], 'width_mm is still the roll');
+
+		$upright = TemplateDocument::Validate(self::qrOnlyDocument(), 'location')['document'];
+		self::assertSame(1, $upright['schema_version']);
+		self::assertArrayNotHasKey('orientation_deg', $upright['canvas'], 'A schema 1 canvas gains no key');
+
+		$explicitZero = TemplateDocument::Validate(self::turned(self::qrOnlyDocument(), 0), 'location')['document'];
+		self::assertSame(0, $explicitZero['canvas']['orientation_deg'], 'Schema 2 always states its turn');
+	}
+
+	/**
+	 * The verifier finds a turned design's QR where the convention puts it, and refuses the
+	 * same symbol turned the other way: a renderer and a verifier disagreeing about direction
+	 * is a mismatch, never an accepted label.
+	 */
+	public function testTheVerifierFollowsTheTurn(): void
+	{
+		[, $version] = self::publishTemplate('Fixture turned label', self::turned(self::qrOnlyDocument(), 90));
+
+		$input = self::claimFresh($version);
+		$artifact = self::tx(static fn () => self::artifacts()->Accept(
+			$input['render_request_id'], (string)$input['generation_token'], self::paint($input), 'fixture-renderer', '0.0.1-fixture'));
+		self::assertSame((int)$input['render_request_id'], (int)$artifact['render_request_id'], 'A correctly turned artifact is accepted');
+
+		$input = self::claimFresh($version);
+		$wrongWay = $input;
+		$wrongWay['document']['canvas']['orientation_deg'] = 270;
+		self::assertRefused(static fn () => self::tx(static fn () => self::artifacts()->Accept(
+			$input['render_request_id'], (string)$input['generation_token'], self::paint($wrongWay), 'fixture-renderer', '0.0.1-fixture')),
+			'elements.code', 'qr_payload_mismatch', 'The symbol turned the opposite way');
 	}
 
 	/**

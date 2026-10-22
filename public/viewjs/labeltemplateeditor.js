@@ -172,8 +172,13 @@
 		// canvas.clear() fires selection:cleared, which would drop the selection and, with
 		// it, the properties panel (and so the description of the merge field just chosen).
 		var selectedBefore = state.selectedId;
-		var width = state.document.canvas.width_mm;
-		var height = state.document.canvas.height_mm || state.document.canvas.max_height_mm || 60;
+		// The canvas is the reading frame: on a quarter turn the tape length runs across the
+		// screen and the roll's width down it (TemplateDocument's docblock states the turn).
+		var length = state.document.canvas.height_mm || state.document.canvas.max_height_mm || 60;
+		var turn = state.document.canvas.orientation_deg || 0;
+		var quarter = turn === 90 || turn === 270;
+		var width = quarter ? length : state.document.canvas.width_mm;
+		var height = quarter ? state.document.canvas.width_mm : length;
 
 		// fabric 6 dropped setWidth()/setHeight() (issue #126); setDimensions() is the
 		// replacement for both at once.
@@ -559,6 +564,20 @@
 		state.document.canvas.height_mm = height === '' ? null : millimetres(height, null);
 		var max = region('canvas-max-height-mm').value;
 		state.document.canvas.max_height_mm = max === '' ? null : millimetres(max, null);
+
+		// Orientation is the one schema 2 feature, so an upright design stays schema 1 and
+		// keeps validating exactly as it always has.
+		var turn = parseInt(region('canvas-orientation').value, 10) || 0;
+		if (turn === 0)
+		{
+			state.document.schema_version = 1;
+			delete state.document.canvas.orientation_deg;
+		}
+		else
+		{
+			state.document.schema_version = 2;
+			state.document.canvas.orientation_deg = turn;
+		}
 	}
 
 	/** Loads the stored draft from the server into the editor state and draws it. */
@@ -572,6 +591,7 @@
 				region('canvas-width-mm').value = state.document.canvas.width_mm;
 				region('canvas-height-mm').value = state.document.canvas.height_mm === null ? '' : state.document.canvas.height_mm;
 				region('canvas-max-height-mm').value = state.document.canvas.max_height_mm === null ? '' : state.document.canvas.max_height_mm;
+				region('canvas-orientation').value = String(state.document.canvas.orientation_deg || 0);
 				draw();
 				properties();
 			},
@@ -628,7 +648,7 @@
 		// The canvas follows the size fields as they are typed. Before this it only changed on
 		// save, so setting a 32 mm length left a 100 mm tall canvas on screen and the label
 		// looked portrait, short edge on top, when the document was already landscape.
-		$(document).find('#canvas-width-mm, #canvas-height-mm, #canvas-max-height-mm').on('input', function()
+		$(document).find('#canvas-width-mm, #canvas-height-mm, #canvas-max-height-mm, #canvas-orientation').on('input change', function()
 		{
 			absorbCanvasSize();
 			draw();
