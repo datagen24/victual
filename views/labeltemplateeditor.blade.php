@@ -52,6 +52,9 @@
 		<div class="form-group">
 			<label for="canvas-width-mm">{{ $__t('Label width (mm)') }}</label>
 			<input type="number" step="0.1" min="1" class="form-control" id="canvas-width-mm">
+			<small class="form-text text-muted">
+				{{ $__t('Width runs across the roll, under the print head; length runs along the tape to the cut. A 32 mm cut on a 60 mm printable roll is width 60 and length 32, and the canvas then shows the long edge on top.') }}
+			</small>
 		</div>
 		<div class="form-group">
 			<label for="canvas-height-mm">{{ $__t('Label length (mm), empty for automatic') }}</label>
