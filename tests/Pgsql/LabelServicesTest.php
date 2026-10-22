@@ -426,6 +426,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'an orientation on a schema 1 document' => [self::withCanvas(['orientation_deg' => 90]), 'canvas.orientation_deg', 'unknown_property'],
 			'an orientation that is not a quarter turn' => [self::turned(self::qrOnlyDocument(), 45), 'canvas.orientation_deg', 'invalid_value'],
 			'an element past the tape length on a turned design' => [self::turned(self::withText(['x_mm' => 2.0, 'y_mm' => 2.0, 'width_mm' => 40.0])), 'elements.title.width_mm', 'element_outside_canvas'],
+			'an element rotation on a schema 1 document' => [self::withQr(['rotation_deg' => 90]), 'elements.code.rotation_deg', 'unknown_property'],
+			'an element rotation that is not a quarter turn' => [self::turned(self::withQr(['rotation_deg' => 45]), 0), 'elements.code.rotation_deg', 'invalid_value'],
+			'a rotation on a line' => [self::turned(self::withElement(['type' => 'line', 'id' => 'rule', 'x1_mm' => 2.0, 'y1_mm' => 2.0, 'x2_mm' => 20.0, 'y2_mm' => 2.0, 'stroke_mm' => 0.3, 'rotation_deg' => 90]), 0), 'elements.rule.rotation_deg', 'unknown_property'],
+			'a turned element whose footprint passes the roll' => [self::turned(self::withText(['x_mm' => 2.0, 'y_mm' => 2.0, 'width_mm' => 60.0, 'height_mm' => 6.0, 'rotation_deg' => 90]), 90), 'elements.title.height_mm', 'element_outside_canvas'],
 			'an element past the roll on a turned design' => [self::turned(self::withText(['x_mm' => 2.0, 'y_mm' => 55.0, 'width_mm' => 20.0])), 'elements.title.height_mm', 'element_outside_canvas'],
 			'a document for another entity kind' => [array_merge(self::qrOnlyDocument(), ['entity_kind' => 'product']), 'entity_kind', 'entity_kind_mismatch'],
 
@@ -1295,11 +1299,17 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			{
 				continue;
 			}
+			// An element's own turn first, inside the reading frame, by the same rule as the
+			// canvas turn below: unturned in its own frame, turned, footprint at (x_mm, y_mm).
 			$matrix = $input['qr'][$element['id']];
-			$moduleX = self::pixels((float)$element['module_mm'], (int)$profile['dpi_x']);
-			$moduleY = self::pixels((float)$element['module_mm'], (int)$profile['dpi_y']);
-			$originX = self::pixels((float)$element['x_mm'], (int)$profile['dpi_x']) + $element['quiet_zone_modules'] * $moduleX;
-			$originY = self::pixels((float)$element['y_mm'], (int)$profile['dpi_y']) + $element['quiet_zone_modules'] * $moduleY;
+			$elementTurn = (int)($element['rotation_deg'] ?? 0);
+			$elementQuarter = $elementTurn === 90 || $elementTurn === 270;
+			$moduleX = self::pixels((float)$element['module_mm'], (int)$profile[$elementQuarter ? 'dpi_y' : 'dpi_x']);
+			$moduleY = self::pixels((float)$element['module_mm'], (int)$profile[$elementQuarter ? 'dpi_x' : 'dpi_y']);
+			$span = $matrix['size'] + 2 * $element['quiet_zone_modules'];
+			[$localWidth, $localHeight] = [$span * $moduleX, $span * $moduleY];
+			$footX = self::pixels((float)$element['x_mm'], (int)$profile['dpi_x']);
+			$footY = self::pixels((float)$element['y_mm'], (int)$profile['dpi_y']);
 
 			for ($row = 0; $row < $matrix['size']; $row++)
 			{
@@ -1313,8 +1323,17 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 					{
 						for ($dx = 0; $dx < $moduleX; $dx++)
 						{
-							$y = $originY + $row * $moduleY + $dy;
-							$x = $originX + $column * $moduleX + $dx;
+							$localX = ($element['quiet_zone_modules'] + $column) * $moduleX + $dx;
+							$localY = ($element['quiet_zone_modules'] + $row) * $moduleY + $dy;
+							[$turnedX, $turnedY] = match ($elementTurn)
+							{
+								90 => [$localHeight - 1 - $localY, $localX],
+								180 => [$localWidth - 1 - $localX, $localHeight - 1 - $localY],
+								270 => [$localY, $localWidth - 1 - $localX],
+								default => [$localX, $localY],
+							};
+							$y = $footY + $turnedY;
+							$x = $footX + $turnedX;
 							if ($y < $height && $x < $width)
 							{
 								$pixels[$y][$x] = (int)$black;
@@ -1506,6 +1525,46 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		self::assertRefused(static fn () => self::tx(static fn () => self::artifacts()->Accept(
 			$input['render_request_id'], (string)$input['generation_token'], self::paint($wrongWay), 'fixture-renderer', '0.0.1-fixture')),
 			'elements.code', 'qr_payload_mismatch', 'The symbol turned the opposite way');
+	}
+
+	/**
+	 * Phase 2 of #1033: an element is bounded by its footprint, so a text box too wide to sit
+	 * upright at x 50 fits once it is turned onto its side.
+	 */
+	public function testATurnedElementIsBoundedByItsFootprint(): void
+	{
+		$upright = self::withText(['x_mm' => 50.0, 'y_mm' => 2.0, 'width_mm' => 20.0, 'height_mm' => 6.0]);
+		self::assertRefused(static fn () => TemplateDocument::Validate($upright, 'location'),
+			'elements.title.width_mm', 'element_outside_canvas', 'Upright, 50 + 20 mm passes a 58.9 mm roll');
+
+		$turned = self::turned(self::withText(['x_mm' => 50.0, 'y_mm' => 2.0, 'width_mm' => 20.0, 'height_mm' => 6.0, 'rotation_deg' => 90]), 0);
+		$element = TemplateDocument::Validate($turned, 'location')['document']['elements'][1];
+		self::assertSame(90, $element['rotation_deg'], 'Turned, the footprint is 6 mm wide and fits');
+		self::assertSame(20.0, $element['width_mm'], 'width_mm stays the unturned box');
+
+		$unstated = TemplateDocument::Validate(self::turned(self::qrOnlyDocument(), 90), 'location')['document']['elements'][0];
+		self::assertArrayNotHasKey('rotation_deg', $unstated, 'An element that states no turn gains no key, so earlier schema 2 digests hold');
+	}
+
+	/**
+	 * The verifier follows an element's own turn inside a turned canvas, and refuses the
+	 * element turned the other way.
+	 */
+	public function testTheVerifierFollowsAnElementsTurn(): void
+	{
+		[, $version] = self::publishTemplate('Fixture turned element', self::turned(self::withQr(['rotation_deg' => 90]), 90));
+
+		$input = self::claimFresh($version);
+		self::tx(static fn () => self::artifacts()->Accept(
+			$input['render_request_id'], (string)$input['generation_token'], self::paint($input), 'fixture-renderer', '0.0.1-fixture'));
+		self::assertSame('ready', self::requestRow($input['render_request_id'])['state'], 'A QR turned by both the element and the canvas is accepted');
+
+		$input = self::claimFresh($version);
+		$wrongWay = $input;
+		$wrongWay['document']['elements'][0]['rotation_deg'] = 270;
+		self::assertRefused(static fn () => self::tx(static fn () => self::artifacts()->Accept(
+			$input['render_request_id'], (string)$input['generation_token'], self::paint($wrongWay), 'fixture-renderer', '0.0.1-fixture')),
+			'elements.code', 'qr_payload_mismatch', 'The element turned the opposite way');
 	}
 
 	/**
