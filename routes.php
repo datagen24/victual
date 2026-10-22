@@ -241,6 +241,7 @@ $app->group('/api', function (RouteCollectorProxy $group)
 	$group->get('/labels/drivers/{driverId}/schemas/{schemaVersion}', [LabelPrintersApiController::class, 'Dispatch'])->setName('label-admin-schema');
 	// Plan 27's four print operations plus cancellation. MASTER_DATA_EDIT and the domain read.
 	$group->post('/labels/locations/{locationId}/print', [LabelsApiController::class, 'Operate'])->setName('label-op-print');
+	$group->post('/labels/locations/{locationId}/print-subtree', [LabelsApiController::class, 'Operate'])->setName('label-op-print-subtree');
 	$group->post('/labels/locations/{locationId}/revised-print', [LabelsApiController::class, 'Operate'])->setName('label-op-revised-print');
 	// Plan 32: the generic pair over all six kinds, including location - the two routes above
 	// are not renamed, but the OpenAPI spec marks them as the same operation as these.

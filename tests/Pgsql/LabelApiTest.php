@@ -403,6 +403,7 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		'POST /api/labels/jobs/{jobId}/authorize-attempt',
 		'GET /api/labels/drivers/{driverId}/schemas/{schemaVersion}',
 		'POST /api/labels/locations/{locationId}/print',
+		'POST /api/labels/locations/{locationId}/print-subtree',
 		'POST /api/labels/locations/{locationId}/revised-print',
 		'POST /api/labels/{kind:location|product|stock_entry|recipe|chore|battery}/{id:[0-9]+}/print',
 		'POST /api/labels/{kind:location|product|stock_entry|recipe|chore|battery}/{id:[0-9]+}/revised-print',
@@ -1514,6 +1515,88 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(202, $response['status'], $response['body']);
 		self::assertSame(self::$locationUid, $response['json']['label_uid'], 'a second print of the same target reuses its identity');
 		self::assertNotSame(self::$locationJobId, (int)$response['json']['job_id'], 'and is still its own job');
+	}
+
+	/**
+	 * A batch prints labels for everything under a location and never reprints a valid
+	 * active label unless asked to.
+	 *
+	 * The tree is its own: a rack with three shelves, a bin under the first, and an inactive
+	 * shelf, with shelf 2 already labelled. A dry run plans the three unlabelled active
+	 * locations and queues nothing; the real run queues exactly those; its key replays the
+	 * same answer; a second batch finds nothing left; reprint_existing with include_root
+	 * queues the rack and all four active locations under it.
+	 */
+	#[Depends('testPrintingEachKindCreatesTheLabelAndTheOutboxEventTogether')]
+	public function testABatchPrintsEverythingUnderALocationAndSkipsWhatIsLabelled(): void
+	{
+		$db = self::$db;
+		$add = static function (string $name, ?int $parent, int $active = 1) use ($db): int
+		{
+			$statement = $db->prepare('INSERT INTO locations (name, parent_location_id, active) VALUES (?, ?, ?) RETURNING id');
+			$statement->execute([$name, $parent, $active]);
+			return (int)$statement->fetchColumn();
+		};
+		$rack = $add('Batch rack', null);
+		$shelf1 = $add('Batch shelf 1', $rack);
+		$shelf2 = $add('Batch shelf 2', $rack);
+		$shelf3 = $add('Batch shelf 3', $rack);
+		$bin = $add('Batch bin', $shelf1);
+		$add('Batch shelf off', $rack, 0);
+
+		$path = '/api/labels/locations/' . $rack . '/print-subtree';
+		$body = ['import_epoch' => 0, 'printer_id' => self::$printerId];
+		$names = static fn (array $entries): array => array_column($entries, 'name');
+
+		self::assertSame(202, self::Send('POST', '/api/labels/locations/' . $shelf2 . '/print', $body, self::$adminKey)['status'], 'shelf 2 is labelled first');
+
+		$before = self::Counts();
+		$plan = self::Send('POST', $path, $body + ['dry_run' => true], self::$adminKey);
+		self::assertSame(200, $plan['status'], $plan['body']);
+		self::assertSame(['Batch shelf 1', 'Batch bin', 'Batch shelf 3'], $names($plan['json']['queued']), 'the unlabelled active locations under the rack, by path, not the rack itself');
+		self::assertSame(['already_labelled', 'inactive'], array_column($plan['json']['skipped'], 'reason'));
+		self::assertSame(['Batch shelf 2', 'Batch shelf off'], $names($plan['json']['skipped']));
+		self::assertSame($before['print_jobs'], self::Counts()['print_jobs'], 'a dry run queues nothing');
+
+		$run = self::Send('POST', $path, $body, self::$adminKey, ['Idempotency-Key' => 'batch-rack-1']);
+		self::assertSame(202, $run['status'], $run['body']);
+		self::assertSame($names($plan['json']['queued']), $names($run['json']['queued']), 'the real run queues what the dry run planned');
+		self::assertSame($before['print_jobs'] + 3, self::Counts()['print_jobs'], 'one job each');
+		self::assertCount(3, array_filter(array_column($run['json']['queued'], 'job_id')));
+
+		$replay = self::Send('POST', $path, $body, self::$adminKey, ['Idempotency-Key' => 'batch-rack-1']);
+		self::assertSame(200, $replay['status'], $replay['body']);
+		// assertEquals, not assertSame: the stored answer comes back from JSONB, which orders keys itself.
+		self::assertEquals($run['json'], $replay['json'], 'the same key answers the same batch');
+		self::assertSame($before['print_jobs'] + 3, self::Counts()['print_jobs'], 'and queues nothing again');
+
+		$again = self::Send('POST', $path, $body, self::$adminKey, ['Idempotency-Key' => 'batch-rack-2']);
+		self::assertSame(202, $again['status'], $again['body']);
+		self::assertSame([], $again['json']['queued'], 'a second batch finds every active location already labelled');
+
+		$reprint = self::Send('POST', $path, $body + ['reprint_existing' => true, 'include_root' => true], self::$adminKey, ['Idempotency-Key' => 'batch-rack-3']);
+		self::assertSame(202, $reprint['status'], $reprint['body']);
+		self::assertSame(['Batch rack', 'Batch shelf 1', 'Batch bin', 'Batch shelf 2', 'Batch shelf 3'], $names($reprint['json']['queued']), 'asked for, the labelled ones and the rack itself');
+		self::assertSame([false, true, true, true, true], array_column($reprint['json']['queued'], 'reprint'), 'only the rack had no label yet');
+		self::assertSame(['Batch shelf off'], $names($reprint['json']['skipped']), 'inactive stays skipped');
+
+		self::AssertRefusal(self::Send('POST', $path, $body + ['dry_run' => 'yes'], self::$adminKey), 422, 'dry_run', 'invalid_value');
+
+		$grants = $db->query('SELECT permission_id FROM user_permissions WHERE user_id = ' . self::OPERATOR_USER)->fetchAll(\PDO::FETCH_COLUMN);
+		try
+		{
+			self::Grant(self::OPERATOR_USER, [User::PERMISSION_STOCK_VIEW]);
+			self::assertSame(403, self::Send('POST', $path, $body + ['dry_run' => true], self::$operatorKey)['status'], 'a batch needs master-data-edit like a single print');
+		}
+		finally
+		{
+			$db->exec('DELETE FROM user_permissions WHERE user_id = ' . self::OPERATOR_USER);
+			$restore = $db->prepare('INSERT INTO user_permissions (user_id, permission_id) VALUES (?, ?)');
+			foreach ($grants as $permission)
+			{
+				$restore->execute([self::OPERATOR_USER, $permission]);
+			}
+		}
 	}
 
 	/**

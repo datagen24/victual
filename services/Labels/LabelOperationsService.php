@@ -54,6 +54,73 @@ class LabelOperationsService extends LabelService
         return $this->CreateJob('issue', $uid, $capture, $resolved, $version, (int)$request['id'], null, null);
     }
 
+    /** The most locations one batch will cover, so a print run is something a person can review. */
+    public const SUBTREE_LIMIT = 200;
+
+    /**
+     * Issues location labels for everything under a location, in one transaction - and for
+     * the location itself only when `$includeRoot` says so, because "everything under the
+     * door rack" is the rack's shelves, not another label for the rack.
+     *
+     * A location that already has a **valid active label** is skipped unless
+     * `$reprintExisting` asks for it: an unretired label with a print job that is neither
+     * cancelled nor dead-lettered - printed, sent, or still on its way. Skipping the ones
+     * still on their way is what keeps a second press of the same batch from queuing every
+     * label twice. A reprint, when asked for, is an ordinary issue: the same label uid,
+     * captured and rendered again. Inactive locations are skipped. The whole batch is one
+     * transaction, so a refusal for any one location queues none of them.
+     *
+     * `$dryRun` answers with the same plan and queues nothing, so the caller can show what
+     * a batch would print before it does.
+     *
+     * @return array{root_location_id: int, include_root: bool, dry_run: bool, queued: array, skipped: array}
+     */
+    public function IssueSubtree(int $rootId, int $epoch, ?int $printerId, ?int $templateId, ?int $templateVersionId, string $locale, string $timezone, bool $reprintExisting, bool $dryRun, bool $includeRoot = false): array
+    {
+        $this->Transaction();
+
+        $locations = $this->Query("SELECT l.id, l.name, r.path, r.depth, l.active,
+                CASE WHEN EXISTS (SELECT 1 FROM labels b JOIN print_jobs j ON j.label_uid = b.uid
+                    WHERE b.kind = 'location' AND b.target_id = l.id AND b.retired_at IS NULL
+                        AND j.cancelled_at IS NULL AND (j.outcome IS NULL OR j.outcome IN ('printed', 'sent')))
+                    THEN 1 ELSE 0 END AS labelled
+            FROM locations_resolved r JOIN locations l ON l.id = r.descendant_location_id
+            WHERE r.ancestor_location_id = ?
+            ORDER BY r.path", [$rootId])->fetchAll(\PDO::FETCH_ASSOC);
+
+        if ($locations === []) {
+            $this->Refuse('location_id', 'not_found', 'No location has id ' . $rootId);
+        }
+        if (!$includeRoot) {
+            $locations = array_values(array_filter($locations, static fn (array $l): bool => (int)$l['depth'] > 0));
+        }
+        if (count($locations) > self::SUBTREE_LIMIT) {
+            $this->Refuse('location_id', 'value_out_of_range', 'This location has ' . count($locations) . ' locations under it; a batch covers at most ' . self::SUBTREE_LIMIT . '. Print a smaller part of the tree.');
+        }
+
+        $queued = [];
+        $skipped = [];
+        foreach ($locations as $location) {
+            $entry = ['location_id' => (int)$location['id'], 'name' => $location['name'], 'path' => $location['path'], 'depth' => (int)$location['depth']];
+            if ((int)$location['active'] !== 1) {
+                $skipped[] = $entry + ['reason' => 'inactive'];
+            } elseif ((int)$location['labelled'] === 1 && !$reprintExisting) {
+                $skipped[] = $entry + ['reason' => 'already_labelled'];
+            } else {
+                $queued[] = $entry + ['reprint' => (int)$location['labelled'] === 1];
+            }
+        }
+
+        if (!$dryRun) {
+            foreach ($queued as $index => $entry) {
+                $job = $this->IssueLocation('location', $entry['location_id'], $epoch, $printerId, $templateId, $templateVersionId, $locale, $timezone);
+                $queued[$index] += ['job_id' => (int)$job['id'], 'label_uid' => $job['label_uid']];
+            }
+        }
+
+        return ['root_location_id' => $rootId, 'include_root' => $includeRoot, 'dry_run' => $dryRun, 'queued' => $queued, 'skipped' => $skipped];
+    }
+
     /**
      * An exact reprint: a new job over the retained bytes of an existing one.
      *
