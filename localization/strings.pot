@@ -2614,6 +2614,9 @@ msgstr ""
 msgid "Automatic length is bounded: continuous tape is not an unbounded canvas, so a design that grows past this is refused rather than cropped."
 msgstr ""
 
+msgid "Width runs across the roll, under the print head; length runs along the tape to the cut. A 32 mm cut on a 60 mm printable roll is width 60 and length 32, and the canvas then shows the long edge on top."
+msgstr ""
+
 msgid "Add starter fonts"
 msgstr ""
 

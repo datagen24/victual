@@ -625,6 +625,15 @@
 
 		$(document).find('#add-element-button').on('click', function() { add(region('element-kind').value); });
 
+		// The canvas follows the size fields as they are typed. Before this it only changed on
+		// save, so setting a 32 mm length left a 100 mm tall canvas on screen and the label
+		// looked portrait, short edge on top, when the document was already landscape.
+		$(document).find('#canvas-width-mm, #canvas-height-mm, #canvas-max-height-mm').on('input', function()
+		{
+			absorbCanvasSize();
+			draw();
+		});
+
 		$(document).find('#upload-asset-button').on('click', function()
 		{
 			var input = region('asset-file');
