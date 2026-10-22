@@ -1,6 +1,6 @@
 # Victual 0.5.2 release dashboard
 
-0.5.2: 7 of 8 issues closed. Latest release v0.5.1 (published 2026-10-20T19:11:29Z). Master `9c8a9835`. 19 open issues and 0 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-21T21:11:05Z.
+0.5.2: 8 of 8 issues closed. Latest release v0.5.1 (published 2026-10-20T19:11:29Z). Master `e7edd6b5`. 18 open issues and 0 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-22T15:18:42Z.
 
 [Interactive dashboard](dashboard.html) · [Structured source](release-data.json) · [Execution ledger](execution.md) · [Handoff](HANDOFF.md) · [0.5.1 release plan (frozen)](../2026-10-19/dashboard.md)
 
@@ -18,7 +18,7 @@
 
 | Issue | State | Priority | Size | Classification | Patch fit | Next action | PR |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| [#737 Consumption recipe sharing: answer a share request identically whether or not the user exists](https://github.com/datagen24/victual/issues/737) | open | P2 | M | security (low, authenticated) | Not clearly compatible: POST and PUT /shares stop answering a documented 422 and answer 204, and the existence check moves after the rights check to close the 403/422 second oracle. | Wave 3 in progress: branch claude/v0-5-2-737-share-oracle, per D3. | None |
+| [#737 Consumption recipe sharing: answer a share request identically whether or not the user exists](https://github.com/datagen24/victual/issues/737) | closed | P2 | M | security (low, authenticated) | Not strictly compatible: POST/PUT stop answering a documented 422 and answer 204; DELETE answers 404 instead of 403 for a share the caller may not remove; a POST with no target answers 400. Listed as compatibility notes in the 0.5.2 record. | Closed 2026-10-22 by PR #1051 (merged as e7edd6b5), after PR #1050 (merged as 50574fe8). | https://github.com/datagen24/victual/pull/1051 |
 | [#762 Users: roles can't be set when creating a user, and the only entry point is an unlabeled lock icon](https://github.com/datagen24/victual/issues/762) | closed | P2 | S | accessibility / UI | Compatible with option (a), a client-side two-step create (POST /users then PUT /users/{id}/roles). Option (b), an optional roles field on POST /users, is an additive API change. | Closed 2026-10-21 by PR #1041, merged as 4a51909b. | https://github.com/datagen24/victual/pull/1041 |
 | [#912 Decide whether ApiResponse encodes with JSON_THROW_ON_ERROR (from #844)](https://github.com/datagen24/victual/issues/912) | closed | P2 | M | decision, then compatible fix | Success bodies unchanged. Option (a) changes the 500 body from empty to the standard JSON error, the same kind of error-path change #989 made in 0.5.1. ExceptionController needs a fallback that does not recurse through ApiResponse. | Closed 2026-10-21 by PR #1046, merged as 710607a1 (D2 as amended). | https://github.com/datagen24/victual/pull/1046 |
 | [#948 Label designer: describe merge fields with names, explanations and example values](https://github.com/datagen24/victual/issues/948) | closed | P3 | S | UI / copy | Compatible after the D6 split: merge-field names, explanations and example values as client strings; no API or schema change. | Closed 2026-10-21 by PR #1038, merged as 8c9d131e; the rest is #1033 and #1034 (0.6.0). | https://github.com/datagen24/victual/pull/1038 |
@@ -29,12 +29,12 @@
 
 ## Open milestones
 
-Observed 2026-10-21T21:11:05Z. Unassigned open issues: [#80](https://github.com/datagen24/victual/issues/80), [#86](https://github.com/datagen24/victual/issues/86), [#93](https://github.com/datagen24/victual/issues/93), [#133](https://github.com/datagen24/victual/issues/133), [#139](https://github.com/datagen24/victual/issues/139).
+Observed 2026-10-22T15:18:42Z. Unassigned open issues: [#80](https://github.com/datagen24/victual/issues/80), [#86](https://github.com/datagen24/victual/issues/86), [#93](https://github.com/datagen24/victual/issues/93), [#133](https://github.com/datagen24/victual/issues/133), [#139](https://github.com/datagen24/victual/issues/139).
 
 | Milestone | Open | Closed | Due | Description |
 | --- | --- | --- | --- | --- |
 | [0.6.0](https://github.com/datagen24/victual/milestone/6) | 12 | 0 | Unset | Later feature release: OAuth then federation; installation country, canonical/scoped barcode resolution and web onboarding, each behind its own design/ADR gates. Full API audit remains later work. These are not requirements for 0.5.0. |
-| [0.5.2](https://github.com/datagen24/victual/milestone/8) | 1 | 10 | Unset | Interm quality of life fixes |
+| [0.5.2](https://github.com/datagen24/victual/milestone/8) | 0 | 11 | Unset | Interm quality of life fixes |
 | [vNext](https://github.com/datagen24/victual/milestone/9) | 1 | 0 | Unset | Farther in the future Ideas and Concepts, not commited to a planned release |
 
 ## Gates carried from 0.5.0
@@ -50,7 +50,7 @@ Observed 2026-10-21T21:11:05Z. Unassigned open issues: [#80](https://github.com/
 | --- | --- | --- | --- | --- |
 | D1 | 2026-10-21 | What does it take to remove a #1026 fallback? | Accepted by the maintainer on 2026-10-21: per branch, documented PHP 8.4 and 8.5 behaviour plus a test that runs on both; a branch without that proof stays, with a deliberately-defensive comment. | [#1026](https://github.com/datagen24/victual/issues/1026) |
 | D2 | 2026-10-21 | Does ApiResponse encode with JSON_THROW_ON_ERROR (#912)? | Amended by the maintainer on 2026-10-21: option (a). An unencodable body answers the standard JSON 500 with a logged cause. Inside InRequestTransaction the write rolls back; outside, earlier writes stay committed. GenericErrorResponse keeps the original status with a fixed literal; ExceptionController has a fixed fallback. | [#912](https://github.com/datagen24/victual/issues/912) |
-| D3 | 2026-10-21 | Does #737 ship in 0.5.2? | Accepted by the maintainer on 2026-10-21: yes, as a patch. It answers 204 for every authorised share request and checks rights before existence. The alternative is 0.6.0 with an accepted residual note in the form of ADR-0048 item 9. | [#737](https://github.com/datagen24/victual/issues/737) |
+| D3 | 2026-10-21 | Does #737 ship in 0.5.2? | Accepted 2026-10-21, extended 2026-10-22: POST/PUT /shares answer 204 for every authorised caller and only a real user gets a row; rights before existence; a hidden share answers like an unknown user; DELETE answers 404 for a share the caller may not remove. A POST with no target is 400 invalid_request. | [#737](https://github.com/datagen24/victual/issues/737) |
 | D4 | 2026-10-21 | How does #762 save roles at creation, and how is the entry point labelled? | Accepted by the maintainer on 2026-10-21: (a) client-side two-step, no API change; the chosen roles replace the defaults; a visible "Roles" text button with an aria-label. | [#762](https://github.com/datagen24/victual/issues/762) |
 | D5 | 2026-10-21 | What are the Medication flyout names (#1007), and when does the parent entry show? | Accepted by the maintainer on 2026-10-21: Medication presets, Medication inbox and Refills, as the issue proposes; the parent shows when at least one child is visible. | [#1007](https://github.com/datagen24/victual/issues/1007) |
 | D6 | 2026-10-21 | How is #948 scoped? | Accepted by the maintainer on 2026-10-21: split it. Merge-field descriptions as client strings in 0.5.2. Alignment, guides and grid as a 0.6.0 issue. Orientation, rotation and starter fonts as a 0.6.0 issue that needs a template-document schema decision. | [#948](https://github.com/datagen24/victual/issues/948) |
@@ -85,7 +85,9 @@ Observed 2026-10-21T21:11:05Z. Unassigned open issues: [#80](https://github.com/
 | 2026-10-21 | [Opened #1047 in 0.6.0: route the remaining direct json_encode writes through a checked encode](https://github.com/datagen24/victual/issues/1047) |
 | 2026-10-21 | [Closed #912 with a summary comment (PR #1046)](https://github.com/datagen24/victual/issues/912) |
 | 2026-10-21 | [Closed #1007 with a summary comment (PR #1048)](https://github.com/datagen24/victual/issues/1007) |
+| 2026-10-22 | [Posted the extended D3 decision comment on #737](https://github.com/datagen24/victual/issues/737#issuecomment-6340732688) |
+| 2026-10-22 | [Opened PR #1051 for the DELETE commit, which landed on the #1050 branch after #1050 merged](https://github.com/datagen24/victual/pull/1051) |
 
 ## Evidence
 
-The latest snapshot is in `evidence/refresh-2026-10-21T211105Z`, taken from the GitHub REST API via gh. Assessments are planning estimates, not validation results.
+The latest snapshot is in `evidence/refresh-2026-10-22T151842Z`, taken from the GitHub REST API via gh. Assessments are planning estimates, not validation results.

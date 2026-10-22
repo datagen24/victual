@@ -1,6 +1,6 @@
 # 0.5.2 release handoff
 
-0.5.2: 7 of 8 issues closed. Latest release v0.5.1 (published 2026-10-20T19:11:29Z). Master `9c8a9835`. 19 open issues and 0 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-21T21:11:05Z.
+0.5.2: 8 of 8 issues closed. Latest release v0.5.1 (published 2026-10-20T19:11:29Z). Master `e7edd6b5`. 18 open issues and 0 open PRs repository-wide; 5 open issues have no milestone. Observed 2026-10-22T15:18:42Z.
 
 ## Read first
 
@@ -23,4 +23,4 @@ refresh.py needs an authenticated `gh` and writes a new evidence directory; rend
 
 ## Open work
 
-- #737 (P2, M): Wave 3 in progress: branch claude/v0-5-2-737-share-oracle, per D3.
+- None.

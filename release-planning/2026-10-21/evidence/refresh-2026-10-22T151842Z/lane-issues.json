@@ -1,0 +1,202 @@
+[
+ {
+  "number": 1043,
+  "title": "PHP2Shell: raise the PHP floor to 8.4.27 / 8.5.12 and rebuild the images on 8.5.12",
+  "html_url": "https://github.com/datagen24/victual/issues/1043",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "php"
+   },
+   {
+    "name": "Security"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": "2026-10-21T21:09:01Z",
+  "updated_at": "2026-10-21T21:09:01Z"
+ },
+ {
+  "number": 1035,
+  "title": "File upload with a form content type answers 204 and stores an empty file",
+  "html_url": "https://github.com/datagen24/victual/issues/1035",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "bug"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": "2026-10-21T19:38:28Z",
+  "updated_at": "2026-10-21T19:38:28Z"
+ },
+ {
+  "number": 1032,
+  "title": "chore(deps): bump hono from 4.13.8 to 4.13.13 in /mcp",
+  "html_url": "https://github.com/datagen24/victual/pull/1032",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "dependencies"
+   },
+   {
+    "name": "javascript"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": "2026-10-21T17:25:37Z",
+  "updated_at": "2026-10-21T17:25:47Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1032",
+   "html_url": "https://github.com/datagen24/victual/pull/1032",
+   "diff_url": "https://github.com/datagen24/victual/pull/1032.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1032.patch",
+   "merged_at": null
+  }
+ },
+ {
+  "number": 1031,
+  "title": "chore(deps): bump @modelcontextprotocol/server from 2.0.0 to 2.3.1 in /mcp",
+  "html_url": "https://github.com/datagen24/victual/pull/1031",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "dependencies"
+   },
+   {
+    "name": "javascript"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": "2026-10-21T17:25:34Z",
+  "updated_at": "2026-10-21T17:25:44Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1031",
+   "html_url": "https://github.com/datagen24/victual/pull/1031",
+   "diff_url": "https://github.com/datagen24/victual/pull/1031.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1031.patch",
+   "merged_at": null
+  }
+ },
+ {
+  "number": 1030,
+  "title": "chore(deps-dev): bump @modelcontextprotocol/client from 2.2.0 to 2.3.0 in /mcp",
+  "html_url": "https://github.com/datagen24/victual/pull/1030",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "dependencies"
+   },
+   {
+    "name": "javascript"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": "2026-10-21T17:25:32Z",
+  "updated_at": "2026-10-21T17:25:42Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1030",
+   "html_url": "https://github.com/datagen24/victual/pull/1030",
+   "diff_url": "https://github.com/datagen24/victual/pull/1030.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1030.patch",
+   "merged_at": null
+  }
+ },
+ {
+  "number": 1026,
+  "title": "Prove or keep the CanonicalJson and StderrLogger fallbacks #252 left in place",
+  "html_url": "https://github.com/datagen24/victual/issues/1026",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": "2026-10-21T19:43:04Z",
+  "updated_at": "2026-10-21T19:43:04Z"
+ },
+ {
+  "number": 1007,
+  "title": "UI: group medication features in a Medication flyout and clarify labels",
+  "html_url": "https://github.com/datagen24/victual/issues/1007",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": "2026-10-21T21:10:24Z",
+  "updated_at": "2026-10-21T21:10:25Z"
+ },
+ {
+  "number": 948,
+  "title": "Label designer: describe merge fields with names, explanations and example values",
+  "html_url": "https://github.com/datagen24/victual/issues/948",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": "2026-10-21T19:43:12Z",
+  "updated_at": "2026-10-21T19:43:12Z"
+ },
+ {
+  "number": 912,
+  "title": "Decide whether ApiResponse encodes with JSON_THROW_ON_ERROR (from #844)",
+  "html_url": "https://github.com/datagen24/victual/issues/912",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": "2026-10-21T21:10:22Z",
+  "updated_at": "2026-10-21T21:10:23Z"
+ },
+ {
+  "number": 762,
+  "title": "Users: roles can't be set when creating a user, and the only entry point is an unlabeled lock icon",
+  "html_url": "https://github.com/datagen24/victual/issues/762",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "accessibility"
+   },
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": "2026-10-21T19:43:07Z",
+  "updated_at": "2026-10-21T19:43:07Z"
+ },
+ {
+  "number": 737,
+  "title": "Consumption recipe sharing: answer a share request identically whether or not the user exists",
+  "html_url": "https://github.com/datagen24/victual/issues/737",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.2"
+  },
+  "closed_at": "2026-10-22T15:17:14Z",
+  "updated_at": "2026-10-22T15:17:14Z"
+ }
+]

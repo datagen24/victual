@@ -41,8 +41,9 @@ Research and status checks (refresh.py, CI reads, issue reads) use Haiku agents.
   parallel PR conflicted at each merge, which led to decision D10.
 - **Wave 2: merged 2026-10-21.** #1045 (#1043, PHP2Shell), #1046 (#912, D2 amended to roll back an
   in-transaction write on an encode failure) and #1048 (#1007). The wave-1 records PR #1044 merged too.
-- **Wave 3: in progress.** #737 (D3). Test image `victual:dev-1043` (PHP 8.5.12), because the new floor
-  refuses the 8.5.10 image.
+- **Wave 3: merged 2026-10-22.** #1050 and #1051 (#737, D3 extended to DELETE). Test image
+  `victual:dev-1043` (PHP 8.5.12), because the new floor refuses the 8.5.10 image.
+- **Close-out: in progress.**
 
 ## Machine limits
 
