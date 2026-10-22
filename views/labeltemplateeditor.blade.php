@@ -57,6 +57,18 @@
 			</small>
 		</div>
 		<div class="form-group">
+			<label for="canvas-orientation">{{ $__t('Reading orientation') }}</label>
+			<select class="form-control" id="canvas-orientation">
+				<option value="0">{{ $__t('Upright: the roll width is the top edge') }}</option>
+				<option value="90">{{ $__t('Turned 90° clockwise: the tape length is the top edge') }}</option>
+				<option value="180">{{ $__t('Upside down') }}</option>
+				<option value="270">{{ $__t('Turned 90° counter-clockwise: the tape length is the top edge') }}</option>
+			</select>
+			<small class="form-text text-muted">
+				{{ $__t('How the label is read once it is stuck on. Width and length above stay the roll and the tape; turning only changes which edge is the top of the design.') }}
+			</small>
+		</div>
+		<div class="form-group">
 			<label for="canvas-height-mm">{{ $__t('Label length (mm), empty for automatic') }}</label>
 			<input type="number" step="0.1" min="1" class="form-control" id="canvas-height-mm">
 		</div>

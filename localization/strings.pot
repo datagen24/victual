@@ -2626,6 +2626,24 @@ msgstr ""
 msgid "Starter fonts are available"
 msgstr ""
 
+msgid "Reading orientation"
+msgstr ""
+
+msgid "Upright: the roll width is the top edge"
+msgstr ""
+
+msgid "Turned 90° clockwise: the tape length is the top edge"
+msgstr ""
+
+msgid "Upside down"
+msgstr ""
+
+msgid "Turned 90° counter-clockwise: the tape length is the top edge"
+msgstr ""
+
+msgid "How the label is read once it is stuck on. Width and length above stay the roll and the tape; turning only changes which edge is the top of the design."
+msgstr ""
+
 msgid "Save draft"
 msgstr ""
 

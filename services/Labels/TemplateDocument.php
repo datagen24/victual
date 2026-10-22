@@ -20,17 +20,34 @@ namespace Victual\Services\Labels;
  * horizontal advances in that space, making every string twice as wide as its physical size
  * - the same class of silent geometry error as issue #90, arriving from the document format
  * instead of from a driver. The format therefore never carries a pixel.
+ *
+ * **Schema 2 adds orientation, and nothing else** (issue #1033). `canvas.orientation_deg` is
+ * 0, 90, 180 or 270: the design as somebody reads it, turned clockwise by that much onto the
+ * tape. The canvas keys keep their physical meaning - `width_mm` is the roll's width and
+ * `height_mm`/`max_height_mm` the length along the tape - so media checks do not change.
+ * Elements are positioned in the reading frame, which on a quarter turn is the tape length
+ * wide and the roll's width tall. In pixels, reading (x, y) of a W x H reading image lands at
+ * physical (H-1-y, x) for 90, (W-1-x, H-1-y) for 180 and (y, W-1-x) for 270; the renderer,
+ * ArtifactService's QR sampler and the editor each implement that one sentence. A schema 1
+ * document is validated and re-emitted as schema 1, so a published digest never moves.
  */
 class TemplateDocument
 {
+    /** The version a new template starts at; the editor writes 2 only when it turns the design. */
     public const SCHEMA_VERSION = 1;
+
+    /** Every version this validator understands. */
+    public const SCHEMA_VERSIONS = [1, 2];
+
+    /** Clockwise quarter turns a schema 2 design may be read at. */
+    public const ORIENTATIONS = [0, 90, 180, 270];
 
     /** Colours a v1 element may paint. `red` is what makes a document need two-colour media. */
     public const COLORS = ['black', 'red', 'white'];
 
     private const ELEMENT_TYPES = ['text', 'qr', 'image', 'line', 'rect'];
 
-    private const CANVAS_KEYS = ['width_mm', 'height_mm', 'max_height_mm', 'margins_mm'];
+    private const CANVAS_KEYS = ['width_mm', 'height_mm', 'max_height_mm', 'margins_mm', 'orientation_deg'];
     private const MARGIN_KEYS = ['top', 'right', 'bottom', 'left'];
     private const DOCUMENT_KEYS = ['schema_version', 'entity_kind', 'canvas', 'elements'];
 
@@ -60,14 +77,16 @@ class TemplateDocument
     {
         self::OnlyKeys($document, self::DOCUMENT_KEYS, 'document');
 
-        if (($document['schema_version'] ?? null) !== self::SCHEMA_VERSION) {
-            self::Refuse('schema_version', 'unsupported_version', 'Only template schema_version ' . self::SCHEMA_VERSION . ' is understood; an unknown version is refused rather than approximated');
+        $schema = $document['schema_version'] ?? null;
+        if (!in_array($schema, self::SCHEMA_VERSIONS, true)) {
+            self::Refuse('schema_version', 'unsupported_version', 'Only template schema_version ' . implode(' and ', self::SCHEMA_VERSIONS) . ' are understood; an unknown version is refused rather than approximated');
         }
         if (($document['entity_kind'] ?? null) !== $entityKind) {
             self::Refuse('entity_kind', 'entity_kind_mismatch', 'The document is for entity kind "' . (string)($document['entity_kind'] ?? '') . '" and the template is for "' . $entityKind . '"');
         }
 
-        $canvas = self::ValidateCanvas($document['canvas'] ?? null);
+        $canvas = self::ValidateCanvas($document['canvas'] ?? null, $schema);
+        $bounds = self::ReadingBounds($canvas);
         $elements = $document['elements'] ?? null;
 
         if (!is_array($elements) || !array_is_list($elements) || count($elements) === 0) {
@@ -102,11 +121,11 @@ class TemplateDocument
             $seen[$id] = true;
 
             $normalized[] = match ($type) {
-                'text' => self::ValidateText($element, $id, $canvas, $catalogue, $assets, $fields, $usesRed),
-                'qr' => self::ValidateQr($element, $id, $canvas, $usesRed),
-                'image' => self::ValidateImage($element, $id, $canvas, $assets, $usesRed),
-                'line' => self::ValidateLine($element, $id, $canvas, $usesRed),
-                'rect' => self::ValidateRect($element, $id, $canvas, $usesRed),
+                'text' => self::ValidateText($element, $id, $bounds, $catalogue, $assets, $fields, $usesRed),
+                'qr' => self::ValidateQr($element, $id, $bounds, $usesRed),
+                'image' => self::ValidateImage($element, $id, $bounds, $assets, $usesRed),
+                'line' => self::ValidateLine($element, $id, $bounds, $usesRed),
+                'rect' => self::ValidateRect($element, $id, $bounds, $usesRed),
             };
         }
 
@@ -116,14 +135,33 @@ class TemplateDocument
         $required = ['color_mode' => $usesRed ? 'black_red' : 'monochrome'];
 
         return [
-            'document' => ['schema_version' => self::SCHEMA_VERSION, 'entity_kind' => $entityKind, 'canvas' => $canvas, 'elements' => $normalized],
+            'document' => ['schema_version' => $schema, 'entity_kind' => $entityKind, 'canvas' => $canvas, 'elements' => $normalized],
             'asset_ids' => array_values(array_unique($assets)),
             'required_capabilities' => $required,
             'fields' => array_values(array_unique($fields)),
         ];
     }
 
-    private static function ValidateCanvas(mixed $canvas): array
+    /**
+     * The extent elements are bounded by, in the reading frame.
+     *
+     * Upright, that is the roll's width, and the length is left to the renderer's length
+     * rules exactly as schema 1 always did. On a quarter turn the reading width is the length
+     * along the tape (fixed, or its automatic maximum) and the reading height is the roll's
+     * width, which is now a hard bound an element can fall off.
+     *
+     * @return array{width_mm: float, height_mm: ?float}
+     */
+    private static function ReadingBounds(array $canvas): array
+    {
+        $orientation = $canvas['orientation_deg'] ?? 0;
+        if ($orientation === 90 || $orientation === 270) {
+            return ['width_mm' => $canvas['height_mm'] ?? $canvas['max_height_mm'], 'height_mm' => $canvas['width_mm']];
+        }
+        return ['width_mm' => $canvas['width_mm'], 'height_mm' => null];
+    }
+
+    private static function ValidateCanvas(mixed $canvas, int $schema): array
     {
         if (!is_array($canvas)) {
             self::Refuse('canvas', 'invalid_value', 'A template has a canvas');
@@ -159,11 +197,29 @@ class TemplateDocument
         foreach (self::MARGIN_KEYS as $side) {
             $resolved[$side] = self::Millimetres($margins[$side] ?? 0, "canvas.margins_mm.$side", true);
         }
-        if ($resolved['left'] + $resolved['right'] >= $width) {
-            self::Refuse('canvas.margins_mm', 'value_out_of_range', 'Horizontal margins leave no printable width');
+        $orientation = 0;
+        if (array_key_exists('orientation_deg', $canvas)) {
+            if ($schema < 2) {
+                self::Refuse('canvas.orientation_deg', 'unknown_property', 'orientation_deg is a schema_version 2 property');
+            }
+            $orientation = $canvas['orientation_deg'];
+            if (!in_array($orientation, self::ORIENTATIONS, true)) {
+                self::Refuse('canvas.orientation_deg', 'invalid_value', 'orientation_deg is one of ' . implode(', ', self::ORIENTATIONS));
+            }
         }
 
-        return ['width_mm' => $width, 'height_mm' => $height, 'max_height_mm' => $max, 'margins_mm' => $resolved];
+        // Margins are in the reading frame, so on a quarter turn the pair that has to leave
+        // room across the roll is top and bottom.
+        $quarter = $orientation === 90 || $orientation === 270;
+        if ($quarter ? $resolved['top'] + $resolved['bottom'] >= $width : $resolved['left'] + $resolved['right'] >= $width) {
+            self::Refuse('canvas.margins_mm', 'value_out_of_range', ($quarter ? 'Vertical' : 'Horizontal') . ' margins leave no printable width');
+        }
+
+        $resolvedCanvas = ['width_mm' => $width, 'height_mm' => $height, 'max_height_mm' => $max, 'margins_mm' => $resolved];
+        if ($schema >= 2) {
+            $resolvedCanvas['orientation_deg'] = $orientation;
+        }
+        return $resolvedCanvas;
     }
 
     private static function ValidateText(array $e, string $id, array $canvas, array $catalogue, array &$assets, array &$fields, bool &$usesRed): array
@@ -340,6 +396,9 @@ class TemplateDocument
 
         if ($x + $w > $canvas['width_mm'] + 0.0001) {
             self::Refuse("elements.$id.width_mm", 'element_outside_canvas', 'The element extends past the canvas width');
+        }
+        if ($canvas['height_mm'] !== null && $y + $h > $canvas['height_mm'] + 0.0001) {
+            self::Refuse("elements.$id.height_mm", 'element_outside_canvas', 'The element extends past the roll, which is the canvas height when the design is turned');
         }
         return ['x_mm' => $x, 'y_mm' => $y, 'width_mm' => $w, 'height_mm' => $h];
     }

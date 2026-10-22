@@ -3,11 +3,11 @@
     "label-renderer": {
       "flake": false,
       "locked": {
-        "lastModified": 1792703106,
-        "narHash": "sha256-zwdzVwbZYzKoE89cZ2Au9xPG2ZvHY2SujI3wevoFh5g=",
+        "lastModified": 1792704328,
+        "narHash": "sha256-mr7ccszCX1NWpc6xeNPrilBtjS/Ei+BkjVliC/awH6w=",
         "owner": "datagen24",
         "repo": "victual-label-renderer",
-        "rev": "fdba5e2dc9f9d4b3c75342f621888352917831d0",
+        "rev": "893bfad824f1e4ea1ffd4d8a3968e863b9a3eef8",
         "type": "github"
       },
       "original": {

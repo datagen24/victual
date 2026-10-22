@@ -286,31 +286,47 @@ class ArtifactService extends LabelService
             $this->Refuse('artifact', 'palette_mismatch', 'The profile palette has no black to draw a QR in');
         }
 
+        // Modules are located in the reading frame and then carried onto the raster by the
+        // turn TemplateDocument's docblock states. Reading axes take the dpi of the physical
+        // axis they become, which is why a quarter turn swaps them here as well.
+        $orientation = (int)($input['document']['canvas']['orientation_deg'] ?? 0);
+        $quarter = $orientation === 90 || $orientation === 270;
+        $readingDpiX = (int)$profile[$quarter ? 'dpi_y' : 'dpi_x'];
+        $readingDpiY = (int)$profile[$quarter ? 'dpi_x' : 'dpi_y'];
+        $readingWidth = $quarter ? $facts['height'] : $facts['width'];
+        $readingHeight = $quarter ? $facts['width'] : $facts['height'];
+
         foreach ($input['document']['elements'] as $element) {
             if ($element['type'] !== 'qr') {
                 continue;
             }
             $matrix = $input['qr'][$element['id']];
-            $modulePxX = MediaProfileService::PixelsFromMm($element['module_mm'], (int)$profile['dpi_x']);
-            $modulePxY = MediaProfileService::PixelsFromMm($element['module_mm'], (int)$profile['dpi_y']);
+            $modulePxX = MediaProfileService::PixelsFromMm($element['module_mm'], $readingDpiX);
+            $modulePxY = MediaProfileService::PixelsFromMm($element['module_mm'], $readingDpiY);
 
             if ($modulePxX < 1 || $modulePxY < 1) {
                 $this->Refuse('elements.' . $element['id'], 'qr_too_small', 'A module of ' . $element['module_mm'] . ' mm is under one device pixel on this profile');
             }
 
-            $originX = MediaProfileService::PixelsFromMm($element['x_mm'], (int)$profile['dpi_x']) + $element['quiet_zone_modules'] * $modulePxX;
-            $originY = MediaProfileService::PixelsFromMm($element['y_mm'], (int)$profile['dpi_y']) + $element['quiet_zone_modules'] * $modulePxY;
+            $originX = MediaProfileService::PixelsFromMm($element['x_mm'], $readingDpiX) + $element['quiet_zone_modules'] * $modulePxX;
+            $originY = MediaProfileService::PixelsFromMm($element['y_mm'], $readingDpiY) + $element['quiet_zone_modules'] * $modulePxY;
 
             for ($row = 0; $row < $matrix['size']; $row++) {
                 for ($column = 0; $column < $matrix['size']; $column++) {
                     // The centre of the module, so a half-pixel of rounding either way in
                     // the renderer does not turn agreement into a failure.
-                    $x = $originX + (int)($column * $modulePxX + intdiv($modulePxX, 2));
-                    $y = $originY + (int)($row * $modulePxY + intdiv($modulePxY, 2));
+                    $readingX = $originX + (int)($column * $modulePxX + intdiv($modulePxX, 2));
+                    $readingY = $originY + (int)($row * $modulePxY + intdiv($modulePxY, 2));
 
-                    if ($y >= $facts['height'] || $x >= $facts['width']) {
+                    if ($readingY >= $readingHeight || $readingX >= $readingWidth) {
                         $this->Refuse('elements.' . $element['id'], 'qr_outside_artifact', 'The QR symbol extends past the artifact at module ' . $row . ',' . $column);
                     }
+                    [$x, $y] = match ($orientation) {
+                        90 => [$readingHeight - 1 - $readingY, $readingX],
+                        180 => [$readingWidth - 1 - $readingX, $readingHeight - 1 - $readingY],
+                        270 => [$readingY, $readingWidth - 1 - $readingX],
+                        default => [$readingX, $readingY],
+                    };
 
                     $dark = $pixels[$y][$x] === $darkIndex;
                     if ($dark !== ($matrix['modules'][$row][$column] === '1')) {
