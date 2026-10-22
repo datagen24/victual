@@ -37,6 +37,11 @@ than re-running whatever booking produced it.
   form, the recipe form and list, the chore form and overview, and the battery form and
   overview. Each offers a printer picker and a button that requests a label for that one
   record.
+- **Labels for everything under a location**, on that location's edit page. **Preview**
+  lists what would print and what is skipped, and **Print** queues exactly that list. A
+  location that already has a valid label is skipped unless you tick the reprint option.
+  Inactive locations are always skipped. The location itself is included only when you
+  tick that option, and one batch covers at most 200 locations.
 
 **Five operations** are available under `/api/labels`:
 
@@ -50,7 +55,9 @@ than re-running whatever booking produced it.
 
 `kind` is `location`, `product`, `stock_entry`, `recipe`, `chore` or `battery`.
 The entity pages expose printing without typing these paths. Locations also retain
-`/api/labels/locations/{locationId}/print` and `/revised-print` under the same prefix.
+`/api/labels/locations/{locationId}/print` and `/revised-print` under the same prefix, and
+add `/print-subtree` for the batch above. Its body takes `include_root`,
+`reprint_existing` and `dry_run`, each `false` unless sent.
 
 Printing new or revised data requires `MASTER_DATA_EDIT` *and* the domain read permission
 for what is being printed — `STOCK_VIEW`

@@ -2656,6 +2656,59 @@ msgstr ""
 msgid "90° counter-clockwise"
 msgstr ""
 
+msgid "Labels for everything under this location"
+msgstr ""
+
+msgid "Also print a label for this location itself"
+msgstr ""
+
+msgid "Also reprint locations that already have a label"
+msgstr ""
+
+msgid "Preview"
+msgstr ""
+
+msgid "already has a label"
+msgstr ""
+
+msgid "inactive"
+msgstr ""
+
+msgid "reprint"
+msgstr ""
+
+msgid "skipped, %s"
+msgstr ""
+
+msgid "The labels were not requested: %s"
+msgstr ""
+
+msgid "the server did not answer"
+msgstr ""
+
+msgid "Nothing to print: every location under this one is skipped."
+msgstr ""
+
+msgid "Print %s label"
+msgid_plural "Print %s labels"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "%s label would print."
+msgid_plural "%s labels would print."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "%s location is skipped."
+msgid_plural "%s locations are skipped."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "%s label is queued for printing."
+msgid_plural "%s labels are queued for printing."
+msgstr[0] ""
+msgstr[1] ""
+
 msgid "Save draft"
 msgstr ""
 

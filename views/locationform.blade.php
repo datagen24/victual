@@ -197,6 +197,30 @@
 			'targetName' => $location->name,
 			'printLabel' => $__t('Print a label for this location'),
 		])
+		@if(VICTUAL_FEATURE_FLAG_LABELS && isset($labelPrinters) && count($labelPrinters) > 0 && Victual\Controllers\Users\User::HasPermissions(Victual\Controllers\Users\User::PERMISSION_MASTER_DATA_EDIT))
+		{{-- A batch over everything under this location, on the printer chosen above. Preview
+		first: it lists what would print and what is skipped, and Print queues exactly that.
+		A location that already has a valid label is skipped unless reprinting is ticked. --}}
+		<div id="location-batch" class="mt-4" data-location-id="{{ $location->id }}" data-location-name="{{ $location->name }}">
+			<h5>{{ $__t('Labels for everything under this location') }}</h5>
+			<div class="form-check">
+				<input class="form-check-input" type="checkbox" id="location-batch-include-root">
+				<label class="form-check-label" for="location-batch-include-root">{{ $__t('Also print a label for this location itself') }}</label>
+			</div>
+			<div class="form-check mb-2">
+				<input class="form-check-input" type="checkbox" id="location-batch-reprint">
+				<label class="form-check-label" for="location-batch-reprint">{{ $__t('Also reprint locations that already have a label') }}</label>
+			</div>
+			<button id="location-batch-preview" type="button" class="btn btn-outline-primary">
+				<i class="fa-solid fa-list"></i>&nbsp;{{ $__t('Preview') }}
+			</button>
+			<button id="location-batch-print" type="button" class="btn btn-primary d-none">
+				<i class="fa-solid fa-print"></i>&nbsp;<span></span>
+			</button>
+			<div id="location-batch-status" class="mt-3" role="status" aria-live="polite"></div>
+			<ul id="location-batch-list" class="list-unstyled small mt-2"></ul>
+		</div>
+		@endif
 		@endif
 	</div>
 </div>

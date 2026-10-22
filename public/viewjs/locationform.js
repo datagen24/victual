@@ -90,3 +90,145 @@ Victual.LabelPrinting.Wire({
 	printerSelect: '#location-form-printer',
 	status: '#location-form-status'
 });
+
+// Labels for everything under this location (LabelOperationsService::IssueSubtree). Preview
+// is a dry run; Print sends the same options with an idempotency key minted for that preview,
+// so a double click or a retried request queues the batch once.
+(function()
+{
+	var holder = document.getElementById('location-batch');
+	if (holder === null)
+	{
+		return;
+	}
+	var locationId = parseInt(holder.getAttribute('data-location-id'), 10);
+	var status = document.getElementById('location-batch-status');
+	var list = document.getElementById('location-batch-list');
+	var printButton = document.getElementById('location-batch-print');
+	var planned = null;
+
+	function clear(node)
+	{
+		while (node.firstChild !== null)
+		{
+			node.removeChild(node.firstChild);
+		}
+	}
+
+	function report(kind, text)
+	{
+		clear(status);
+		var box = document.createElement('div');
+		box.className = 'alert alert-' + kind + ' mb-0';
+		box.appendChild(document.createTextNode(text));
+		status.appendChild(box);
+	}
+
+	function refusal(xhr)
+	{
+		try
+		{
+			var body = JSON.parse((xhr && xhr.responseText) || '{}');
+			if (body.error_message)
+			{
+				return body.error_message;
+			}
+		}
+		catch (error)
+		{
+			// Not JSON: a transport failure, described by the fallback below.
+		}
+		return __t('the server did not answer');
+	}
+
+	var REASONS = { already_labelled: __t('already has a label'), inactive: __t('inactive') };
+
+	function show(result)
+	{
+		clear(list);
+		result.queued.forEach(function(entry)
+		{
+			var item = document.createElement('li');
+			item.appendChild(document.createTextNode((result.dry_run ? '\u2610 ' : '\u2713 ') + entry.path + (entry.reprint ? ' (' + __t('reprint') + ')' : '')));
+			list.appendChild(item);
+		});
+		result.skipped.forEach(function(entry)
+		{
+			var item = document.createElement('li');
+			item.className = 'text-muted';
+			item.appendChild(document.createTextNode('\u2014 ' + entry.path + ': ' + __t('skipped, %s', REASONS[entry.reason] || entry.reason)));
+			list.appendChild(item);
+		});
+	}
+
+	function send(dryRun, key, onDone)
+	{
+		var printerId = parseInt(document.getElementById('location-form-printer').value, 10);
+		Victual.Api.Get('labels/locations/' + locationId + '/context', function(context)
+		{
+			Victual.Api.Post('labels/locations/' + locationId + '/print-subtree',
+				{
+					'import_epoch': context.import_epoch,
+					'printer_id': printerId,
+					'include_root': document.getElementById('location-batch-include-root').checked,
+					'reprint_existing': document.getElementById('location-batch-reprint').checked,
+					'dry_run': dryRun,
+					'locale': document.documentElement.lang || 'en',
+					'timezone': (window.Intl && Intl.DateTimeFormat().resolvedOptions().timeZone) || 'UTC'
+				},
+				onDone,
+				function(xhr) { printButton.disabled = false; report('danger', __t('The labels were not requested: %s', refusal(xhr))); },
+				key === null ? undefined : { 'Idempotency-Key': key });
+		},
+		function(xhr) { printButton.disabled = false; report('danger', __t('The labels were not requested: %s', refusal(xhr))); });
+	}
+
+	function forget()
+	{
+		planned = null;
+		printButton.classList.add('d-none');
+	}
+	['location-batch-include-root', 'location-batch-reprint', 'location-form-printer'].forEach(function(id)
+	{
+		var node = document.getElementById(id);
+		if (node !== null)
+		{
+			node.addEventListener('change', forget);
+		}
+	});
+
+	document.getElementById('location-batch-preview').addEventListener('click', function()
+	{
+		forget();
+		send(true, null, function(result)
+		{
+			show(result);
+			if (result.queued.length === 0)
+			{
+				report('info', __t('Nothing to print: every location under this one is skipped.'));
+				return;
+			}
+			planned = 'location-batch-' + locationId + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+			printButton.querySelector('span').textContent = __n(result.queued.length, 'Print %s label', 'Print %s labels');
+			printButton.classList.remove('d-none');
+			report('info', __n(result.queued.length, '%s label would print.', '%s labels would print.') + ' ' + __n(result.skipped.length, '%s location is skipped.', '%s locations are skipped.'));
+		});
+	});
+
+	printButton.addEventListener('click', function()
+	{
+		if (planned === null)
+		{
+			return;
+		}
+		var key = planned;
+		printButton.disabled = true;
+		send(false, key, function(result)
+		{
+			printButton.disabled = false;
+			forget();
+			show(result);
+			report('success', __n(result.queued.length, '%s label is queued for printing.', '%s labels are queued for printing.'));
+		});
+	});
+})();

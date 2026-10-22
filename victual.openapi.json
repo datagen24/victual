@@ -9963,6 +9963,319 @@
 				]
 			}
 		},
+		"/labels/locations/{locationId}/print-subtree": {
+			"post": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Queue labels for everything under a location",
+				"description": "Requires MASTER_DATA_EDIT and STOCK_VIEW. Issues location labels for every descendant of the location (and the location itself with include_root), in one transaction, at most 200 locations. A location that already has a valid active label - an unretired label with a print job that is neither cancelled nor dead-lettered - is skipped unless reprint_existing is true; inactive locations are skipped. dry_run answers 200 with the plan and queues nothing; a real run answers 202 and is replayed when its Idempotency-Key is reused.",
+				"parameters": [
+					{
+						"name": "locationId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer",
+							"minimum": 1
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"required": [
+									"import_epoch",
+									"printer_id"
+								],
+								"properties": {
+									"import_epoch": {
+										"type": "integer",
+										"minimum": 0
+									},
+									"printer_id": {
+										"type": "integer",
+										"minimum": 1
+									},
+									"include_root": {
+										"type": "boolean",
+										"default": false
+									},
+									"reprint_existing": {
+										"type": "boolean",
+										"default": false
+									},
+									"dry_run": {
+										"type": "boolean",
+										"default": false
+									}
+								}
+							}
+						}
+					}
+				},
+				"responses": {
+					"202": {
+						"description": "Labels queued; each job is awaiting_artifact",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"root_location_id",
+										"include_root",
+										"dry_run",
+										"queued",
+										"skipped"
+									],
+									"properties": {
+										"root_location_id": {
+											"type": "integer"
+										},
+										"include_root": {
+											"type": "boolean"
+										},
+										"dry_run": {
+											"type": "boolean"
+										},
+										"queued": {
+											"type": "array",
+											"items": {
+												"type": "object",
+												"required": [
+													"location_id",
+													"name",
+													"path",
+													"depth"
+												],
+												"properties": {
+													"location_id": {
+														"type": "integer"
+													},
+													"name": {
+														"type": "string"
+													},
+													"path": {
+														"type": "string"
+													},
+													"depth": {
+														"type": "integer"
+													},
+													"reprint": {
+														"type": "boolean"
+													},
+													"reason": {
+														"type": "string",
+														"enum": [
+															"already_labelled",
+															"inactive"
+														]
+													},
+													"job_id": {
+														"type": "integer"
+													},
+													"label_uid": {
+														"type": "string"
+													}
+												}
+											}
+										},
+										"skipped": {
+											"type": "array",
+											"items": {
+												"type": "object",
+												"required": [
+													"location_id",
+													"name",
+													"path",
+													"depth"
+												],
+												"properties": {
+													"location_id": {
+														"type": "integer"
+													},
+													"name": {
+														"type": "string"
+													},
+													"path": {
+														"type": "string"
+													},
+													"depth": {
+														"type": "integer"
+													},
+													"reprint": {
+														"type": "boolean"
+													},
+													"reason": {
+														"type": "string",
+														"enum": [
+															"already_labelled",
+															"inactive"
+														]
+													},
+													"job_id": {
+														"type": "integer"
+													},
+													"label_uid": {
+														"type": "string"
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					},
+					"400": {
+						"$ref": "#/components/responses/InvalidPathParameter",
+						"description": "The {locationId} path parameter is not an integer"
+					},
+					"401": {
+						"$ref": "#/components/responses/Unauthorized",
+						"description": "Missing, invalid or expired API key"
+					},
+					"409": {
+						"$ref": "#/components/responses/LabelConflict",
+						"description": "idempotency_conflict: the Idempotency-Key was already used for a different request"
+					},
+					"422": {
+						"description": "Invalid printer configuration or request",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/LabelRefusal"
+								}
+							}
+						}
+					},
+					"500": {
+						"$ref": "#/components/responses/ServerError"
+					},
+					"503": {
+						"$ref": "#/components/responses/SchemaUnavailable"
+					},
+					"403": {
+						"$ref": "#/components/responses/Forbidden"
+					},
+					"200": {
+						"description": "The plan of a dry run, or the stored answer of a replayed key",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"root_location_id",
+										"include_root",
+										"dry_run",
+										"queued",
+										"skipped"
+									],
+									"properties": {
+										"root_location_id": {
+											"type": "integer"
+										},
+										"include_root": {
+											"type": "boolean"
+										},
+										"dry_run": {
+											"type": "boolean"
+										},
+										"queued": {
+											"type": "array",
+											"items": {
+												"type": "object",
+												"required": [
+													"location_id",
+													"name",
+													"path",
+													"depth"
+												],
+												"properties": {
+													"location_id": {
+														"type": "integer"
+													},
+													"name": {
+														"type": "string"
+													},
+													"path": {
+														"type": "string"
+													},
+													"depth": {
+														"type": "integer"
+													},
+													"reprint": {
+														"type": "boolean"
+													},
+													"reason": {
+														"type": "string",
+														"enum": [
+															"already_labelled",
+															"inactive"
+														]
+													},
+													"job_id": {
+														"type": "integer"
+													},
+													"label_uid": {
+														"type": "string"
+													}
+												}
+											}
+										},
+										"skipped": {
+											"type": "array",
+											"items": {
+												"type": "object",
+												"required": [
+													"location_id",
+													"name",
+													"path",
+													"depth"
+												],
+												"properties": {
+													"location_id": {
+														"type": "integer"
+													},
+													"name": {
+														"type": "string"
+													},
+													"path": {
+														"type": "string"
+													},
+													"depth": {
+														"type": "integer"
+													},
+													"reprint": {
+														"type": "boolean"
+													},
+													"reason": {
+														"type": "string",
+														"enum": [
+															"already_labelled",
+															"inactive"
+														]
+													},
+													"job_id": {
+														"type": "integer"
+													},
+													"label_uid": {
+														"type": "string"
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		},
 		"/labels/locations/{locationId}/print": {
 			"post": {
 				"tags": [

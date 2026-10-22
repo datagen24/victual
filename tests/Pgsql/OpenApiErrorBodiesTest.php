@@ -788,6 +788,7 @@ class OpenApiErrorBodiesTest extends PgsqlSchemaTestCase
 	private const LABEL_CONFLICTS = [
 		'PUT /labels/templates/{templateId}/draft' => ['stale_revision'],
 		'POST /labels/locations/{locationId}/print' => ['idempotency_conflict'],
+		'POST /labels/locations/{locationId}/print-subtree' => ['idempotency_conflict'],
 		'POST /labels/locations/{locationId}/revised-print' => ['idempotency_conflict'],
 		'POST /labels/{kind}/{id}/print' => ['idempotency_conflict'],
 		'POST /labels/{kind}/{id}/revised-print' => ['idempotency_conflict'],

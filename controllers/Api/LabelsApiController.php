@@ -77,7 +77,7 @@ class LabelsApiController extends BaseApiController
 		$route = \Slim\Routing\RouteContext::fromRequest($request)->getRoute()->getName();
 		[$kind, $targetId] = match ($route)
 		{
-			'label-op-print', 'label-op-revised-print' => ['location', (int)$args['locationId']],
+			'label-op-print', 'label-op-revised-print', 'label-op-print-subtree' => ['location', (int)$args['locationId']],
 			'label-op-print-generic', 'label-op-revised-print-generic' => [(string)$args['kind'], (int)$args['id']],
 			default => [null, null],
 		};
@@ -108,6 +108,11 @@ class LabelsApiController extends BaseApiController
 					$permissions = static fn (string $permission): bool => User::HasPermissions($permission);
 					$operations = new \Victual\Services\Labels\LabelOperationsService($db, $permissions, $user);
 					$keys = new \Victual\Services\Labels\IdempotencyService($db);
+
+					if ($route === 'label-op-print-subtree')
+					{
+						return $this->PrintSubtree($response, $operations, $keys, $targetId, $body, $user, $operation, $key, $route, $args);
+					}
 
 					$fingerprint = ['route' => $route, 'args' => $args, 'body' => $body];
 					$begun = $keys->Begin($user, $operation, $key, $fingerprint);
@@ -154,6 +159,52 @@ class LabelsApiController extends BaseApiController
 				return $this->ApiResponse($response->withStatus(422), ['field' => 'document', 'code' => 'not_canonicalizable', 'error_message' => $error->getMessage()]);
 			}
 		});
+	}
+
+	/**
+	 * Labels for everything under a location, as one batch (LabelOperationsService::IssueSubtree).
+	 *
+	 * A dry run changes nothing, so it answers 200 with the plan and takes no idempotency key;
+	 * a real run answers 202 and is replayed, like a single print, when its key is reused.
+	 */
+	private function PrintSubtree(Response $response, \Victual\Services\Labels\LabelOperationsService $operations, \Victual\Services\Labels\IdempotencyService $keys,
+		int $rootId, array $body, int $user, string $operation, ?string $key, string $route, array $args): Response
+	{
+		$dryRun = $this->Flag($body, 'dry_run');
+		if (!$dryRun)
+		{
+			$begun = $keys->Begin($user, $operation, $key, ['route' => $route, 'args' => $args, 'body' => $body]);
+			if ($begun['replay'])
+			{
+				return $this->ApiResponse($response->withStatus(200), $begun['row']['response']);
+			}
+		}
+
+		$result = $operations->IssueSubtree($rootId, $this->Integer($body, 'import_epoch'), $this->Integer($body, 'printer_id'),
+			isset($body['template_id']) ? (int)$body['template_id'] : null, isset($body['template_version_id']) ? (int)$body['template_version_id'] : null,
+			(string)($body['locale'] ?? 'en'), (string)($body['timezone'] ?? 'UTC'),
+			$this->Flag($body, 'reprint_existing'), $dryRun, $this->Flag($body, 'include_root'));
+
+		if ($dryRun)
+		{
+			return $this->ApiResponse($response->withStatus(200), $result);
+		}
+		$keys->Record($user, $operation, $key, 'location_subtree', $rootId, $result);
+		return $this->ApiResponse($response->withStatus(202), $result);
+	}
+
+	/** An optional boolean: absent is false, and anything but a JSON boolean is refused rather than guessed. */
+	private function Flag(array $body, string $field): bool
+	{
+		if (!array_key_exists($field, $body))
+		{
+			return false;
+		}
+		if (!is_bool($body[$field]))
+		{
+			throw new \Victual\Services\Labels\LabelValidationException($field, 'invalid_value', $field . ' is true or false');
+		}
+		return $body[$field];
 	}
 
 	/** Keeps the route from turning a missing integer into a zero nobody asked for. */
