@@ -98,6 +98,8 @@ Sharing a recipe does not reveal which accounts exist. `POST` and `PUT` on `/api
 `204` for every authorised caller, whether the target is a real user, an unknown username or user id,
 or the owner; only a real, shareable user gets a row. A right the caller lacks is refused with `403`
 whether or not the target exists.
+`DELETE` on a share the caller may not remove answers `404`, the same as a user who holds no share,
+and removes nothing.
 
 `ADMIN` and the `USERS_*` permissions give no access to a recipe. An account administrator who
 can change a user's password can sign in as that user

@@ -283,6 +283,26 @@ class ConsumptionRecipeApiTest extends PgsqlSchemaTestCase
 	}
 
 	/**
+	 * A share holder who DELETEs a hidden share (it holds a right they lack) gets the status, body and headers a user with no share gets, and the row stays (#737).
+	 */
+	public function testAShareHolderCannotProbeWithDeleteForAShareTheyCannotSee(): void
+	{
+		$id = self::createRecipe('owner', self::product(10));
+		self::assertSame(204, self::send('POST', "/api/consumption/recipes/$id/shares", 'owner', ['username' => 'api-member', 'consume' => true, 'share' => true])['status']);
+		self::assertSame(204, self::send('POST', "/api/consumption/recipes/$id/shares", 'owner', ['username' => 'api-viewer', 'edit' => true, 'share' => true])['status']);
+
+		$answers = [];
+		foreach ([self::$users['viewer'], self::$users['stranger'], 987654] as $userId)
+		{
+			$response = self::send('DELETE', "/api/consumption/recipes/$id/shares/$userId", 'member');
+			$answers[] = [$response['status'], $response['body'], self::stableHeaders($response['headers'] ?? [])];
+		}
+		self::assertSame(404, $answers[0][0], json_encode($answers));
+		self::assertCount(1, array_unique(array_map('serialize', $answers)), json_encode($answers));
+		self::assertSame(1, (int)self::$db->query("SELECT count(*) FROM consumption_recipe_shares WHERE recipe_id = $id AND user_id = " . self::$users['viewer'])->fetchColumn(), 'the share is still there');
+	}
+
+	/**
 	 * A share holder asking for a right they lack gets the same 403 for an existing and an unknown target, and an allowed request gets 204 for both (#737).
 	 */
 	public function testAShareHolderGetsTheSameAnswerForAKnownAndAnUnknownTarget(): void
