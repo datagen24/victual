@@ -420,6 +420,7 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		'POST /api/labels/templates/{templateId}/preview',
 		'GET /api/labels/assets',
 		'POST /api/labels/assets',
+		'POST /api/labels/assets/starter-fonts',
 		'GET /api/labels/renders/{requestId}',
 		'GET /api/labels/artifacts/{artifactId}/image',
 		'POST /api/labels/workers/{workerId}/renderer-credentials',
@@ -1324,6 +1325,22 @@ class LabelApiTest extends PgsqlSchemaTestCase
 	{
 		self::assertSame(403, self::Send('GET', '/api/labels/assets', null, self::$operatorKey)['status']);
 		self::assertSame(403, self::Send('POST', '/api/labels/assets', ['name' => 'X'], self::$operatorKey)['status']);
+		self::assertSame(403, self::Send('POST', '/api/labels/assets/starter-fonts', [], self::$operatorKey)['status']);
+	}
+
+	/**
+	 * An administrator adds the bundled starter fonts over HTTP, and a second call returns the
+	 * same assets rather than storing them again (issue #1033).
+	 */
+	public function testAdminAddsTheStarterFontsOnce(): void
+	{
+		$first = self::Send('POST', '/api/labels/assets/starter-fonts', [], self::$adminKey);
+		self::assertSame(200, $first['status'], $first['body']);
+		self::assertSame(['Noto Sans', 'Noto Sans Bold', 'Noto Sans Mono'], array_column($first['json'], 'name'));
+
+		$second = self::Send('POST', '/api/labels/assets/starter-fonts', [], self::$adminKey);
+		self::assertSame(200, $second['status']);
+		self::assertSame(array_column($first['json'], 'id'), array_column($second['json'], 'id'), 'A second call stores nothing new');
 	}
 
 	// ============================================================ print operations

@@ -2614,6 +2614,15 @@ msgstr ""
 msgid "Automatic length is bounded: continuous tape is not an unbounded canvas, so a design that grows past this is refused rather than cropped."
 msgstr ""
 
+msgid "Add starter fonts"
+msgstr ""
+
+msgid "Noto Sans, Noto Sans Bold and Noto Sans Mono, under the SIL Open Font License 1.1."
+msgstr ""
+
+msgid "Starter fonts are available"
+msgstr ""
+
 msgid "Save draft"
 msgstr ""
 
@@ -2686,7 +2695,7 @@ msgstr ""
 msgid "Upload"
 msgstr ""
 
-msgid "Upload a font before adding text: a template pins the font it prints with, and there is no default and no substitution."
+msgid "Add the starter fonts or upload a font before adding text: a template pins the font it prints with, and there is no default and no substitution."
 msgstr ""
 
 msgid "Published version %s"

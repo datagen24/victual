@@ -510,7 +510,7 @@
 			var font = Victual.LabelTemplate.Assets.filter(function(a) { return a.asset_kind === 'font'; })[0];
 			if (!font)
 			{
-				report('danger', __t('Upload a font before adding text: a template pins the font it prints with, and there is no default and no substitution.'));
+				report('danger', __t('Add the starter fonts or upload a font before adding text: a template pins the font it prints with, and there is no default and no substitution.'));
 				return;
 			}
 			Object.assign(element, {
@@ -674,6 +674,29 @@
 					function(xhr) { report('danger', refusal(xhr)); });
 			};
 			reader.readAsDataURL(file);
+		});
+		$(document).find('#starter-fonts-button').on('click', function()
+		{
+			Victual.Api.Post('labels/assets/starter-fonts', {},
+				function(fonts)
+				{
+					// Idempotent on the server, so a second press returns the same rows; only
+					// the ones this page has not listed yet are added to it.
+					fonts.forEach(function(asset)
+					{
+						if (Victual.LabelTemplate.Assets.some(function(a) { return a.id === asset.id; }))
+						{
+							return;
+						}
+						Victual.LabelTemplate.Assets.push(asset);
+						var item = document.createElement('li');
+						item.appendChild(document.createTextNode(asset.name + (asset.font_family ? ' (' + asset.font_family + ')' : '')));
+						region('asset-list').appendChild(item);
+					});
+					report('success', __t('Starter fonts are available'));
+					properties();
+				},
+				function(xhr) { report('danger', refusal(xhr)); });
 		});
 		$(document).find('#save-draft-button').on('click', function() { save(null); });
 

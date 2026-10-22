@@ -19,7 +19,10 @@ than re-running whatever booking produced it.
   `ADMIN`, since templates and printers are administration while printing itself is not.
   A template is validated against its own document model on every save; the designer
   cannot produce anything the validator would reject. Creating a template asks for the
-  entity kind it is for — one of the six above.
+  entity kind it is for — one of the six above. A text element needs a stored font, because
+  a template pins the font it prints with. **Add starter fonts**, under "Fonts and images",
+  stores the bundled Noto Sans, Noto Sans Bold and Noto Sans Mono (SIL Open Font License
+  1.1). You can also upload your own TTF or OTF.
 - **`/labelprinters`** — register and edit workers and printers, issue credentials or
   pairing material, and revoke worker credentials. Requires `ADMIN`.
 - **`/labelprintjobs`** — the job queue, with the printer each job targets. States include
