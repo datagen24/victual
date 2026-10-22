@@ -27,7 +27,7 @@ harness was built for and the state of that work; this file only locates the too
 | `ci/` | Python checks CI runs: changed-path detection, ADR headers, the deploy manifest, the OpenAPI document, vendor paths, Helm chart parity, and the k3s renderer. Each check has a `test_*.py`. | `python3 .devtools/ci/<check>.py` | [ci README](ci/README.md) |
 | `check-cited-jobs.php` | Fails when the documentation names a CI job that does not exist. | `php .devtools/check-cited-jobs.php` | Header comment in the script |
 | `check-path-id-validation.php` | Fails when an id-shaped API path parameter is untyped in `victual.openapi.json`. | `php .devtools/check-path-id-validation.php` | [Plan 11: API error handling](../docs/plans/11-api-error-handling.md) |
-| `seed/` | `seed_units.py`, which loads US customary quantity units and their global conversions into a running instance through the REST API. | `VICTUAL_API_KEY=<key> .devtools/seed/seed_units.py --base-url <url> [--dry-run]` | [seed README](seed/README.md) |
+| `seed/` | `seed_units.py`, which loads US customary, metric, or both sets of quantity units and their global conversions into a running instance through the REST API. | `VICTUAL_API_KEY=<key> .devtools/seed/seed_units.py --base-url <url> --system us\|metric\|both [--dry-run]` | [seed README](seed/README.md) |
 | `nix/` | `walk.py`, which drives a running image over HTTP: every top-level page, the API read side, and one write cycle. | `.devtools/nix/walk.py --base-url <url> --password <admin password>` | [Plan 20: container infrastructure](../docs/plans/20-container-infrastructure.md) |
 
 ## Documentation tooling

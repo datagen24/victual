@@ -1,4 +1,4 @@
-"""seed_units.py plans exact factors from the shipped data file, and seeds against a fake API the
+"""seed_units.py plans exact factors from the shipped data file for each --system choice, and seeds against a fake API the
 way the real one behaves: the database writes each conversion's inverse, and a rerun writes
 nothing.
 """
@@ -56,8 +56,30 @@ def factor(plan, a, b):
 
 class ShippedData(unittest.TestCase):
     def setUp(self):
-        self.units = su.load_units(su.DEFAULT_DATA)
+        self.all_units = su.load_units(su.DEFAULT_DATA)
+        self.units = su.select_units(self.all_units, "both")
         self.plan = su.plan_conversions(self.units)
+
+    def names(self, system):
+        return {u["name"] for u in su.select_units(self.all_units, system)}
+
+    def test_each_system_loads_its_own_units_and_the_common_ones(self):
+        us, metric, both = self.names("us"), self.names("metric"), self.names("both")
+        self.assertEqual(us | metric, both)
+        self.assertEqual(us & metric, {"Piece", "Dozen", "Pack", "Can", "Bottle", "Jar", "Box", "Bag", "Carton", "Bunch", "Loaf"})
+        self.assertTrue({"Cup", "Ounce", "Pound", "Stick"} <= us - metric)
+        self.assertTrue({"Milliliter", "Liter", "Gram", "Kilogram"} <= metric - us)
+
+    def test_conversion_counts_per_system(self):
+        counts = {s: len(su.plan_conversions(su.select_units(self.all_units, s))) for s in su.SYSTEMS}
+        # us: 7 volume units (21 pairs), 2 weight (1), Piece/Dozen (1); metric: 1 + 1 + 1;
+        # both: 9 volume (36), 4 weight (6), 1.
+        self.assertEqual(counts, {"us": 23, "metric": 3, "both": 43})
+
+    def test_only_both_links_the_systems(self):
+        for system in ("us", "metric"):
+            for f, t, _ in su.plan_conversions(su.select_units(self.all_units, system)):
+                self.assertFalse({f, t} & {"Cup", "Ounce"} and {f, t} & {"Gram", "Milliliter"}, (system, f, t))
 
     def test_kitchen_factors_are_exact(self):
         cases = [
@@ -173,11 +195,13 @@ class DataChecks(unittest.TestCase):
             json.dump({"units": units}, handle)
         return su.load_units(handle.name)
 
-    def test_refuses_duplicate_size_without_dimension_and_zero_size(self):
+    def test_refuses_duplicate_bad_system_size_without_dimension_and_zero_size(self):
         for units in (
-            [{"name": "Cup"}, {"name": "cup"}],
-            [{"name": "Cup", "size": "1"}],
-            [{"name": "Cup", "dimension": "volume", "size": "0"}],
+            [{"name": "Cup", "system": "us"}, {"name": "cup", "system": "us"}],
+            [{"name": "Cup"}],
+            [{"name": "Cup", "system": "imperial"}],
+            [{"name": "Cup", "system": "us", "size": "1"}],
+            [{"name": "Cup", "system": "us", "dimension": "volume", "size": "0"}],
         ):
             with self.subTest(units=units), self.assertRaises(su.SeedError):
                 self.check(units)

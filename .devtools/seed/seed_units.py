@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
 """Load a set of quantity units and the global conversions between them into a running Victual.
 
-    VICTUAL_API_KEY=<key> .devtools/seed/seed_units.py --base-url https://victual.example [--dry-run]
+    VICTUAL_API_KEY=<key> .devtools/seed/seed_units.py --base-url https://victual.example \
+        --system us|metric|both [--dry-run]
+
+--system picks the measurement system: us (US customary), metric, or both, for a household that
+shops and cooks in both, as in the northern US and Canada. Units every household uses (Piece,
+Dozen, the containers) come with each choice. Loading both also links the two systems: a cup
+converts to milliliters, a pound to grams. There is no default, because a unit set seeded by
+mistake is a cleanup by hand.
 
 It goes through the REST API rather than the database, so every row passes the same checks a
 person adding it in the UI would: the unique unit name, the positive-factor CHECK (#868) and the
 conversion-range refusal the insert trigger raises (#952). The key needs MASTER_DATA_EDIT.
 
-The data file (default: us-customary-units.json next to this script) lists units. A unit with a
-dimension and a size gets a global conversion to every other unit of that dimension. Every pair
+The data file (default: quantity-units.json next to this script) lists units, each tagged with
+the system that loads it. A loaded unit with a dimension and a size gets a global conversion to
+every other loaded unit of that dimension. Every pair
 is written directly, never left to a chain, because the resolver multiplies factors along a chain
 and takes the shortest path: a direct conversion is the exact one, and with every pair direct the
 resolver's closure stops at depth 1. Each pair is written once, from the larger unit to the
@@ -34,7 +42,15 @@ import sys
 import urllib.error
 import urllib.request
 
-DEFAULT_DATA = Path(__file__).resolve().parent / "us-customary-units.json"
+DEFAULT_DATA = Path(__file__).resolve().parent / "quantity-units.json"
+
+# The --system choices, and the unit systems from the data file each one loads.
+SYSTEMS = {
+    "us": {"us", "common"},
+    "metric": {"metric", "common"},
+    "both": {"us", "metric", "common"},
+}
+UNIT_SYSTEMS = SYSTEMS["both"]
 
 # Relative difference below which a stored factor counts as the expected one. The API stores
 # doubles at full precision since #951, so a factor this script wrote compares equal; the
@@ -60,11 +76,19 @@ def load_units(path):
         if name.casefold() in seen:
             raise SeedError(f"{path}: unit {name!r} is listed twice")
         seen.add(name.casefold())
+        if unit.get("system") not in UNIT_SYSTEMS:
+            raise SeedError(f"{path}: unit {name!r} has system {unit.get('system')!r}, not one of {sorted(UNIT_SYSTEMS)}")
         if ("dimension" in unit) != ("size" in unit):
             raise SeedError(f"{path}: unit {name!r} needs both dimension and size, or neither")
         if "size" in unit and Fraction(unit["size"]) <= 0:
             raise SeedError(f"{path}: unit {name!r} has a size that is not positive")
     return units
+
+
+def select_units(units, system):
+    """The units a --system choice loads, in data file order."""
+    wanted = SYSTEMS[system]
+    return [unit for unit in units if unit["system"] in wanted]
 
 
 def plan_conversions(units):
@@ -181,6 +205,7 @@ def main(argv=None):
     """Parse arguments, run the seed, and return the exit status."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--base-url", required=True, help="the instance's root URL, including any base path")
+    parser.add_argument("--system", required=True, choices=sorted(SYSTEMS), help="which measurement system's units to load")
     parser.add_argument("--data", default=DEFAULT_DATA, help=f"unit data file (default: {DEFAULT_DATA.name})")
     parser.add_argument("--dry-run", action="store_true", help="report what would be created; write nothing")
     args = parser.parse_args(argv)
@@ -190,7 +215,8 @@ def main(argv=None):
         print("VICTUAL_API_KEY is not set", file=sys.stderr)
         return 1
     try:
-        problems = seed(Api(args.base_url, api_key), load_units(args.data), args.dry_run)
+        units = select_units(load_units(args.data), args.system)
+        problems = seed(Api(args.base_url, api_key), units, args.dry_run)
     except SeedError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
