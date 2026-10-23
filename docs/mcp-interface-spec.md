@@ -350,6 +350,7 @@ the build specification:
 | `transfer_product` | `product_id`, `amount`, `location_id_from`, `location_id_to` (req, different) | `POST /api/stock/products/{id}/transfer` |
 | `undo_transaction` | `transaction_id` (req) | `POST /api/stock/transactions/{id}/undo` |
 | `check_off_shopping_list_item` | `item_id` (req) · `done?` (default true) | `PUT /api/objects/shopping_list/{id}` |
+| `set_due_date` | `product_id`, `due_date` (req; `null` never expires) · `location_id?` · `current_due_date?` (`null` selects never-expiring stock) | `GET /api/stock/products/{id}/entries`, then `PUT /api/stock/entry/{entryId}` per selected entry |
 
 The last five are ADR-0052 decision 1's and join `stock-write`. Every booking tool also
 takes `request_id` (below). `inventory_product` sets an absolute amount. Victual refuses
@@ -359,6 +360,23 @@ not one of ADR-0046's bookings and carries no key. Checking an item off is an ed
 removing one stays in the UI. Each booking needs its permission plus `STOCK_VIEW`
 (`STOCK_INVENTORY`, `STOCK_OPEN`, `STOCK_TRANSFER`), undo needs `STOCK_EDIT`, and
 checking off needs `SHOPPINGLIST_ITEMS_ADD`.
+
+`set_due_date` was added on 2026-10-23 (ADR-0052 decision 1, as amended) and joins
+`stock-write`. A product created without `default_best_before_days` has every count dated
+today, and `update_product` changes only the default for new stock. The tool changes the
+due date of stock already on hand and nothing else on the entry.
+
+- `PUT /api/stock/entry/{id}` requires `amount` and keeps every field the body omits. The
+  body is therefore the entry's own `amount` and the new `best_before_date`, with
+  `2999-12-31` for `null`.
+- Entries that already have the date are skipped, so a repeated call changes nothing.
+- Each edit is its own transaction, returned per entry as
+  `changed: [{entry_id, amount, transaction_id}]`, and `undo_transaction` reverses it. It is
+  not one of ADR-0046's bookings and carries no key.
+- If an edit fails after others succeeded, the error names the entries already changed and
+  their transactions.
+- It needs `STOCK_EDIT` plus `STOCK_VIEW` and carries `destructiveHint`. The entries answer
+  carries prices, and none of them leaves the tool.
 
 **On `shopping_location_id`, which reads worse than `store_id` and is the right name
 anyway.** Earlier drafts of this table said `store_id`, and the household vocabulary is

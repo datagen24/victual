@@ -73,6 +73,18 @@ export interface StockLogRow {
   amount: Numeric;
 }
 
+/**
+ * GET /api/stock/products/{id}/entries (the stock_next_use view): one row per stock entry. The
+ * row also carries prices, which are deliberately not declared here.
+ */
+export interface StockEntryRow {
+  id: Numeric;
+  product_id: Numeric;
+  amount: Numeric;
+  best_before_date: string | null;
+  location_id: Numeric | null;
+}
+
 /** GET /api/objects/locations. parent_location_id is migration 0273's nesting. */
 export interface LocationRow {
   id: Numeric;

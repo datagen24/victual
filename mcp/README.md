@@ -1,6 +1,6 @@
 # victual-mcp
 
-MCP sidecar for Victual (ten read tools, fourteen opt-in write tools), built from
+MCP sidecar for Victual (ten read tools, fifteen opt-in write tools), built from
 [docs/mcp-interface-spec.md](../docs/mcp-interface-spec.md). It lives in this repository
 rather than a separate one — see the spec's Open Question 1 amendment (2026-09-19) and
 [ADR-0013](../docs/adr/0013-nix-built-container-images.md).
@@ -57,7 +57,10 @@ the next upgrade would revert.
 `open_product`, `transfer_product`, `undo_transaction` and `check_off_shopping_list_item`
 join the three above in `stock-write`. A pantry walk is `find_product` or
 `create_product`, then `inventory_product`, and `undo_transaction` takes back a wrong
-count by the `transaction_id` it returned.
+count by the `transaction_id` it returned. `set_due_date`, also in `stock-write`, sets the due date of stock
+already on hand, for a product counted before it had a shelf life. It needs `STOCK_EDIT`
+and `STOCK_VIEW`, changes nothing else on the entry, and makes one undoable transaction per
+entry.
 
 ## Catalog tools (ADR-0052)
 

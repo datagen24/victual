@@ -20,7 +20,8 @@ export const ALL_READ_TOOLS = [
 ] as const;
 
 // §6 write tools: never part of `all-read`, so enabling one is a deliberate act.
-// §6's stock and list writes: the three of 0.5.3 and ADR-0052 decision 1's five.
+// §6's stock and list writes: the three of 0.5.3 and ADR-0052 decision 1's six (set_due_date
+// by its 2026-10-23 amendment).
 export const WRITE_TOOLS = [
   "add_to_shopping_list",
   "consume_product",
@@ -30,6 +31,7 @@ export const WRITE_TOOLS = [
   "transfer_product",
   "undo_transaction",
   "check_off_shopping_list_item",
+  "set_due_date",
 ] as const;
 
 // ADR-0052 decision 1's master-data writes; deletion stays in the UI (decision 2).
