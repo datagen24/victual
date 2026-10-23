@@ -65,7 +65,8 @@ count by the `transaction_id` it returned.
 `create_product_group` and `add_barcode`, off by default: enable them by name or with
 `catalog-write`. They need `MASTER_DATA_ADD` (`update_product`: `MASTER_DATA_EDIT`). The
 reads they take ids from (`list_locations`, `list_quantity_units`, `list_product_groups`,
-`lookup_barcode`) are part of `all-read`.
+`lookup_barcode`) are part of `all-read`. `list_locations` takes `query` and `limit` (default 50), as
+`find_product` does.
 
 `create_product` refuses a taken name before it posts, with the id of the product that holds
 it, because Victual reports the `UNIQUE` violation only as "The database rejected this
