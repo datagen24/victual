@@ -27,6 +27,16 @@ than re-running whatever booking produced it.
   design: turned 90°, the tape length runs across the canvas, so a long label can be read
   sideways. Each element except a line can also be rotated in 90° steps from its properties.
   The rendered preview shows the label as it leaves the printer.
+
+  A text element's box bounds its text down as well as across. Each line takes the type size
+  times the line spacing, so 9 pt at 1.2 needs a box at least 3.9 mm tall for one line.
+  **When it does not fit** decides what happens to a value too long for the box:
+
+  - *Refuse the label* prints nothing and names the element.
+  - *Shorten with an ellipsis* keeps the lines that fit and ends the last one with "…".
+  - *Shrink, to a floor* makes the type smaller, down to the smallest size, then refuses.
+
+  A refused preview or print names the element in the designer and on the job.
 - **`/labelprinters`** — register and edit workers and printers, issue credentials or
   pairing material, and revoke worker credentials. Requires `ADMIN`.
 - **`/labelprintjobs`** — the job queue, with the printer each job targets. States include
