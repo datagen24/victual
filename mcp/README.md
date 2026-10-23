@@ -1,6 +1,6 @@
 # victual-mcp
 
-MCP sidecar for Victual (ten read tools, fourteen opt-in write tools), built from
+MCP sidecar for Victual (eleven read tools, fourteen opt-in write tools), built from
 [docs/mcp-interface-spec.md](../docs/mcp-interface-spec.md). It lives in this repository
 rather than a separate one — see the spec's Open Question 1 amendment (2026-09-19) and
 [ADR-0013](../docs/adr/0013-nix-built-container-images.md).
@@ -57,7 +57,10 @@ the next upgrade would revert.
 `open_product`, `transfer_product`, `undo_transaction` and `check_off_shopping_list_item`
 join the three above in `stock-write`. A pantry walk is `find_product` or
 `create_product`, then `inventory_product`, and `undo_transaction` takes back a wrong
-count by the `transaction_id` it returned.
+count by the `transaction_id` it returned. In a later conversation, `recent_transactions`
+(a read in `all-read`) lists a product's newest stock journal rows with their
+`transaction_id`, so an undo does not depend on the conversation that booked. It returns
+no price.
 
 ## Catalog tools (ADR-0052)
 
