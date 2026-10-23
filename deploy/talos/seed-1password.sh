@@ -4,7 +4,12 @@
 # 1Password Connect operator turns each item into a Secret of the same name, one key per
 # field, so the field labels below are the environment variable names the pods read.
 #
-#   deploy/talos/seed-1password.sh
+#   deploy/talos/seed-1password.sh           the development app's items
+#   deploy/talos/seed-1password.sh --prod    production's victual-prod-* items: the two
+#                                            database roles and the first admin. Production's
+#                                            PostgreSQL is external, so it has no superuser
+#                                            item; copy the two database passwords into
+#                                            deploy/postgres/roles.sql's run.
 #
 # An item that already exists is left alone: the database was initialised with the
 # passwords in it, and replacing them would lock the pods out. A value comes from
@@ -82,6 +87,18 @@ for spec in specs:
 json.dump({"title": title, "category": "SECURE_NOTE", "tags": ["victual", "k8s"], "fields": fields}, sys.stdout)
 PY
 }
+
+if [ "${1:-}" = --prod ]; then
+	seed victual-prod-db-migrate prod-migrate.env \
+		VICTUAL_DB_USER=victual_migrate \
+		VICTUAL_DB_PASSWORD=@generate
+	seed victual-prod-bootstrap-admin prod-migrate.env \
+		VICTUAL_BOOTSTRAP_ADMIN_PASSWORD=@generate
+	seed victual-prod-db-app prod-app.env \
+		VICTUAL_DB_USER=victual_app \
+		VICTUAL_DB_PASSWORD=@generate
+	exit 0
+fi
 
 seed victual-postgres-superuser superuser.env password=@generate
 seed victual-db-migrate migrate.env \
