@@ -318,7 +318,7 @@ Appendix A for why nothing may depend on that internal naming convention again).
 Added by [ADR-0052](adr/0052-the-mcp-sidecar-builds-the-catalog-and-the-chart-exposes-it.md)
 decision 1 for building a catalog: the catalog tools in §6 take ids, and these lists are
 where a model finds them. Each needs `STOCK_VIEW`, which `EntityReadPolicy` checks for all
-four routes, and each is part of `all-read`.
+the routes they read, and each is part of `all-read`.
 
 | Tool | Input | Backed by | Output row |
 |---|---|---|---|
@@ -326,6 +326,16 @@ four routes, and each is part of `all-read`.
 | `list_quantity_units` | none | `GET /api/objects/quantity_units` (active, by name) | `unit_id, name, name_plural` |
 | `list_product_groups` | none | `GET /api/objects/product_groups` (active, by name) | `product_group_id, name` |
 | `lookup_barcode` | `barcode` (req) | `GET /api/stock/products/by-barcode/{barcode}`, then on its 400 "Unknown barcode" `GET /api/stock/barcodes/external-lookup/{barcode}` without `add` | `{ found: victual\|external\|none, product, suggestion }` |
+| `recent_transactions` | `product_id` (req) · `limit?` (default 20, max 100) · `include_undone?` (default true) | `GET /api/objects/stock_log?query[]=product_id={id}&order=id:desc&limit={limit}` (+ the product and `quantity_units` for names) | `transaction_id, type, amount, location_id, due_date, undone, timestamp`, beside the product's `name` and `unit` |
+
+`recent_transactions` was added on 2026-10-23 (ADR-0052 decision 1, as amended). Before it,
+`undo_transaction` worked only in the conversation that booked, because nothing else
+supplied a `transaction_id`. Rows come newest first by `id`, because `row_created_timestamp`
+is truncated to the second. One booking can write several rows that share a
+`transaction_id`, such as a consume across several entries or a transfer's two halves, and
+an undo reverses all of them. `type` is `stock_log.transaction_type` as stored. Rows without
+a `transaction_id` predate the column and are left out. `stock_log` carries `price`, and
+none of it leaves the tool.
 
 `list_locations` filters as `find_product` does: the server gets the longest run of the query
 that Victual's `query[]` pattern admits, and the whole query is matched in the sidecar.

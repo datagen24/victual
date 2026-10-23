@@ -73,6 +73,22 @@ export interface StockLogRow {
   amount: Numeric;
 }
 
+/**
+ * GET /api/objects/stock_log: the stock journal rows recent_transactions reads. The table also
+ * carries `price`, which is deliberately not declared here.
+ */
+export interface StockJournalRow {
+  id: Numeric;
+  transaction_id: string | null;
+  transaction_type: string;
+  product_id: Numeric;
+  amount: Numeric;
+  location_id?: Numeric | null;
+  best_before_date?: string | null;
+  undone: Numeric | boolean;
+  row_created_timestamp?: string | null;
+}
+
 /** GET /api/objects/locations. parent_location_id is migration 0273's nesting. */
 export interface LocationRow {
   id: Numeric;
