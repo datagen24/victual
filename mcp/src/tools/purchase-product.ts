@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ToolDefinition } from "./types.js";
-import type { StockLogRow } from "../victual/types.js";
-import { transactionId, UNDO_NOTE } from "../victual/transaction.js";
+import { UNDO_NOTE } from "../victual/transaction.js";
+import { book, REPLAY_NOTE, requestIdSchema } from "../victual/booking.js";
 
 // §6. POST /api/stock/products/{id}/add. The tool's due_date is the route's
 // best_before_date; shopping_location_id keeps its real name (§6's note).
@@ -13,12 +13,15 @@ const inputSchema = z.object({
   price: z.number().nonnegative().optional().describe("Price per stock unit"),
   due_date: isoDate.optional().describe("Best-before date, YYYY-MM-DD (default: derived from the product)"),
   shopping_location_id: z.number().int().positive().optional().describe("Id of the store it was bought at"),
+  request_id: requestIdSchema,
 });
 
 const outputSchema = z.object({
   transaction_id: z.string(),
   product_id: z.number(),
   amount: z.number(),
+  request_id: z.string().optional(),
+  replayed: z.boolean(),
 });
 
 export const purchaseProduct: ToolDefinition<typeof inputSchema, typeof outputSchema> = {
@@ -32,16 +35,21 @@ export const purchaseProduct: ToolDefinition<typeof inputSchema, typeof outputSc
   inputSchema,
   outputSchema,
   handler: async (input, ctx) => {
-    const { status, body: rows } = await ctx.client.postWithStatus<StockLogRow[]>(`/api/stock/products/${input.product_id}/add`, ctx.credential, {
-      amount: input.amount,
-      ...(input.price !== undefined ? { price: input.price } : {}),
-      ...(input.due_date !== undefined ? { best_before_date: input.due_date } : {}),
-      ...(input.shopping_location_id !== undefined ? { shopping_location_id: input.shopping_location_id } : {}),
-    });
-    const id = transactionId(rows, status);
+    const booked = await book(
+      ctx,
+      `/api/stock/products/${input.product_id}/add`,
+      {
+        amount: input.amount,
+        ...(input.price !== undefined ? { price: input.price } : {}),
+        ...(input.due_date !== undefined ? { best_before_date: input.due_date } : {}),
+        ...(input.shopping_location_id !== undefined ? { shopping_location_id: input.shopping_location_id } : {}),
+      },
+      input.request_id,
+    );
+    const id = booked.transaction_id;
     return {
-      data: { transaction_id: id, product_id: input.product_id, amount: input.amount },
-      text: `Purchased ${input.amount} of product ${input.product_id} (transaction ${id}). ${UNDO_NOTE}`,
+      data: { ...booked, product_id: input.product_id, amount: input.amount },
+      text: `Purchased ${input.amount} of product ${input.product_id} (transaction ${id}). ${booked.replayed ? `${REPLAY_NOTE} ` : ""}${UNDO_NOTE}`,
     };
   },
 };

@@ -44,7 +44,10 @@ the next upgrade would revert.
   `shopping_list_id` -> `list_id` on the shopping-list route, `due_date` ->
   `best_before_date` on purchase. `shopping_location_id` keeps its name.
 - `consume_product` and `purchase_product` return `transaction_id` in `structuredContent`.
-  A booking answered without a transaction row is reported as `victual_error`.
+  A booking answered without a transaction row is reported as `outcome_unknown`.
+- Bookings carry an `Idempotency-Key` (ADR-0046) when Victual publishes support for it,
+  returned as `request_id`. A retry of an `outcome_unknown` booking with the same
+  `request_id` and values cannot book twice.
 - No tool creates a product; an unknown `product_id` is refused by Victual.
 - Not done: the real-client household check ("add milk to the list", "I used the last of the
   coffee") and contract tests against plan 14's fixtures for the three POST routes.

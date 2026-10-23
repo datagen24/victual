@@ -47,16 +47,27 @@ function toolErrorResult(error: unknown) {
       ? error
       : new VictualApiError("victual_error", error instanceof Error ? error.message : String(error));
   const retryable = apiError.category === "victual_unavailable";
+  const keyed = apiError.requestId;
+  // ADR-0046 obligations 3, 7 and 8: a keyed booking's retry is safe only with the same
+  // request_id and the same values, and a conflict is a client defect, never a retry.
   const advice =
-    apiError.category === "outcome_unknown"
-      ? "the write may already have been applied; check the current state (the stock journal, stock overview or shopping list) before any retry; retrying will not help, and may book it twice, until you have checked"
-      : retryable
-        ? "retrying may help"
-        : "retrying will not help";
+    apiError.code === "idempotency_conflict"
+      ? "that request_id was already used for a different booking; do not resend it, and use a new request_id only for a genuinely new booking"
+      : apiError.code === "idempotency_in_progress"
+        ? `the first attempt with request_id ${keyed ?? "(unknown)"} is still being processed; retry later with the same request_id and exactly the same values`
+        : apiError.category === "outcome_unknown" && keyed
+          ? `the booking may already have been applied; retrying with request_id ${keyed} and exactly the same values cannot book it twice, because Victual replays the first attempt; with different values, check the current state (the stock journal or stock overview) first`
+          : apiError.category === "outcome_unknown"
+            ? "the write may already have been applied; check the current state (the stock journal, stock overview or shopping list) before any retry; retrying will not help, and may book it twice, until you have checked"
+            : retryable
+              ? "retrying may help"
+              : "retrying will not help";
   const payload = {
     error: apiError.category,
     message: apiError.message,
     ...(apiError.victualStatus !== undefined ? { victual_status: apiError.victualStatus } : {}),
+    ...(apiError.code !== undefined ? { code: apiError.code } : {}),
+    ...(keyed !== undefined ? { request_id: keyed } : {}),
   };
   return {
     isError: true,
@@ -71,7 +82,7 @@ function toolErrorResult(error: unknown) {
 }
 
 function registerTool(server: McpServer, tool: AnyTool, context: ToolContext, log: Logger) {
-  // One registration shape for all nine; the cast is the price of a heterogeneous array
+  // One registration shape for every tool; the cast is the price of a heterogeneous array
   // of tools whose input types differ.
   const definition = tool as unknown as {
     name: string;

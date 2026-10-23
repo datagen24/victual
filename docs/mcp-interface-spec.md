@@ -351,6 +351,15 @@ Write-tool rules, fixed now:
   `structuredContent`, and the `text` block says how to undo ("this can be undone in
   Victual's stock journal") — the REST undo endpoints exist and an assistant that just
   consumed the wrong thing should be able to say so accurately.
+- Every stock booking carries an `Idempotency-Key` when Victual publishes
+  `stock_booking_idempotency` in `GET /api/system/info` ([ADR-0046](adr/0046-stock-bookings-accept-an-optional-idempotency-key.md),
+  [ADR-0052](adr/0052-the-mcp-sidecar-builds-the-catalog-and-the-chart-exposes-it.md)
+  decision 4). The sidecar keeps no session, so it asks before every booking. The key
+  is a fresh UUID unless the call passes `request_id`, and it is returned as
+  `request_id` with `replayed` (`Idempotent-Replayed: true`) in `structuredContent`.
+  An `outcome_unknown` error from a keyed booking carries its `request_id`, and its
+  `text` says a retry with that `request_id` and the same values cannot book twice. A
+  409 `idempotency_conflict` says not to resend.
 - No write tool ever creates a product implicitly. The prior art's "smart" auto-create
   path is exactly the kind of surprise 02-Q2's caution exists to prevent; product
   creation stays in the UI until a deliberate future decision.
@@ -395,6 +404,10 @@ Two layers, never mixed:
   whose 2xx answer is read but carries no transaction row: the booking was probably
   applied, but what was booked cannot be confirmed. Both keep `victual_status`, and the
   `text` gives the same check-before-retry advice.
+
+The `message` repeats Victual's `error_message` from a refused request's body, and the
+payload carries its `code` when there is one. Neither affects the category, which comes
+from the status code alone.
 
 This mapping is why [plan 11](plans/11-api-error-handling.md) gates this work: today
 Victual answers 400 for "not allowed" and 500 for "bad filter" on some routes, which
