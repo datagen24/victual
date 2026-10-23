@@ -33,7 +33,8 @@ data:
   # TLS is the ingress's job; the sidecar never disables verification, it just never
   # leaves the cluster network).
   VICTUAL_BASE_URL: "http://victual:8080"
-  # mcp.enabledTools: `all-read` is the read tools, `stock-write` the stock and list writes.
+  # mcp.enabledTools: `all-read` is the read tools, `stock-write` the stock and list writes,
+  # `catalog-write` the product, location, unit, group and barcode writes.
   # A comma-separated list names tools one by one; an unknown name stops the container at
   # startup rather than being ignored.
   MCP_ENABLED_TOOLS: "all-read"
@@ -72,7 +73,7 @@ spec:
         app.kubernetes.io/name: victual-mcp
       annotations:
         # envFrom is read once, at container start: a changed ConfigMap rolls the pods (issue #852).
-        checksum/config: 42efcfee2fe4deb56766ceb4c7b56df79438a869855b0c715aeb0aed9c32f722
+        checksum/config: 25531065b28a4b287259d272bbaa1d627238d079c2c015532a9df80cb19f16c9
     spec:
       # Nothing here talks to the Kubernetes API.
       automountServiceAccountToken: false

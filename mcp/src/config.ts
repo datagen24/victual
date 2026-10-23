@@ -22,13 +22,27 @@ export const ALL_READ_TOOLS = [
 // §6 write tools: never part of `all-read`, so enabling one is a deliberate act.
 export const WRITE_TOOLS = ["add_to_shopping_list", "consume_product", "purchase_product"] as const;
 
-export type ToolName = (typeof ALL_READ_TOOLS)[number] | (typeof WRITE_TOOLS)[number];
+// ADR-0052 decision 1's master-data writes; deletion stays in the UI (decision 2).
+export const CATALOG_WRITE_TOOLS = [
+  "create_product",
+  "update_product",
+  "create_location",
+  "create_quantity_unit",
+  "create_product_group",
+  "add_barcode",
+] as const;
+
+export type ToolName =
+  | (typeof ALL_READ_TOOLS)[number]
+  | (typeof WRITE_TOOLS)[number]
+  | (typeof CATALOG_WRITE_TOOLS)[number];
 
 // Keywords that expand in place inside MCP_ENABLED_TOOLS (ADR-0052 decision 5). Write tools
 // are still never part of `all-read`: `stock-write` names them as a group, deliberately.
 export const TOOL_KEYWORDS: Readonly<Record<string, readonly ToolName[]>> = {
   "all-read": ALL_READ_TOOLS,
   "stock-write": WRITE_TOOLS,
+  "catalog-write": CATALOG_WRITE_TOOLS,
 };
 
 const envSchema = z.object({
@@ -68,7 +82,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const config = parsed.data;
   const unknown = config.MCP_ENABLED_TOOLS.filter(
-    (tool) => ![...ALL_READ_TOOLS, ...WRITE_TOOLS].includes(tool as ToolName),
+    (tool) => ![...ALL_READ_TOOLS, ...WRITE_TOOLS, ...CATALOG_WRITE_TOOLS].includes(tool as ToolName),
   );
   if (unknown.length > 0) {
     console.error(

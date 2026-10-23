@@ -98,7 +98,8 @@ mcp:
   # Two replicas behind the service victual-mcp, port 3000, inside the cluster.
   enabled: true
   # The tools the sidecar serves (MCP_ENABLED_TOOLS, ADR-0052 decision 5): a comma list of
-  # tool names and the keywords all-read and stock-write. Write tools are off unless named.
+  # tool names and the keywords all-read, stock-write and catalog-write. Write tools are off
+  # unless named.
   # An unknown name stops the sidecar at startup rather than being ignored.
   enabledTools: all-read
   # Off by default. Publishes the sidecar at https://<host>/mcp on its own hostname, for

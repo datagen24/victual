@@ -11,6 +11,12 @@ import { lookupBarcode } from "./lookup-barcode.js";
 import { addToShoppingList } from "./add-to-shopping-list.js";
 import { consumeProduct } from "./consume-product.js";
 import { purchaseProduct } from "./purchase-product.js";
+import { createProduct } from "./create-product.js";
+import { updateProduct } from "./update-product.js";
+import { createLocation } from "./create-location.js";
+import { createQuantityUnit } from "./create-quantity-unit.js";
+import { createProductGroup } from "./create-product-group.js";
+import { addBarcode } from "./add-barcode.js";
 
 // Fixed, deterministic order — §5's tools/list ordering rule.
 export const ALL_TOOLS = [
@@ -29,4 +35,11 @@ export const ALL_TOOLS = [
   addToShoppingList,
   consumeProduct,
   purchaseProduct,
+  // ADR-0052 decision 1's catalog writes: off unless named or `catalog-write`.
+  createProduct,
+  updateProduct,
+  createLocation,
+  createQuantityUnit,
+  createProductGroup,
+  addBarcode,
 ] as const;

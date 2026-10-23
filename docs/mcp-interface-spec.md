@@ -380,8 +380,36 @@ Write-tool rules, fixed now:
   `text` says a retry with that `request_id` and the same values cannot book twice. A
   409 `idempotency_conflict` says not to resend.
 - No write tool ever creates a product implicitly. The prior art's "smart" auto-create
-  path is exactly the kind of surprise 02-Q2's caution exists to prevent; product
-  creation stays in the UI until a deliberate future decision.
+  path is exactly the kind of surprise 02-Q2's caution exists to prevent. The deliberate
+  decision this rule waited for is ADR-0052: only `create_product` (§6.1) creates a
+  product, and only when the model calls it.
+- No tool deletes anything (ADR-0052 decision 2). Deletion stays in the UI.
+
+### 6.1 Catalog writes (ADR-0052)
+
+Off by default. Each is enabled by name or with the `catalog-write` keyword. They need
+`MASTER_DATA_ADD` ([ADR-0043](adr/0043-creating-shared-master-data-is-a-right-below-master-data-edit.md)),
+except `update_product`, which needs `MASTER_DATA_EDIT`.
+
+| Tool | Input | Backed by |
+|---|---|---|
+| `create_product` | `name`, `location_id`, `unit_id` (req) · `product_group_id?` · `min_stock_amount?` · `default_best_before_days?` (`-1` never expires) · `barcode?` | `POST /api/objects/products`, then `POST /api/objects/product_barcodes` |
+| `update_product` | `product_id` (req) and at least one of `name`, `location_id`, `product_group_id` (`null` clears it), `min_stock_amount`, `default_best_before_days` | `PUT /api/objects/products/{id}` |
+| `create_location` | `name` (req) · `parent_location_id?` · `is_freezer?` · `description?` | `POST /api/objects/locations` |
+| `create_quantity_unit` | `name` (req) · `name_plural?` | `POST /api/objects/quantity_units` |
+| `create_product_group` | `name` (req) | `POST /api/objects/product_groups` |
+| `add_barcode` | `product_id`, `barcode` (req) · `note?` | `POST /api/objects/product_barcodes` |
+
+- `create_product` sets `qu_id_stock`, `qu_id_purchase`, `qu_id_consume` and
+  `qu_id_price` from its one `unit_id`, as the product form does by default. A barcode
+  that fails to attach is reported on the successful result as `barcode_added: false`,
+  because the product exists either way, and an error would invite a second create.
+- `update_product` cannot change the stock unit, because changing it under existing stock
+  changes what every booked amount means. Its location is the default for new stock.
+  Moving existing stock is `transfer_product`. It carries `destructiveHint`, because it
+  overwrites values.
+- A 2xx without `created_object_id` is `outcome_unknown`, as a booking without a
+  transaction row is.
 
 ## 7. Error model
 
@@ -443,7 +471,7 @@ nothing here is complex enough for a config file:
 |---|---|---|
 | `VICTUAL_BASE_URL` | Victual origin, e.g. `http://victual.victual.svc:80` | required |
 | `MCP_PORT` | listen port | `3000` |
-| `MCP_ENABLED_TOOLS` | comma-separated allowlist; keywords expand in place: `all-read` = the §5 read tools, `stock-write` = the §6 write tools (ADR-0052 decision 5); write tools are otherwise enabled by name. The Helm chart sets it from `mcp.enabledTools` | `all-read` |
+| `MCP_ENABLED_TOOLS` | comma-separated allowlist; keywords expand in place: `all-read` = the §5 read tools, `stock-write` = the §6 stock and list writes, `catalog-write` = §6.1 (ADR-0052 decision 5); write tools are otherwise enabled by name. The Helm chart sets it from `mcp.enabledTools` | `all-read` |
 | `MCP_REQUEST_TIMEOUT_MS` | per-REST-call timeout | `10000` |
 | `LOG_LEVEL` | `error`/`warn`/`info`/`debug`, to stderr/stdout | `info` |
 
@@ -484,7 +512,8 @@ Recorded so their absence reads as decided, not forgotten:
   `subscriptions/listen`.
 - Response streaming beyond what the SDK does natively, and OAuth (§4.1).
 - Fuzzy search (§5.4) and localization of names and `text` blocks (English v1).
-- Any write beyond §6's three.
+- Any write beyond §6's three. *Amended by ADR-0052:* §6.1's catalog writes and the
+  stock writes ADR-0052 decision 1 names are in scope, and deletes remain out.
 
 ### 10.1 Medication and private consumption data
 

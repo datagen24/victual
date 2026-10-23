@@ -1,6 +1,6 @@
 # victual-mcp
 
-MCP sidecar for Victual (ten read tools, three opt-in write tools), built from
+MCP sidecar for Victual (ten read tools, nine opt-in write tools), built from
 [docs/mcp-interface-spec.md](../docs/mcp-interface-spec.md). It lives in this repository
 rather than a separate one — see the spec's Open Question 1 amendment (2026-09-19) and
 [ADR-0013](../docs/adr/0013-nix-built-container-images.md).
@@ -48,7 +48,16 @@ the next upgrade would revert.
 - Bookings carry an `Idempotency-Key` (ADR-0046) when Victual publishes support for it,
   returned as `request_id`. A retry of an `outcome_unknown` booking with the same
   `request_id` and values cannot book twice.
-- No tool creates a product; an unknown `product_id` is refused by Victual.
+- Only `create_product` creates a product (ADR-0052, spec §6.1); a booking on an unknown
+  `product_id` is refused by Victual. No tool deletes anything.
+
+## Catalog tools (ADR-0052)
+
+`create_product`, `update_product`, `create_location`, `create_quantity_unit`,
+`create_product_group` and `add_barcode`, off by default: enable them by name or with
+`catalog-write`. They need `MASTER_DATA_ADD` (`update_product`: `MASTER_DATA_EDIT`). The
+reads they take ids from (`list_locations`, `list_quantity_units`, `list_product_groups`,
+`lookup_barcode`) are part of `all-read`.
 - Not done: the real-client household check ("add milk to the list", "I used the last of the
   coffee") and contract tests against plan 14's fixtures for the three POST routes.
 
