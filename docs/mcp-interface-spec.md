@@ -512,7 +512,10 @@ unknown `MCP_ENABLED_TOOLS` entry or missing required variable.
   problem and another reason 10 precedes Wave 5.
 - Exposure per 02-Q4: cluster/tailnet only. The ingress route for `/mcp` is not
   published externally; if that ever flips, the IdP future state (§4.1) owns the
-  boundary first.
+  boundary first. *Amended by ADR-0052 decisions 6 and 7:* the chart's opt-in
+  `mcp.ingress` publishes exactly `/mcp` on its own hostname on the household network
+  (stage 1). A route through Cloudflare Access (stage 2) and remote connectors with
+  OAuth (stage 3) are later decisions.
 - Logs to stdout/stderr only (MCP Logging is deprecated anyway); no metrics endpoint
   in v1.
 
