@@ -3319,6 +3319,7 @@ msgstr ""
 msgid "The remaining events did not change, so the requests stopped."
 msgstr ""
 
+
 msgid "Refills"
 msgstr ""
 
@@ -3834,19 +3835,4 @@ msgid "Record %s has no label yet, or does not exist, so this preview of version
 msgstr ""
 
 msgid "Version %s with the real values of record %s, as a print of it would come out."
-msgstr ""
-
-msgid "Create a label template"
-msgstr ""
-
-msgid "Stroke (mm)"
-msgstr ""
-
-msgid "Rendering..."
-msgstr ""
-
-msgid "The rendered label"
-msgstr ""
-
-msgid "Rendered"
 msgstr ""
