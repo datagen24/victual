@@ -110,9 +110,9 @@ and the operator's *VictualKit Access Brief* (2026-10-23).
 
    | Tool | Route | Permission | Kind |
    |---|---|---|---|
-   | `list_locations` | `GET /objects/locations` | (authenticated) | read |
-   | `list_quantity_units` | `GET /objects/quantity_units` | (authenticated) | read |
-   | `list_product_groups` | `GET /objects/product_groups` | (authenticated) | read |
+   | `list_locations` | `GET /objects/locations` | `STOCK_VIEW` | read |
+   | `list_quantity_units` | `GET /objects/quantity_units` | `STOCK_VIEW` | read |
+   | `list_product_groups` | `GET /objects/product_groups` | `STOCK_VIEW` | read |
    | `lookup_barcode` | `GET /stock/products/by-barcode/{barcode}`, then on a miss `GET /stock/barcodes/external-lookup/{barcode}` without `add` | `STOCK_VIEW` | read |
    | `create_product` | `POST /objects/products` | `MASTER_DATA_ADD` | catalog write |
    | `update_product` | `PUT /objects/products/{id}` | `MASTER_DATA_EDIT` | catalog write |
@@ -127,8 +127,11 @@ and the operator's *VictualKit Access Brief* (2026-10-23).
    | `check_off_shopping_list_item` | `PUT /objects/shopping_list/{id}` (`done`) | `SHOPPINGLIST_ITEMS_ADD` | list write |
 
    `inventory_product` is the main tool for walking the pantry: "there are three cans"
-   sets an absolute amount. It does not add three, so saying the same thing twice does no
-   harm.
+   sets an absolute amount. It does not add three. Victual refuses an inventory booking
+   whose new amount equals the current one ("The new amount cannot equal the current
+   stock amount"), so the tool reads `GET /stock/products/{id}` first. When the amounts
+   match it books nothing and reports the amount as unchanged, so saying the same thing
+   twice does no harm.
 
 2. **Nothing deletes.** No tool calls a `DELETE` route, `POST /stock/shoppinglist/remove-product`
    or `POST /stock/shoppinglist/clear`. Deleting a product, a location, a unit, a barcode,
@@ -140,15 +143,29 @@ and the operator's *VictualKit Access Brief* (2026-10-23).
    still fail. Only `create_product` creates one, and only when the model calls it.
    Its input names the product, its location and its stock unit by id. Optional fields
    are the product group, the minimum stock amount, the default best-before days and one
-   barcode. `update_product` changes only those fields plus the name. It cannot change
-   the stock unit, because changing it under existing stock changes what every booked
-   amount means.
+   barcode. `update_product` changes only the name, the default location, the product
+   group, the minimum stock amount and the default best-before days. Moving stock that
+   already exists is `transfer_product`'s job. It cannot change the stock unit, because
+   changing it under existing stock changes what every booked amount means. The tool
+   sets both `qu_id_stock` and `qu_id_purchase` (both are required) from its one unit
+   input. `create_location` takes an optional `parent_location_id` (migration 0273),
+   so shelves can sit inside a pantry.
 
-4. **Every stock booking carries an `Idempotency-Key`** (ADR-0046). The tools take an
-   optional `request_id`. If it is absent, the sidecar generates one. The value is
-   returned in `structuredContent` beside `transaction_id`. A timeout's `text` block says
-   the booking may have happened and that a retry with the same `request_id` cannot book
-   twice.
+4. **Every stock booking carries an `Idempotency-Key`** (ADR-0046) when Victual
+   publishes support for it. The five bookings are purchase, consume, transfer, open and
+   inventory; undo is not one of them. The tools take an optional `request_id`. If it is
+   absent, the sidecar generates one with `crypto.randomUUID()`. The value is returned in
+   `structuredContent` beside `transaction_id`. ADR-0046's client obligations apply, as
+   follows for a stateless client:
+   - **Discovery (obligation 1)** happens per booking call: `GET /api/system/info`, and
+     the header is sent only if the response has `stock_booking_idempotency`. The sidecar
+     keeps no session, so it cannot cache the answer (spec §2).
+   - **An `outcome_unknown` result that carries a `request_id`** (obligations 3 and 5)
+     says a retry with the same `request_id` **and the same values** cannot book twice,
+     within the published retention window.
+   - **A 409 `idempotency_conflict` (obligation 7)** says to stop and not resend.
+   - **`Idempotent-Replayed: true` (obligation 9)** is reported as a replay, not a second
+     booking.
 
 5. **The chart sets the enabled tools.** A new value, `mcp.enabledTools` (default
    `"all-read"`), renders into `MCP_ENABLED_TOOLS`. Two new keywords join `all-read`:
@@ -251,12 +268,21 @@ and the operator's *VictualKit Access Brief* (2026-10-23).
    header. Claude Code uses `claude mcp add --transport http --header` directly. The
    choice of bridge (a third-party package, or a small one shipped from `mcp/`) is made
    at implementation.
+
+   > **Response:** datagen24, 2026-10-23: accepted as recommended.
+
 2. **External barcode lookup.** `lookup_barcode`'s fallback sends the barcode to whichever
    lookup plugin Victual has configured (an external service). Recommendation: allow it.
    It sends only the barcode, it is already what the UI's scan flow does, and with no
    plugin configured the fallback is skipped.
+
+   > **Response:** datagen24, 2026-10-23: accepted as recommended.
+
 3. **Checking off a shopping-list item.** This record treats `done` as an edit and keeps
    removal in the UI. Recommendation: keep that split.
+
+   > **Response:** datagen24, 2026-10-23: accepted as recommended.
+
 4. **A question for issue 770, recorded here because stage 3 depends on it: whose token
    is the user credential?** One option is that Victual verifies the Access JWT, which
    gives one sign-in through Entra but ties Victual's authentication to Cloudflare. The
@@ -270,9 +296,15 @@ and the operator's *VictualKit Access Brief* (2026-10-23).
    - One discovery document that Victual and the sidecar both publish would serve the
      native apps and the assistant alike.
 
+   > **Response:** datagen24, 2026-10-23: deferred to
+   > [issue 770](https://github.com/datagen24/victual/issues/770). Stage 3 is outside this
+   > record's scope, so this record does not decide whose token is the user credential.
+   > The recommendation and its reasons go to issue 770 as input.
+
 ## Acceptance prerequisites
 
-1. The maintainer answers the open questions.
+1. The maintainer answers the open questions. *Met 2026-10-23:* questions 1 to 3 were
+   accepted as recommended, and question 4 was deferred to issue 770.
 2. The tools, the chart values and the spec amendments are built and covered by the
    sidecar's handler and HTTP tests and by `helm template` checks for both new values.
 3. A real-client run on production: a catalog of at least ten products is built and
