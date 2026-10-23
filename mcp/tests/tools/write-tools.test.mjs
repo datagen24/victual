@@ -5,7 +5,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { buildServer } from "../../dist/server.js";
-import { ALL_READ_TOOLS, loadConfig } from "../../dist/config.js";
+import { ALL_READ_TOOLS, WRITE_TOOLS, loadConfig } from "../../dist/config.js";
 import { addToShoppingList } from "../../dist/tools/add-to-shopping-list.js";
 import { consumeProduct } from "../../dist/tools/consume-product.js";
 import { purchaseProduct } from "../../dist/tools/purchase-product.js";
@@ -153,7 +153,8 @@ test("loadConfig accepts the write tools by name, and all-read does not include 
 
 test("loadConfig expands stock-write to the write tools, in place and without duplicates", () => {
   const base = { VICTUAL_BASE_URL: "http://x" };
-  const writes = ["add_to_shopping_list", "consume_product", "purchase_product"];
+  const writes = [...WRITE_TOOLS];
+  assert.ok(writes.includes("consume_product") && writes.includes("inventory_product"));
   assert.deepEqual(loadConfig({ ...base, MCP_ENABLED_TOOLS: "stock-write" }).MCP_ENABLED_TOOLS, writes);
   const both = loadConfig({ ...base, MCP_ENABLED_TOOLS: "consume_product, all-read ,stock-write" }).MCP_ENABLED_TOOLS;
   assert.equal(both.length, ALL_READ_TOOLS.length + writes.length);

@@ -345,6 +345,20 @@ the build specification:
 | `add_to_shopping_list` | `product_id` (req) · `amount?` (default 1) · `shopping_list_id?` · `note?` | `POST /api/stock/shoppinglist/add-product` |
 | `consume_product` | `product_id` (req) · `amount` (req) · `spoiled?: boolean` | `POST /api/stock/products/{id}/consume` |
 | `purchase_product` | `product_id` (req) · `amount` (req) · `price?` · `due_date?` · `shopping_location_id?` | `POST /api/stock/products/{id}/add` |
+| `inventory_product` | `product_id`, `new_amount` (req) · `best_before_date?` · `location_id?` · `note?` | `GET /api/stock/products/{id}`, then `POST /api/stock/products/{id}/inventory` |
+| `open_product` | `product_id` (req) · `amount?` (default 1) | `POST /api/stock/products/{id}/open` |
+| `transfer_product` | `product_id`, `amount`, `location_id_from`, `location_id_to` (req, different) | `POST /api/stock/products/{id}/transfer` |
+| `undo_transaction` | `transaction_id` (req) | `POST /api/stock/transactions/{id}/undo` |
+| `check_off_shopping_list_item` | `item_id` (req) · `done?` (default true) | `PUT /api/objects/shopping_list/{id}` |
+
+The last five are ADR-0052 decision 1's and join `stock-write`. Every booking tool also
+takes `request_id` (below). `inventory_product` sets an absolute amount. Victual refuses
+a new amount equal to the current one, so the tool reads the current amount first, and
+an unchanged amount books nothing and answers `changed: false`. `undo_transaction` is
+not one of ADR-0046's bookings and carries no key. Checking an item off is an edit;
+removing one stays in the UI. Each booking needs its permission plus `STOCK_VIEW`
+(`STOCK_INVENTORY`, `STOCK_OPEN`, `STOCK_TRANSFER`), undo needs `STOCK_EDIT`, and
+checking off needs `SHOPPINGLIST_ITEMS_ADD`.
 
 **On `shopping_location_id`, which reads worse than `store_id` and is the right name
 anyway.** Earlier drafts of this table said `store_id`, and the household vocabulary is
