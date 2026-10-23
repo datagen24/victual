@@ -580,10 +580,18 @@ class McpExposureTest(unittest.TestCase):
         self.assertIn("/mcp/enabledTools", refusal(values))
 
     def test_the_ingress_is_off_by_default(self):
-        """The base and this repository's two deployments publish no MCP Ingress."""
-        for path in [CHART / "ci/k3s-values.yaml", *DEPLOYMENTS]:
+        """The base and kind publish no MCP Ingress."""
+        for path in [CHART / "ci/k3s-values.yaml", KIND_VALUES]:
             with self.subTest(file=path.name):
                 self.assertNotIn("victual-mcp", by_kind(render(path), "Ingress"))
+
+    def test_talos_dev_serves_every_tool_on_its_lan_host(self):
+        """The Talos test environment runs every MCP tool, published on a nip.io LAN name."""
+        docs = render(TALOS_VALUES)
+        self.assertEqual(by_kind(docs, "ConfigMap")["victual-mcp-config"]["data"]["MCP_ENABLED_TOOLS"],
+                         "all-read,stock-write,catalog-write")
+        (rule,) = by_kind(docs, "Ingress")["victual-mcp"]["spec"]["rules"]
+        self.assertEqual(rule["host"], "mcp.victual.10.130.34.240.nip.io")
 
     def test_the_ingress_serves_only_mcp_on_its_own_host(self):
         """Decision 6: its own host and certificate, and only the exact /mcp path."""
