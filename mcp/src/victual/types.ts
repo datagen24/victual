@@ -74,6 +74,22 @@ export interface StockLogRow {
 }
 
 /**
+ * GET /api/objects/stock_log: the stock journal rows recent_transactions reads. The table also
+ * carries `price`, which is deliberately not declared here.
+ */
+export interface StockJournalRow {
+  id: Numeric;
+  transaction_id: string | null;
+  transaction_type: string;
+  product_id: Numeric;
+  amount: Numeric;
+  location_id?: Numeric | null;
+  best_before_date?: string | null;
+  undone: Numeric | boolean;
+  row_created_timestamp?: string | null;
+}
+
+/**
  * GET /api/stock/products/{id}/entries (the stock_next_use view): one row per stock entry. The
  * row also carries prices, which are deliberately not declared here.
  */

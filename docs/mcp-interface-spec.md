@@ -318,14 +318,30 @@ Appendix A for why nothing may depend on that internal naming convention again).
 Added by [ADR-0052](adr/0052-the-mcp-sidecar-builds-the-catalog-and-the-chart-exposes-it.md)
 decision 1 for building a catalog: the catalog tools in §6 take ids, and these lists are
 where a model finds them. Each needs `STOCK_VIEW`, which `EntityReadPolicy` checks for all
-four routes, and each is part of `all-read`.
+the routes they read, and each is part of `all-read`.
 
 | Tool | Input | Backed by | Output row |
 |---|---|---|---|
-| `list_locations` | none | `GET /api/objects/locations` (active, by name) | `location_id, name, parent_location_id, is_freezer` |
+| `list_locations` | `query?` · `limit?` (default 50, max 200) | `GET /api/objects/locations` (active, by name, `name~` as in §5.4) | `location_id, name, parent_location_id, is_freezer`, and `total` |
 | `list_quantity_units` | none | `GET /api/objects/quantity_units` (active, by name) | `unit_id, name, name_plural` |
 | `list_product_groups` | none | `GET /api/objects/product_groups` (active, by name) | `product_group_id, name` |
 | `lookup_barcode` | `barcode` (req) | `GET /api/stock/products/by-barcode/{barcode}`, then on its 400 "Unknown barcode" `GET /api/stock/barcodes/external-lookup/{barcode}` without `add` | `{ found: victual\|external\|none, product, suggestion }` |
+| `recent_transactions` | `product_id` (req) · `limit?` (default 20, max 100) · `include_undone?` (default true) | `GET /api/objects/stock_log?query[]=product_id={id}&order=id:desc&limit={limit}` (+ the product and `quantity_units` for names) | `transaction_id, type, amount, location_id, due_date, undone, timestamp`, beside the product's `name` and `unit` |
+
+`recent_transactions` was added on 2026-10-23 (ADR-0052 decision 1, as amended). Before it,
+`undo_transaction` worked only in the conversation that booked, because nothing else
+supplied a `transaction_id`. Rows come newest first by `id`, because `row_created_timestamp`
+is truncated to the second. One booking can write several rows that share a
+`transaction_id`, such as a consume across several entries or a transfer's two halves, and
+an undo reverses all of them. `type` is `stock_log.transaction_type` as stored. Rows without
+a `transaction_id` predate the column and are left out. `stock_log` carries `price`, and
+none of it leaves the tool.
+
+`list_locations` filters as `find_product` does: the server gets the longest run of the query
+that Victual's `query[]` pattern admits, and the whole query is matched in the sidecar.
+`total` counts every matching location, so a model can tell that `limit` cut the list. A
+filtered list can leave out a row's parent. The filter and limit were added on 2026-10-23,
+after a dev instance with about 270 locations returned all of them.
 
 `lookup_barcode`'s `product` is `product_id, name, unit, location, in_stock_amount`. The
 product-details answer it reads also carries prices, and none of them leaves the tool.
@@ -425,7 +441,7 @@ except `update_product`, which needs `MASTER_DATA_EDIT`.
 
 | Tool | Input | Backed by |
 |---|---|---|
-| `create_product` | `name`, `location_id`, `unit_id` (req) · `product_group_id?` · `min_stock_amount?` · `default_best_before_days?` (`-1` never expires) · `barcode?` | `POST /api/objects/products`, then `POST /api/objects/product_barcodes` |
+| `create_product` | `name`, `location_id`, `unit_id` (req) · `product_group_id?` · `min_stock_amount?` · `default_best_before_days?` (`-1` never expires) · `barcode?` | `GET /api/objects/products` (name check), `POST /api/objects/products`, then `POST /api/objects/product_barcodes` |
 | `update_product` | `product_id` (req) and at least one of `name`, `location_id`, `product_group_id` (`null` clears it), `min_stock_amount`, `default_best_before_days` | `PUT /api/objects/products/{id}` |
 | `create_location` | `name` (req) · `parent_location_id?` · `is_freezer?` · `description?` | `POST /api/objects/locations` |
 | `create_quantity_unit` | `name` (req) · `name_plural?` | `POST /api/objects/quantity_units` |
@@ -436,6 +452,18 @@ except `update_product`, which needs `MASTER_DATA_EDIT`.
   `qu_id_price` from its one `unit_id`, as the product form does by default. A barcode
   that fails to attach is reported on the successful result as `barcode_added: false`,
   because the product exists either way, and an error would invite a second create.
+- `create_product` checks the name before it creates. `products.name` is `UNIQUE`, and
+  Victual reports the violation only as "The database rejected this request". So the tool
+  reads `GET /api/objects/products` with a `name~` filter and no `active` filter, because an
+  inactive product still holds its name. It compares the names exactly, as the constraint
+  does: "rice" does not hold "Rice". A taken name is refused as `invalid_request` with the
+  holder's id ("the name … is taken by product N; use product_id N"). A create that
+  Victual refuses is checked again, for a name another client took in between. A key
+  without `STOCK_VIEW` cannot read products, so it skips the check and Victual's refusal
+  stands.
+- `create_product`'s description asks for a shelf life. Without
+  `default_best_before_days`, Victual's default is 0, so every count of the new product is
+  due the day it is recorded.
 - `update_product` cannot change the stock unit, because changing it under existing stock
   changes what every booked amount means. Its location is the default for new stock.
   Moving existing stock is `transfer_product`. It carries `destructiveHint`, because it

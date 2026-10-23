@@ -17,6 +17,7 @@ export const ALL_READ_TOOLS = [
   "list_quantity_units",
   "list_product_groups",
   "lookup_barcode",
+  "recent_transactions",
 ] as const;
 
 // §6 write tools: never part of `all-read`, so enabling one is a deliberate act.

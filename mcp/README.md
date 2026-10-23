@@ -1,6 +1,6 @@
 # victual-mcp
 
-MCP sidecar for Victual (ten read tools, fifteen opt-in write tools), built from
+MCP sidecar for Victual (eleven read tools, fifteen opt-in write tools), built from
 [docs/mcp-interface-spec.md](../docs/mcp-interface-spec.md). It lives in this repository
 rather than a separate one — see the spec's Open Question 1 amendment (2026-09-19) and
 [ADR-0013](../docs/adr/0013-nix-built-container-images.md).
@@ -57,9 +57,12 @@ the next upgrade would revert.
 `open_product`, `transfer_product`, `undo_transaction` and `check_off_shopping_list_item`
 join the three above in `stock-write`. A pantry walk is `find_product` or
 `create_product`, then `inventory_product`, and `undo_transaction` takes back a wrong
-count by the `transaction_id` it returned. `set_due_date`, also in `stock-write`, sets the due date of stock
-already on hand, for a product counted before it had a shelf life. It needs `STOCK_EDIT`
-and `STOCK_VIEW`, changes nothing else on the entry, and makes one undoable transaction per
+count by the `transaction_id` it returned. In a later conversation, `recent_transactions`
+(a read in `all-read`) lists a product's newest stock journal rows with their
+`transaction_id`, so an undo does not depend on the conversation that booked. It returns
+no price. `set_due_date`, also in `stock-write`, sets the due date of stock already on
+hand, for a product counted before it had a shelf life. It needs `STOCK_EDIT` and
+`STOCK_VIEW`, changes nothing else on the entry, and makes one undoable transaction per
 entry.
 
 ## Catalog tools (ADR-0052)
@@ -68,7 +71,13 @@ entry.
 `create_product_group` and `add_barcode`, off by default: enable them by name or with
 `catalog-write`. They need `MASTER_DATA_ADD` (`update_product`: `MASTER_DATA_EDIT`). The
 reads they take ids from (`list_locations`, `list_quantity_units`, `list_product_groups`,
-`lookup_barcode`) are part of `all-read`.
+`lookup_barcode`) are part of `all-read`. `list_locations` takes `query` and `limit` (default 50), as
+`find_product` does.
+
+`create_product` refuses a taken name before it posts, with the id of the product that holds
+it, because Victual reports the `UNIQUE` violation only as "The database rejected this
+request". Its description asks for a shelf life (`default_best_before_days`): without one,
+Victual's default is 0, and every count is due the day it is recorded.
 - Not done: the real-client household check ("add milk to the list", "I used the last of the
   coffee") and contract tests against plan 14's fixtures for the three POST routes.
 

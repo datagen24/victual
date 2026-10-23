@@ -9,7 +9,7 @@ const inputSchema = z.object({
     .string()
     .trim()
     .regex(/^[A-Za-z0-9._:-]{1,128}$/, "a transaction_id as a booking tool returned it")
-    .describe("The transaction_id a booking tool returned"),
+    .describe("The transaction_id a booking tool returned, or recent_transactions lists"),
 });
 
 const outputSchema = z.object({ transaction_id: z.string(), undone: z.boolean() });
@@ -18,7 +18,7 @@ export const undoTransaction: ToolDefinition<typeof inputSchema, typeof outputSc
   name: "undo_transaction",
   title: "Undo stock transaction",
   description:
-    "Reverse a stock booking (purchase, consume, inventory, open, move or due-date change) by the transaction_id its tool returned. Use it to correct a mistake.",
+    "Reverse a stock booking (purchase, consume, inventory, open, move or due-date change) by its transaction_id: the one the booking tool returned, or one recent_transactions lists. Use it to correct a mistake.",
   permission: "STOCK_EDIT",
   write: true,
   destructive: true,

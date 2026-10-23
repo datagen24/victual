@@ -8,6 +8,7 @@ import { listLocations } from "./list-locations.js";
 import { listQuantityUnits } from "./list-quantity-units.js";
 import { listProductGroups } from "./list-product-groups.js";
 import { lookupBarcode } from "./lookup-barcode.js";
+import { recentTransactions } from "./recent-transactions.js";
 import { addToShoppingList } from "./add-to-shopping-list.js";
 import { consumeProduct } from "./consume-product.js";
 import { purchaseProduct } from "./purchase-product.js";
@@ -37,6 +38,8 @@ export const ALL_TOOLS = [
   listQuantityUnits,
   listProductGroups,
   lookupBarcode,
+  // ADR-0052 decision 1 as amended 2026-10-23: the journal, so an undo outlives its conversation.
+  recentTransactions,
   // §6 write tools, after the reads; config and the capability filter decide who sees them.
   addToShoppingList,
   consumeProduct,
