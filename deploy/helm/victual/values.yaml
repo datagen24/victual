@@ -76,10 +76,24 @@ influxdb:
   username: ""
   # The token comes from `secrets` (for 1, it is the password of `username`).
 
-# --- The read-only MCP server for AI assistants (optional) ---------------------------------
+# --- The MCP server for AI assistants (optional) -------------------------------------------
 mcp:
-  # Two replicas, reachable only inside the cluster (service victual-mcp, port 3000).
+  # Two replicas behind the service victual-mcp, port 3000, inside the cluster.
   enabled: true
+  # The tools the sidecar serves (MCP_ENABLED_TOOLS, ADR-0052 decision 5): a comma list of
+  # tool names and the keywords all-read and stock-write. Write tools are off unless named.
+  # An unknown name stops the sidecar at startup rather than being ignored.
+  enabledTools: all-read
+  # Off by default. Publishes the sidecar at https://<host>/mcp on its own hostname, for
+  # clients on the household network (ADR-0052 decisions 6 and 7). Same fields as ingress.
+  ingress:
+    enabled: false
+    className: traefik
+    host: ""
+    tls:
+      enabled: false
+      secretName: ""
+    annotations: {}
 
 # --- The label renderer and worker (optional) ----------------------------------------------
 labelWorkers:

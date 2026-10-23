@@ -411,7 +411,7 @@ nothing here is complex enough for a config file:
 |---|---|---|
 | `VICTUAL_BASE_URL` | Victual origin, e.g. `http://victual.victual.svc:80` | required |
 | `MCP_PORT` | listen port | `3000` |
-| `MCP_ENABLED_TOOLS` | comma-separated allowlist; `all-read` keyword (also valid inside the list) = the six §5 tools; the §6 write tools are enabled by name only | `all-read` |
+| `MCP_ENABLED_TOOLS` | comma-separated allowlist; keywords expand in place: `all-read` = the §5 read tools, `stock-write` = the §6 write tools (ADR-0052 decision 5); write tools are otherwise enabled by name. The Helm chart sets it from `mcp.enabledTools` | `all-read` |
 | `MCP_REQUEST_TIMEOUT_MS` | per-REST-call timeout | `10000` |
 | `LOG_LEVEL` | `error`/`warn`/`info`/`debug`, to stderr/stdout | `info` |
 

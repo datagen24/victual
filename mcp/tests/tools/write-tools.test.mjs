@@ -88,6 +88,15 @@ test("loadConfig accepts the write tools by name, and all-read does not include 
   assert.equal(loadConfig(base).MCP_ENABLED_TOOLS.some((t) => ["add_to_shopping_list", "consume_product", "purchase_product"].includes(t)), false);
 });
 
+test("loadConfig expands stock-write to the write tools, in place and without duplicates", () => {
+  const base = { VICTUAL_BASE_URL: "http://x" };
+  const writes = ["add_to_shopping_list", "consume_product", "purchase_product"];
+  assert.deepEqual(loadConfig({ ...base, MCP_ENABLED_TOOLS: "stock-write" }).MCP_ENABLED_TOOLS, writes);
+  const both = loadConfig({ ...base, MCP_ENABLED_TOOLS: "consume_product, all-read ,stock-write" }).MCP_ENABLED_TOOLS;
+  assert.equal(both.length, 9);
+  assert.equal(both[0], "consume_product");
+});
+
 // --- over HTTP ---------------------------------------------------------------------------
 
 let victual, sidecar, base;

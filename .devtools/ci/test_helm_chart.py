@@ -155,6 +155,7 @@ class ValuesMatrixTest(unittest.TestCase):
             ("CronJob", "victual-label-renderer"),
             ("CronJob", "victual-label-worker"),
             ("Ingress", "victual"),
+            ("Ingress", "victual-mcp"),
             ("OnePasswordItem", "victual-db-migrate"),
             ("Secret", "victual-mqtt"),
             ("Secret", "victual-influxdb"),
@@ -545,6 +546,63 @@ class PodHardeningTest(unittest.TestCase):
         values = filled_inline(False)
         values["settings"] = {"BOOTSTRAP_ADMIN_PASSWORD": "x"}
         self.assertIn("/settings/BOOTSTRAP_ADMIN_PASSWORD", refusal(values))
+
+
+@needs_helm
+class McpExposureTest(unittest.TestCase):
+    """ADR-0052 decisions 5 and 6: the enabled tools and the opt-in private Ingress."""
+
+    INLINE_ALL = CHART / "ci/inline-all-features.yaml"
+
+    def mcp_config(self, values):
+        """The rendered victual-mcp-config ConfigMap data for `values`."""
+        return by_kind(render(values), "ConfigMap")["victual-mcp-config"]["data"]
+
+    def test_enabled_tools_default_to_all_read(self):
+        """Leaving mcp.enabledTools out keeps the sidecar on its read tools."""
+        base = yaml.safe_load(self.INLINE_ALL.read_text())
+        del base["mcp"]["enabledTools"]
+        self.assertEqual(self.mcp_config(base)["MCP_ENABLED_TOOLS"], "all-read")
+
+    def test_enabled_tools_reach_the_sidecar_and_roll_it(self):
+        """The value becomes MCP_ENABLED_TOOLS, and changing it rolls the pods (#852)."""
+        base = yaml.safe_load(self.INLINE_ALL.read_text())
+        changed = copy.deepcopy(base)
+        changed["mcp"]["enabledTools"] = "all-read,consume_product"
+        self.assertEqual(self.mcp_config(changed)["MCP_ENABLED_TOOLS"], "all-read,consume_product")
+        annotations = lambda v: by_kind(render(v), "Deployment")["victual-mcp"]["spec"]["template"]["metadata"]["annotations"]
+        self.assertNotEqual(annotations(base)["checksum/config"], annotations(changed)["checksum/config"])
+
+    def test_a_malformed_tool_list_is_refused(self):
+        """The schema refuses a list that is not comma-separated tool names."""
+        values = filled_inline(False)
+        values["mcp"] = {"enabled": True, "enabledTools": "all-read;rm"}
+        self.assertIn("/mcp/enabledTools", refusal(values))
+
+    def test_the_ingress_is_off_by_default(self):
+        """The base and this repository's two deployments publish no MCP Ingress."""
+        for path in [CHART / "ci/k3s-values.yaml", *DEPLOYMENTS]:
+            with self.subTest(file=path.name):
+                self.assertNotIn("victual-mcp", by_kind(render(path), "Ingress"))
+
+    def test_the_ingress_serves_only_mcp_on_its_own_host(self):
+        """Decision 6: its own host and certificate, and only the exact /mcp path."""
+        ingress = by_kind(render(self.INLINE_ALL), "Ingress")
+        mcp, app = ingress["victual-mcp"], ingress["victual"]
+        (rule,) = mcp["spec"]["rules"]
+        self.assertEqual(rule["host"], "mcp.victual.example.com")
+        self.assertNotEqual(rule["host"], app["spec"]["rules"][0]["host"])
+        (path,) = rule["http"]["paths"]
+        self.assertEqual((path["path"], path["pathType"]), ("/mcp", "Exact"))
+        self.assertEqual(path["backend"]["service"], {"name": "victual-mcp", "port": {"name": "http"}})
+        self.assertEqual(mcp["spec"]["tls"], [{"hosts": ["mcp.victual.example.com"], "secretName": "victual-mcp-tls"}])
+        self.assertEqual(mcp["metadata"]["annotations"], {"cert-manager.io/cluster-issuer": "letsencrypt"})
+
+    def test_an_ingress_without_a_host_is_refused(self):
+        """An enabled MCP Ingress needs a hostname, as Victual's does."""
+        values = filled_inline(False)
+        values["mcp"] = {"enabled": True, "ingress": {"enabled": True, "className": "traefik", "host": ""}}
+        self.assertIn("/mcp/ingress/host", refusal(values))
 
 
 if __name__ == "__main__":

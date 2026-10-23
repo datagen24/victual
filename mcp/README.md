@@ -31,7 +31,10 @@ redeployed sidecar; it records what Victual now offers.
 The earlier condition that they wait for #86 to be in household use was added by an
 agent, not decided by the maintainer, and is withdrawn (plan 02 Q2). They are **off by default**: `all-read` does
 not include them, so an operator enables each by name, for example
-`MCP_ENABLED_TOOLS=all-read,add_to_shopping_list,consume_product,purchase_product`.The `all-read` keyword expands inside a comma list.
+`MCP_ENABLED_TOOLS=all-read,add_to_shopping_list,consume_product,purchase_product`, or
+`all-read,stock-write` for the same set. Keywords expand inside a comma list. With the Helm
+chart, set `mcp.enabledTools` in the values file rather than editing the ConfigMap, which
+the next upgrade would revert.
 
 - Listed only to a key that is not `read_only` and whose user holds the tool's permission
   (`SHOPPINGLIST_ITEMS_ADD`, `STOCK_CONSUME`, `STOCK_PURCHASE`). `consume_product` and
@@ -93,7 +96,9 @@ this server reported `2025-11-25` against a server that serves both.
   builds and loads all four images.
 - **Changing `package-lock.json` changes `nix/hashes.nix`'s `mcpNpmDeps`.** Re-run
   `nix build .#mcp` and take the `got:` value.
-- **Manifest:** [`deploy/k3s/victual-mcp.yaml`](../deploy/k3s/victual-mcp.yaml).
+- **Manifest:** [`deploy/k3s/victual-mcp.yaml`](../deploy/k3s/victual-mcp.yaml), rendered
+  from the chart. `mcp.ingress` (off by default) publishes `/mcp` on its own hostname for
+  clients on the household network (ADR-0052 decision 6).
 - **Local cluster:** [`deploy/kind/up.sh`](../deploy/kind/up.sh) brings up Victual, the
   sidecar and a throwaway PostgreSQL on kind.
 

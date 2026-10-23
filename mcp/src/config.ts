@@ -20,16 +20,26 @@ export const WRITE_TOOLS = ["add_to_shopping_list", "consume_product", "purchase
 
 export type ToolName = (typeof ALL_READ_TOOLS)[number] | (typeof WRITE_TOOLS)[number];
 
+// Keywords that expand in place inside MCP_ENABLED_TOOLS (ADR-0052 decision 5). Write tools
+// are still never part of `all-read`: `stock-write` names them as a group, deliberately.
+export const TOOL_KEYWORDS: Readonly<Record<string, readonly ToolName[]>> = {
+  "all-read": ALL_READ_TOOLS,
+  "stock-write": WRITE_TOOLS,
+};
+
 const envSchema = z.object({
   VICTUAL_BASE_URL: z.string().url(),
   MCP_PORT: z.coerce.number().int().positive().default(3000),
   MCP_ENABLED_TOOLS: z
     .string()
     .default("all-read")
-    // `all-read` expands in place, so `all-read,consume_product` is the six reads plus one write.
+    // Keywords expand in place, so `all-read,consume_product` is the reads plus one write.
     .transform((value) => [
       ...new Set(
-        value.split(",").flatMap((name) => (name.trim() === "all-read" ? [...ALL_READ_TOOLS] : [name.trim()])),
+        value.split(",").flatMap((entry) => {
+          const name = entry.trim();
+          return name in TOOL_KEYWORDS ? [...TOOL_KEYWORDS[name]] : [name];
+        }),
       ),
     ]),
   MCP_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
@@ -40,6 +50,10 @@ export type Config = Omit<z.infer<typeof envSchema>, "MCP_ENABLED_TOOLS"> & {
   MCP_ENABLED_TOOLS: ToolName[];
 };
 
+/**
+ * Parse and validate the §8 environment, expanding tool keywords. Exits the process with a
+ * message on anything invalid, so a bad deployment fails at startup, not on first use.
+ */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = envSchema.safeParse(env);
   if (!parsed.success) {
