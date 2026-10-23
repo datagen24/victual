@@ -3788,3 +3788,27 @@ msgstr ""
 
 msgid "The preview is built from example values, not from any real item, and cannot be printed."
 msgstr ""
+
+msgid "Print with the version I publish"
+msgstr ""
+
+msgid "Version that prints"
+msgstr ""
+
+msgid "Version %s"
+msgstr ""
+
+msgid "Print with this version"
+msgstr ""
+
+msgid "Labels now print with version %s"
+msgstr ""
+
+msgid "Nothing is published yet, so nothing prints from this template."
+msgstr ""
+
+msgid "Labels print with version %s, not the newest version %s."
+msgstr ""
+
+msgid "Labels print with version %s, the newest."
+msgstr ""

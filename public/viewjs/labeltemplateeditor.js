@@ -808,11 +808,36 @@
 			// an unsaved canvas would publish the version before the one on screen.
 			save(function()
 			{
-				Victual.Api.Post('labels/templates/' + Victual.LabelTemplate.Id + '/publish', {},
-					function(version) { report('success', __t('Published version %s', version.version)); },
+				var makeDefault = region('publish-make-default').checked;
+				Victual.Api.Post('labels/templates/' + Victual.LabelTemplate.Id + '/publish', { 'make_default': makeDefault },
+					function(version)
+					{
+						Victual.LabelTemplate.Versions.unshift({ id: version.id, version: version.version });
+						// The server makes a first version the default whether or not it was asked.
+						if (makeDefault || Victual.LabelTemplate.DefaultVersionId === null)
+						{
+							Victual.LabelTemplate.DefaultVersionId = version.id;
+						}
+						versionChoices();
+						report('success', __t('Published version %s', version.version));
+					},
 					function(xhr) { report('danger', refusal(xhr)); });
 			});
 		});
+
+		$(document).find('#default-version-button').on('click', function()
+		{
+			var versionId = parseInt(region('default-version').value, 10);
+			Victual.Api.Put('labels/templates/' + Victual.LabelTemplate.Id + '/default-version', { 'version_id': versionId },
+				function(template)
+				{
+					Victual.LabelTemplate.DefaultVersionId = parseInt(template.default_version_id, 10);
+					versionChoices();
+					report('success', __t('Labels now print with version %s', versionNumber(Victual.LabelTemplate.DefaultVersionId)));
+				},
+				function(xhr) { report('danger', refusal(xhr)); });
+		});
+		versionChoices();
 
 		$(document).find('#preview-button').on('click', function()
 		{
@@ -828,6 +853,59 @@
 
 		load();
 	});
+
+	/** The version number of a published version id, or null for one this page does not list. */
+	function versionNumber(versionId)
+	{
+		var found = Victual.LabelTemplate.Versions.filter(function(v) { return v.id === versionId; });
+		return found.length === 0 ? null : found[0].version;
+	}
+
+	/**
+	 * Fills the "Version that prints" select from the published versions, newest first, and
+	 * says which one a plain print uses - with a warning when a newer version exists that does
+	 * not print.
+	 */
+	function versionChoices()
+	{
+		var select = region('default-version');
+		var status = region('default-version-status');
+		var versions = Victual.LabelTemplate.Versions;
+		var current = Victual.LabelTemplate.DefaultVersionId;
+
+		while (select.firstChild !== null)
+		{
+			select.removeChild(select.firstChild);
+		}
+		versions.forEach(function(v)
+		{
+			var option = $('<option>').attr('value', v.id).text(__t('Version %s', v.version));
+			option.prop('selected', v.id === current);
+			$(select).append(option);
+		});
+		region('default-version-button').disabled = versions.length === 0;
+
+		while (status.firstChild !== null)
+		{
+			status.removeChild(status.firstChild);
+		}
+		if (current === null || versions.length === 0)
+		{
+			status.className = 'form-text text-warning';
+			status.appendChild(document.createTextNode(__t('Nothing is published yet, so nothing prints from this template.')));
+			return;
+		}
+		var newest = versions[0].version;
+		var printing = versionNumber(current);
+		if (newest !== printing)
+		{
+			status.className = 'form-text text-warning';
+			status.appendChild(document.createTextNode(__t('Labels print with version %s, not the newest version %s.', printing, newest)));
+			return;
+		}
+		status.className = 'form-text text-muted';
+		status.appendChild(document.createTextNode(__t('Labels print with version %s, the newest.', printing)));
+	}
 
 	/** Polls a render request. A pending image reports its status rather than an empty body. */
 	function poll(requestId, attemptsLeft)

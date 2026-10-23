@@ -12,7 +12,9 @@
 		EntityKind: '{{ $template['entity_kind'] }}',
 		Name: {!! json_encode($template['name']) !!},
 		Assets: {!! json_encode($assets) !!},
-		Printers: {!! json_encode($printers) !!}
+		Printers: {!! json_encode($printers) !!},
+		Versions: {!! json_encode($versions) !!},
+		DefaultVersionId: {!! json_encode($template['default_version_id'] === null ? null : (int)$template['default_version_id']) !!}
 	};
 </script>
 
@@ -88,6 +90,30 @@
 		<button class="btn btn-success" id="publish-button">
 			<i class="fa-solid fa-upload"></i>&nbsp;{{ $__t('Publish a version') }}
 		</button>
+		<div class="form-check mt-2">
+			<input class="form-check-input" type="checkbox" id="publish-make-default" checked>
+			<label class="form-check-label" for="publish-make-default">{{ $__t('Print with the version I publish') }}</label>
+		</div>
+
+		{{-- Which version prints. A plain print and a live preview use the template's default
+		version, and on 2026-10-23 two versions were published while the default stayed on the
+		first, so this is stated rather than left to the template list. --}}
+		<div class="form-group mt-3">
+			<label for="default-version">{{ $__t('Version that prints') }}</label>
+			<div class="input-group">
+				<select class="form-control" id="default-version">
+					@foreach($versions as $version)
+					<option value="{{ $version['id'] }}" @if($version['id'] === (int)$template['default_version_id']) selected @endif>{{ $__t('Version %s', $version['version']) }}</option>
+					@endforeach
+				</select>
+				<div class="input-group-append">
+					<button class="btn btn-outline-secondary" id="default-version-button" @if(count($versions) === 0) disabled @endif>
+						{{ $__t('Print with this version') }}
+					</button>
+				</div>
+			</div>
+			<small class="form-text" id="default-version-status"></small>
+		</div>
 
 		<hr>
 

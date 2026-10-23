@@ -69,8 +69,14 @@ class LabelTemplateService extends LabelService
      * Overflow, glyph coverage, QR geometry and media compatibility are properties of a
      * particular capture on a particular profile, so they are checked at each render and
      * cannot be settled here.
+     *
+     * The first version becomes the default whatever `$makeDefault` says. A later one moves
+     * the default only when asked: on 2026-10-23 versions 2 and 3 of a stock entry template
+     * were published while the default stayed on the QR-only version 1, and 21 labels printed
+     * from it. The designer asks by default; an API client that says nothing keeps the old
+     * behaviour.
      */
-    public function Publish(int $templateId, ?int $userId): array
+    public function Publish(int $templateId, ?int $userId, bool $makeDefault = false): array
     {
         $this->Transaction();
         $draft = $this->Query('SELECT d.*,t.entity_kind,t.archived_at FROM label_template_drafts d JOIN label_templates t ON t.id=d.template_id WHERE d.template_id=? FOR UPDATE OF d', [$templateId])->fetch(\PDO::FETCH_ASSOC);
@@ -97,7 +103,9 @@ class LabelTemplateService extends LabelService
 
         // The first published version becomes the default, because a template with versions
         // and no default is a template nothing can print from.
-        $this->Query('UPDATE label_templates SET default_version_id=COALESCE(default_version_id,?) WHERE id=?', [$row['id'], $templateId]);
+        $this->Query($makeDefault
+            ? 'UPDATE label_templates SET default_version_id=? WHERE id=?'
+            : 'UPDATE label_templates SET default_version_id=COALESCE(default_version_id,?) WHERE id=?', [$row['id'], $templateId]);
         return $row;
     }
 

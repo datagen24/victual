@@ -27,6 +27,14 @@ than re-running whatever booking produced it.
   design: turned 90°, the tape length runs across the canvas, so a long label can be read
   sideways. Each element except a line can also be rotated in 90° steps from its properties.
   The rendered preview shows the label as it leaves the printer.
+
+  A print uses the template's *default version*, not its draft and not its newest version.
+  **Version that prints** in the designer shows which version that is, warns when a newer
+  version exists, and **Print with this version** changes it. **Publish a version** makes the
+  new version the default while **Print with the version I publish** is ticked, which it is
+  by default. Through the API, `POST /api/labels/templates/{id}/publish` moves the default
+  only when its body sends `"make_default": true`; the first version is always the default.
+  `PUT /api/labels/templates/{id}/default-version` sets it directly.
 - **`/labelprinters`** — register and edit workers and printers, issue credentials or
   pairing material, and revoke worker credentials. Requires `ADMIN`.
 - **`/labelprintjobs`** — the job queue, with the printer each job targets. States include
