@@ -407,7 +407,7 @@ except `update_product`, which needs `MASTER_DATA_EDIT`.
 
 | Tool | Input | Backed by |
 |---|---|---|
-| `create_product` | `name`, `location_id`, `unit_id` (req) · `product_group_id?` · `min_stock_amount?` · `default_best_before_days?` (`-1` never expires) · `barcode?` | `POST /api/objects/products`, then `POST /api/objects/product_barcodes` |
+| `create_product` | `name`, `location_id`, `unit_id` (req) · `product_group_id?` · `min_stock_amount?` · `default_best_before_days?` (`-1` never expires) · `barcode?` | `GET /api/objects/products` (name check), `POST /api/objects/products`, then `POST /api/objects/product_barcodes` |
 | `update_product` | `product_id` (req) and at least one of `name`, `location_id`, `product_group_id` (`null` clears it), `min_stock_amount`, `default_best_before_days` | `PUT /api/objects/products/{id}` |
 | `create_location` | `name` (req) · `parent_location_id?` · `is_freezer?` · `description?` | `POST /api/objects/locations` |
 | `create_quantity_unit` | `name` (req) · `name_plural?` | `POST /api/objects/quantity_units` |
@@ -418,6 +418,18 @@ except `update_product`, which needs `MASTER_DATA_EDIT`.
   `qu_id_price` from its one `unit_id`, as the product form does by default. A barcode
   that fails to attach is reported on the successful result as `barcode_added: false`,
   because the product exists either way, and an error would invite a second create.
+- `create_product` checks the name before it creates. `products.name` is `UNIQUE`, and
+  Victual reports the violation only as "The database rejected this request". So the tool
+  reads `GET /api/objects/products` with a `name~` filter and no `active` filter, because an
+  inactive product still holds its name. It compares the names exactly, as the constraint
+  does: "rice" does not hold "Rice". A taken name is refused as `invalid_request` with the
+  holder's id ("the name … is taken by product N; use product_id N"). A create that
+  Victual refuses is checked again, for a name another client took in between. A key
+  without `STOCK_VIEW` cannot read products, so it skips the check and Victual's refusal
+  stands.
+- `create_product`'s description asks for a shelf life. Without
+  `default_best_before_days`, Victual's default is 0, so every count of the new product is
+  due the day it is recorded.
 - `update_product` cannot change the stock unit, because changing it under existing stock
   changes what every booked amount means. Its location is the default for new stock.
   Moving existing stock is `transfer_product`. It carries `destructiveHint`, because it

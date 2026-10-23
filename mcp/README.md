@@ -66,6 +66,11 @@ count by the `transaction_id` it returned.
 `catalog-write`. They need `MASTER_DATA_ADD` (`update_product`: `MASTER_DATA_EDIT`). The
 reads they take ids from (`list_locations`, `list_quantity_units`, `list_product_groups`,
 `lookup_barcode`) are part of `all-read`.
+
+`create_product` refuses a taken name before it posts, with the id of the product that holds
+it, because Victual reports the `UNIQUE` violation only as "The database rejected this
+request". Its description asks for a shelf life (`default_best_before_days`): without one,
+Victual's default is 0, and every count is due the day it is recorded.
 - Not done: the real-client household check ("add milk to the list", "I used the last of the
   coffee") and contract tests against plan 14's fixtures for the three POST routes.
 

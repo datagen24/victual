@@ -15,16 +15,25 @@ import { VictualApiError } from "../../dist/victual/client.js";
 
 const run = (tool, input, context) => tool.handler(tool.inputSchema.parse(input), context);
 
-// Each POST answers the next id, or what `answer(path, body)` returns or throws.
-function ctx(answer) {
+// Each POST answers the next id, or what `answer(path, body)` returns or throws. GET
+// /api/objects/products answers `products` (create_product's name check), or throws it.
+function ctx(answer, products = []) {
   const posts = [];
   const puts = [];
+  const gets = [];
   let next = 40;
   return {
     posts,
     puts,
+    gets,
     credential: { headers: { "VICTUAL-API-KEY": "k" } },
     client: {
+      async get(path, credential, params) {
+        gets.push({ path, params: params?.toString() ?? "" });
+        const value = typeof products === "function" ? products() : products;
+        if (value instanceof VictualApiError) throw value;
+        return value;
+      },
       async postWithStatus(path, credential, body) {
         posts.push({ path, body });
         const value = answer ? answer(path, body) : { created_object_id: next++ };
@@ -71,10 +80,58 @@ test("create_product: a failed barcode is reported on a successful result, never
   assert.match(text, /add_barcode/);
 });
 
-test("create_product: a refused product (a taken name) is an error, and no barcode is tried", async () => {
-  const c = ctx(() => { throw new VictualApiError("invalid_request", "Victual answered 400: UNIQUE constraint failed: products.name", 400); });
-  await assert.rejects(run(createProduct, { name: "Rice", location_id: 1, unit_id: 1, barcode: "1" }, c), (e) => /UNIQUE/.test(e.message));
+test("create_product: a refused product is an error, and no barcode is tried", async () => {
+  const c = ctx(() => { throw new VictualApiError("invalid_request", "Victual answered 400: The database rejected this request", 400); });
+  await assert.rejects(run(createProduct, { name: "Rice", location_id: 1, unit_id: 1, barcode: "1" }, c), (e) => /database rejected/.test(e.message));
   assert.equal(c.posts.length, 1);
+  assert.equal(c.gets.length, 2, "the name is checked before the create and again after the refusal");
+});
+
+test("create_product: a taken name is refused before any POST, naming the product that holds it", async () => {
+  const c = ctx(undefined, [
+    { id: 12, name: "Ben & Jerry's Chunky Monkey", active: 1 },
+    { id: 13, name: "Ben & Jerry's Chunky Monkey 2", active: 1 },
+  ]);
+  await assert.rejects(
+    run(createProduct, { name: "Ben & Jerry's Chunky Monkey", location_id: 1, unit_id: 1 }, c),
+    (e) => e.category === "invalid_request" && /taken by product 12; use product_id 12/.test(e.message),
+  );
+  assert.equal(c.posts.length, 0);
+  // The server gets a substring its query[] pattern admits, with no active filter; the exact match is made here.
+  assert.equal(c.gets[0].params, "query%5B%5D=name%7Es+Chunky+Monkey");
+});
+
+test("create_product: an inactive product still holds its name, and the message says so", async () => {
+  const c = ctx(undefined, [{ id: "9", name: "Rice", active: "0" }]);
+  await assert.rejects(run(createProduct, { name: "Rice", location_id: 1, unit_id: 1 }, c), (e) => /product 9, which is inactive/.test(e.message));
+  assert.equal(c.posts.length, 0);
+});
+
+test("create_product: the name match is exact and case-sensitive, as the UNIQUE constraint is", async () => {
+  const c = ctx(undefined, [{ id: 3, name: "rice", active: 1 }, { id: 4, name: "Rice pudding", active: 1 }]);
+  const { data } = await run(createProduct, { name: "Rice", location_id: 1, unit_id: 1 }, c);
+  assert.equal(data.product_id, 40);
+});
+
+test("create_product: a name taken between the check and the create is reported as taken", async () => {
+  let calls = 0;
+  const c = ctx(
+    () => { throw new VictualApiError("invalid_request", "Victual answered 400: The database rejected this request", 400); },
+    () => (calls++ === 0 ? [] : [{ id: 77, name: "Rice", active: 1 }]),
+  );
+  await assert.rejects(run(createProduct, { name: "Rice", location_id: 1, unit_id: 1 }, c), (e) => /taken by product 77/.test(e.message));
+});
+
+test("create_product: a key that cannot read products skips the check, and Victual decides", async () => {
+  const c = ctx(undefined, new VictualApiError("forbidden", "Victual answered 403", 403));
+  const { data } = await run(createProduct, { name: "Rice", location_id: 1, unit_id: 1 }, c);
+  assert.equal(data.product_id, 40);
+  assert.equal(createProduct.alsoRequires, undefined, "the listing does not change");
+});
+
+test("create_product asks for a shelf life and says what the default of 0 does", () => {
+  assert.match(createProduct.description, /shelf life/);
+  assert.match(createProduct.inputSchema.shape.default_best_before_days.description, /default is 0, so every count is due the day it is recorded/);
 });
 
 test("a 2xx without created_object_id is outcome_unknown and keeps the status", async () => {
