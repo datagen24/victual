@@ -846,9 +846,44 @@
 				report('info', __t('Rendering...'));
 				Victual.Api.Post('labels/templates/' + Victual.LabelTemplate.Id + '/preview',
 					{ 'kind': 'draft', 'printer_id': parseInt(region('preview-printer').value, 10) },
-					function(request) { poll(request.id, 40); },
+					function(request) { poll(request.id, 40, __t('The preview is built from example values, not from any real item, and cannot be printed.')); },
 					function(xhr) { report('danger', refusal(xhr)); });
 			});
+		});
+
+		$(document).find('#live-preview-button').on('click', function()
+		{
+			var targetId = parseInt(region('preview-target-id').value, 10);
+			if (isNaN(targetId) || targetId < 1)
+			{
+				report('danger', __t('Enter the number of the record to preview'));
+				return;
+			}
+			if (Victual.LabelTemplate.Versions.length === 0)
+			{
+				report('danger', __t('Publish a version first: a live preview renders a published version, as a print does.'));
+				return;
+			}
+			var versionId = parseInt(region('default-version').value, 10);
+			var version = versionNumber(versionId);
+			report('info', __t('Rendering...'));
+			Victual.Api.Post('labels/templates/' + Victual.LabelTemplate.Id + '/preview',
+				{
+					'kind': 'live',
+					'printer_id': parseInt(region('preview-printer').value, 10),
+					'target_id': targetId,
+					'version_id': versionId
+				},
+				function(request)
+				{
+					// The server answers a record with no label, or no such record, with a
+					// sample rather than a refusal, and says so; this must not be described as
+					// the record's own label.
+					poll(request.id, 40, request.is_sample
+						? __t('Record %s has no label yet, or does not exist, so this preview of version %s uses example values.', targetId, version)
+						: __t('Version %s with the real values of record %s, as a print of it would come out.', version, targetId));
+				},
+				function(xhr) { report('danger', refusal(xhr)); });
 		});
 
 		load();
@@ -907,13 +942,23 @@
 		status.appendChild(document.createTextNode(__t('Labels print with version %s, the newest.', printing)));
 	}
 
-	/** Polls a render request. A pending image reports its status rather than an empty body. */
-	function poll(requestId, attemptsLeft)
+	/**
+	 * Polls a render request. A pending image reports its status rather than an empty body.
+	 * `note` says what the image shows - example values or a real record - and replaces the
+	 * line above the preview once it is drawn.
+	 */
+	function poll(requestId, attemptsLeft, note)
 	{
 		Victual.Api.Get('labels/renders/' + requestId, function(status)
 		{
 			if (status.state === 'ready')
 			{
+				var describe = region('preview-sample-note');
+				while (describe.firstChild !== null)
+				{
+					describe.removeChild(describe.firstChild);
+				}
+				describe.appendChild(document.createTextNode(note));
 				var holder = region('preview-holder');
 				while (holder.firstChild !== null)
 				{
@@ -944,7 +989,7 @@
 				report('warning', __t('The preview is still rendering. No renderer may be running.'));
 				return;
 			}
-			window.setTimeout(function() { poll(requestId, attemptsLeft - 1); }, 1500);
+			window.setTimeout(function() { poll(requestId, attemptsLeft - 1, note); }, 1500);
 		},
 		function(xhr) { report('danger', refusal(xhr)); });
 	}

@@ -2360,6 +2360,35 @@ class LabelApiTest extends PgsqlSchemaTestCase
 	}
 
 	/**
+	 * The designer's live preview: a chosen published version, not only the default, rendered
+	 * with the real values of a labelled stock entry. On 2026-10-23 the designer could show only
+	 * field keys and sample values, so a real product name too long for its box was invisible.
+	 */
+	#[Depends('testPrintingEachKindCreatesTheLabelAndTheOutboxEventTogether')]
+	public function testALivePreviewRendersTheChosenVersionWithTheRecordsRealValues(): void
+	{
+		$templateId = self::$templates['stock_entry'];
+		$default = (int)self::Row('SELECT default_version_id FROM label_templates WHERE id = ?', [$templateId])['default_version_id'];
+		$newer = self::Send('POST', "/api/labels/templates/$templateId/publish", [], self::$adminKey);
+		self::assertSame(200, $newer['status'], $newer['body']);
+		self::assertNotSame($default, (int)$newer['json']['id']);
+
+		$response = self::Send('POST', "/api/labels/templates/$templateId/preview",
+			['kind' => 'live', 'printer_id' => self::$printerId, 'target_id' => self::$targets['stock_entry'], 'version_id' => (int)$newer['json']['id']], self::$adminKey);
+
+		self::assertSame(200, $response['status'], $response['body']);
+		self::assertSame('preview_live', $response['json']['purpose'], 'a labelled record is previewed with its real values');
+		self::assertSame((int)$newer['json']['id'], (int)$response['json']['template_version_id'], 'the chosen version is rendered, not the default');
+		self::assertSame($default, (int)self::Row('SELECT default_version_id FROM label_templates WHERE id = ?', [$templateId])['default_version_id'],
+			'previewing a version does not make it the default');
+
+		$capture = self::Row('SELECT target_id, is_sample, captured_fields FROM label_captures WHERE id = ?', [(int)$response['json']['capture_id']]);
+		self::assertSame(self::$targets['stock_entry'], (int)$capture['target_id']);
+		self::assertSame(0, (int)$capture['is_sample']);
+		self::assertSame('Labelapi beans', json_decode($capture['captured_fields'], true)['stock_entry.product_name'], 'the value is the record\'s, read from the database');
+	}
+
+	/**
 	 * A live preview of a target that has no label is rendered as a sample and the response says so.
 	 */
 	#[Depends('testALivePreviewOfALabelledTargetCanBePromotedToAPrint')]

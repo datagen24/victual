@@ -174,6 +174,30 @@
 			<i class="fa-solid fa-eye"></i>&nbsp;{{ $__t('Render a preview') }}
 		</button>
 
+		{{-- What will print. The canvas draws a field as its key and the preview above uses
+		example values, so a real value too long for its box is invisible in both. A live
+		preview captures the real values of one record and renders them with a published
+		version, the same way a print does. --}}
+		<div class="form-group mt-3">
+			<label for="preview-target-id">{{ $__t('Preview a real record') }}</label>
+			<div class="input-group">
+				<input type="number"
+					min="1"
+					step="1"
+					class="form-control"
+					id="preview-target-id"
+					placeholder="{{ $__t('Record number') }}">
+				<div class="input-group-append">
+					<button class="btn btn-info" id="live-preview-button" @if(count($printers) === 0) disabled @endif>
+						<i class="fa-solid fa-eye"></i>&nbsp;{{ $__t('Render it') }}
+					</button>
+				</div>
+			</div>
+			<small class="form-text text-muted">
+				{{ $__t('Renders the version chosen under Version that prints with the real values of this record, as a print of it would come out. The record number is the number at the end of its edit page address. The draft is not used, so publish an edit before previewing it. A record that has no label yet is shown with example values.') }}
+			</small>
+		</div>
+
 		<div id="template-message"
 			class="mt-3"
 			role="status"

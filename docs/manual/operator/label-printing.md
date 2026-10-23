@@ -35,6 +35,17 @@ than re-running whatever booking produced it.
   by default. Through the API, `POST /api/labels/templates/{id}/publish` moves the default
   only when its body sends `"make_default": true`; the first version is always the default.
   `PUT /api/labels/templates/{id}/default-version` sets it directly.
+
+  The canvas draws each field as its key, and **Render a preview** fills the draft with
+  example values. Neither shows a real value that is too long for its box. **Preview a real
+  record** does: enter the number at the end of a record's edit page address, for example
+  `12` for `/stockentry/12`.
+
+  - The designer renders the version chosen under **Version that prints** with that
+    record's real values, through the same renderer and media profile as a print.
+  - A refusal names the element that does not fit.
+  - The draft is not used, so publish an edit before previewing it this way.
+  - A record that has no label yet is rendered with example values, and the designer says so.
 - **`/labelprinters`** — register and edit workers and printers, issue credentials or
   pairing material, and revoke worker credentials. Requires `ADMIN`.
 - **`/labelprintjobs`** — the job queue, with the printer each job targets. States include
