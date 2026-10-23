@@ -251,12 +251,21 @@ and the operator's *VictualKit Access Brief* (2026-10-23).
    header. Claude Code uses `claude mcp add --transport http --header` directly. The
    choice of bridge (a third-party package, or a small one shipped from `mcp/`) is made
    at implementation.
+
+   > **Response:** datagen24, 2026-10-23: accepted as recommended.
+
 2. **External barcode lookup.** `lookup_barcode`'s fallback sends the barcode to whichever
    lookup plugin Victual has configured (an external service). Recommendation: allow it.
    It sends only the barcode, it is already what the UI's scan flow does, and with no
    plugin configured the fallback is skipped.
+
+   > **Response:** datagen24, 2026-10-23: accepted as recommended.
+
 3. **Checking off a shopping-list item.** This record treats `done` as an edit and keeps
    removal in the UI. Recommendation: keep that split.
+
+   > **Response:** datagen24, 2026-10-23: accepted as recommended.
+
 4. **A question for issue 770, recorded here because stage 3 depends on it: whose token
    is the user credential?** One option is that Victual verifies the Access JWT, which
    gives one sign-in through Entra but ties Victual's authentication to Cloudflare. The
@@ -270,9 +279,15 @@ and the operator's *VictualKit Access Brief* (2026-10-23).
    - One discovery document that Victual and the sidecar both publish would serve the
      native apps and the assistant alike.
 
+   > **Response:** datagen24, 2026-10-23: deferred to
+   > [issue 770](https://github.com/datagen24/victual/issues/770). Stage 3 is outside this
+   > record's scope, so this record does not decide whose token is the user credential.
+   > The recommendation and its reasons go to issue 770 as input.
+
 ## Acceptance prerequisites
 
-1. The maintainer answers the open questions.
+1. The maintainer answers the open questions. *Met 2026-10-23:* questions 1 to 3 were
+   accepted as recommended, and question 4 was deferred to issue 770.
 2. The tools, the chart values and the spec amendments are built and covered by the
    sidecar's handler and HTTP tests and by `helm template` checks for both new values.
 3. A real-client run on production: a catalog of at least ten products is built and
