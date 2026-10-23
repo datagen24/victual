@@ -270,7 +270,12 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 	/** Returns the QR-only document with $overrides applied to its canvas. */
 	private static function withCanvas(array $overrides): array
 	{
-		$document = self::qrOnlyDocument();
+		return self::withCanvasOf(self::qrOnlyDocument(), $overrides);
+	}
+
+	/** Returns $document with $overrides applied to its canvas. */
+	private static function withCanvasOf(array $document, array $overrides): array
+	{
 		$document['canvas'] = array_merge($document['canvas'], $overrides);
 		return $document;
 	}
@@ -431,6 +436,8 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'a rotation on a line' => [self::turned(self::withElement(['type' => 'line', 'id' => 'rule', 'x1_mm' => 2.0, 'y1_mm' => 2.0, 'x2_mm' => 20.0, 'y2_mm' => 2.0, 'stroke_mm' => 0.3, 'rotation_deg' => 90]), 0), 'elements.rule.rotation_deg', 'unknown_property'],
 			'a turned element whose footprint passes the roll' => [self::turned(self::withText(['x_mm' => 2.0, 'y_mm' => 2.0, 'width_mm' => 60.0, 'height_mm' => 6.0, 'rotation_deg' => 90]), 90), 'elements.title.height_mm', 'element_outside_canvas'],
 			'an element past the roll on a turned design' => [self::turned(self::withText(['x_mm' => 2.0, 'y_mm' => 55.0, 'width_mm' => 20.0])), 'elements.title.height_mm', 'element_outside_canvas'],
+			// The 2026-10-23 stock label: 20.8 + 4.6 mm on a 25 mm label, bottom cropped on paper.
+			'an element past a fixed length upright' => [self::withCanvasOf(self::withText(['y_mm' => 20.8, 'height_mm' => 4.6]), ['height_mm' => 25.0]), 'elements.title.height_mm', 'element_outside_canvas'],
 			'a document for another entity kind' => [array_merge(self::qrOnlyDocument(), ['entity_kind' => 'product']), 'entity_kind', 'entity_kind_mismatch'],
 
 			// Canvas.
@@ -1525,6 +1532,26 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		self::assertRefused(static fn () => self::tx(static fn () => self::artifacts()->Accept(
 			$input['render_request_id'], (string)$input['generation_token'], self::paint($wrongWay), 'fixture-renderer', '0.0.1-fixture')),
 			'elements.code', 'qr_payload_mismatch', 'The symbol turned the opposite way');
+	}
+
+	/**
+	 * Upright, a fixed length bounds elements as the roll's width does, because the renderer
+	 * draws at that length and crops what passes it. An automatic length grows to its content
+	 * and bounds nothing here. A margin is not a bound: the designer warns about crossing one.
+	 */
+	public function testAFixedUprightLengthBoundsElements(): void
+	{
+		$fits = self::withCanvasOf(self::withText(['y_mm' => 20.4, 'height_mm' => 4.6]), ['height_mm' => 25.0]);
+		$element = TemplateDocument::Validate($fits, 'location')['document']['elements'][1];
+		self::assertSame(20.4, $element['y_mm'], 'A box that ends at the canvas edge is accepted, though it crosses the 2 mm bottom margin');
+
+		$automatic = self::withCanvasOf(self::withText(['y_mm' => 20.8, 'height_mm' => 4.6]), ['height_mm' => null, 'max_height_mm' => 100.0]);
+		self::assertSame(20.8, TemplateDocument::Validate($automatic, 'location')['document']['elements'][1]['y_mm'],
+			'An automatic length is the renderer\'s to bound');
+
+		$turnedBox = self::withCanvasOf(self::turned(self::withText(['y_mm' => 6.0, 'width_mm' => 20.0, 'height_mm' => 6.0, 'rotation_deg' => 90]), 0), ['height_mm' => 25.0]);
+		self::assertRefused(static fn () => TemplateDocument::Validate($turnedBox, 'location'),
+			'elements.title.height_mm', 'element_outside_canvas', 'A turned box is bounded by its footprint, 20 mm tall: 6 + 20 mm passes 25 mm');
 	}
 
 	/**
