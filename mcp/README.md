@@ -65,7 +65,8 @@ count by the `transaction_id` it returned.
 `create_product_group` and `add_barcode`, off by default: enable them by name or with
 `catalog-write`. They need `MASTER_DATA_ADD` (`update_product`: `MASTER_DATA_EDIT`). The
 reads they take ids from (`list_locations`, `list_quantity_units`, `list_product_groups`,
-`lookup_barcode`) are part of `all-read`.
+`lookup_barcode`) are part of `all-read`. `list_locations` takes `query` and `limit` (default 50), as
+`find_product` does.
 - Not done: the real-client household check ("add milk to the list", "I used the last of the
   coffee") and contract tests against plan 14's fixtures for the three POST routes.
 

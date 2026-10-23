@@ -322,10 +322,16 @@ four routes, and each is part of `all-read`.
 
 | Tool | Input | Backed by | Output row |
 |---|---|---|---|
-| `list_locations` | none | `GET /api/objects/locations` (active, by name) | `location_id, name, parent_location_id, is_freezer` |
+| `list_locations` | `query?` · `limit?` (default 50, max 200) | `GET /api/objects/locations` (active, by name, `name~` as in §5.4) | `location_id, name, parent_location_id, is_freezer`, and `total` |
 | `list_quantity_units` | none | `GET /api/objects/quantity_units` (active, by name) | `unit_id, name, name_plural` |
 | `list_product_groups` | none | `GET /api/objects/product_groups` (active, by name) | `product_group_id, name` |
 | `lookup_barcode` | `barcode` (req) | `GET /api/stock/products/by-barcode/{barcode}`, then on its 400 "Unknown barcode" `GET /api/stock/barcodes/external-lookup/{barcode}` without `add` | `{ found: victual\|external\|none, product, suggestion }` |
+
+`list_locations` filters as `find_product` does: the server gets the longest run of the query
+that Victual's `query[]` pattern admits, and the whole query is matched in the sidecar.
+`total` counts every matching location, so a model can tell that `limit` cut the list. A
+filtered list can leave out a row's parent. The filter and limit were added on 2026-10-23,
+after a dev instance with about 270 locations returned all of them.
 
 `lookup_barcode`'s `product` is `product_id, name, unit, location, in_stock_amount`. The
 product-details answer it reads also carries prices, and none of them leaves the tool.

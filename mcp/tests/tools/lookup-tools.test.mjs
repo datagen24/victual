@@ -46,6 +46,31 @@ test("list_locations: active ones by name, nesting and freezer flag shaped, stri
     { location_id: 3, name: "Chest freezer", parent_location_id: null, is_freezer: true },
   ]);
   assert.match(text, /3 locations/);
+  assert.equal(data.total, 3);
+});
+
+test("list_locations: query filters by name, server- and client-side; limit caps the rows and says so", async () => {
+  const rows = Array.from({ length: 270 }, (_, i) => ({ id: i + 1, name: `Shelf ${i + 1}`, is_freezer: 0 }));
+  rows.push({ id: 900, name: "Ben & Jerry's freezer", is_freezer: 1 }, { id: 901, name: "Ben's shed", is_freezer: 0 });
+  const c = ctx({ "/api/objects/locations": rows });
+
+  const all = await run(listLocations, {}, c);
+  assert.equal(c.calls[0].params, "query%5B%5D=active%3D1&order=name%3Aasc", "no query sends no name filter");
+  assert.equal(all.data.rows.length, 50, "default limit");
+  assert.equal(all.data.total, 272);
+  assert.match(all.text, /272 locations; showing 50, narrow it with query/);
+
+  const filtered = await run(listLocations, { query: "Ben & Jerry", limit: 5 }, c);
+  // The server gets the longest run its query[] pattern admits; the full query is applied here.
+  assert.equal(c.calls[1].params, "query%5B%5D=name%7EJerry&query%5B%5D=active%3D1&order=name%3Aasc");
+  assert.deepEqual(filtered.data.rows.map((r) => r.location_id), [900]);
+  assert.match(filtered.text, /^1 location matching "Ben & Jerry"\.$/);
+
+  const capped = await run(listLocations, { query: "shelf 1", limit: 3 }, c);
+  assert.equal(capped.data.rows.length, 3);
+  assert.ok(capped.data.total > 3);
+  assert.equal(listLocations.inputSchema.safeParse({ limit: 201 }).success, false);
+  assert.equal(listLocations.inputSchema.safeParse({ query: "" }).success, false);
 });
 
 test("list_quantity_units and list_product_groups: ids and names only", async () => {
