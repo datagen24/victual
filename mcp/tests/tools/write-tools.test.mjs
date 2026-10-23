@@ -156,7 +156,7 @@ test("loadConfig expands stock-write to the write tools, in place and without du
   const writes = ["add_to_shopping_list", "consume_product", "purchase_product"];
   assert.deepEqual(loadConfig({ ...base, MCP_ENABLED_TOOLS: "stock-write" }).MCP_ENABLED_TOOLS, writes);
   const both = loadConfig({ ...base, MCP_ENABLED_TOOLS: "consume_product, all-read ,stock-write" }).MCP_ENABLED_TOOLS;
-  assert.equal(both.length, 9);
+  assert.equal(both.length, ALL_READ_TOOLS.length + writes.length);
   assert.equal(both[0], "consume_product");
 });
 
