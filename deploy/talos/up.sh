@@ -135,9 +135,14 @@ log "waiting for Victual and the sidecar"
 "${KUBECTL[@]}" rollout status deployment/victual-mcp --timeout=300s
 
 HOST="$("${KUBECTL[@]}" get ingress victual -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)"
+# https when the Ingress carries a tls block, or when Traefik's own annotation turns TLS on
+# (a certificate resolver needs no Secret, so the chart's tls block stays off for it).
+SCHEME=http
+TLS="$("${KUBECTL[@]}" get ingress victual -o jsonpath='{.spec.tls[0].hosts[0]}{.metadata.annotations.traefik\.ingress\.kubernetes\.io/router\.tls}' 2>/dev/null || true)"
+[ -z "$TLS" ] || [ "$TLS" = false ] || SCHEME=https
 cat <<MSG
 
-Up at http://${HOST:-<no ingress>}
+Up at $SCHEME://${HOST:-<no ingress>}
 
 Log in as admin with VICTUAL_BOOTSTRAP_ADMIN_PASSWORD from the 1Password item
 $ADMIN_ITEM (it applies to the database this deployment first created).
