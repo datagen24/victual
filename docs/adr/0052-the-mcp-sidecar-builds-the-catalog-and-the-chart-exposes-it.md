@@ -44,9 +44,27 @@ Two deployment facts block real use as well:
   the only way to enable one is to edit the rendered ConfigMap by hand, and the next
   `helm upgrade` reverts that edit.
 - **The chart gives the sidecar no route in.** The sidecar's Service is ClusterIP only, so
-  every client today needs `kubectl port-forward`. Production already serves Victual over
-  HTTPS: a domain on Cloudflare, Let's Encrypt certificates through Traefik's DNS-01
-  resolver, and DNS that points at a private ingress address.
+  every client today needs `kubectl port-forward`.
+
+Since 2026-10-23, production's public hostname reaches Victual through Cloudflare's edge
+rather than at a private address. The path is the WAF, then Bot Fight Mode, then Cloudflare
+Access, then a `cloudflared` tunnel running in the cluster, then Traefik, then Victual.
+Checked on 2026-10-23: the hostname resolves to Cloudflare addresses, and a request with no
+edge credentials gets a `302` to the Access login.
+
+- **Access** signs browsers in with Entra ID. Native apps present a per-device Access
+  service token (`CF-Access-Client-Id` and `CF-Access-Client-Secret`) alongside the Victual
+  API key.
+- **The WAF** allows only US and Canadian traffic, and only the methods GET, HEAD, POST,
+  PUT, PATCH, DELETE and OPTIONS.
+
+The operator's brief for VictualKit draws the layering this record follows. The edge
+credential identifies a *device* to Cloudflare. The API key, and later an OIDC token,
+identifies a *user* to Victual. Replacing the user credential with OIDC must leave the
+edge credential alone. The sidecar is unaffected by the edge, because it calls Victual
+inside the cluster (`http://victual:8080`). `mcp/src/auth/resolver.ts` forwards only
+`Authorization` or `VICTUAL-API-KEY`, so no edge header or cookie reaches Victual
+through it.
 
 Research (2026-10-23) on which Claude clients can reach a server at a private address.
 Anthropic's documentation separates servers that run on the device from remote servers
@@ -64,9 +82,25 @@ added by URL:
   connect. Their authentication is OAuth. Sending a fixed `Authorization` value as a
   request header is a beta available only to some organizations.
 
+Research (2026-10-23) on putting an MCP server behind Cloudflare Access. Access can act
+as the OAuth 2.0 authorization server for a self-hosted application ("managed OAuth",
+opt-in per application). An MCP server portal answers non-browser clients with a `401`
+and OAuth discovery metadata rather than a login redirect, and it also accepts service
+tokens. Two limits matter here:
+
+- Managed OAuth hands the client an *opaque* access token, which cannot be forwarded to
+  a downstream application. The user's identity reaches the origin as the
+  `Cf-Access-Jwt-Assertion` JWT instead.
+- Access is enforced only on the hostname it protects. Any other route to the same
+  service bypasses it.
+
 Sources: [Add a connector that isn't in the directory](https://claude.com/docs/connectors/custom/remote-mcp),
 [Get started with custom connectors using remote MCP](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp),
-[MCP tunnels](https://claude.com/docs/connectors/mcp-tunnels/overview).
+[MCP tunnels](https://claude.com/docs/connectors/mcp-tunnels/overview),
+[Managed OAuth for Cloudflare Access](https://developers.cloudflare.com/changelog/post/2026-03-20-managed-oauth/),
+[MCP server portals](https://developers.cloudflare.com/cloudflare-one/access-controls/ai-controls/mcp-portals/),
+[Build a remote MCP server](https://developers.cloudflare.com/agents/model-context-protocol/guides/remote-mcp-server/),
+and the operator's *VictualKit Access Brief* (2026-10-23).
 
 ## Decision
 
@@ -136,18 +170,39 @@ Sources: [Add a connector that isn't in the directory](https://claude.com/docs/c
    The repository carries only the template. The hostname, the certificate resolver
    annotations and any middleware go in the operator's values file, as they do for
    Victual's own Ingress. On production that means a second name under the household
-   domain, a DNS-only record at the same private ingress address, and the Traefik DNS-01
-   resolver already in use.
+   domain, resolvable on the LAN to the private ingress address, plus the Traefik DNS-01
+   resolver already in use. That name gets no tunnel route.
 
-7. **Exposure stays private (plan 02 Q4).** With decision 6, Claude Code and a local MCP
-   server in Claude Desktop, on the LAN or VPN, reach `https://<mcp-host>/mcp` with a
-   static bearer key. A remote custom connector added by URL, which is what the mobile
-   apps use, cannot reach it, and this record does not change that. Publishing the
-   sidecar outside the private network, for example through a Cloudflare Tunnel, is a
-   later decision. It waits until the tools have proven stable and the boundary has been
-   reviewed. It will also need OAuth
-   ([issue 770](https://github.com/datagen24/victual/issues/770), the IdP future state in
-   spec §4.1), because remote connectors authenticate that way.
+7. **Exposure is staged, and this record takes only the first stage.** The stages
+   (plan 02 Q4 holds for stage 1):
+
+   | Stage | Route to the sidecar | User credential to Victual | Clients that work |
+   |---|---|---|---|
+   | 1, this record | Private ingress on the LAN or VPN, outside Cloudflare | Static MCP API key | Claude Code; a local server in Claude Desktop |
+   | 2, later | A tunnel hostname behind its own Access application, with a service-token policy | Static MCP API key | Stage 1's clients, which add the two `CF-Access-Client-*` headers |
+   | 3, with OIDC | Access managed OAuth or an MCP portal, or Victual's own IdP | An OIDC-derived identity, mapped through the resolver seam (spec §4.1) | Also remote custom connectors, including the mobile apps |
+
+   - **Stage 1** needs no Cloudflare configuration.
+   - **Stage 2** changes only the operator's values file and Cloudflare settings. The chart
+     template is the same.
+   - **Stage 3 is not a configuration step.** A remote connector authenticates with OAuth,
+     which takes the `Authorization` header, so it cannot also send the static key. Managed
+     OAuth gives it an opaque token that cannot be forwarded to Victual, so Victual has to
+     accept an identity it can verify: the Access JWT, or a token from its own OIDC
+     issuer. Choosing between them belongs to
+     [issue 770](https://github.com/datagen24/victual/issues/770).
+
+   Before stage 2 or 3, Bot Fight Mode needs testing against MCP traffic, because Cloudflare
+   documents that it may challenge API traffic. Stage 3 also needs testing against
+   Anthropic's connector traffic. The WAF's method list already covers Streamable HTTP,
+   which uses POST, GET and DELETE.
+
+8. **The sidecar carries only the user credential.** Edge credentials end at Cloudflare.
+   The sidecar never forwards `CF-Access-*` headers, `CF_Authorization` or
+   `Cf-Access-Jwt-Assertion` to Victual unless a stage 3 decision makes the JWT the user
+   credential. The new tools are credential-agnostic: they reach Victual only through the
+   resolver (`mcp/src/auth/resolver.ts`). OIDC then changes the resolver and Victual's
+   authentication, and no tool.
 
 ## Consequences
 
@@ -169,7 +224,11 @@ Sources: [Add a connector that isn't in the directory](https://claude.com/docs/c
   are untouched by this record. The implementation changes the spec and README in the
   same pull request as the code. The REST contract does not change, because every tool
   uses an existing route.
-- Phone use is not solved here (decision 7).
+- Phone use is not solved here. It arrives with stage 3 (decision 7), and that stage
+  depends on issue 770's choice of user credential.
+- Stage 1's private route bypasses Cloudflare Access by design, as the LAN path to Victual
+  does. It is protected by the MCP key and by being reachable only on the LAN or VPN.
+  It never gets a tunnel route.
 
 ### Options ruled out
 
@@ -177,9 +236,13 @@ Sources: [Add a connector that isn't in the directory](https://claude.com/docs/c
   the model a schema-free write surface and makes the capability filter meaningless.
 - **A `/mcp` path on Victual's own Ingress.** It shares Victual's certificate and
   middlewares, so an IP allow-list for the sidecar would also restrict the app.
-- **Public exposure with the static API key, now.** That would let anyone who learns the
-  key in from the internet. The maintainer has deferred any public route, Cloudflare
-  Tunnel included, until the tool set is stable and the boundary has been reviewed.
+- **Public exposure with the static API key alone.** That would let anyone who learns the
+  key in from the internet. Stage 2 always puts Access in front, and the maintainer has
+  deferred even that until the tool set is stable.
+- **The sidecar on Victual's existing tunnel hostname and Access application.** That shares
+  the app's Access policy and Bot Fight Mode exposure. It also mixes a device-token policy
+  for native apps with a policy for the assistant. A separate Access application can be
+  revoked and scoped on its own.
 
 ## Open questions
 
@@ -194,6 +257,18 @@ Sources: [Add a connector that isn't in the directory](https://claude.com/docs/c
    plugin configured the fallback is skipped.
 3. **Checking off a shopping-list item.** This record treats `done` as an edit and keeps
    removal in the UI. Recommendation: keep that split.
+4. **A question for issue 770, recorded here because stage 3 depends on it: whose token
+   is the user credential?** One option is that Victual verifies the Access JWT, which
+   gives one sign-in through Entra but ties Victual's authentication to Cloudflare. The
+   other is that Victual runs as an OIDC relying party with its own issuer
+   configuration, which other deployments can use but which may mean signing in twice
+   behind Access. Recommendation: Victual's own OIDC.
+   - The VictualKit brief already reads the issuer from the server rather than
+     hard-coding Entra.
+   - The MCP authorization spec has clients discover the authorization server from the
+     resource's `/.well-known/oauth-protected-resource` metadata (RFC 9728).
+   - One discovery document that Victual and the sidecar both publish would serve the
+     native apps and the assistant alike.
 
 ## Acceptance prerequisites
 
