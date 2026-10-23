@@ -72,3 +72,40 @@ export interface StockLogRow {
   product_id: Numeric;
   amount: Numeric;
 }
+
+/** GET /api/objects/locations. parent_location_id is migration 0273's nesting. */
+export interface LocationRow {
+  id: Numeric;
+  name: string;
+  parent_location_id?: Numeric | null;
+  is_freezer?: Numeric | boolean;
+}
+
+/** GET /api/objects/quantity_units. */
+export interface QuantityUnitRow {
+  id: Numeric;
+  name: string;
+  name_plural?: string | null;
+}
+
+/** GET /api/objects/product_groups. */
+export interface ProductGroupRow {
+  id: Numeric;
+  name: string;
+}
+
+/**
+ * GET /api/stock/products/by-barcode/{barcode} (ProductDetailsResponse). Only the fields
+ * lookup_barcode reads: the answer also carries prices, which no tool returns.
+ */
+export interface ProductDetailsRow {
+  product?: { id: Numeric; name: string };
+  quantity_unit_stock?: { name?: string };
+  location?: { name?: string };
+  stock_amount?: Numeric;
+}
+
+/** GET /api/stock/barcodes/external-lookup/{barcode}, or null when nothing was found. */
+export interface ExternalBarcodeLookupRow {
+  name?: string;
+}

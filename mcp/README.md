@@ -1,6 +1,6 @@
 # victual-mcp
 
-MCP sidecar for Victual (six read tools, three opt-in write tools), built from
+MCP sidecar for Victual (ten read tools, fourteen opt-in write tools), built from
 [docs/mcp-interface-spec.md](../docs/mcp-interface-spec.md). It lives in this repository
 rather than a separate one — see the spec's Open Question 1 amendment (2026-09-19) and
 [ADR-0013](../docs/adr/0013-nix-built-container-images.md).
@@ -31,7 +31,10 @@ redeployed sidecar; it records what Victual now offers.
 The earlier condition that they wait for #86 to be in household use was added by an
 agent, not decided by the maintainer, and is withdrawn (plan 02 Q2). They are **off by default**: `all-read` does
 not include them, so an operator enables each by name, for example
-`MCP_ENABLED_TOOLS=all-read,add_to_shopping_list,consume_product,purchase_product`.The `all-read` keyword expands inside a comma list.
+`MCP_ENABLED_TOOLS=all-read,add_to_shopping_list,consume_product,purchase_product`, or
+`all-read,stock-write` for the same set. Keywords expand inside a comma list. With the Helm
+chart, set `mcp.enabledTools` in the values file rather than editing the ConfigMap, which
+the next upgrade would revert.
 
 - Listed only to a key that is not `read_only` and whose user holds the tool's permission
   (`SHOPPINGLIST_ITEMS_ADD`, `STOCK_CONSUME`, `STOCK_PURCHASE`). `consume_product` and
@@ -41,8 +44,28 @@ not include them, so an operator enables each by name, for example
   `shopping_list_id` -> `list_id` on the shopping-list route, `due_date` ->
   `best_before_date` on purchase. `shopping_location_id` keeps its name.
 - `consume_product` and `purchase_product` return `transaction_id` in `structuredContent`.
-  A booking answered without a transaction row is reported as `victual_error`.
-- No tool creates a product; an unknown `product_id` is refused by Victual.
+  A booking answered without a transaction row is reported as `outcome_unknown`.
+- Bookings carry an `Idempotency-Key` (ADR-0046) when Victual publishes support for it,
+  returned as `request_id`. A retry of an `outcome_unknown` booking with the same
+  `request_id` and values cannot book twice.
+- Only `create_product` creates a product (ADR-0052, spec §6.1); a booking on an unknown
+  `product_id` is refused by Victual. No tool deletes anything.
+
+## Stock-count tools (ADR-0052)
+
+`inventory_product` (set an absolute amount; an unchanged amount books nothing),
+`open_product`, `transfer_product`, `undo_transaction` and `check_off_shopping_list_item`
+join the three above in `stock-write`. A pantry walk is `find_product` or
+`create_product`, then `inventory_product`, and `undo_transaction` takes back a wrong
+count by the `transaction_id` it returned.
+
+## Catalog tools (ADR-0052)
+
+`create_product`, `update_product`, `create_location`, `create_quantity_unit`,
+`create_product_group` and `add_barcode`, off by default: enable them by name or with
+`catalog-write`. They need `MASTER_DATA_ADD` (`update_product`: `MASTER_DATA_EDIT`). The
+reads they take ids from (`list_locations`, `list_quantity_units`, `list_product_groups`,
+`lookup_barcode`) are part of `all-read`.
 - Not done: the real-client household check ("add milk to the list", "I used the last of the
   coffee") and contract tests against plan 14's fixtures for the three POST routes.
 
@@ -93,7 +116,9 @@ this server reported `2025-11-25` against a server that serves both.
   builds and loads all four images.
 - **Changing `package-lock.json` changes `nix/hashes.nix`'s `mcpNpmDeps`.** Re-run
   `nix build .#mcp` and take the `got:` value.
-- **Manifest:** [`deploy/k3s/victual-mcp.yaml`](../deploy/k3s/victual-mcp.yaml).
+- **Manifest:** [`deploy/k3s/victual-mcp.yaml`](../deploy/k3s/victual-mcp.yaml), rendered
+  from the chart. `mcp.ingress` (off by default) publishes `/mcp` on its own hostname for
+  clients on the household network (ADR-0052 decision 6).
 - **Local cluster:** [`deploy/kind/up.sh`](../deploy/kind/up.sh) brings up Victual, the
   sidecar and a throwaway PostgreSQL on kind.
 

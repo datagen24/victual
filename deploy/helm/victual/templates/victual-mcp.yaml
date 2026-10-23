@@ -10,10 +10,10 @@
 # does, and two replicas behind the Service must be indistinguishable from one (§11.5 is
 # the soak that checks that, and why this starts at two).
 #
-# Exposure is cluster- or tailnet-only (§9, plan 02 Q4). There is deliberately no Ingress
-# here; the ingress is the operator's (ADR-0010), and publishing /mcp beyond the household
-# network is not a decision this manifest can make — the IdP future state owns that
-# boundary first (§4.1).
+# Exposure is cluster-, LAN- or tailnet-only (§9, plan 02 Q4). mcp.ingress, off by default,
+# publishes the sidecar on its own hostname for clients on the household network (ADR-0052
+# decisions 6 and 7); the hostname, certificate and middlewares are the operator's values
+# (ADR-0010). Publishing /mcp beyond that network is a later stage that needs OAuth (§4.1).
 #
 # Clients authenticate with `Authorization: Bearer <Victual API key>`; the sidecar forwards
 # the key to Victual on every call and stores nothing (§2, §4).
@@ -112,4 +112,38 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+{{- if .Values.mcp.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: victual-mcp
+  labels:
+    app.kubernetes.io/name: victual-mcp
+  {{- with .Values.mcp.ingress.annotations }}
+  annotations:
+    {{- range $k, $v := . }}
+    {{ $k }}: {{ include "victual.setting" $v | quote }}
+    {{- end }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.mcp.ingress.className | quote }}
+  rules:
+    - host: {{ .Values.mcp.ingress.host | quote }}
+      http:
+        paths:
+          - path: /mcp
+            pathType: Exact
+            backend:
+              service:
+                name: victual-mcp
+                port:
+                  name: http
+  {{- if .Values.mcp.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.mcp.ingress.host | quote }}
+      secretName: {{ .Values.mcp.ingress.tls.secretName | default "victual-mcp-tls" | quote }}
+  {{- end }}
+{{- end }}
 {{- end }}

@@ -184,9 +184,11 @@ a `---`. A define so that the Deployment can hash exactly what the Secrets hold 
 # TLS is the ingress's job; the sidecar never disables verification, it just never
 # leaves the cluster network).
 VICTUAL_BASE_URL: "http://victual:8080"
-# `all-read` is the six §5 tools. A comma-separated list narrows it; an unknown name
-# stops the container at startup rather than being ignored.
-MCP_ENABLED_TOOLS: "all-read"
+# mcp.enabledTools: `all-read` is the read tools, `stock-write` the stock and list writes,
+# `catalog-write` the product, location, unit, group and barcode writes.
+# A comma-separated list names tools one by one; an unknown name stops the container at
+# startup rather than being ignored.
+MCP_ENABLED_TOOLS: {{ .Values.mcp.enabledTools | default "all-read" | quote }}
 MCP_REQUEST_TIMEOUT_MS: "10000"
 LOG_LEVEL: "info"
 {{- end -}}

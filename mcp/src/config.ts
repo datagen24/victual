@@ -13,12 +13,47 @@ export const ALL_READ_TOOLS = [
   "find_product",
   "shopping_list",
   "recipes_i_can_cook",
+  "list_locations",
+  "list_quantity_units",
+  "list_product_groups",
+  "lookup_barcode",
 ] as const;
 
 // §6 write tools: never part of `all-read`, so enabling one is a deliberate act.
-export const WRITE_TOOLS = ["add_to_shopping_list", "consume_product", "purchase_product"] as const;
+// §6's stock and list writes: the three of 0.5.3 and ADR-0052 decision 1's five.
+export const WRITE_TOOLS = [
+  "add_to_shopping_list",
+  "consume_product",
+  "purchase_product",
+  "inventory_product",
+  "open_product",
+  "transfer_product",
+  "undo_transaction",
+  "check_off_shopping_list_item",
+] as const;
 
-export type ToolName = (typeof ALL_READ_TOOLS)[number] | (typeof WRITE_TOOLS)[number];
+// ADR-0052 decision 1's master-data writes; deletion stays in the UI (decision 2).
+export const CATALOG_WRITE_TOOLS = [
+  "create_product",
+  "update_product",
+  "create_location",
+  "create_quantity_unit",
+  "create_product_group",
+  "add_barcode",
+] as const;
+
+export type ToolName =
+  | (typeof ALL_READ_TOOLS)[number]
+  | (typeof WRITE_TOOLS)[number]
+  | (typeof CATALOG_WRITE_TOOLS)[number];
+
+// Keywords that expand in place inside MCP_ENABLED_TOOLS (ADR-0052 decision 5). Write tools
+// are still never part of `all-read`: `stock-write` names them as a group, deliberately.
+export const TOOL_KEYWORDS: Readonly<Record<string, readonly ToolName[]>> = {
+  "all-read": ALL_READ_TOOLS,
+  "stock-write": WRITE_TOOLS,
+  "catalog-write": CATALOG_WRITE_TOOLS,
+};
 
 const envSchema = z.object({
   VICTUAL_BASE_URL: z.string().url(),
@@ -26,10 +61,13 @@ const envSchema = z.object({
   MCP_ENABLED_TOOLS: z
     .string()
     .default("all-read")
-    // `all-read` expands in place, so `all-read,consume_product` is the six reads plus one write.
+    // Keywords expand in place, so `all-read,consume_product` is the reads plus one write.
     .transform((value) => [
       ...new Set(
-        value.split(",").flatMap((name) => (name.trim() === "all-read" ? [...ALL_READ_TOOLS] : [name.trim()])),
+        value.split(",").flatMap((entry) => {
+          const name = entry.trim();
+          return name in TOOL_KEYWORDS ? [...TOOL_KEYWORDS[name]] : [name];
+        }),
       ),
     ]),
   MCP_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
@@ -40,6 +78,10 @@ export type Config = Omit<z.infer<typeof envSchema>, "MCP_ENABLED_TOOLS"> & {
   MCP_ENABLED_TOOLS: ToolName[];
 };
 
+/**
+ * Parse and validate the §8 environment, expanding tool keywords. Exits the process with a
+ * message on anything invalid, so a bad deployment fails at startup, not on first use.
+ */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = envSchema.safeParse(env);
   if (!parsed.success) {
@@ -50,7 +92,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const config = parsed.data;
   const unknown = config.MCP_ENABLED_TOOLS.filter(
-    (tool) => ![...ALL_READ_TOOLS, ...WRITE_TOOLS].includes(tool as ToolName),
+    (tool) => ![...ALL_READ_TOOLS, ...WRITE_TOOLS, ...CATALOG_WRITE_TOOLS].includes(tool as ToolName),
   );
   if (unknown.length > 0) {
     console.error(

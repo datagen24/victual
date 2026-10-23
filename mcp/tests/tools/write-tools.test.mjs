@@ -5,7 +5,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { buildServer } from "../../dist/server.js";
-import { loadConfig } from "../../dist/config.js";
+import { ALL_READ_TOOLS, WRITE_TOOLS, loadConfig } from "../../dist/config.js";
 import { addToShoppingList } from "../../dist/tools/add-to-shopping-list.js";
 import { consumeProduct } from "../../dist/tools/consume-product.js";
 import { purchaseProduct } from "../../dist/tools/purchase-product.js";
@@ -13,27 +13,38 @@ import { VictualApiError, VictualClient } from "../../dist/victual/client.js";
 
 const run = (tool, input, context) => tool.handler(tool.inputSchema.parse(input), context);
 
-function ctx(response) {
+// `info` is what GET /api/system/info answers: no stock_booking_idempotency by default, so a
+// booking is sent unkeyed, as to a Victual that predates ADR-0046.
+function ctx(response, { info = {}, replayed } = {}) {
   const posts = [];
+  const gets = [];
   return {
     posts,
+    gets,
     credential: { headers: { "VICTUAL-API-KEY": "k" } },
     client: {
-      async post(path, credential, body) {
-        posts.push({ path, body });
+      async get(path) {
+        gets.push(path);
+        return info;
+      },
+      async post(path, credential, body, headers = {}) {
+        posts.push({ path, body, headers });
         return typeof response === "function" ? response(path, body) : response;
       },
-      async postWithStatus(path, credential, body) {
-        return { status: 200, body: await this.post(path, credential, body) };
+      async postWithStatus(path, credential, body, headers = {}) {
+        const answer = await this.post(path, credential, body, headers);
+        return { status: 200, body: answer, headers: new Headers(replayed === undefined ? {} : { "Idempotent-Replayed": String(replayed) }) };
       },
     },
   };
 }
 
+const KEYED = { stock_booking_idempotency: { header: "Idempotency-Key", retention_seconds: 604800, operations: ["purchase", "consume", "transfer", "open", "inventory"] } };
+
 test("add_to_shopping_list maps to list_id/product_amount and defaults amount to 1", async () => {
   const c = ctx(undefined);
   const { data, text } = await run(addToShoppingList, { product_id: 7, note: "organic" }, c);
-  assert.deepEqual(c.posts, [
+  assert.deepEqual(c.posts.map(({ path, body }) => ({ path, body })), [
     { path: "/api/stock/shoppinglist/add-product", body: { product_id: 7, product_amount: 1, list_id: 1, note: "organic" } },
   ]);
   assert.deepEqual(data, { product_id: 7, amount: 1, shopping_list_id: 1 });
@@ -49,11 +60,63 @@ test("add_to_shopping_list refuses amount 0 (the route would silently read it as
 test("consume_product sends a real boolean and returns the transaction_id with the undo note", async () => {
   const c = ctx([{ transaction_id: "tx-1", product_id: 3, amount: -2 }, { transaction_id: "tx-1", product_id: 3, amount: -1 }]);
   const { data, text } = await run(consumeProduct, { product_id: 3, amount: 3, spoiled: true }, c);
-  assert.deepEqual(c.posts, [{ path: "/api/stock/products/3/consume", body: { amount: 3, spoiled: true } }]);
+  assert.deepEqual(c.posts.map(({ path, body }) => ({ path, body })), [{ path: "/api/stock/products/3/consume", body: { amount: 3, spoiled: true } }]);
   assert.equal(data.transaction_id, "tx-1");
   assert.equal(c.posts[0].body.spoiled, true);
   assert.match(text, /undone in Victual's stock journal/);
   assert.match(text, /spoiled/);
+});
+
+test("a booking asks Victual for the idempotency capability first, and sends no key to a Victual without it", async () => {
+  const c = ctx([{ transaction_id: "tx-u" }]);
+  const { data } = await run(consumeProduct, { product_id: 3, amount: 1 }, c);
+  assert.deepEqual(c.gets, ["/api/system/info"]);
+  assert.deepEqual(c.posts[0].headers, {});
+  assert.equal(data.request_id, undefined);
+  assert.equal(data.replayed, false);
+});
+
+test("a booking to a Victual that publishes the capability carries a fresh UUID key, returned as request_id", async () => {
+  const c = ctx([{ transaction_id: "tx-k" }], { info: KEYED });
+  const { data } = await run(purchaseProduct, { product_id: 4, amount: 1 }, c);
+  const key = c.posts[0].headers["Idempotency-Key"];
+  assert.match(key, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.equal(data.request_id, key);
+  const again = ctx([{ transaction_id: "tx-k2" }], { info: KEYED });
+  await run(purchaseProduct, { product_id: 4, amount: 1 }, again);
+  assert.notEqual(again.posts[0].headers["Idempotency-Key"], key, "one key per intended booking (ADR-0046 obligation 2)");
+});
+
+test("a retry's request_id is sent unchanged, and a replay is reported as nothing new booked", async () => {
+  const c = ctx([{ transaction_id: "tx-r" }], { info: KEYED, replayed: true });
+  const { data, text } = await run(consumeProduct, { product_id: 3, amount: 1, request_id: "retry-key-0001" }, c);
+  assert.equal(c.posts[0].headers["Idempotency-Key"], "retry-key-0001");
+  assert.equal(data.replayed, true);
+  assert.match(text, /nothing new was booked/);
+});
+
+test("a Victual without /api/system/info books unkeyed; an unreachable one fails before booking", async () => {
+  const c = ctx([{ transaction_id: "tx-old" }]);
+  c.client.get = async () => { throw new VictualApiError("not_found", "Victual answered 404", 404); };
+  const { data } = await run(consumeProduct, { product_id: 3, amount: 1 }, c);
+  assert.equal(data.request_id, undefined);
+  const down = ctx([{ transaction_id: "never" }]);
+  down.client.get = async () => { throw new VictualApiError("victual_unavailable", "could not reach Victual"); };
+  await assert.rejects(run(consumeProduct, { product_id: 3, amount: 1 }, down), (e) => e.category === "victual_unavailable");
+  assert.equal(down.posts.length, 0);
+});
+
+test("request_id follows ADR-0046's key grammar", () => {
+  for (const bad of ["short", "x".repeat(129), "has space-in-it", "slash/not/allowed"]) {
+    assert.equal(consumeProduct.inputSchema.safeParse({ product_id: 1, amount: 1, request_id: bad }).success, false, bad);
+  }
+  assert.equal(purchaseProduct.inputSchema.safeParse({ product_id: 1, amount: 1, request_id: "a1._:-b2c3" }).success, true);
+});
+
+test("an error from a keyed booking carries its request_id; an unkeyed one does not", async () => {
+  const refuse = () => { throw new VictualApiError("outcome_unknown", "timed out"); };
+  await assert.rejects(run(consumeProduct, { product_id: 3, amount: 1, request_id: "retry-key-0002" }, ctx(refuse, { info: KEYED })), (e) => e.requestId === "retry-key-0002");
+  await assert.rejects(run(consumeProduct, { product_id: 3, amount: 1 }, ctx(refuse)), (e) => e.requestId === undefined);
 });
 
 test("consume_product defaults spoiled to false", async () => {
@@ -84,8 +147,18 @@ test("a booking answered 2xx without a transaction row is outcome_unknown and ke
 test("loadConfig accepts the write tools by name, and all-read does not include them", () => {
   const base = { VICTUAL_BASE_URL: "http://x" };
   assert.deepEqual(loadConfig({ ...base, MCP_ENABLED_TOOLS: "shopping_list,consume_product" }).MCP_ENABLED_TOOLS, ["shopping_list", "consume_product"]);
-  assert.equal(loadConfig({ ...base, MCP_ENABLED_TOOLS: "all-read,consume_product" }).MCP_ENABLED_TOOLS.length, 7);
+  assert.equal(loadConfig({ ...base, MCP_ENABLED_TOOLS: "all-read,consume_product" }).MCP_ENABLED_TOOLS.length, ALL_READ_TOOLS.length + 1);
   assert.equal(loadConfig(base).MCP_ENABLED_TOOLS.some((t) => ["add_to_shopping_list", "consume_product", "purchase_product"].includes(t)), false);
+});
+
+test("loadConfig expands stock-write to the write tools, in place and without duplicates", () => {
+  const base = { VICTUAL_BASE_URL: "http://x" };
+  const writes = [...WRITE_TOOLS];
+  assert.ok(writes.includes("consume_product") && writes.includes("inventory_product"));
+  assert.deepEqual(loadConfig({ ...base, MCP_ENABLED_TOOLS: "stock-write" }).MCP_ENABLED_TOOLS, writes);
+  const both = loadConfig({ ...base, MCP_ENABLED_TOOLS: "consume_product, all-read ,stock-write" }).MCP_ENABLED_TOOLS;
+  assert.equal(both.length, ALL_READ_TOOLS.length + writes.length);
+  assert.equal(both[0], "consume_product");
 });
 
 // --- over HTTP ---------------------------------------------------------------------------
@@ -101,13 +174,26 @@ before(async () => {
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify(capabilities));
     }
+    if (path === "/api/system/info") {
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify(KEYED));
+    }
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
     req.on("end", () => {
-      seen.push({ method: req.method, path, type: req.headers["content-type"], body: raw ? JSON.parse(raw) : null });
+      const key = req.headers["idempotency-key"];
+      seen.push({ method: req.method, path, type: req.headers["content-type"], key, body: raw ? JSON.parse(raw) : null });
       if (path === "/api/stock/shoppinglist/add-product") { res.writeHead(204); return res.end(); }
+      if (path === "/api/stock/products/10/consume") {
+        res.writeHead(409, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ error_message: "That key was used for a different request", code: "idempotency_conflict" }));
+      }
+      if (path === "/api/stock/products/11/consume") {
+        res.writeHead(400, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ error_message: "Amount to be consumed cannot be > current stock amount" }));
+      }
       if (path.endsWith("/consume")) {
-        res.writeHead(200, { "content-type": "application/json" });
+        res.writeHead(200, { "content-type": "application/json", "Idempotent-Replayed": key === "replayed-key-01" ? "true" : "false" });
         return res.end(JSON.stringify([{ transaction_id: "tx-http", product_id: 9, amount: -1 }]));
       }
       res.writeHead(403); res.end("{}");
@@ -180,6 +266,31 @@ test("consume_product over HTTP returns transaction_id in structuredContent", as
   assert.equal(res.structuredContent.transaction_id, "tx-http");
   assert.match(res.content[0].text, /undone in Victual's stock journal/);
   assert.deepEqual(seen[0].body, { amount: 1, spoiled: false });
+  assert.equal(seen[0].key, res.structuredContent.request_id);
+  assert.equal(res.structuredContent.replayed, false);
+});
+
+test("over HTTP: Idempotent-Replayed: true is reported as a replay, not a second booking", async () => {
+  const res = await call("consume_product", { product_id: 9, amount: 1, request_id: "replayed-key-01" });
+  assert.equal(res.structuredContent.replayed, true);
+  assert.match(res.content[0].text, /nothing new was booked/);
+});
+
+test("over HTTP: an idempotency_conflict says not to resend, and carries the code and request_id", async () => {
+  const res = await call("consume_product", { product_id: 10, amount: 1, request_id: "conflict-key-1" });
+  assert.equal(res.isError, true);
+  const payload = JSON.parse(res.content[1].text);
+  assert.equal(payload.error, "invalid_request");
+  assert.equal(payload.code, "idempotency_conflict");
+  assert.equal(payload.request_id, "conflict-key-1");
+  assert.match(res.content[0].text, /do not resend it/);
+});
+
+test("over HTTP: Victual's error_message reaches the tool error; the status alone sets the category", async () => {
+  const res = await call("consume_product", { product_id: 11, amount: 5 });
+  const payload = JSON.parse(res.content[1].text);
+  assert.equal(payload.error, "invalid_request");
+  assert.match(payload.message, /cannot be > current stock amount/);
 });
 
 test("a Victual 403 on a write call is an isError result categorized forbidden", async () => {
@@ -305,7 +416,10 @@ async function callOn(baseUrl, timeoutMs, name, args) {
 }
 
 test("over HTTP: a write that times out says it may have been applied and is not retryable; a read timeout still says retry", async () => {
-  const hanging = createServer(() => {}); // accepts the connection, never answers
+  // Answers the capability probe (no idempotency, so the booking is unkeyed), never the booking.
+  const hanging = createServer((req, res) => {
+    if (req.url.startsWith("/api/system/info")) { res.writeHead(200, { "content-type": "application/json" }); res.end("{}"); }
+  });
   await new Promise((resolve) => hanging.listen(0, resolve));
   const url = `http://127.0.0.1:${hanging.address().port}`;
   try {
@@ -320,6 +434,23 @@ test("over HTTP: a write that times out says it may have been applied and is not
     const read = await callOn(url, 150, "stock_overview", {});
     assert.equal(JSON.parse(read.content[1].text).error, "victual_unavailable");
     assert.match(read.content[0].text, /retrying may help/);
+  } finally {
+    hanging.closeAllConnections();
+    await new Promise((resolve) => hanging.close(resolve));
+  }
+});
+
+test("over HTTP: a keyed write that times out says a retry with the same request_id and values is safe", async () => {
+  const hanging = createServer((req, res) => {
+    if (req.url.startsWith("/api/system/info")) { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(KEYED)); }
+  });
+  await new Promise((resolve) => hanging.listen(0, resolve));
+  try {
+    const write = await callOn(`http://127.0.0.1:${hanging.address().port}`, 150, "consume_product", { product_id: 9, amount: 1 });
+    const payload = JSON.parse(write.content[1].text);
+    assert.equal(payload.error, "outcome_unknown");
+    assert.match(payload.request_id, /^[0-9a-f-]{36}$/);
+    assert.match(write.content[0].text, new RegExp(`request_id ${payload.request_id} and exactly the same values cannot book it twice`));
   } finally {
     hanging.closeAllConnections();
     await new Promise((resolve) => hanging.close(resolve));

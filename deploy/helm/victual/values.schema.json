@@ -203,6 +203,58 @@
       "properties": {
         "enabled": {
           "type": "boolean"
+        },
+        "enabledTools": {
+          "type": "string",
+          "pattern": "^[a-z][a-z_-]*( *, *[a-z][a-z_-]*)*$",
+          "$comment": "Tool names and keywords; the sidecar refuses an unknown one at startup."
+        },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "className": {
+              "$ref": "#/$defs/text"
+            },
+            "host": {
+              "$ref": "#/$defs/text"
+            },
+            "tls": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "secretName": {
+                  "$ref": "#/$defs/text"
+                }
+              },
+              "required": [
+                "enabled"
+              ]
+            },
+            "annotations": {
+              "type": "object",
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ],
+                "not": {
+                  "type": "string",
+                  "pattern": "CHANGE-ME"
+                }
+              }
+            }
+          },
+          "required": [
+            "enabled"
+          ]
         }
       },
       "required": [
@@ -761,6 +813,54 @@
                 "required": [
                   "labelRendererKey",
                   "labelWorkerKey"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mcp": {
+            "properties": {
+              "ingress": {
+                "properties": {
+                  "enabled": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              }
+            },
+            "required": [
+              "ingress"
+            ]
+          }
+        },
+        "required": [
+          "mcp"
+        ]
+      },
+      "then": {
+        "properties": {
+          "mcp": {
+            "properties": {
+              "ingress": {
+                "properties": {
+                  "className": {
+                    "minLength": 1
+                  },
+                  "host": {
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "className",
+                  "host"
                 ]
               }
             }

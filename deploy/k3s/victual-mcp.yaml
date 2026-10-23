@@ -14,10 +14,10 @@
 # does, and two replicas behind the Service must be indistinguishable from one (§11.5 is
 # the soak that checks that, and why this starts at two).
 #
-# Exposure is cluster- or tailnet-only (§9, plan 02 Q4). There is deliberately no Ingress
-# here; the ingress is the operator's (ADR-0010), and publishing /mcp beyond the household
-# network is not a decision this manifest can make — the IdP future state owns that
-# boundary first (§4.1).
+# Exposure is cluster-, LAN- or tailnet-only (§9, plan 02 Q4). mcp.ingress, off by default,
+# publishes the sidecar on its own hostname for clients on the household network (ADR-0052
+# decisions 6 and 7); the hostname, certificate and middlewares are the operator's values
+# (ADR-0010). Publishing /mcp beyond that network is a later stage that needs OAuth (§4.1).
 #
 # Clients authenticate with `Authorization: Bearer <Victual API key>`; the sidecar forwards
 # the key to Victual on every call and stores nothing (§2, §4).
@@ -33,8 +33,10 @@ data:
   # TLS is the ingress's job; the sidecar never disables verification, it just never
   # leaves the cluster network).
   VICTUAL_BASE_URL: "http://victual:8080"
-  # `all-read` is the six §5 tools. A comma-separated list narrows it; an unknown name
-  # stops the container at startup rather than being ignored.
+  # mcp.enabledTools: `all-read` is the read tools, `stock-write` the stock and list writes,
+  # `catalog-write` the product, location, unit, group and barcode writes.
+  # A comma-separated list names tools one by one; an unknown name stops the container at
+  # startup rather than being ignored.
   MCP_ENABLED_TOOLS: "all-read"
   MCP_REQUEST_TIMEOUT_MS: "10000"
   LOG_LEVEL: "info"
@@ -71,7 +73,7 @@ spec:
         app.kubernetes.io/name: victual-mcp
       annotations:
         # envFrom is read once, at container start: a changed ConfigMap rolls the pods (issue #852).
-        checksum/config: b512d11cd5696fac176831a1a307a1314b8f36454e6dede1580fdab93dce075b
+        checksum/config: 25531065b28a4b287259d272bbaa1d627238d079c2c015532a9df80cb19f16c9
     spec:
       # Nothing here talks to the Kubernetes API.
       automountServiceAccountToken: false

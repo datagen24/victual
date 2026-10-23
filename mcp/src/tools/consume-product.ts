@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ToolDefinition } from "./types.js";
-import type { StockLogRow } from "../victual/types.js";
-import { transactionId, UNDO_NOTE } from "../victual/transaction.js";
+import { UNDO_NOTE } from "../victual/transaction.js";
+import { book, REPLAY_NOTE, requestIdSchema } from "../victual/booking.js";
 
 // §6. POST /api/stock/products/{id}/consume. `spoiled` is sent as a real boolean: the
 // route refuses the string "false" rather than reading it as true.
@@ -9,6 +9,7 @@ const inputSchema = z.object({
   product_id: z.number().int().positive().describe("Id of an existing product (find it with find_product)"),
   amount: z.number().positive().describe("How much was used, in the product's stock unit"),
   spoiled: z.boolean().default(false).describe("True if the amount was thrown away as spoiled"),
+  request_id: requestIdSchema,
 });
 
 const outputSchema = z.object({
@@ -16,6 +17,8 @@ const outputSchema = z.object({
   product_id: z.number(),
   amount: z.number(),
   spoiled: z.boolean(),
+  request_id: z.string().optional(),
+  replayed: z.boolean(),
 });
 
 export const consumeProduct: ToolDefinition<typeof inputSchema, typeof outputSchema> = {
@@ -30,15 +33,16 @@ export const consumeProduct: ToolDefinition<typeof inputSchema, typeof outputSch
   inputSchema,
   outputSchema,
   handler: async (input, ctx) => {
-    const { status, body: rows } = await ctx.client.postWithStatus<StockLogRow[]>(
+    const booked = await book(
+      ctx,
       `/api/stock/products/${input.product_id}/consume`,
-      ctx.credential,
       { amount: input.amount, spoiled: input.spoiled },
+      input.request_id,
     );
-    const id = transactionId(rows, status);
+    const id = booked.transaction_id;
     return {
-      data: { transaction_id: id, product_id: input.product_id, amount: input.amount, spoiled: input.spoiled },
-      text: `Consumed ${input.amount} of product ${input.product_id}${input.spoiled ? " as spoiled" : ""} (transaction ${id}). ${UNDO_NOTE}`,
+      data: { ...booked, product_id: input.product_id, amount: input.amount, spoiled: input.spoiled },
+      text: `Consumed ${input.amount} of product ${input.product_id}${input.spoiled ? " as spoiled" : ""} (transaction ${id}). ${booked.replayed ? `${REPLAY_NOTE} ` : ""}${UNDO_NOTE}`,
     };
   },
 };

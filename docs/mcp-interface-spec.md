@@ -313,6 +313,25 @@ candidate later if substring proves insufficient in use — recorded, not built)
 minus the first set. Only `type = normal` recipes (not meal-plan shadow recipes — see
 Appendix A for why nothing may depend on that internal naming convention again).
 
+### 5.7 Master-data and barcode reads (ADR-0052)
+
+Added by [ADR-0052](adr/0052-the-mcp-sidecar-builds-the-catalog-and-the-chart-exposes-it.md)
+decision 1 for building a catalog: the catalog tools in §6 take ids, and these lists are
+where a model finds them. Each needs `STOCK_VIEW`, which `EntityReadPolicy` checks for all
+four routes, and each is part of `all-read`.
+
+| Tool | Input | Backed by | Output row |
+|---|---|---|---|
+| `list_locations` | none | `GET /api/objects/locations` (active, by name) | `location_id, name, parent_location_id, is_freezer` |
+| `list_quantity_units` | none | `GET /api/objects/quantity_units` (active, by name) | `unit_id, name, name_plural` |
+| `list_product_groups` | none | `GET /api/objects/product_groups` (active, by name) | `product_group_id, name` |
+| `lookup_barcode` | `barcode` (req) | `GET /api/stock/products/by-barcode/{barcode}`, then on its 400 "Unknown barcode" `GET /api/stock/barcodes/external-lookup/{barcode}` without `add` | `{ found: victual\|external\|none, product, suggestion }` |
+
+`lookup_barcode`'s `product` is `product_id, name, unit, location, in_stock_amount`. The
+product-details answer it reads also carries prices, and none of them leaves the tool.
+`suggestion` is the external lookup's `name` only. Without `add`, the lookup never creates
+a product, and a plugin error (400) is reported as `none`.
+
 ## 6. Tools — writes (built 2026-10-08, issue #209)
 
 02-Q2 originally held these until read-only v1 had been used in the household. The
@@ -326,6 +345,20 @@ the build specification:
 | `add_to_shopping_list` | `product_id` (req) · `amount?` (default 1) · `shopping_list_id?` · `note?` | `POST /api/stock/shoppinglist/add-product` |
 | `consume_product` | `product_id` (req) · `amount` (req) · `spoiled?: boolean` | `POST /api/stock/products/{id}/consume` |
 | `purchase_product` | `product_id` (req) · `amount` (req) · `price?` · `due_date?` · `shopping_location_id?` | `POST /api/stock/products/{id}/add` |
+| `inventory_product` | `product_id`, `new_amount` (req) · `best_before_date?` · `location_id?` · `note?` | `GET /api/stock/products/{id}`, then `POST /api/stock/products/{id}/inventory` |
+| `open_product` | `product_id` (req) · `amount?` (default 1) | `POST /api/stock/products/{id}/open` |
+| `transfer_product` | `product_id`, `amount`, `location_id_from`, `location_id_to` (req, different) | `POST /api/stock/products/{id}/transfer` |
+| `undo_transaction` | `transaction_id` (req) | `POST /api/stock/transactions/{id}/undo` |
+| `check_off_shopping_list_item` | `item_id` (req) · `done?` (default true) | `PUT /api/objects/shopping_list/{id}` |
+
+The last five are ADR-0052 decision 1's and join `stock-write`. Every booking tool also
+takes `request_id` (below). `inventory_product` sets an absolute amount. Victual refuses
+a new amount equal to the current one, so the tool reads the current amount first, and
+an unchanged amount books nothing and answers `changed: false`. `undo_transaction` is
+not one of ADR-0046's bookings and carries no key. Checking an item off is an edit;
+removing one stays in the UI. Each booking needs its permission plus `STOCK_VIEW`
+(`STOCK_INVENTORY`, `STOCK_OPEN`, `STOCK_TRANSFER`), undo needs `STOCK_EDIT`, and
+checking off needs `SHOPPINGLIST_ITEMS_ADD`.
 
 **On `shopping_location_id`, which reads worse than `store_id` and is the right name
 anyway.** Earlier drafts of this table said `store_id`, and the household vocabulary is
@@ -351,9 +384,46 @@ Write-tool rules, fixed now:
   `structuredContent`, and the `text` block says how to undo ("this can be undone in
   Victual's stock journal") — the REST undo endpoints exist and an assistant that just
   consumed the wrong thing should be able to say so accurately.
+- Every stock booking carries an `Idempotency-Key` when Victual publishes
+  `stock_booking_idempotency` in `GET /api/system/info` ([ADR-0046](adr/0046-stock-bookings-accept-an-optional-idempotency-key.md),
+  [ADR-0052](adr/0052-the-mcp-sidecar-builds-the-catalog-and-the-chart-exposes-it.md)
+  decision 4). The sidecar keeps no session, so it asks before every booking. The key
+  is a fresh UUID unless the call passes `request_id`, and it is returned as
+  `request_id` with `replayed` (`Idempotent-Replayed: true`) in `structuredContent`.
+  An `outcome_unknown` error from a keyed booking carries its `request_id`, and its
+  `text` says a retry with that `request_id` and the same values cannot book twice. A
+  409 `idempotency_conflict` says not to resend.
 - No write tool ever creates a product implicitly. The prior art's "smart" auto-create
-  path is exactly the kind of surprise 02-Q2's caution exists to prevent; product
-  creation stays in the UI until a deliberate future decision.
+  path is exactly the kind of surprise 02-Q2's caution exists to prevent. The deliberate
+  decision this rule waited for is ADR-0052: only `create_product` (§6.1) creates a
+  product, and only when the model calls it.
+- No tool deletes anything (ADR-0052 decision 2). Deletion stays in the UI.
+
+### 6.1 Catalog writes (ADR-0052)
+
+Off by default. Each is enabled by name or with the `catalog-write` keyword. They need
+`MASTER_DATA_ADD` ([ADR-0043](adr/0043-creating-shared-master-data-is-a-right-below-master-data-edit.md)),
+except `update_product`, which needs `MASTER_DATA_EDIT`.
+
+| Tool | Input | Backed by |
+|---|---|---|
+| `create_product` | `name`, `location_id`, `unit_id` (req) · `product_group_id?` · `min_stock_amount?` · `default_best_before_days?` (`-1` never expires) · `barcode?` | `POST /api/objects/products`, then `POST /api/objects/product_barcodes` |
+| `update_product` | `product_id` (req) and at least one of `name`, `location_id`, `product_group_id` (`null` clears it), `min_stock_amount`, `default_best_before_days` | `PUT /api/objects/products/{id}` |
+| `create_location` | `name` (req) · `parent_location_id?` · `is_freezer?` · `description?` | `POST /api/objects/locations` |
+| `create_quantity_unit` | `name` (req) · `name_plural?` | `POST /api/objects/quantity_units` |
+| `create_product_group` | `name` (req) | `POST /api/objects/product_groups` |
+| `add_barcode` | `product_id`, `barcode` (req) · `note?` | `POST /api/objects/product_barcodes` |
+
+- `create_product` sets `qu_id_stock`, `qu_id_purchase`, `qu_id_consume` and
+  `qu_id_price` from its one `unit_id`, as the product form does by default. A barcode
+  that fails to attach is reported on the successful result as `barcode_added: false`,
+  because the product exists either way, and an error would invite a second create.
+- `update_product` cannot change the stock unit, because changing it under existing stock
+  changes what every booked amount means. Its location is the default for new stock.
+  Moving existing stock is `transfer_product`. It carries `destructiveHint`, because it
+  overwrites values.
+- A 2xx without `created_object_id` is `outcome_unknown`, as a booking without a
+  transaction row is.
 
 ## 7. Error model
 
@@ -396,6 +466,10 @@ Two layers, never mixed:
   applied, but what was booked cannot be confirmed. Both keep `victual_status`, and the
   `text` gives the same check-before-retry advice.
 
+The `message` repeats Victual's `error_message` from a refused request's body, and the
+payload carries its `code` when there is one. Neither affects the category, which comes
+from the status code alone.
+
 This mapping is why [plan 11](plans/11-api-error-handling.md) gates this work: today
 Victual answers 400 for "not allowed" and 500 for "bad filter" on some routes, which
 collapses `forbidden`/`invalid_request`/`victual_error` into mush. The sidecar maps
@@ -411,7 +485,7 @@ nothing here is complex enough for a config file:
 |---|---|---|
 | `VICTUAL_BASE_URL` | Victual origin, e.g. `http://victual.victual.svc:80` | required |
 | `MCP_PORT` | listen port | `3000` |
-| `MCP_ENABLED_TOOLS` | comma-separated allowlist; `all-read` keyword (also valid inside the list) = the six §5 tools; the §6 write tools are enabled by name only | `all-read` |
+| `MCP_ENABLED_TOOLS` | comma-separated allowlist; keywords expand in place: `all-read` = the §5 read tools, `stock-write` = the §6 stock and list writes, `catalog-write` = §6.1 (ADR-0052 decision 5); write tools are otherwise enabled by name. The Helm chart sets it from `mcp.enabledTools` | `all-read` |
 | `MCP_REQUEST_TIMEOUT_MS` | per-REST-call timeout | `10000` |
 | `LOG_LEVEL` | `error`/`warn`/`info`/`debug`, to stderr/stdout | `info` |
 
@@ -438,7 +512,10 @@ unknown `MCP_ENABLED_TOOLS` entry or missing required variable.
   problem and another reason 10 precedes Wave 5.
 - Exposure per 02-Q4: cluster/tailnet only. The ingress route for `/mcp` is not
   published externally; if that ever flips, the IdP future state (§4.1) owns the
-  boundary first.
+  boundary first. *Amended by ADR-0052 decisions 6 and 7:* the chart's opt-in
+  `mcp.ingress` publishes exactly `/mcp` on its own hostname on the household network
+  (stage 1). A route through Cloudflare Access (stage 2) and remote connectors with
+  OAuth (stage 3) are later decisions.
 - Logs to stdout/stderr only (MCP Logging is deprecated anyway); no metrics endpoint
   in v1.
 
@@ -452,7 +529,8 @@ Recorded so their absence reads as decided, not forgotten:
   `subscriptions/listen`.
 - Response streaming beyond what the SDK does natively, and OAuth (§4.1).
 - Fuzzy search (§5.4) and localization of names and `text` blocks (English v1).
-- Any write beyond §6's three.
+- Any write beyond §6's three. *Amended by ADR-0052:* §6.1's catalog writes and the
+  stock writes ADR-0052 decision 1 names are in scope, and deletes remain out.
 
 ### 10.1 Medication and private consumption data
 
