@@ -48,21 +48,25 @@ Two deployment facts block real use as well:
   HTTPS: a domain on Cloudflare, Let's Encrypt certificates through Traefik's DNS-01
   resolver, and DNS that points at a private ingress address.
 
-Research (2026-10-23, Anthropic's connector documentation) on which Claude clients can
-reach a server at a private address:
+Research (2026-10-23) on which Claude clients can reach a server at a private address.
+Anthropic's documentation separates servers that run on the device from remote servers
+added by URL:
 
 - **Claude Code** connects from the machine it runs on, and `claude mcp add --header`
   sends a static `Authorization: Bearer` header. It works on the LAN or VPN.
-- **Claude Desktop's local extensions** (MCPB bundles, or a stdio server in its config)
-  also run on the device. A small stdio bridge that adds the header reaches a
-  private-network URL.
-- **Custom connectors in claude.ai, Claude Desktop and the mobile apps** connect from
-  Anthropic's cloud, not from the device. Their documentation says the server must be
-  reachable from Anthropic's IP ranges over the public internet. Servers on a private
-  network or behind a VPN do not connect. The way around that, MCP tunnels, needs an
-  Enterprise organization. For authentication these connectors use OAuth. A fixed
-  `Authorization` value sent as a request header is a beta available only to a limited
-  set of organizations.
+- **Local MCP servers in Claude Desktop** (a stdio server in its config, or an MCPB
+  extension) run on the device and reach whatever the device can reach. The maintainer
+  runs several this way. A small stdio bridge that adds the header reaches the sidecar's
+  private-network URL the same way.
+- **Remote servers added by URL as custom connectors** (claude.ai, Claude Desktop's
+  Connectors settings, the mobile apps) are connected from Anthropic's cloud, so the
+  server must be reachable from Anthropic's IP ranges. A private address does not
+  connect. Their authentication is OAuth. Sending a fixed `Authorization` value as a
+  request header is a beta available only to some organizations.
+
+Sources: [Add a connector that isn't in the directory](https://claude.com/docs/connectors/custom/remote-mcp),
+[Get started with custom connectors using remote MCP](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp),
+[MCP tunnels](https://claude.com/docs/connectors/mcp-tunnels/overview).
 
 ## Decision
 
@@ -120,8 +124,9 @@ reach a server at a private address:
    setting overrides this value, and the value remains the 404 fallback that ADR-0039
    decision 6 describes.
 
-6. **The chart can publish the sidecar on the private network.** A new `mcp.ingress` block
-   mirrors the existing `ingress` values: `enabled` (default `false`), `className`, `host`,
+6. **The chart can publish the sidecar on the private network.** This follows the opt-in
+   Ingress precedent of [ADR-0038](0038-kubernetes-deployments-ship-as-a-helm-chart.md)
+   decision 7. A new `mcp.ingress` block mirrors the existing `ingress` values: `enabled` (default `false`), `className`, `host`,
    `tls.enabled`, `tls.secretName` and `annotations`. It renders a second Ingress to the
    `victual-mcp` Service on its own hostname, not a `/mcp` path on Victual's host, because:
    - its own host gets its own certificate;
@@ -134,19 +139,22 @@ reach a server at a private address:
    domain, a DNS-only record at the same private ingress address, and the Traefik DNS-01
    resolver already in use.
 
-7. **Exposure stays private (plan 02 Q4).** With decision 6, Claude Code and a Claude
-   Desktop local extension on the LAN or VPN reach `https://<mcp-host>/mcp` with a static
-   bearer key. Claude's cloud-brokered connectors (web, mobile, Desktop custom
-   connectors) cannot reach it, and this record does not change that. Reaching the
-   sidecar from a phone needs a public route restricted to Anthropic's published IP
-   ranges, plus OAuth
+7. **Exposure stays private (plan 02 Q4).** With decision 6, Claude Code and a local MCP
+   server in Claude Desktop, on the LAN or VPN, reach `https://<mcp-host>/mcp` with a
+   static bearer key. A remote custom connector added by URL, which is what the mobile
+   apps use, cannot reach it, and this record does not change that. Publishing the
+   sidecar outside the private network, for example through a Cloudflare Tunnel, is a
+   later decision. It waits until the tools have proven stable and the boundary has been
+   reviewed. It will also need OAuth
    ([issue 770](https://github.com/datagen24/victual/issues/770), the IdP future state in
-   spec §4.1). That is its own decision.
+   spec §4.1), because remote connectors authenticate that way.
 
 ## Consequences
 
 - The household can build a catalog and count stock from a conversation, with the same
   permissions and per-key `read_only` boundary the 0.5.3 writes already have.
+- `all-read` grows from six tools to ten on every deployment that upgrades, without a
+  values change. The four new reads only list master data or look up a barcode.
 - The tool list grows from 9 to 24. Plan 02 Q5 asked for 6 to 10 narrow tools to keep the
   list small for the model. This record trades some of that budget for coverage. Turning
   off groups the deployment doesn't need (decision 5) keeps the cost down, and the
@@ -169,15 +177,17 @@ reach a server at a private address:
   the model a schema-free write surface and makes the capability filter meaningless.
 - **A `/mcp` path on Victual's own Ingress.** It shares Victual's certificate and
   middlewares, so an IP allow-list for the sidecar would also restrict the app.
-- **Public exposure with the static API key.** That would let anyone who learns the key
-  in from the internet, and the cloud connectors would still need the beta request-header
-  feature to send it.
+- **Public exposure with the static API key, now.** That would let anyone who learns the
+  key in from the internet. The maintainer has deferred any public route, Cloudflare
+  Tunnel included, until the tool set is stable and the boundary has been reviewed.
 
 ## Open questions
 
-1. **Which client will the household use for the pantry walk?** Recommendation: Claude
-   Desktop with a local extension on the Mac, or Claude Code, while decision 7 holds. If
-   it has to be the phone, issue 770 comes first.
+1. **How does Claude Desktop reach the sidecar?** Recommendation: a local stdio entry in
+   Claude Desktop's config that bridges to `https://<mcp-host>/mcp` and adds the bearer
+   header. Claude Code uses `claude mcp add --transport http --header` directly. The
+   choice of bridge (a third-party package, or a small one shipped from `mcp/`) is made
+   at implementation.
 2. **External barcode lookup.** `lookup_barcode`'s fallback sends the barcode to whichever
    lookup plugin Victual has configured (an external service). Recommendation: allow it.
    It sends only the barcode, it is already what the UI's scan flow does, and with no
