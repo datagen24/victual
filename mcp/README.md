@@ -67,6 +67,11 @@ count by the `transaction_id` it returned.
 reads they take ids from (`list_locations`, `list_quantity_units`, `list_product_groups`,
 `lookup_barcode`) are part of `all-read`. `list_locations` takes `query` and `limit` (default 50), as
 `find_product` does.
+
+`create_product` refuses a taken name before it posts, with the id of the product that holds
+it, because Victual reports the `UNIQUE` violation only as "The database rejected this
+request". Its description asks for a shelf life (`default_best_before_days`): without one,
+Victual's default is 0, and every count is due the day it is recorded.
 - Not done: the real-client household check ("add milk to the list", "I used the last of the
   coffee") and contract tests against plan 14's fixtures for the three POST routes.
 
