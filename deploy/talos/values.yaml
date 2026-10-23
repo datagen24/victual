@@ -22,8 +22,18 @@ ingress:
 database:
   host: victual-postgres
 
+# A test environment: every MCP tool is on, so ADR-0052's tools are exercised here before a
+# release reaches production. The sidecar is published on the LAN at http://<host>/mcp, a
+# nip.io name for the same Traefik address, so it resolves without any DNS change.
 mcp:
   enabled: true
+  enabledTools: all-read,stock-write,catalog-write
+  ingress:
+    enabled: true
+    className: traefik
+    host: mcp.victual.10.130.34.240.nip.io
+    tls:
+      enabled: false
 
 # No printer on this cluster.
 labelWorkers:
