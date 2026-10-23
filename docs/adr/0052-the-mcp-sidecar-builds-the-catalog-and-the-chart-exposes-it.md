@@ -114,6 +114,7 @@ and the operator's *VictualKit Access Brief* (2026-10-23).
    | `list_quantity_units` | `GET /objects/quantity_units` | `STOCK_VIEW` | read |
    | `list_product_groups` | `GET /objects/product_groups` | `STOCK_VIEW` | read |
    | `lookup_barcode` | `GET /stock/products/by-barcode/{barcode}`, then on a miss `GET /stock/barcodes/external-lookup/{barcode}` without `add` | `STOCK_VIEW` | read |
+   | `recent_transactions` (amended 2026-10-23) | `GET /objects/stock_log` | `STOCK_VIEW` | read |
    | `create_product` | `POST /objects/products` | `MASTER_DATA_ADD` | catalog write |
    | `update_product` | `PUT /objects/products/{id}` | `MASTER_DATA_EDIT` | catalog write |
    | `create_location` | `POST /objects/locations` | `MASTER_DATA_ADD` | catalog write |
@@ -124,6 +125,7 @@ and the operator's *VictualKit Access Brief* (2026-10-23).
    | `open_product` | `POST /stock/products/{id}/open` | `STOCK_OPEN`, `STOCK_VIEW` | stock write |
    | `transfer_product` | `POST /stock/products/{id}/transfer` | `STOCK_TRANSFER`, `STOCK_VIEW` | stock write |
    | `undo_transaction` | `POST /stock/transactions/{id}/undo` | `STOCK_EDIT` | stock write |
+   | `set_due_date` (amended 2026-10-23) | `GET /stock/products/{id}/entries`, then `PUT /stock/entry/{entryId}` per entry | `STOCK_EDIT`, `STOCK_VIEW` | stock write |
    | `check_off_shopping_list_item` | `PUT /objects/shopping_list/{id}` (`done`) | `SHOPPINGLIST_ITEMS_ADD` | list write |
 
    `inventory_product` is the main tool for walking the pantry: "there are three cans"
@@ -132,6 +134,40 @@ and the operator's *VictualKit Access Brief* (2026-10-23).
    stock amount"), so the tool reads `GET /stock/products/{id}` first. When the amounts
    match it books nothing and reports the amount as unchanged, so saying the same thing
    twice does no harm.
+
+   > **Amended 2026-10-23.** Two tools join the table, after four headless Claude
+   > conversations against the Talos dev app found two gaps in the 0.5.4 tool set
+   > ([release record](../releases/0.5.4.md), "Known limitations"). This record is
+   > Proposed, so the table is amended in place, with this note saying what changed and why.
+   >
+   > - **`recent_transactions`** lists a product's newest stock journal rows:
+   >   `transaction_id`, type, amount, location, due date, `undone` and the timestamp. It
+   >   never returns `price`, which `stock_log` carries. Without it, `undo_transaction`
+   >   worked only inside the conversation that booked, because nothing else could supply a
+   >   `transaction_id`. A later conversation had to correct with `inventory_product`, which
+   >   leaves a second correction in the journal where an undo would have marked the first
+   >   booking undone. It is a read and joins `all-read`. `EntityReadPolicy` already maps
+   >   `stock_log` to `STOCK_VIEW`.
+   > - **`set_due_date`** sets the due date of a product's stock already on hand. A product
+   >   created without `default_best_before_days` defaults to 0, and Victual then dates
+   >   every count today (`StockService`'s default due date). `update_product` changes the
+   >   default for new stock only, so before this tool the only fix for counted stock was the
+   >   UI. The tool takes `product_id`, `due_date` (or never expires), and optionally
+   >   `location_id` and the entries' `current_due_date`, which select the entries to
+   >   change. It reads `GET /stock/products/{id}/entries` and sends
+   >   `PUT /stock/entry/{entryId}` for each selected entry whose date differs. The body is
+   >   the entry's own `amount`, which the route requires, and the new `best_before_date`.
+   >   Each edit is its own transaction, and `undo_transaction` reverses it. The edit is not
+   >   one of ADR-0046's five bookings, so it carries no `Idempotency-Key`. Repeating it is
+   >   harmless anyway, because an entry that already has the date is skipped. It joins
+   >   `stock-write`. It overwrites a value, so it carries `destructiveHint`, as
+   >   `update_product` does. No tool edits an entry's amount, price or location: counts
+   >   remain `inventory_product`'s job and moves remain `transfer_product`'s.
+   >
+   > The other two gaps the conversations found change existing tools and need no
+   > decision: `list_locations` gains `query` and `limit` (spec §5 already requires a
+   > `limit` on every list tool), and `create_product` refuses a taken name by the id of
+   > the product that holds it.
 
 2. **Nothing deletes.** No tool calls a `DELETE` route, `POST /stock/shoppinglist/remove-product`
    or `POST /stock/shoppinglist/clear`. Deleting a product, a location, a unit, a barcode,
@@ -227,7 +263,8 @@ and the operator's *VictualKit Access Brief* (2026-10-23).
   permissions and per-key `read_only` boundary the 0.5.3 writes already have.
 - `all-read` grows from six tools to ten on every deployment that upgrades, without a
   values change. The four new reads only list master data or look up a barcode.
-- The tool list grows from 9 to 24. Plan 02 Q5 asked for 6 to 10 narrow tools to keep the
+- The tool list grows from 9 to 24 (26 with the 2026-10-23 amendment to decision 1, and
+  `all-read` to eleven). Plan 02 Q5 asked for 6 to 10 narrow tools to keep the
   list small for the model. This record trades some of that budget for coverage. Turning
   off groups the deployment doesn't need (decision 5) keeps the cost down, and the
   sidecar lists only the enabled tools.
