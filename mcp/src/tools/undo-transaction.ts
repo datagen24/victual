@@ -18,7 +18,7 @@ export const undoTransaction: ToolDefinition<typeof inputSchema, typeof outputSc
   name: "undo_transaction",
   title: "Undo stock transaction",
   description:
-    "Reverse a stock booking (purchase, consume, inventory, open or move) by its transaction_id: the one the booking tool returned, or one recent_transactions lists. Use it to correct a mistake.",
+    "Reverse a stock booking (purchase, consume, inventory, open, move or due-date change) by its transaction_id: the one the booking tool returned, or one recent_transactions lists. Use it to correct a mistake.",
   permission: "STOCK_EDIT",
   write: true,
   destructive: true,

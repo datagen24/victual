@@ -23,6 +23,7 @@ import { openProduct } from "./open-product.js";
 import { transferProduct } from "./transfer-product.js";
 import { undoTransaction } from "./undo-transaction.js";
 import { checkOffShoppingListItem } from "./check-off-shopping-list-item.js";
+import { setDueDate } from "./set-due-date.js";
 
 // Fixed, deterministic order — §5's tools/list ordering rule.
 export const ALL_TOOLS = [
@@ -49,6 +50,7 @@ export const ALL_TOOLS = [
   transferProduct,
   undoTransaction,
   checkOffShoppingListItem,
+  setDueDate,
   // ADR-0052 decision 1's catalog writes: off unless named or `catalog-write`.
   createProduct,
   updateProduct,
