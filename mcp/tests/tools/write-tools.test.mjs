@@ -5,7 +5,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { buildServer } from "../../dist/server.js";
-import { loadConfig } from "../../dist/config.js";
+import { ALL_READ_TOOLS, loadConfig } from "../../dist/config.js";
 import { addToShoppingList } from "../../dist/tools/add-to-shopping-list.js";
 import { consumeProduct } from "../../dist/tools/consume-product.js";
 import { purchaseProduct } from "../../dist/tools/purchase-product.js";
@@ -147,7 +147,7 @@ test("a booking answered 2xx without a transaction row is outcome_unknown and ke
 test("loadConfig accepts the write tools by name, and all-read does not include them", () => {
   const base = { VICTUAL_BASE_URL: "http://x" };
   assert.deepEqual(loadConfig({ ...base, MCP_ENABLED_TOOLS: "shopping_list,consume_product" }).MCP_ENABLED_TOOLS, ["shopping_list", "consume_product"]);
-  assert.equal(loadConfig({ ...base, MCP_ENABLED_TOOLS: "all-read,consume_product" }).MCP_ENABLED_TOOLS.length, 7);
+  assert.equal(loadConfig({ ...base, MCP_ENABLED_TOOLS: "all-read,consume_product" }).MCP_ENABLED_TOOLS.length, ALL_READ_TOOLS.length + 1);
   assert.equal(loadConfig(base).MCP_ENABLED_TOOLS.some((t) => ["add_to_shopping_list", "consume_product", "purchase_product"].includes(t)), false);
 });
 

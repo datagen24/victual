@@ -13,6 +13,10 @@ export const ALL_READ_TOOLS = [
   "find_product",
   "shopping_list",
   "recipes_i_can_cook",
+  "list_locations",
+  "list_quantity_units",
+  "list_product_groups",
+  "lookup_barcode",
 ] as const;
 
 // §6 write tools: never part of `all-read`, so enabling one is a deliberate act.

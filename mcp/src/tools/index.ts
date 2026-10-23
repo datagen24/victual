@@ -4,6 +4,10 @@ import { missingProducts } from "./missing-products.js";
 import { findProduct } from "./find-product.js";
 import { shoppingList } from "./shopping-list.js";
 import { recipesICanCook } from "./recipes-i-can-cook.js";
+import { listLocations } from "./list-locations.js";
+import { listQuantityUnits } from "./list-quantity-units.js";
+import { listProductGroups } from "./list-product-groups.js";
+import { lookupBarcode } from "./lookup-barcode.js";
 import { addToShoppingList } from "./add-to-shopping-list.js";
 import { consumeProduct } from "./consume-product.js";
 import { purchaseProduct } from "./purchase-product.js";
@@ -16,6 +20,11 @@ export const ALL_TOOLS = [
   findProduct,
   shoppingList,
   recipesICanCook,
+  // ADR-0052 decision 1's reads, which the catalog tools take their ids from.
+  listLocations,
+  listQuantityUnits,
+  listProductGroups,
+  lookupBarcode,
   // §6 write tools, after the reads; config and the capability filter decide who sees them.
   addToShoppingList,
   consumeProduct,

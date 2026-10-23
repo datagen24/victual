@@ -1,6 +1,6 @@
 # victual-mcp
 
-MCP sidecar for Victual (six read tools, three opt-in write tools), built from
+MCP sidecar for Victual (ten read tools, three opt-in write tools), built from
 [docs/mcp-interface-spec.md](../docs/mcp-interface-spec.md). It lives in this repository
 rather than a separate one — see the spec's Open Question 1 amendment (2026-09-19) and
 [ADR-0013](../docs/adr/0013-nix-built-container-images.md).

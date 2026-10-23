@@ -313,6 +313,25 @@ candidate later if substring proves insufficient in use — recorded, not built)
 minus the first set. Only `type = normal` recipes (not meal-plan shadow recipes — see
 Appendix A for why nothing may depend on that internal naming convention again).
 
+### 5.7 Master-data and barcode reads (ADR-0052)
+
+Added by [ADR-0052](adr/0052-the-mcp-sidecar-builds-the-catalog-and-the-chart-exposes-it.md)
+decision 1 for building a catalog: the catalog tools in §6 take ids, and these lists are
+where a model finds them. Each needs `STOCK_VIEW`, which `EntityReadPolicy` checks for all
+four routes, and each is part of `all-read`.
+
+| Tool | Input | Backed by | Output row |
+|---|---|---|---|
+| `list_locations` | none | `GET /api/objects/locations` (active, by name) | `location_id, name, parent_location_id, is_freezer` |
+| `list_quantity_units` | none | `GET /api/objects/quantity_units` (active, by name) | `unit_id, name, name_plural` |
+| `list_product_groups` | none | `GET /api/objects/product_groups` (active, by name) | `product_group_id, name` |
+| `lookup_barcode` | `barcode` (req) | `GET /api/stock/products/by-barcode/{barcode}`, then on its 400 "Unknown barcode" `GET /api/stock/barcodes/external-lookup/{barcode}` without `add` | `{ found: victual\|external\|none, product, suggestion }` |
+
+`lookup_barcode`'s `product` is `product_id, name, unit, location, in_stock_amount`. The
+product-details answer it reads also carries prices, and none of them leaves the tool.
+`suggestion` is the external lookup's `name` only. Without `add`, the lookup never creates
+a product, and a plugin error (400) is reported as `none`.
+
 ## 6. Tools — writes (built 2026-10-08, issue #209)
 
 02-Q2 originally held these until read-only v1 had been used in the household. The
