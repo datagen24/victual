@@ -266,6 +266,15 @@ user accounts. See [Label printing](manual/operator/label-printing.md).
 
 ## Permissions and contracts
 
+### Authorization server
+
+The service that issues OAuth access tokens. Proposed in
+[ADR-0055](adr/0055-api-and-mcp-callers-present-oauth-access-tokens-from-a-swappable-authorization-server.md)
+(Proposed, not implemented): one per install, either the built-in authorization server
+(a separate container) or an external identity provider such as Authentik
+([ADR-0056](adr/0056-an-external-identity-provider-replaces-the-built-in-authorization-server.md)).
+Victual is never the authorization server.
+
 ### Effective permissions
 
 The union of a user's direct grants and assigned role grants, expanded through the
@@ -284,6 +293,20 @@ A proposed booking from a client supplying a confidence value. A person must con
 through the existing booking permissions; there is no automatic confirmation threshold.
 [ADR-0012](adr/0012-observations-are-proposals.md) accepts this model. The
 [plan index](plans/README.md) records it as unbuilt and unscheduled.
+
+### Relying party
+
+An application that signs users in through an OIDC provider and trusts its ID tokens.
+Proposed in [ADR-0056](adr/0056-an-external-identity-provider-replaces-the-built-in-authorization-server.md)
+(Proposed, not implemented): Victual is the relying party for browser login when an
+external identity provider is configured.
+
+### Resource server
+
+A service that accepts OAuth access tokens and refuses those not issued for it. Proposed in
+[ADR-0055](adr/0055-api-and-mcp-callers-present-oauth-access-tokens-from-a-swappable-authorization-server.md)
+(Proposed, not implemented): Victual's `/api` and the MCP sidecar are two resource servers
+with different audiences.
 
 ### Role
 
