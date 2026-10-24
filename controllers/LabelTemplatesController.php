@@ -56,10 +56,17 @@ class LabelTemplatesController extends BaseController
 		$printers = $db->query('SELECT id, name, is_default FROM label_printers WHERE active = 1 ORDER BY is_default DESC, name')->fetchAll(\PDO::FETCH_ASSOC);
 		$assets = $db->query("SELECT id, name, asset_kind, font_family FROM label_assets ORDER BY asset_kind, name")->fetchAll(\PDO::FETCH_ASSOC);
 
+		// The published versions, newest first, so the designer can say which one prints: a
+		// plain print and a live preview use the default, which publishing does not always move.
+		$statement = $db->prepare('SELECT id, version FROM label_template_versions WHERE template_id = ? ORDER BY version DESC');
+		$statement->execute([(int)$template['id']]);
+		$versions = array_map(static fn (array $row) => ['id' => (int)$row['id'], 'version' => (int)$row['version']], $statement->fetchAll(\PDO::FETCH_ASSOC));
+
 		return $this->RenderPage($response, 'labeltemplateeditor', [
 			'template' => $template,
 			'printers' => $printers,
-			'assets' => $assets
+			'assets' => $assets,
+			'versions' => $versions
 		]);
 	}
 }

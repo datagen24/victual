@@ -48,7 +48,7 @@ class LabelTemplatesApiController extends BaseApiController
                         'label-templates-create' => $templates->Create((string)($body['name'] ?? ''), $body['description'] ?? null, (string)($body['entity_kind'] ?? 'location'), $user),
                         'label-templates-draft' => $templates->GetDraft((int)$args['templateId']),
                         'label-templates-save-draft' => $templates->SaveDraft((int)$args['templateId'], (array)($body['document'] ?? []), (string)($body['revision_token'] ?? ''), $user),
-                        'label-templates-publish' => $templates->Publish((int)$args['templateId'], $user),
+                        'label-templates-publish' => $templates->Publish((int)$args['templateId'], $user, $this->MakeDefault($body)),
                         'label-templates-versions' => $this->Versions($db, (int)$args['templateId']),
                         'label-templates-default' => $templates->SetDefaultVersion((int)$args['templateId'], (int)($body['version_id'] ?? 0)),
                         'label-templates-archive' => $templates->Archive((int)$args['templateId']),
@@ -86,6 +86,20 @@ class LabelTemplatesApiController extends BaseApiController
 
         $response->getBody()->write($bytes);
         return $response->withHeader('Content-Type', ArtifactService::MIME_TYPE)->withHeader('Cache-Control', 'no-store');
+    }
+
+    /**
+     * The publish body's `make_default`: false when absent, and refused when it is anything
+     * but a boolean, so a client sending "yes" or 1 learns that rather than having it read
+     * one way or the other.
+     */
+    private function MakeDefault(array $body): bool
+    {
+        $value = $body['make_default'] ?? false;
+        if (!is_bool($value)) {
+            throw new LabelValidationException('make_default', 'invalid_value', 'make_default is a boolean');
+        }
+        return $value;
     }
 
     private function Versions($db, int $templateId): array

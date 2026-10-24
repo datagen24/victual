@@ -185,6 +185,7 @@
 		canvas.setDimensions({ width: width * MM_PER_PX, height: height * MM_PER_PX });
 		canvas.clear();
 		canvas.backgroundColor = '#ffffff';
+		canvas.add(marginGuide(width, height));
 
 		state.document.elements.forEach(function(element)
 		{
@@ -207,6 +208,100 @@
 
 		state.selectedId = selectedBefore !== null && find(selectedBefore) !== null ? selectedBefore : null;
 		canvas.renderAll();
+		warnAboutMargins();
+	}
+
+	/**
+	 * The printable area inside the margins, as a dashed outline nobody can select. Drawn
+	 * because the margins are part of the document and nothing else on the page shows them.
+	 */
+	function marginGuide(width, height)
+	{
+		var margins = state.document.canvas.margins_mm || {};
+		var guide = new fabric.Rect({
+			left: (margins.left || 0) * MM_PER_PX,
+			top: (margins.top || 0) * MM_PER_PX,
+			width: Math.max(0, width - (margins.left || 0) - (margins.right || 0)) * MM_PER_PX,
+			height: Math.max(0, height - (margins.top || 0) - (margins.bottom || 0)) * MM_PER_PX,
+			originX: 'left',
+			originY: 'top',
+			fill: 'transparent',
+			stroke: '#17a2b8',
+			strokeDashArray: [3, 3],
+			selectable: false,
+			evented: false
+		});
+		return guide;
+	}
+
+	/**
+	 * The ids of the elements whose footprint crosses a margin, in document order.
+	 *
+	 * A warning rather than a refusal: the renderer uses margins only to pad an automatic
+	 * length, and a frame drawn into the margin is a legitimate design. Running past the
+	 * canvas itself is refused by the server (TemplateDocument::ReadingBounds). An automatic
+	 * length has no far edge yet, so its bottom margin, or its right one when turned, is not
+	 * checked.
+	 */
+	function elementsCrossingMargins()
+	{
+		var canvasDocument = state.document.canvas;
+		var margins = canvasDocument.margins_mm || {};
+		var turn = canvasDocument.orientation_deg || 0;
+		var quarter = turn === 90 || turn === 270;
+		var length = canvasDocument.height_mm || null;
+		var width = quarter ? length : canvasDocument.width_mm;
+		var height = quarter ? canvasDocument.width_mm : length;
+		var crossing = [];
+
+		state.document.elements.forEach(function(element)
+		{
+			var box;
+			if (element.type === 'line')
+			{
+				box = {
+					x1: Math.min(element.x1_mm, element.x2_mm), y1: Math.min(element.y1_mm, element.y2_mm),
+					x2: Math.max(element.x1_mm, element.x2_mm), y2: Math.max(element.y1_mm, element.y2_mm)
+				};
+			}
+			else
+			{
+				var size = localSize(element);
+				var turnedElement = element.rotation_deg === 90 || element.rotation_deg === 270;
+				var across = turnedElement ? size.h : size.w;
+				var down = turnedElement ? size.w : size.h;
+				box = { x1: element.x_mm, y1: element.y_mm, x2: element.x_mm + across, y2: element.y_mm + down };
+			}
+
+			// A tenth of a millimetre of slack, the precision the editor rounds to.
+			var slack = 0.05;
+			if (box.x1 < (margins.left || 0) - slack || box.y1 < (margins.top || 0) - slack ||
+				(width !== null && box.x2 > width - (margins.right || 0) + slack) ||
+				(height !== null && box.y2 > height - (margins.bottom || 0) + slack))
+			{
+				crossing.push(element.id);
+			}
+		});
+		return crossing;
+	}
+
+	/** Names the elements that cross a margin under the canvas, or says nothing when none do. */
+	function warnAboutMargins()
+	{
+		var note = region('canvas-margin-note');
+		if (note === null)
+		{
+			return;
+		}
+		while (note.firstChild !== null)
+		{
+			note.removeChild(note.firstChild);
+		}
+		var crossing = elementsCrossingMargins();
+		if (crossing.length > 0)
+		{
+			note.appendChild(document.createTextNode(__t('These elements cross the margin, the dashed outline, and may be cut off or print too close to the edge: %s', crossing.join(', '))));
+		}
 	}
 
 	/** Maps a document colour name to the CSS colour the canvas draws it in. */
@@ -714,7 +809,7 @@
 		canvas.on('selection:created', function(event) { state.selectedId = event.selected[0].victualId; properties(); });
 		canvas.on('selection:updated', function(event) { state.selectedId = event.selected[0].victualId; properties(); });
 		canvas.on('selection:cleared', function() { state.selectedId = null; properties(); });
-		canvas.on('object:modified', function(event) { absorb(event.target); properties(); });
+		canvas.on('object:modified', function(event) { absorb(event.target); properties(); warnAboutMargins(); });
 
 		$(document).find('#add-element-button').on('click', function() { add(region('element-kind').value); });
 
@@ -808,11 +903,36 @@
 			// an unsaved canvas would publish the version before the one on screen.
 			save(function()
 			{
-				Victual.Api.Post('labels/templates/' + Victual.LabelTemplate.Id + '/publish', {},
-					function(version) { report('success', __t('Published version %s', version.version)); },
+				var makeDefault = region('publish-make-default').checked;
+				Victual.Api.Post('labels/templates/' + Victual.LabelTemplate.Id + '/publish', { 'make_default': makeDefault },
+					function(version)
+					{
+						Victual.LabelTemplate.Versions.unshift({ id: version.id, version: version.version });
+						// The server makes a first version the default whether or not it was asked.
+						if (makeDefault || Victual.LabelTemplate.DefaultVersionId === null)
+						{
+							Victual.LabelTemplate.DefaultVersionId = version.id;
+						}
+						versionChoices();
+						report('success', __t('Published version %s', version.version));
+					},
 					function(xhr) { report('danger', refusal(xhr)); });
 			});
 		});
+
+		$(document).find('#default-version-button').on('click', function()
+		{
+			var versionId = parseInt(region('default-version').value, 10);
+			Victual.Api.Put('labels/templates/' + Victual.LabelTemplate.Id + '/default-version', { 'version_id': versionId },
+				function(template)
+				{
+					Victual.LabelTemplate.DefaultVersionId = parseInt(template.default_version_id, 10);
+					versionChoices();
+					report('success', __t('Labels now print with version %s', versionNumber(Victual.LabelTemplate.DefaultVersionId)));
+				},
+				function(xhr) { report('danger', refusal(xhr)); });
+		});
+		versionChoices();
 
 		$(document).find('#preview-button').on('click', function()
 		{
@@ -828,6 +948,59 @@
 
 		load();
 	});
+
+	/** The version number of a published version id, or null for one this page does not list. */
+	function versionNumber(versionId)
+	{
+		var found = Victual.LabelTemplate.Versions.filter(function(v) { return v.id === versionId; });
+		return found.length === 0 ? null : found[0].version;
+	}
+
+	/**
+	 * Fills the "Version that prints" select from the published versions, newest first, and
+	 * says which one a plain print uses - with a warning when a newer version exists that does
+	 * not print.
+	 */
+	function versionChoices()
+	{
+		var select = region('default-version');
+		var status = region('default-version-status');
+		var versions = Victual.LabelTemplate.Versions;
+		var current = Victual.LabelTemplate.DefaultVersionId;
+
+		while (select.firstChild !== null)
+		{
+			select.removeChild(select.firstChild);
+		}
+		versions.forEach(function(v)
+		{
+			var option = $('<option>').attr('value', v.id).text(__t('Version %s', v.version));
+			option.prop('selected', v.id === current);
+			$(select).append(option);
+		});
+		region('default-version-button').disabled = versions.length === 0;
+
+		while (status.firstChild !== null)
+		{
+			status.removeChild(status.firstChild);
+		}
+		if (current === null || versions.length === 0)
+		{
+			status.className = 'form-text text-warning';
+			status.appendChild(document.createTextNode(__t('Nothing is published yet, so nothing prints from this template.')));
+			return;
+		}
+		var newest = versions[0].version;
+		var printing = versionNumber(current);
+		if (newest !== printing)
+		{
+			status.className = 'form-text text-warning';
+			status.appendChild(document.createTextNode(__t('Labels print with version %s, not the newest version %s.', printing, newest)));
+			return;
+		}
+		status.className = 'form-text text-muted';
+		status.appendChild(document.createTextNode(__t('Labels print with version %s, the newest.', printing)));
+	}
 
 	/** Polls a render request. A pending image reports its status rather than an empty body. */
 	function poll(requestId, attemptsLeft)
