@@ -93,7 +93,9 @@ for InfluxDB rows, not label rows.
 ## Decision
 
 Each question states the current behaviour, the options with their consequences, and a
-recommendation. The maintainer's decision line is empty until the maintainer fills it.
+recommendation. The maintainer decided all six on 2026-10-24 and took each recommendation;
+the decision line under each question records it. The record stays Proposed until its
+acceptance pull request, under the lifecycle rule in [the index](README.md).
 
 ### 1. A deactivated printer
 
@@ -115,7 +117,9 @@ predicate.
 
 **Recommendation:** (b).
 
-**Maintainer decision:**
+**Maintainer decision:** (b), decided 2026-10-24: add the `p.active = 1` predicate to
+`Claim`, and skip rather than dead-letter a job when the deactivation race reaches
+`Resolve`.
 
 ### 2. A deactivated worker
 
@@ -135,7 +139,7 @@ Reassigning a printer to another worker moves its queued jobs with it.
 
 **Recommendation:** (a).
 
-**Maintainer decision:**
+**Maintainer decision:** (a), decided 2026-10-24: jobs stay queued.
 
 ### 3. Other `Resolve` refusals
 
@@ -155,7 +159,8 @@ edit; a release that tightens `Validate` should ship a preflight that reports pr
 new rules refuse, so the operator fixes them before jobs dead-letter. That preflight is a
 release-checklist item for such a change, not part of this record.
 
-**Maintainer decision:**
+**Maintainer decision:** (a), decided 2026-10-24: keep dead-lettering, with the release
+preflight for a change that tightens validation.
 
 ### 4. Cause 5: a cancelled job's outbox row
 
@@ -175,7 +180,7 @@ dead-lettered ones. No label code counts dead-lettered outbox rows;
 
 **Recommendation:** (a).
 
-**Maintainer decision:**
+**Maintainer decision:** (a), decided 2026-10-24: cancellation is a separate state.
 
 ### 5. Recovery
 
@@ -205,7 +210,7 @@ Reprint covers every dead-letter cause:
 
 **Recommendation:** (a).
 
-**Maintainer decision:**
+**Maintainer decision:** (a), decided 2026-10-24: reprint is the only recovery.
 
 ### 6. How the cause is stored
 
@@ -227,11 +232,11 @@ operator see why a job was dead-lettered. That adds a field to the
 [ADR-0005](0005-wire-contract-is-the-invariant.md), so it is a follow-up with its own
 review, not part of this decision.
 
-**Maintainer decision:**
+**Maintainer decision:** (a), decided 2026-10-24: no schema change.
 
 ## Consequences
 
-If every recommendation is accepted:
+With the decisions of 2026-10-24, which took every recommendation:
 
 - A job dead-letters for causes 1 to 4 and 6 only, and cause 2 in normal operation becomes
   unreachable: an inactive printer or worker leaves its jobs queued, and the other refusals
@@ -258,8 +263,9 @@ without the code change.
 
 Not part of this record and not done here.
 
-- Implementation of question 1 (b), if accepted, as its own pull request with the test
-  above.
-- Exposing `last_error` in `LabelPrintJobService::Monitor` (question 6), as a wire change.
+- Implementation of question 1 (b) as its own pull request with the test above, after
+  this record is accepted.
+- Exposing `last_error` in `LabelPrintJobService::Monitor` (question 6), as a wire change:
+  [issue 1102](https://github.com/datagen24/victual/issues/1102).
 - The regression test ADR-0049 lists, that `last_error` carries the `Resolve` refusal text,
   applies to whichever cause-2 path remains.
