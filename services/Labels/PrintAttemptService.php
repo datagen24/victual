@@ -58,7 +58,8 @@ class PrintAttemptService extends LabelService
     /**
      * Leases up to $limit claimable jobs for the worker's printers and returns each attempt
      * with its payload, resolved printer and artifact manifest. Jobs the claim cannot serve are
-     * dead-lettered on the way (ADR-0049 part 1, causes 1 and 2).
+     * dead-lettered on the way (ADR-0049 part 1, causes 1 and 2), except a job whose printer is
+     * inactive, which stays queued until the printer is reactivated (ADR-0053 question 1).
      */
     public function Claim(int $workerId, int $limit = 1): array
     {
@@ -78,13 +79,19 @@ class PrintAttemptService extends LabelService
         // render-request cause is applied by RenderRequestService when the request ends, not
         // here: such a job has no artifact and is never a candidate.)
         //
+        // An inactive printer is excluded here for the same LIMIT reason, and is not one of the
+        // causes: ADR-0053 question 1 narrows ADR-0049's cause 2 so that deactivating a printer
+        // leaves its jobs queued, spending no attempt, until it is reactivated. Deleting the
+        // printer is the way to abandon its queue. Resolve() can still refuse such a job with
+        // inactive_printer when the deactivation commits after this select; the loop skips it.
+        //
         // ADR-0037 section 9: a stock-entry label can turn live again when an undo revives it.
         // A job that existed when the label retired (id at or below the event's jobs_through_id)
         // stays unclaimable, so an authorized retry from before the consumption does not print
         // by itself. A job requested after the revival has a higher id and is claimable.
         $jobs = $this->Query("SELECT j.*,o.payload FROM print_jobs j JOIN outbox o ON o.id=j.outbox_id
    JOIN label_printers p ON p.id=j.printer_id
-   WHERE p.worker_id=? AND j.outcome IS NULL AND j.cancelled_at IS NULL AND j.artifact_id IS NOT NULL AND j.attempts_made<j.attempts_authorized
+   WHERE p.worker_id=? AND p.active=1 AND j.outcome IS NULL AND j.cancelled_at IS NULL AND j.artifact_id IS NOT NULL AND j.attempts_made<j.attempts_authorized
    AND o.delivered_at IS NULL AND o.dead_lettered_at IS NULL
    AND NOT EXISTS (SELECT 1 FROM print_attempts a WHERE a.id=j.current_attempt_id AND a.ended_at IS NULL AND a.lease_expires_at>CURRENT_TIMESTAMP)
    AND NOT EXISTS (SELECT 1 FROM labels lb WHERE lb.uid=j.label_uid AND lb.retired_at IS NOT NULL)
@@ -102,7 +109,12 @@ class PrintAttemptService extends LabelService
             try {
                 $resolved = (new PrinterConfigurationService($this->db))->Resolve((int)$job['printer_id']);
             } catch (LabelValidationException $error) {
-                $this->DeadLetter($job, $error->getMessage());
+                // A printer deactivated since the select above: leave the job queued, as the
+                // p.active predicate would have (ADR-0053 question 1). Every other refusal is
+                // a configuration this job cannot be printed under, and dead-letters it.
+                if ($error->errorCode !== 'inactive_printer') {
+                    $this->DeadLetter($job, $error->getMessage());
+                }
                 continue;
             }
             $printer = $resolved['printer'];

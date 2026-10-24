@@ -3596,7 +3596,8 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 
 	/**
 	 * A job the drainer cannot make sense of is dead-lettered with the reason rather than
-	 * dispatched on a guess - for a payload it cannot read, and for a printer that has gone.
+	 * dispatched on a guess - for a payload it cannot read, and for a printer configuration
+	 * Resolve() refuses for a reason other than the printer being inactive.
 	 */
 	public function testJobThatCannotBeDispatchedIsDeadLetteredWithItsReason(): void
 	{
@@ -3612,13 +3613,99 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'SELECT last_error FROM outbox WHERE id = ' . (int)$unreadable['outbox_id'])->fetchColumn(),
 			'The outbox entry says which part could not be read');
 
-		$printer = self::tx(static fn () => self::printers()->Save(array_merge(self::printerDefinition(), ['name' => 'Doomed printer'])));
+		// Settings the driver no longer accepts, as an upgrade that tightens validation or a
+		// manual edit would leave them (ADR-0053 question 3): still a dead letter.
+		$printer = self::tx(static fn () => self::printers()->Save(array_merge(self::printerDefinition(), ['name' => 'Misconfigured printer'])));
 		[$stranded] = self::issueAndRender(null, $printer);
-		self::$db->exec('UPDATE label_printers SET active = 0 WHERE id = ' . $printer);
+		self::$db->exec("UPDATE label_printers SET settings = jsonb_set(settings, '{color_mode}', '\"no_such_mode\"') WHERE id = " . $printer);
+		$refusal = null;
+		try
+		{
+			self::tx(static fn () => self::printers()->Resolve($printer));
+		}
+		catch (LabelValidationException $error)
+		{
+			$refusal = $error;
+		}
+		self::assertNotNull($refusal, 'The edited settings are refused');
+		self::assertNotSame('inactive_printer', $refusal->errorCode, 'The refusal is not the inactive-printer one');
 		self::assertSame([], self::tx(static fn () => self::attempts()->Claim(self::$worker)),
-			'A job whose printer has been deactivated is not dispatched');
+			'A job whose printer configuration is refused is not dispatched');
 		self::assertSame('dead_lettered', self::$db->query('SELECT outcome FROM print_jobs WHERE id = ' . (int)$stranded['id'])->fetchColumn(),
 			'It is dead-lettered with the printer refusal');
+		self::assertSame($refusal->getMessage(), (string)self::$db->query(
+			'SELECT last_error FROM outbox WHERE id = ' . (int)$stranded['outbox_id'])->fetchColumn(),
+			'The outbox entry carries the refusal text');
+	}
+
+	/**
+	 * ADR-0053 question 1 (b): deactivating a printer leaves its queued jobs queued, spending
+	 * no attempt, and reactivating it makes them claimable again.
+	 */
+	public function testJobForAnInactivePrinterStaysQueuedUntilReactivated(): void
+	{
+		self::$db->exec("UPDATE print_jobs SET outcome = 'dead_lettered' WHERE outcome IS NULL AND cancelled_at IS NULL");
+
+		$printer = self::tx(static fn () => self::printers()->Save(array_merge(self::printerDefinition(), ['name' => 'Paused printer'])));
+		[$job] = self::issueAndRender(null, $printer);
+		self::$db->exec('UPDATE label_printers SET active = 0 WHERE id = ' . $printer);
+
+		self::assertSame([], self::tx(static fn () => self::attempts()->Claim(self::$worker)),
+			'A job whose printer is inactive is not dispatched');
+		self::assertJobStillQueued((int)$job['id'], 'while its printer is inactive');
+
+		self::$db->exec('UPDATE label_printers SET active = 1 WHERE id = ' . $printer);
+		$claim = self::tx(static fn () => self::attempts()->Claim(self::$worker));
+		self::assertCount(1, $claim, 'The job is claimable once its printer is reactivated');
+		self::assertSame((int)$job['id'], (int)$claim[0]['attempt']['job_id'], 'The claim is for the job that waited');
+		self::assertSame(1, (int)$claim[0]['attempt']['attempt_number'], 'Waiting spent none of its attempts');
+	}
+
+	/**
+	 * A deactivation that commits after Claim() selected the job but before Resolve() reads the
+	 * printer gives the same result as the p.active predicate: the job is skipped, not
+	 * dead-lettered.
+	 */
+	public function testPrinterDeactivatedDuringAClaimLeavesTheJobQueued(): void
+	{
+		self::$db->exec("UPDATE print_jobs SET outcome = 'dead_lettered' WHERE outcome IS NULL AND cancelled_at IS NULL");
+
+		$printer = self::tx(static fn () => self::printers()->Save(array_merge(self::printerDefinition(), ['name' => 'Racing printer'])));
+		[$job] = self::issueAndRender(null, $printer);
+
+		// Reap() runs per selected row, after the select and before Resolve(), so deactivating
+		// the printer there reproduces the race inside one claim.
+		$racing = new class (self::$db, $printer) extends \Victual\Services\Labels\PrintAttemptService {
+			/** Takes the connection and the printer to deactivate mid-claim. */
+			public function __construct(\PDO $db, private int $printerId)
+			{
+				parent::__construct($db);
+			}
+
+			/** Deactivates the printer, then reaps as usual. */
+			public function Reap(int $jobId): void
+			{
+				$this->Query('UPDATE label_printers SET active = 0 WHERE id = ?', [$this->printerId]);
+				parent::Reap($jobId);
+			}
+		};
+		self::assertSame([], self::tx(static fn () => $racing->Claim(self::$worker)),
+			'A job whose printer was deactivated mid-claim is not dispatched');
+		self::assertJobStillQueued((int)$job['id'], 'after the deactivation race');
+
+		self::$db->exec('UPDATE label_printers SET active = 1 WHERE id = ' . $printer);
+		self::assertCount(1, self::tx(static fn () => self::attempts()->Claim(self::$worker)),
+			'The job is claimable once its printer is reactivated');
+	}
+
+	/** Asserts the job has no outcome, no attempt, and an outbox row that is not dead-lettered. */
+	private static function assertJobStillQueued(int $jobId, string $when): void
+	{
+		$row = self::$db->query('SELECT j.outcome, j.attempts_made, j.current_attempt_id, o.dead_lettered_at FROM print_jobs j JOIN outbox o ON o.id = j.outbox_id WHERE j.id = ' . $jobId)->fetch(PDO::FETCH_ASSOC);
+		self::assertNull($row['outcome'], 'The job has no outcome ' . $when);
+		self::assertNull($row['dead_lettered_at'], 'Its outbox entry is not dead-lettered ' . $when);
+		self::assertSame(0, (int)$row['attempts_made'], 'It spent no attempt ' . $when);
+		self::assertNull($row['current_attempt_id'], 'It has no attempt ' . $when);
 	}
 
 	/**

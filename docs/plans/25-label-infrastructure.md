@@ -274,8 +274,10 @@ creates the `labels` row, so a rollback takes the job with it.
   as they stood, `payload_version`, and `template_id` with an immutable version or digest. It
   names a `printer_id` and nothing else about the device. The claim response resolves that
   printer's row *now* — its typed columns, its validated `settings`, and the driver and schema
-  version they were validated against. A job whose printer has been deleted or deactivated is
-  dead-lettered saying so rather than handed out against a device that is gone.
+  version they were validated against. A job whose printer has been deleted is dead-lettered
+  saying so rather than handed out against a device that is gone. A job whose printer is
+  deactivated stays queued until the printer is reactivated
+  ([ADR-0053](../adr/0053-label-print-jobs-stay-queued-while-a-printer-is-inactive-and-reprint-stays-the-recovery.md) question 1).
 - **A claim's preconditions live in the query that selects the job, not after it.** Found by
   the gate 2 spike on 2026-09-07, and worth stating because the wrong version passes every
   single-job test. An implementation that picks the lowest matching job and *then* checks
