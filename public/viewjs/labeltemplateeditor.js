@@ -237,37 +237,45 @@
 		// fabric 6 dropped setWidth()/setHeight() (issue #126); setDimensions() is the
 		// replacement for both at once.
 		canvas.setDimensions({ width: width * MM_PER_PX, height: height * MM_PER_PX });
+		// Set for the whole rebuild, and cleared even if building a shape throws: left set,
+		// every later selection would be ignored.
 		redrawing = true;
-		canvas.clear();
-		canvas.backgroundColor = '#ffffff';
-		if (prefs.snap)
+		try
 		{
-			gridLines(width, height).forEach(function(line) { canvas.add(line); });
-		}
-		canvas.add(marginGuide(width, height));
-		var area = printableArea();
-		centreGuides(area, width, height).forEach(function(line) { canvas.add(line); });
-		describeCentring(area);
+			canvas.clear();
+			canvas.backgroundColor = '#ffffff';
+			if (prefs.snap)
+			{
+				gridLines(width, height).forEach(function(line) { canvas.add(line); });
+			}
+			canvas.add(marginGuide(width, height));
+			var area = printableArea();
+			centreGuides(area, width, height).forEach(function(line) { canvas.add(line); });
+			describeCentring(area);
 
-		state.document.elements.forEach(function(element)
+			state.document.elements.forEach(function(element)
+			{
+				var shape = shapeFor(element);
+				if (shape === null)
+				{
+					return;
+				}
+				// `hasRotatingPoint` is gone in fabric 6+ (issue #126); hiding the rotate handle
+				// is now a per-control call rather than a constructor-style flag.
+				shape.set({ victualId: element.id, lockRotation: true });
+				shape.setControlVisible('mtr', false);
+				placeTurned(shape, element);
+				canvas.add(shape);
+				if (element.id === selectedBefore)
+				{
+					canvas.setActiveObject(shape);
+				}
+			});
+		}
+		finally
 		{
-			var shape = shapeFor(element);
-			if (shape === null)
-			{
-				return;
-			}
-			// `hasRotatingPoint` is gone in fabric 6+ (issue #126); hiding the rotate handle
-			// is now a per-control call rather than a constructor-style flag.
-			shape.set({ victualId: element.id, lockRotation: true });
-			shape.setControlVisible('mtr', false);
-			placeTurned(shape, element);
-			canvas.add(shape);
-			if (element.id === selectedBefore)
-			{
-				canvas.setActiveObject(shape);
-			}
-		});
-		redrawing = false;
+			redrawing = false;
+		}
 
 		state.selectedId = selectedBefore !== null && find(selectedBefore) !== null ? selectedBefore : null;
 		canvas.renderAll();
