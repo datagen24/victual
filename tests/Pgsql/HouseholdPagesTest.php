@@ -1410,6 +1410,11 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		$editor = self::render(fn () => self::$labelTemplates->TemplateEditor(self::request(), self::response(), ['templateId' => (string)self::$ids['Template listed']]), 'GET /labeltemplate/{id}');
 		self::assertStringContainsString('Template listed', $editor, 'the editor carries the template it opens');
 		self::assertStringNotContainsString('Template second', $editor, 'and no other');
+		// Issue #1034: each printer carries the printable width centring uses. The fixture
+		// printer's driver has no settings schema, so it does not resolve and carries null,
+		// and the page still renders.
+		self::assertMatchesRegularExpression('/"name":"Household label printer",[^}]*"printable_width_um":null\}/', $editor,
+			'a printer that does not resolve has no printable width');
 
 		self::grant(['USERS_READ']);
 		$before = self::stateSnapshot();

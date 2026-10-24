@@ -3792,6 +3792,33 @@ msgstr ""
 msgid "These elements cross the margin, the dashed outline, and may be cut off or print too close to the edge: %s"
 msgstr ""
 
+msgid "Snap to a grid"
+msgstr ""
+
+msgid "Grid (mm)"
+msgstr ""
+
+msgid "Kept in this browser for you, not saved with the template."
+msgstr ""
+
+msgid "Centring and the centre guides use the printable width of %1$s across the roll, %2$s mm, from its media profile."
+msgstr ""
+
+msgid "%s has no usable media profile, so centring uses the label width."
+msgstr ""
+
+msgid "No printer is configured, so centring uses the label width."
+msgstr ""
+
+msgid "Centre horizontally"
+msgstr ""
+
+msgid "Centre vertically"
+msgstr ""
+
+msgid "The label length is automatic, so it has no middle to centre on. Enter a length to centre along it."
+msgstr ""
+
 msgid "Print with the version I publish"
 msgstr ""
 

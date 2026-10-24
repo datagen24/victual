@@ -7,6 +7,7 @@
 // the server anything.
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
+const driverFixture = require('../labels/fixtures/brother-ql.json');
 
 const urlIndex = process.argv.indexOf('--url');
 const base = urlIndex < 0 ? 'http://127.0.0.1:8200' : process.argv[urlIndex + 1];
@@ -65,7 +66,32 @@ async function saveDraft(page, templateId)
 		response.url().includes('/api/labels/templates/' + templateId + '/draft'));
 	await page.getByRole('button', { name: 'Save draft' }).click();
 	const response = await saved;
-	assert.ok(response.ok(), 'saving the draft succeeded: ' + response.status());
+	assert.ok(response.ok(), 'saving the draft succeeded: ' + response.status() + ' ' + (response.ok() ? '' : await response.text()));
+}
+
+/** Opens the editor for a template and waits for fabric and the draft. */
+async function openEditor(page, templateId)
+{
+	await page.goto(base + '/labeltemplate/' + templateId);
+	await page.waitForFunction(() => window.fabric !== undefined, null, { timeout: 20000 });
+	await page.waitForFunction(() => document.querySelector('#canvas-width-mm').value !== '', null, { timeout: 20000 });
+}
+
+/** Reads one element of a template's stored draft. */
+async function storedElement(page, templateId, id)
+{
+	const saved = await (await page.request.get(base + '/api/labels/templates/' + templateId + '/draft')).json();
+	return saved.document.elements.find(element => element.id === id);
+}
+
+/** Selects the element under a canvas-relative pixel offset with a click. */
+async function clickCanvas(page, at)
+{
+	const canvas = page.locator('#label-canvas');
+	await canvas.scrollIntoViewIfNeeded();
+	const box = await canvas.boundingBox();
+	await page.mouse.click(box.x + at.x, box.y + at.y);
+	await page.waitForTimeout(200);
 }
 
 (async () => {
@@ -328,6 +354,112 @@ async function saveDraft(page, templateId)
 		await page.waitForFunction(() => document.querySelector('#preview-holder img') !== null, null, { timeout: 10000 });
 		assert.match(await page.locator('#preview-sample-note').innerText(), /real values of record 5/,
 			'the preview says it shows the record, not example values');
+
+		// Issue #1034: centring, centre guides and the grid. A printer on the 62red fixture
+		// (58.42 mm printable) is made here rather than relied on from label-printers.js, and
+		// the template's canvas is 62 mm wide, so centring on the canvas and centring on the
+		// media give different answers.
+		const unique = 'Centre probe ' + Date.now();
+		const driver = JSON.parse(JSON.stringify(driverFixture));
+		driver.schema_version = '1.' + (Date.now() % 100000);
+		const post = async (path, data, headers = {}) =>
+		{
+			const response = await page.request.post(base + '/api/' + path, { data, headers });
+			assert.ok(response.ok(), path + ': ' + await response.text());
+			return response.json();
+		};
+		const worker = await post('labels/workers', { name: unique, configuration_mode: 'declared' });
+		const credential = await post('labels/workers/' + worker.id + '/credentials', {});
+		await post('labels/register', { drivers: [driver] }, { 'VICTUAL-API-KEY': credential.credential });
+		const printer = await post('labels/printers', {
+			name: unique, worker_id: worker.id, driver_id: driver.driver_id, driver_schema_version: driver.schema_version,
+			connection: '127.0.0.1:9100', connection_type: 'tcp', model: 'QL-820NWBc',
+			settings: { media: '62red', resolution_x: 300, resolution_y: 300, color_mode: 'black_red' }, active: 1, is_default: 0 });
+
+		const centred = await post('labels/templates', { name: unique, entity_kind: 'location' });
+		const centredDraft = await (await page.request.get(base + '/api/labels/templates/' + centred.id + '/draft')).json();
+		await page.request.put(base + '/api/labels/templates/' + centred.id + '/draft', { data: {
+			document: {
+				schema_version: 1, entity_kind: 'location',
+				canvas: { width_mm: 62, height_mm: 30, max_height_mm: null, margins_mm: { top: 0, right: 0, bottom: 0, left: 0 } },
+				elements: [{ type: 'rect', id: 'box', x_mm: 1, y_mm: 1, width_mm: 20, height_mm: 10, stroke_mm: 0.3, fill: null, color: 'black' }]
+			},
+			revision_token: centredDraft.revision_token } });
+
+		await openEditor(page, centred.id);
+		await page.locator('#preview-printer').selectOption(String(printer.id));
+		await page.waitForFunction(() => document.querySelector('#canvas-centre-note').textContent.includes('58.42 mm'), null, { timeout: 5000 });
+		assert.equal(await page.locator('#canvas-centre-note').getAttribute('data-centre-width-mm'), '58.42',
+			'centring uses the printer\'s printable width, not the 62 mm canvas');
+
+		// The rect sits at (1mm, 1mm), 20x10mm: canvas px (4,4)-(84,44).
+		await clickCanvas(page, { x: 40, y: 20 });
+		await page.locator('#centre-horizontal-button').click();
+		await page.locator('#centre-vertical-button').click();
+		await saveDraft(page, centred.id);
+		let box = await storedElement(page, centred.id, 'box');
+		assert.equal(box.x_mm, 19.2, '(58.42 - 20) / 2 = 19.21, at the editor\'s 0.1 mm: ' + JSON.stringify(box));
+		assert.equal(box.y_mm, 10, '(30 - 10) / 2: ' + JSON.stringify(box));
+		const centredIds = (await (await page.request.get(base + '/api/labels/templates/' + centred.id + '/draft')).json()).document.elements.map(e => e.id);
+		assert.deepEqual(centredIds, ['box'], 'the centre guides are canvas-only and never reach the document');
+
+		// A canvas narrower than the media centres on the canvas.
+		await page.locator('#canvas-width-mm').fill('50');
+		await page.locator('#canvas-width-mm').dispatchEvent('change');
+		await page.waitForFunction(() => document.querySelector('#canvas-centre-note').getAttribute('data-centre-width-mm') === '50', null, { timeout: 5000 });
+		await page.locator('#centre-horizontal-button').click();
+		await saveDraft(page, centred.id);
+		box = await storedElement(page, centred.id, 'box');
+		assert.equal(box.x_mm, 15, 'on a 50 mm canvas the middle is the canvas\'s: ' + JSON.stringify(box));
+
+		// Turned a quarter, the roll's width runs down the screen, so the media bounds the
+		// vertical axis, (58.42 - 10) / 2 = 24.21, and the 30 mm length the horizontal one.
+		await page.locator('#canvas-width-mm').fill('62');
+		await page.locator('#canvas-orientation').selectOption('90');
+		await page.waitForFunction(() => document.querySelector('#canvas-centre-note').getAttribute('data-centre-height-mm') === '58.42', null, { timeout: 5000 });
+		await page.locator('#centre-horizontal-button').click();
+		await page.locator('#centre-vertical-button').click();
+		await saveDraft(page, centred.id);
+		box = await storedElement(page, centred.id, 'box');
+		assert.deepEqual({ x: box.x_mm, y: box.y_mm }, { x: 5, y: 24.2 }, 'turned, centring down uses the printable width: ' + JSON.stringify(box));
+
+		// An automatic length has no middle: centring along it is refused with a reason.
+		await page.locator('#canvas-orientation').selectOption('0');
+		await page.locator('#canvas-height-mm').fill('');
+		await page.locator('#canvas-height-mm').dispatchEvent('change');
+		await page.locator('#centre-vertical-button').click();
+		await page.waitForFunction(() => document.querySelector('#template-message').textContent.includes('no middle'), null, { timeout: 5000 });
+		await page.locator('#canvas-height-mm').fill('30');
+		await page.locator('#canvas-height-mm').dispatchEvent('change');
+		await page.locator('#centre-horizontal-button').click();
+		await page.locator('#centre-vertical-button').click();
+		await saveDraft(page, centred.id);
+
+		// Snapping to a 5 mm grid: a drag lands the footprint's corner on a grid line.
+		await page.locator('#grid-mm').fill('5');
+		await page.locator('#grid-mm').dispatchEvent('change');
+		await page.locator('#snap-to-grid').check();
+		box = await storedElement(page, centred.id, 'box');
+		assert.deepEqual({ x: box.x_mm, y: box.y_mm }, { x: 19.2, y: 10 }, 'upright again and centred on the media and the 30 mm length');
+		// From the rect's middle, (116.8, 60) px, up and left by 5.75 x 3.25 mm: (13.45, 6.75)
+		// unsnapped, (15, 5) on the grid.
+		await selectAndDrag(page, page.locator('#label-canvas'), { x: 117, y: 60 }, { x: 94, y: 47 });
+		await saveDraft(page, centred.id);
+		const snapped = await storedElement(page, centred.id, 'box');
+		assert.notEqual(snapped.x_mm, box.x_mm, 'the drag moved the element: ' + JSON.stringify({ box, snapped }));
+		assert.equal(snapped.x_mm % 5, 0, 'x_mm is on the 5 mm grid: ' + JSON.stringify(snapped));
+		assert.equal(snapped.y_mm % 5, 0, 'y_mm is on the 5 mm grid: ' + JSON.stringify(snapped));
+
+		// The grid is this user's, kept in the browser: it survives a reload and is not in
+		// the template document.
+		await openEditor(page, centred.id);
+		assert.ok(await page.locator('#snap-to-grid').isChecked(), 'snapping is still on after a reload');
+		assert.equal(await page.locator('#grid-mm').inputValue(), '5', 'and the grid is still 5 mm');
+		const stored = await page.evaluate(() => window.localStorage.getItem('victual_labeldesigner_prefs_' + Victual.UserId));
+		assert.deepEqual(JSON.parse(stored), { snap: true, grid_mm: 5 }, 'kept under this user\'s key');
+		const canvasKeys = Object.keys((await (await page.request.get(base + '/api/labels/templates/' + centred.id + '/draft')).json()).document.canvas);
+		assert.ok(!canvasKeys.some(key => /grid|snap/.test(key)), 'the template document carries no grid setting: ' + JSON.stringify(canvasKeys));
+		await page.locator('#snap-to-grid').uncheck();
 
 		assert.deepEqual(errors, [], 'no page errors');
 		console.log('PASS label designer: ' + text.trim());
