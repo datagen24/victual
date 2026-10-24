@@ -165,6 +165,47 @@ class TemplateDocument
     }
 
     /**
+     * The element that reaches furthest across the roll, and how far, in millimetres.
+     *
+     * `canvas.width_mm` bounds a document, and the media bounds the raster: the renderer
+     * sizes its pixmap from the profile's `raster_width_px`, so a box between the two is
+     * cropped on paper without a word. A canvas of 58.9 mm (the width the driver claimed for
+     * DK-22251 until 2026-10-24) passes its own validation and still has 0.48 mm the 58.42 mm
+     * roll cannot print. RenderRequestService compares this extent with the profile.
+     *
+     * Upright or half-turned, across the roll is reading x; on a quarter turn it is reading
+     * y. A turned element's footprint is used, and a line's endpoints. A QR code is left out:
+     * its size depends on the payload, and ArtifactService samples every rendered symbol.
+     *
+     * @param array $document A validated document, as Validate() returns it.
+     * @return array{id: string, extent_mm: float}|null Null when no element is measured.
+     */
+    public static function FurthestAcrossRoll(array $document): ?array
+    {
+        $orientation = $document['canvas']['orientation_deg'] ?? 0;
+        $quarter = $orientation === 90 || $orientation === 270;
+        $furthest = null;
+        foreach ($document['elements'] as $element) {
+            if ($element['type'] === 'qr') {
+                continue;
+            }
+            if ($element['type'] === 'line') {
+                $extent = $quarter ? max($element['y1_mm'], $element['y2_mm']) : max($element['x1_mm'], $element['x2_mm']);
+            } else {
+                $turn = $element['rotation_deg'] ?? 0;
+                [$across, $down] = $turn === 90 || $turn === 270
+                    ? [$element['height_mm'], $element['width_mm']]
+                    : [$element['width_mm'], $element['height_mm']];
+                $extent = $quarter ? $element['y_mm'] + $down : $element['x_mm'] + $across;
+            }
+            if ($furthest === null || $extent > $furthest['extent_mm']) {
+                $furthest = ['id' => (string)$element['id'], 'extent_mm' => (float)$extent];
+            }
+        }
+        return $furthest;
+    }
+
+    /**
      * The extent elements are bounded by, in the reading frame.
      *
      * Upright, that is the roll's width across, and down it is a fixed `height_mm` when the

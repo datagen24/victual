@@ -61,7 +61,7 @@ no bytes to a printer. The synthetic Brother contract is in `fixtures/brother-ql
 The frontend probe is `node .devtools/frontend/label-printers.js --url <demo-app-url>`;
 it verifies the generated form's 422 refusal, successful save and visible artifact gate.
 
-## Printable width in the fixture: 58928 µm, not 62000
+## Printable width in the fixture: 58420 µm, not 62000 or 58928
 
 `fixtures/brother-ql.json` declared `printable_width_um: 62000` — the width of the *tape* —
 where the capability contract asks for the **printable area**. The two differ by thirty-six dots
@@ -72,6 +72,12 @@ fixture. The prototype authored an image against `dots_total` while its library 
 against `dots_printable`, so every endless print was silently resampled. A profile derived
 from 62000 µm fixes the raster at 732 px, and the worker checks a grid against the device's
 printable dot count and refuses rather than resizing, so it would refuse every artifact
-rendered from that profile. The number is now 58928, which is 696 dots at 300 dpi.
+rendered from that profile. The number became 58928, which is 696 dots at 300 dpi.
 
 Found on 2026-09-08 by the worker's grid check.
+
+696 dots is Brother's figure for 62 mm DK-22205 tape. The fixture's only combination is
+`62red`, DK-22251, which the maintainer measured on 2026-10-24 at a fixed 1.78 mm margin on
+each side: 58.42 mm, so the fixture now says 58420, which `MediaProfileService::Pixels()`
+rounds to 690 dots. The worker (`victual-label-worker`, driver schema 1.2) carries the same
+correction.

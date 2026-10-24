@@ -48,7 +48,7 @@ const base = index < 0 ? 'http://127.0.0.1:8200' : process.argv[index + 1];
   const draft = await (await page.request.get(base + '/api/labels/templates/' + template.id + '/draft')).json();
   const document_ = {
    schema_version: 1, entity_kind: 'location',
-   canvas: { width_mm: 58.9, height_mm: 30.0, max_height_mm: null, margins_mm: { top: 1, right: 1, bottom: 1, left: 1 } },
+   canvas: { width_mm: 58.42, height_mm: 30.0, max_height_mm: null, margins_mm: { top: 1, right: 1, bottom: 1, left: 1 } },
    elements: [{ type: 'qr', id: 'code', x_mm: 2, y_mm: 2, module_mm: 0.6, ec_level: 'M', quiet_zone_modules: 4, color: 'black', source: 'label.payload' }]
   };
   const saved = await (await page.request.put(base + '/api/labels/templates/' + template.id + '/draft',

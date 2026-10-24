@@ -129,7 +129,7 @@ class PreviewCollectionConcurrencyTest extends PgsqlSchemaTestCase
 		$request = (int)self::$db->query("INSERT INTO label_render_requests(purpose, template_version_id, profile_id, capture_id, state, expires_at)
 			VALUES ('preview_sample', " . self::$templateVersion . ', ' . self::$profileId . ', ' . self::$captureId . ", 'ready', $expiry) RETURNING id")->fetchColumn();
 		$statement = self::$db->prepare("INSERT INTO label_artifacts(render_request_id, form, byte_digest, byte_length, mime_type, width_px, height_px, dpi_x, dpi_y, color_mode, profile_id, template_version_id, capture_id, renderer_id, renderer_version, manifest, manifest_digest, file_group, file_name, retention_class)
-			VALUES (?, 'raster/png-indexed;v=1', ?, 10, 'image/png', 696, 354, 300, 300, 'black_red', ?, ?, ?, 'fixture-renderer', '0.0.1', '{}'::jsonb, ?, ?, ?, 'preview') RETURNING id");
+			VALUES (?, 'raster/png-indexed;v=1', ?, 10, 'image/png', 690, 354, 300, 300, 'black_red', ?, ?, ?, 'fixture-renderer', '0.0.1', '{}'::jsonb, ?, ?, ?, 'preview') RETURNING id");
 		$statement->execute([$request, str_repeat('a', 64), self::$profileId, self::$templateVersion, self::$captureId, str_repeat('b', 64), LabelByteStore::GROUP_ARTIFACTS, $fileName]);
 		return (int)$statement->fetchColumn();
 	}

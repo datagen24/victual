@@ -56,7 +56,7 @@ runLabelTests(function (PDO $db, string $schema) use ($binary, $font) {
 		$label = ($orientation === null ? 'schema 1' : 'orientation ' . $orientation) . ($qrTurn ? ', QR turned ' . $qrTurn : '');
 		$template = tx($db, fn () => $templates->Create('Agreement label ' . $label, null, 'location', null));
 		$draft = $templates->GetDraft((int)$template['id']);
-		$canvas = ['width_mm' => 58.9, 'height_mm' => 30.0, 'max_height_mm' => null,
+		$canvas = ['width_mm' => 58.42, 'height_mm' => 30.0, 'max_height_mm' => null,
 			'margins_mm' => ['top' => 1.0, 'right' => 1.0, 'bottom' => 1.0, 'left' => 1.0]];
 		if ($orientation !== null)
 		{

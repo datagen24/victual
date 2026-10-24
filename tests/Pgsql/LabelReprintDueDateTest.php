@@ -95,7 +95,7 @@ class LabelReprintDueDateTest extends PgsqlSchemaTestCase
 		$draft = $templates->GetDraft(self::$templateId);
 		$document = [
 			'schema_version' => 1, 'entity_kind' => 'stock_entry',
-			'canvas' => ['width_mm' => 58.9, 'height_mm' => 30.0, 'max_height_mm' => null,
+			'canvas' => ['width_mm' => 58.42, 'height_mm' => 30.0, 'max_height_mm' => null,
 				'margins_mm' => ['top' => 2.0, 'right' => 2.0, 'bottom' => 2.0, 'left' => 2.0]],
 			'elements' => [
 				['type' => 'text', 'id' => 'due', 'x_mm' => 2.0, 'y_mm' => 4.0, 'width_mm' => 50.0,
