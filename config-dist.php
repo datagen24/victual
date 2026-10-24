@@ -124,6 +124,13 @@ Setting('MEAL_PLAN_FIRST_DAY_OF_WEEK', '');
 // ISO 4217 code of the currency ("USD", "EUR", "GBP", etc.)
 Setting('CURRENCY', 'USD');
 
+// The country this installation's household shops in, as an ISO 3166-1 alpha-2 code
+// ("US", "DE", "GB" - not "UK"), case-insensitive. Leave empty when you do not want to say;
+// Victual then behaves exactly as it does without the setting. Nothing reads it yet: it is
+// the input later country-dependent defaults (barcode sources, units of measure) will use.
+// Code reads it through Victual\Helpers\InstallationCountry::Get(), never this constant.
+Setting('COUNTRY', '');
+
 // Your preferred unit for energy
 // E.g. "kcal" or "kJ" or something else (doesn't really matter, it's only used to display energy values)
 Setting('ENERGY_UNIT', 'kcal');

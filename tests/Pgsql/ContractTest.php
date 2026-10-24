@@ -370,6 +370,21 @@ class ContractTest extends PgsqlSchemaTestCase
 	}
 
 	/**
+	 * Issue #486: /system/config reports the installation country, normalized, and reports it
+	 * as an empty string when none is configured - the suite's configuration - so a client can
+	 * tell "no country" from an older server that does not know the setting.
+	 */
+	public function testSystemConfigReportsTheInstallationCountry(): void
+	{
+		self::grantAdmin();
+		$response = self::controller(SystemApiController::class)->GetConfig(self::request(), new Response(), []);
+		$body = json_decode((string)$response->getBody(), true);
+		self::assertSame(200, $response->getStatusCode());
+		self::assertArrayHasKey('COUNTRY', $body);
+		self::assertSame('', $body['COUNTRY'], 'unset is the empty string, not null and not omitted');
+	}
+
+	/**
 	 * Issue #218: an entity that does not exist is the documented 400 on every generic read,
 	 * not a 500. EntityReadPolicy::Check() used to run first and throw for an entity it did
 	 * not know, outside HandleApiCall - so called directly, as here, the old code does not

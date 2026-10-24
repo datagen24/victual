@@ -2,6 +2,7 @@
 
 namespace Victual\Controllers\Api;
 
+use Victual\Helpers\InstallationCountry;
 use Victual\Services\ApplicationService;
 use Victual\Services\DatabaseService;
 use Victual\Services\LocalizationService;
@@ -47,8 +48,8 @@ class SystemApiController extends BaseApiController
 	/**
 	 * GET /api/system/config - returns the config settings which are safe to expose
 	 * to clients (self::EXPOSED_SETTINGS plus all VICTUAL_FEATURE_FLAG_* constants, plus
-	 * the effective FILE_STORAGE_MAX_SIZE_MB) as a key/value map with the VICTUAL_ prefix
-	 * stripped. Settings which are not defined are omitted (no null values). 400 error
+	 * the effective FILE_STORAGE_MAX_SIZE_MB and the normalized COUNTRY) as a key/value
+	 * map with the VICTUAL_ prefix stripped. Settings which are not defined are omitted (no null values). 400 error
 	 * response on failure.
 	 */
 	public function GetConfig(Request $request, Response $response, array $args)
@@ -73,6 +74,12 @@ class SystemApiController extends BaseApiController
 			// which is why it is not simply another name in EXPOSED_SETTINGS. Sweep S10 /
 			// plan 01 Q2.
 			$returnArray['FILE_STORAGE_MAX_SIZE_MB'] = FileSizeLimit::EffectiveMaxMegabytes();
+
+			// The installation country (issue #486) is reported as InstallationCountry::Get()
+			// normalizes it - upper case, "" when unset - so a client compares it to "US"
+			// without caring whether the operator wrote "us". It names a country, nothing
+			// about the household, so any API key holder may see it.
+			$returnArray['COUNTRY'] = InstallationCountry::Get() ?? '';
 
 			// Feature flags are not sensitive by definition, so all of them are exposed
 			$constants = get_defined_constants();

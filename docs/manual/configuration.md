@@ -84,6 +84,7 @@ guessing.
 | `MEAL_PLAN_FIRST_DAY_OF_WEEK` | *(empty)* | Same 0–6 scale as above, plus `-1` to start the meal plan week dynamically on "today". Empty follows `CALENDAR_FIRST_DAY_OF_WEEK`. |
 | `CURRENCY` | `USD` | An ISO 4217 three-letter code, used only to format money values — Victual does not convert between currencies. |
 | `ENERGY_UNIT` | `kcal` | A display label only (e.g. `kcal` or `kJ`); nothing converts between energy units either. |
+| `COUNTRY` | *(empty)* | The country the household shops in, as an ISO 3166-1 alpha-2 code such as `US` or `GB` (not `UK`), in either letter case. Startup refuses an unassigned code. Empty changes nothing. No feature reads it yet; later releases choose country-dependent defaults from it. `GET /api/system/config` reports it in upper case. |
 
 ## URLs {: #urls }
 
