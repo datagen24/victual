@@ -31,6 +31,12 @@ than re-running whatever booking produced it.
   when the product never expires. Victual stores that case as the date 2999-12-31, and the
   stored date does not change.
 
+  An element must fit on the canvas: across the roll always, and along the tape when the
+  label has a fixed length. Saving refuses an element that runs past either edge and names
+  it. The dashed outline on the canvas is the margin. An element that crosses it is saved,
+  and the designer names it under the canvas, because it may be cut off or print too close
+  to the edge.
+
   A print uses the template's *default version*, not its draft and not its newest version.
   **Version that prints** in the designer shows which version that is, warns when a newer
   version exists, and **Print with this version** changes it. **Publish a version** makes the
@@ -49,6 +55,16 @@ than re-running whatever booking produced it.
   - A refusal names the element that does not fit.
   - The draft is not used, so publish an edit before previewing it this way.
   - A record that has no label yet is rendered with example values, and the designer says so.
+
+  A text element's box bounds its text down as well as across. Each line takes the type size
+  times the line spacing, so 9 pt at 1.2 needs a box at least 3.9 mm tall for one line.
+  **When it does not fit** decides what happens to a value too long for the box:
+
+  - *Refuse the label* prints nothing and names the element.
+  - *Shorten with an ellipsis* keeps the lines that fit and ends the last one with "…".
+  - *Shrink, to a floor* makes the type smaller, down to the smallest size, then refuses.
+
+  A refused preview or print names the element in the designer and on the job.
 - **`/labelprinters`** — register and edit workers and printers, issue credentials or
   pairing material, and revoke worker credentials. Requires `ADMIN`.
 - **`/labelprintjobs`** — the job queue, with the printer each job targets. States include
