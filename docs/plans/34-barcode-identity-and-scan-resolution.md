@@ -222,7 +222,7 @@ A pattern is an immutable `barcode_patterns` row with these fields:
 
 | Field | Meaning |
 |---|---|
-| `layout` | One character per digit position of the 12- or 13-digit form. A literal digit is a required prefix, `I` an item reference digit, `P` a price digit, `W` a weight digit, `V` the price/weight verifier digit, and `C` the check digit. The common US random-weight layout is `2IIIIIPPPPPC`. Matching pads it to 14 characters (canonicalisation step 6). |
+| `layout` | One character per digit position of the 12- or 13-digit form. A literal digit is a required prefix, `I` an item reference digit, `P` a price digit, `W` a weight digit, `V` the price/weight verifier digit, and `C` the check digit. One US random-weight layout is `2IIIIIPPPPPC`; "Country default table" covers which one GS1 US specifies. Matching pads it to 14 characters (canonicalisation step 6). |
 | `value_kind` | `price` or `weight` |
 | `decimals` | implied decimal places of the value field |
 | `weight_unit` | `g`, `kg`, `lb` or `oz`; required for `weight` |
@@ -251,6 +251,74 @@ together with the rows it collides with.
 **The installation default pattern** decodes a sticker scanned without a store. A
 default-pattern match is `restricted` but has no scope. The resolver accepts it only if
 exactly one store's active rows match under that store's own bound patterns.
+
+### Country default table
+
+The installation default is a set of pattern versions, one for each literal prefix in
+the installation country's table (ADR-0031 decision 6). The set is looked up at read time
+from `InstallationCountry::Get()`. Within one country the prefixes do not overlap, so a
+store-less scan matches at most one default pattern. An unset country gets no default,
+and so does a country without a row below; a store-less scan then answers
+`store_required`.
+
+**How the sources were read.** On 2026-10-24, each source below was fetched and read.
+To reproduce, open the URL and read the cited section. "Verified" means the full layout
+was read from that primary GS1 source: prefix, field widths, value kind, unit and
+verifier. Any other row ships no default.
+- The General Specifications citations are to Release 18 (January 2018), read from GS1
+  Canada's mirror. Section numbers move between releases, so prerequisite 7 re-checks
+  every row against the current release.
+- GS1's "Summary of GS1 Prefixes 20-29 by GS1 Member Organisation" answered 403 to every
+  automated fetch. The accepting PR should read it by hand:
+  <https://www.gs1.org/docs/barcodes/SummaryOfGS1MOPrefixes20-29.pdf>.
+
+**General Specifications.** [Release 18](https://gs1ca.org/documents/standards/GS1-General-Specifications.pdf):
+- §2.1.14.2, pp. 72–73, and §2.1.13.4, p. 69: prefixes 02 and 20–29 (GTIN-13 form) and
+  2 (UPC-A) are restricted circulation. Each member organisation defines the layout, and
+  a price verifier "should" be used.
+- §7.9.2–§7.9.4, pp. 436–438: the four- and five-digit price verifier algorithms that
+  prerequisite 2 tests.
+
+**Verified rows.** These ship as defaults.
+
+| Country | Prefix | Layout | Value | Verifier | Source |
+|---|---|---|---|---|---|
+| `GB` | 20 | `20IIIIIVPPPPC` | price, GBP, 2 decimals | `four_digit` | [GS1 UK, "How to calculate variable measure items"](https://test.gs1uk.org/sites/default/files/How_to_calculate_variable_measure_items_0.pdf) (08/16), p. 3, branded layout |
+| `DE` | 23 | `23IIIIVPPPPPC` | price, EUR, 2 decimals | `five_digit` | [GS1 Germany, "GTIN in der Anwendung" v1.1](https://www.gs1-germany.de/fileadmin/gs1/fachpublikationen/globale-artikelnummer-gtin-in-der-anwendung.pdf) (2019-08), §5.2, pp. 26–27, Tabelle 9 |
+| `AT` | 21, 27 | `21IIIIIWWWWWC`, `27IIIIIWWWWWC` | weight, kg, 3 decimals | `none` | [GS1 Austria, Nationale GS1 Spezifikationen V23](https://www.gs1.at/sites/default/files/2023-04/Nationale-GS1-Spezifikationen-V23-AT.pdf) (2023-04), Abb. 10.2.2-2 and 10.2.2.1-1 to -3, pp. 9–12; [Kurzinfo](https://www.gs1.at/sites/default/files/2020-05/Kurzinfo-GS1-Austria-variable-Endverbrauchereinheiten.pdf), p. 1 |
+| `AT` | 22, 23, 24 | `22IIIIIPPPPPC`, `23IIIIIPPPPPC`, `24IIIIIPPPPPC` | price, EUR, 2 decimals | `none` | as above |
+| `CH` | 21 | `21IIIIVPPPPPC` | price, CHF, 2 decimals | `five_digit` | [GS1 Switzerland, Nationale Spezifikationen V23](https://www.gs1.ch/de/media/1633) (2023-09), §10.1.1 and §10.1.3, pp. 3–6 |
+| `CH` | 22 | `22IIIIIPPPPPC` | price, CHF, 2 decimals | `none` | as above |
+| `CH` | 28 | `28IIIIVWWWWWC` | weight, g, 0 decimals | `five_digit` | as above |
+| `CH` | 29 | `29IIIIIWWWWWC` | weight, g, 0 decimals | `none` | as above |
+| `DK` | 27 | `27IIIIIWWWWWC` | weight, g, 0 decimals | `none` | [GS1 Denmark, GTIN-13 vægt](https://www.gs1.dk/en/gs1-standarder/gtin-13-vaegt); [how-to](https://www.gs1.dk/en/vejledninger/sadan-opretter-du-vaegtvariable-stregkoder-og-produkter) |
+
+In the Austrian, Swiss and Danish rows, a SAN, HPID or pack-type digit is folded into
+the `I` positions. Identity takes the item reference whole, so the split inside it does
+not matter here. Austria 28–29 and Denmark 26 and 28 encode a piece count or a
+six-digit quantity, which `value_kind` cannot express, so they ship no default.
+
+**The US row needs the maintainer.** The maintainer named `2IIIIIPPPPPC` on 2026-10-24.
+General Specifications Release 18, Fig. 2.1.14.2-1 row 1, gives "the structure specified
+by GS1 US" as `2IIIIIVPPPPC`: a four-digit price with a price verifier. `2IIIIIPPPPPC`
+matches only one of that figure's generic alternatives. No gs1us.org document stating
+either layout was found. Until the maintainer chooses and a primary GS1 US source
+confirms the choice, `US` ships no default (prerequisite 7). The cents interpretation
+(USD, 2 decimals) is US convention and also unverified.
+
+**Unverified or not found.** These ship no default until a primary source gives the
+whole layout.
+
+| Country | What a primary source gives | Missing | Source |
+|---|---|---|---|
+| `GB` (02, in-store) | `02` + item + price + check | the cell widths contradict the prose: it computes a five-digit verifier but has no room for one | GS1 UK PDF above, p. 3 |
+| `DE` (22, 25, 26, 28, 29) | the meaning of each prefix (price, pieces, weight; retailer or SAN) | field widths, verifier and unit | GS1 Germany above, Tabelle 8 |
+| `BE`, `LU` | supplier prefixes 295, 296 and 28; retailer prefixes 02 and 20–27 | the digit layout | [GS1 Belgium & Luxembourg](https://www.gs1belu.org/fr/media/1601/download) (2021-03), p. 1 |
+| `SE` | `2X`, where X sets the unit and decimals (SEK 0–2 decimals, kg 1–3 decimals) | the width of the value field | [GS1 Sweden](https://gs1.se/en/support/how-do-i-create-my-variable-weight-numbers/) |
+| `NO` | 20–22 carry a price, 23–25 a weight; four-digit value | the decimals | [GS1 Norway](https://gs1.no/gs1-vektvareprefiks/) |
+| `IT` | prefix 2 is assigned by GS1 Italy; price for retail, kg for cash and carry | field widths, which appear only in a figure | [GS1 Italy, Guida pratica](https://gs1it.org/files/sharing/1463583138/163), §3.4.1, pp. 18–19 |
+| `FI` | weight classes 23–25, from a search snippet only | the whole layout; the page failed TLS | gs1.fi |
+| `FR`, `NL`, `ES`, `PL`, `IE`, `CA`, `AU`, `NZ` | no layout found | everything | gs1.fr, gs1.nl, aecoc.es, gs1pl.org, gs1ie.org, gs1ca.org, gs1nz.org |
 
 ### Write functions and the locking protocol
 
@@ -608,7 +676,8 @@ the page that resolves them.
    > **Response:** (datagen24, 2026-10-24)
    > - **Which countries.** Ship `US` (`2IIIIIPPPPPC`) and the common European GS1
    >   member-organisation layouts, each verified against a primary GS1 source. See
-   >   "Country default table".
+   >   "Country default table", which also records that the General Specifications give
+   >   GS1 US's layout as `2IIIIIVPPPPC`.
    > - **When it is computed.** At read time, from `InstallationCountry::Get()`.
    >   [PR 1096](https://github.com/datagen24/victual/pull/1096) ships
    >   `VICTUAL_COUNTRY` as an environment setting, and this matches it.

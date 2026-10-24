@@ -113,16 +113,20 @@ of the five matchers.
      answer is `ambiguous`.
    - An installation default pattern can decode a sticker. It cannot establish which
      store issued it.
-   - The installation default is one immutable pattern version, looked up from the
-     installation country ([issue 486](https://github.com/datagen24/victual/issues/486)).
+   - The installation default is a set of immutable pattern versions, one per literal
+     prefix, looked up from the installation country ([issue 486](https://github.com/datagen24/victual/issues/486)).
      That country is read through `InstallationCountry::Get()`, which serves
      `Setting('COUNTRY')` and `VICTUAL_COUNTRY`.
      - The lookup runs at read time. Maintainer decision, 2026-10-24, answering issue 486
        question 2.
-     - Victual ships a country-to-pattern table. It covers `US` (`2IIIIIPPPPPC`) and the
+     - Victual ships a country-to-pattern table covering `US` and the
        restricted-circulation layouts of the common European GS1 member organisations.
-       Plan 34 lists each entry with its primary GS1 source and marks any it could not
-       verify from one. Maintainer decision, 2026-10-24.
+       Maintainer decision, 2026-10-24.
+     - Plan 34's "Country default table" lists each entry with its primary GS1 source.
+       Entries it could not verify from a primary source ship nothing.
+     - For `US`, the maintainer named `2IIIIIPPPPPC`. The General Specifications attribute
+       `2IIIIIVPPPPC` to GS1 US, so that entry waits for the maintainer to choose
+       (prerequisite 7).
      - An unset country, or one with no entry in the table, has no default. A
        store-less scan of a restricted-circulation number then answers `store_required`.
      - A change of country therefore changes how a store-less scan of an already-printed
@@ -353,7 +357,11 @@ label namespace.
    records the answers these decisions restate.
 7. **Country table verified.** Each entry in the country-to-pattern table (decision 6) is
    verified against the GS1 source plan 34 cites for it. An entry that is not verified
-   is not shipped. The accepting PR names the source and section for each entry.
+   is not shipped.
+   - The accepting PR names the source and section for each entry, checked against the
+     current release of the General Specifications.
+   - The maintainer has chosen the `US` layout, and a primary GS1 US source confirms
+     it.
 
 ## Open questions
 
@@ -363,6 +371,7 @@ same day, and the answers are now in the decisions:
 1. **The installation default pattern.** It is looked up at read time from issue 486's
    country, through a shipped table covering `US` and the common European layouts. No
    entry or no country means no default. See decision 6 and prerequisite 7.
+   Prerequisite 7 leaves one point to the maintainer: which `US` layout to ship.
 2. **A `vctl:` label of a kind the caller may not read.** It answers `unknown`, matching
    `LabelIdentityService::Resolve`. See decision 10.
 3. **Scanning on a shopping-list page without `STOCK_VIEW`.** `SHOPPINGLIST_VIEW` suffices
