@@ -1,6 +1,6 @@
 # ADR-0053: A label print job stays queued while its printer is inactive, cancellation is its own state, and reprint stays the only recovery
 
-- **Status:** Proposed
+- **Status:** Accepted, 2026-10-24 (all six questions, as decided)
 - **Decider:** datagen24 (maintainer). Each of the six questions below is decided
   separately; the record can be accepted in part. Acceptance is its own pull request; see
   the lifecycle rule in [the index](README.md).
@@ -10,11 +10,9 @@
 - **Referenced by:** [issue 1021](https://github.com/datagen24/victual/issues/1021)
 - **Relationship:** decides the six questions accepted
   [ADR-0049](0049-label-print-job-dead-letter-causes-as-the-code-applies-them.md) left open
-  in *Part 2: not decided here*. Where a recommendation below changes behaviour, accepting
-  it partly supersedes ADR-0049 part 1's description of that behaviour, and the accepting
-  pull request adds the forward pointer on ADR-0049. ADR-0049 part 1 stays the record of
-  what the code did on 2026-10-20. It also corrects two statements in ADR-0049 part 1 (see
-  Context). [ADR-0019](0019-label-printers-are-master-data.md) is touched only through
+  in *Part 2: not decided here*, and partly supersedes ADR-0049: part 1's deactivated-printer
+  dead letter (question 1), and the three statements in part 1 corrected under Context.
+  ADR-0049 part 1 stays the record of what the code did on 2026-10-20. [ADR-0019](0019-label-printers-are-master-data.md) is touched only through
   ADR-0049.
 
 Questions 1, 3 and 6 change behaviour or the schema if the recommended option is not

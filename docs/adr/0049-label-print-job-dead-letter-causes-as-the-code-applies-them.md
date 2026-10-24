@@ -16,6 +16,12 @@
   Context). Every other part of ADR-0019 is unchanged. Related to, and independent of,
   [issue 902](https://github.com/datagen24/victual/issues/902), which concerns requeue of
   InfluxDB outbox rows.
+- **Partly superseded 2026-10-24** by
+  [ADR-0053](0053-label-print-jobs-stay-queued-while-a-printer-is-inactive-and-reprint-stays-the-recovery.md),
+  which decides part 2's six questions. It replaces part 1's account of a deactivated
+  printer's queued job being dead-lettered (question 1: the job stays queued), adds a sixth
+  cause and a second cancellation path, and corrects what part 2 item 3 says about
+  `last_error` being overwritten. Every other part of part 1 remains in force.
 
 The decision has two parts that are kept apart on purpose. Part 1 corrects the record to
 match what the code does today and changes no behaviour. Part 2 lists the behaviour
@@ -89,6 +95,10 @@ Every `LabelValidationException` it raises is a cause-2 dead letter. The complet
 
 ### The claim selects jobs for inactive printers
 
+*The deactivated-printer behaviour below is superseded by
+[ADR-0053](0053-label-print-jobs-stay-queued-while-a-printer-is-inactive-and-reprint-stays-the-recovery.md)
+question 1 (2026-10-24): such a job stays queued.*
+
 The `Claim` query (`PrintAttemptService.php:68-75`) joins `label_printers` and filters on
 `p.worker_id = ?`. It has no `p.active` or worker `active` condition. A queued job for a
 deactivated printer is therefore selected, `Resolve` refuses it with `inactive_printer`, and
@@ -128,6 +138,10 @@ ADR-0019 dead-letters an unclaimed job "only for a payload no version can read o
 printer". The comment is out of scope here; see Follow-ups.
 
 ## Part 2: not decided here
+
+*Decided by
+[ADR-0053](0053-label-print-jobs-stay-queued-while-a-printer-is-inactive-and-reprint-stays-the-recovery.md)
+(2026-10-24).*
 
 When a job should become unclaimable and when it should be dead-lettered is a behaviour
 question. These items record the options; none is chosen.
