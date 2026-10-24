@@ -80,9 +80,8 @@ class RenderRequestService extends LabelService
             return;
         }
         $profile = (new MediaProfileService($this->db))->Get($profileId)['document'];
-        $quarter = in_array($document['canvas']['orientation_deg'] ?? 0, [90, 270], true);
         if (MediaProfileService::PixelsFromMm($furthest['extent_mm'], (int)$profile['dpi_x']) > (int)$profile['raster_width_px']) {
-            $this->Refuse('elements.' . $furthest['id'] . ($quarter ? '.y_mm' : '.x_mm'), 'element_outside_media',
+            $this->Refuse('elements.' . $furthest['id'] . '.' . $furthest['field'], 'element_outside_media',
                 'The element reaches ' . round($furthest['extent_mm'], 2) . ' mm across the roll and ' . $profile['media'] . ' prints '
                 . round((int)$profile['printable_width_um'] / 1000, 2) . ' mm (' . (int)$profile['raster_width_px'] . ' px); move or narrow it');
         }

@@ -178,7 +178,8 @@ class TemplateDocument
      * its size depends on the payload, and ArtifactService samples every rendered symbol.
      *
      * @param array $document A validated document, as Validate() returns it.
-     * @return array{id: string, extent_mm: float}|null Null when no element is measured.
+     * @return array{id: string, field: string, extent_mm: float}|null The element, the key that
+     *     places its far edge (a line's endpoint), and the extent; null when no element is measured.
      */
     public static function FurthestAcrossRoll(array $document): ?array
     {
@@ -190,16 +191,19 @@ class TemplateDocument
                 continue;
             }
             if ($element['type'] === 'line') {
-                $extent = $quarter ? max($element['y1_mm'], $element['y2_mm']) : max($element['x1_mm'], $element['x2_mm']);
+                $axis = $quarter ? 'y' : 'x';
+                $field = $element[$axis . '2_mm'] >= $element[$axis . '1_mm'] ? $axis . '2_mm' : $axis . '1_mm';
+                $extent = $element[$field];
             } else {
                 $turn = $element['rotation_deg'] ?? 0;
                 [$across, $down] = $turn === 90 || $turn === 270
                     ? [$element['height_mm'], $element['width_mm']]
                     : [$element['width_mm'], $element['height_mm']];
+                $field = $quarter ? 'y_mm' : 'x_mm';
                 $extent = $quarter ? $element['y_mm'] + $down : $element['x_mm'] + $across;
             }
             if ($furthest === null || $extent > $furthest['extent_mm']) {
-                $furthest = ['id' => (string)$element['id'], 'extent_mm' => (float)$extent];
+                $furthest = ['id' => (string)$element['id'], 'field' => $field, 'extent_mm' => (float)$extent];
             }
         }
         return $furthest;

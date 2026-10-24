@@ -19,11 +19,11 @@
     "label-worker": {
       "flake": false,
       "locked": {
-        "lastModified": 1792848783,
-        "narHash": "sha256-eGwFqPHqeqEvfD5Albb/DWcGxTlBElh5u15RmwPEzbw=",
+        "lastModified": 1792850218,
+        "narHash": "sha256-xg19nCUkFJsMRsMrN31cjCVPw72vtJP/c7GgjNqrfTg=",
         "owner": "datagen24",
         "repo": "victual-label-worker",
-        "rev": "53434ce26e02c7c27665d1eb17addd84d49f504d",
+        "rev": "6fbf5ac879d0997ad7c4d7bf129d604812006519",
         "type": "github"
       },
       "original": {

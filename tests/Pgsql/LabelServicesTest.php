@@ -3460,6 +3460,21 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		$turned['elements'][] = array_merge(self::rectElement(), ['y_mm' => 50.0, 'height_mm' => 8.9]);
 		self::assertRefused(static fn () => $draft($turned), 'elements.box.y_mm', 'element_outside_media',
 			'On a quarter turn, across the roll is reading y');
+
+		$line = $wide;
+		$line['elements'][] = ['type' => 'line', 'id' => 'rule', 'x1_mm' => 58.9, 'y1_mm' => 20.0,
+			'x2_mm' => 2.0, 'y2_mm' => 20.0, 'stroke_mm' => 0.3];
+		self::assertRefused(static fn () => $draft($line), 'elements.rule.x1_mm', 'element_outside_media',
+			'A line is measured by the endpoint furthest across the roll');
+
+		// Upright 50 + 8 mm passes 58.42; turned 90, its footprint is as wide as it is tall.
+		$rotated = $wide;
+		$rotated['schema_version'] = 2;
+		$rotated['elements'][] = array_merge(self::rectElement(), ['x_mm' => 50.0, 'width_mm' => 8.0, 'height_mm' => 8.9]);
+		self::assertSame('pending', $draft($rotated)['state'], 'Unturned, the box ends at 58 mm');
+		$rotated['elements'][1]['rotation_deg'] = 90;
+		self::assertRefused(static fn () => $draft($rotated), 'elements.box.x_mm', 'element_outside_media',
+			'Turned a quarter, the box is 8.9 mm across and ends at 58.9 mm');
 		self::quiesceQueue();
 	}
 
