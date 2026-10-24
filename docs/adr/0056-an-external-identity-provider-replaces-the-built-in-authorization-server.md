@@ -3,7 +3,9 @@
 - **Status:** **Proposed.** Nothing here constrains work until the maintainer accepts it in a
   separate pull request, and it must not be accepted before
   [ADR-0055](0055-api-and-mcp-callers-present-oauth-access-tokens-from-a-swappable-authorization-server.md).
-  The acceptance prerequisites below are unmet as of 2026-10-24.
+  The maintainer answered all six open questions on 2026-10-24; the answers are folded
+  into the decisions and recorded under Open questions. Acceptance prerequisites 1 to 5
+  are unmet as of 2026-10-24.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -59,9 +61,9 @@ Read from the tree on 2026-10-24:
 ### Production edge
 
 Since 2026-10-23 production reaches Victual through Cloudflare Access, which signs browsers
-in with Entra ID (ADR-0052). That identity ends at the edge. Which identity provider issues
-Victual's own tokens in production is open question 1; Authentik is the home-lab reference
-and the test target.
+in with Entra ID (ADR-0052). That identity ends at the edge. Authentik is the home-lab
+reference, the test target and, by the maintainer's answer to open question 1, the issuer
+of production's tokens (decision 1).
 
 ### Authentik capabilities, read 2026-10-24
 
@@ -89,7 +91,22 @@ One authorization server per install issues every token, either the built-in one
 external one; Victual never issues tokens. This is ADR-0055 decision 1. With an external
 provider configured, the built-in authorization server is not deployed, the provider's
 issuer URL is the one ADR-0055 decision 3 pins, and Victual is its OIDC relying party
-for browser login. Exactly one issuer per install; multiple issuers are open question 2.
+for browser login. Exactly one issuer per install (open question 2): the mapping, the JWKS
+cache and the failure table in decision 10 each assume a single issuer.
+
+In production that issuer is Authentik (open question 1). Entra ID is configured as an
+upstream source inside Authentik, so a person keeps one sign-in and Victual sees only
+Authentik's issuer and subjects. The Cloudflare Access edge credential stays separate
+(ADR-0055 decision 10). Configuring Authentik, its Entra ID source and Cloudflare is
+infrastructure work outside this repository. What Victual requires of it:
+
+- one Authentik OAuth2/OpenID provider whose issuer URL is reachable from Victual and the
+  sidecar, with a published JWKS;
+- the redirect URI of Victual's relying-party callback registered on that provider;
+- a stable subject per person whether they sign in through Entra ID or directly, so that
+  one person maps to one Victual user;
+- group membership in the token claims (decision 4);
+- token exchange enabled for the sidecar's client (ADR-0055 decision 7).
 
 ### 2. Victual is the relying party; the forward-auth proxy is not the path
 
@@ -160,8 +177,9 @@ credentials only:
 - `VICTUAL_EXTERNALLY_MANAGED_AUTHENTICATION` is not defined on this path. Local accounts
   keep their passwords, so the check must keep running.
 
-Whether an operator may name the administrator's provider subject in configuration, so
-that an install never has a local admin password, is open question 3.
+Configuration cannot name the administrator's provider subject (open question 3). The
+bootstrap administrator is always a local account, and it may link a provider identity
+afterwards.
 
 ### 6. Service callers map like any client
 
@@ -170,12 +188,20 @@ through ADR-0055 decision 4: a Victual user registers the client, owns the mappi
 and the client acts with that owner's permissions narrowed by scope. A service account
 with no mapping row is refused. Device-flow tokens are ordinary user tokens.
 
+Linked and provisioned users may create static API keys like any other user until
+ADR-0055 decision 9 stops new keys on their install (phase 2); their keys then retire
+with everyone else's at phase 3 (open question 5). Key creation must not require
+re-entering a local password, because a provisioned user has none it knows. The
+manage-API-keys form asks for no password today (`OpenApiController::CreateNewApiKey`,
+read 2026-10-24), and that stays true.
+
 ### 7. Local login stays available
 
 Password login stays on by default so that an install still works when the provider is
-down. An administrator may restrict it to accounts holding `ADMIN` (a break-glass mode).
-Turning it off entirely is open question 4, because a provider outage would then lock
-everyone out. ADR-0007's login throttle applies to password login in every mode.
+down. An administrator may restrict it to accounts holding `ADMIN` (break-glass mode).
+Break-glass is the strongest mode: password login cannot be turned off entirely
+(open question 4), because a provider outage would then lock everyone out. ADR-0007's
+login throttle applies to password login in every mode.
 
 Sessions have Victual's own lifetime (`SESSION_STAY_LOGGED_IN_DAYS`). Logging out of
 Victual ends the Victual session and sends the browser to the provider's end-session
@@ -215,14 +241,54 @@ and audience from Victual; the credential stays a Secret.
 | User disabled or unlinked in Victual | Refused on the next request |
 | Group removed at the provider | Decision 4: next login, or within one token lifetime |
 
-### 11. Audit
+### 11. Authentication events go to an audit table
 
 Victual has no general audit table: none exists in `services/`, `controllers/` or
 `migrations/` (searched 2026-10-24). Bookings carry their user on the stock journal, and
-that is unchanged. This record adds no audit table. A provider login, a link and an unlink
-are written to the application log with the Victual user, the issuer, the subject and,
-for a link or unlink, who performed it. Whether these events need a table is open
-question 6.
+that is unchanged. This record adds one table for authentication events only
+(open question 6). Its implementation reserves a migration number in its own pull
+request; this record reserves none.
+
+Events recorded:
+
+| Event | Written when |
+|---|---|
+| `provider_login` | A provider login completes and resolves to a Victual user |
+| `provider_login_refused` | A provider login is refused: no mapping and provisioning off, an email match with no link, or a disabled user |
+| `link` | An `(issuer, subject)` mapping is created, by the user or by an administrator |
+| `unlink` | A mapping is removed |
+| `token_exchange_used` | Victual first sees an exchanged token carrying `act` (ADR-0055 decision 7) |
+
+Columns:
+
+| Column | Content |
+|---|---|
+| `id` | Row id |
+| `occurred_at` | `TIMESTAMPTZ` |
+| `event` | One of the five values above, held to them by a `CHECK` |
+| `user_id` | The Victual user, or null for a refusal that resolved to nobody |
+| `issuer`, `subject` | The provider identity the event concerns |
+| `actor_user_id` | Who performed a `link` or `unlink`; null otherwise |
+| `client_id` | The OAuth client, for a provider login through a client or a token exchange |
+| `act_subject` | The `act` subject of an exchanged token |
+| `token_id` | The exchanged token's `jti`, unique where present |
+| `reason` | A short refusal code for `provider_login_refused` |
+| `remote_address` | The request's client address as Victual saw it |
+
+`token_exchange_used` is written once per exchanged token. The insert conflicts on
+`token_id` and does nothing the second time, so one exchanged token is one row however
+many requests it serves. The sidecar's cache (ADR-0055 decision 7) bounds this to about one
+row per user per token lifetime while the user is active.
+
+Rows are append-only. A trigger refuses `UPDATE` and refuses `DELETE` of a row younger
+than the retention period. Retention defaults to 365 days, set by an install setting, and
+a maintenance routine deletes older rows. A database restore brings the table back with
+the rest of the data; it holds identifiers and addresses, not secrets.
+
+Reading the table requires a new permission leaf, `AUTH_AUDIT_VIEW`, placed under
+`USERS_READ`, because inspecting who signed in is part of inspecting users. It is not
+exposed through the generic objects API, and no route writes to it except the events
+above. No scope grants it (ADR-0055 decision 5 keeps user administration session-only).
 
 ## Alternatives considered
 
@@ -245,8 +311,12 @@ question 6.
   the provider.
 - A provider outage blocks provider login but not password login, existing sessions, or
   tokens until they expire.
-- Victual gains an OIDC relying-party flow, a linking page, a group mapping page and a
-  back-channel logout endpoint. `ReverseProxyAuthMiddleware` is unchanged.
+- Victual gains an OIDC relying-party flow, a linking page, a group mapping page, a
+  back-channel logout endpoint, an authentication audit table with its permission leaf
+  `AUTH_AUDIT_VIEW`, and a retention routine for it. `ReverseProxyAuthMiddleware` is
+  unchanged.
+- An install cannot run without a local administrator password, and cannot turn password
+  login off entirely; break-glass mode is the strongest restriction.
 - A group change at the provider reaches active API callers within five minutes and
   browsers at their next login.
 - An Authentik walkthrough (provider, application, scope mappings, group claims, redirect
@@ -269,22 +339,48 @@ question 6.
    at the next login and within one token lifetime, as decision 4 states.
 5. **Break-glass.** With Authentik stopped, an administrator logs in by password and the
    other users' provider logins fail with a message.
-6. **Open questions 1 and 3 answered.**
+6. **Open questions 1 and 3 answered.** Met 2026-10-24: the maintainer answered all six.
 
-## Open questions
+## Open questions and maintainer responses
+
+All six were answered on 2026-10-24 and are folded into the decisions named in each
+response. The answers do not accept this record.
 
 1. **Which provider issues Victual's tokens in production?** Production's edge signs in
-   with Entra ID through Cloudflare Access. Victual's tokens could come from Authentik,
-   from Entra ID as a second reference, or from the built-in authorization server.
-2. **One issuer or several?** One keeps the mapping, the JWKS cache and the failure table
-   simple. Several would let a household mix a work provider and a personal one.
-3. **May configuration name the administrator's provider subject?** It would let an install
-   have no local administrator password. The cost is that a provider outage with password
-   login restricted leaves no way in.
-4. **May local login be turned off entirely?** Decision 7 stops at break-glass mode.
-5. **Can a provider-linked user create static API keys?** ADR-0055 decision 9 keeps keys
-   tied to a user row; a linked user has one. A provisioned user has no local password
-   to re-enter when creating a key, if key creation ever asks for one.
+   with Entra ID through Cloudflare Access.
+
+   > **Response:** datagen24, 2026-10-24: Authentik issues production tokens, with Entra
+   > ID as an upstream source in Authentik, so people keep one sign-in. The Cloudflare
+   > Access edge credential stays separate (ADR-0055 decision 10). Infrastructure
+   > configuration is not in this repository; the record describes requirements only.
+   > (Decision 1.)
+
+2. **One issuer or several?**
+
+   > **Response:** datagen24, 2026-10-24: one issuer per install. (Decision 1.)
+
+3. **May configuration name the administrator's provider subject?**
+
+   > **Response:** datagen24, 2026-10-24: no. The bootstrap administrator stays local and
+   > may link a provider identity afterwards. (Decision 5.)
+
+4. **May local login be turned off entirely?**
+
+   > **Response:** datagen24, 2026-10-24: no. The strongest mode is break-glass, password
+   > login restricted to holders of `ADMIN`. (Decision 7.)
+
+5. **Can a provider-linked user create static API keys?**
+
+   > **Response:** datagen24, 2026-10-24: linked or provisioned users may create static
+   > keys until key retirement applies to their install, under ADR-0055 open question 2's
+   > rule. Key creation must not require re-entering a local password such a user does
+   > not have. (Decision 6.)
+
 6. **Do login and linking events need an audit table?** Issue 771 asks whether they belong
-   in "the existing audit trail", and the tree has none. A table would also be the place
-   for ADR-0055 decision 7's `act` claim.
+   in "the existing audit trail", and the tree has none.
+
+   > **Response:** datagen24, 2026-10-24: add an audit table for provider login, link and
+   > unlink, and for ADR-0055 decision 7's `act` claim on token exchange. Design it at
+   > record level: events, columns, retention, and who may read it through a permission
+   > leaf. Its implementation reserves a migration in its own pull request. (Decision 11;
+   > ADR-0055 decision 7.)

@@ -1,7 +1,9 @@
 # ADR-0055: API and MCP callers present OAuth 2.1 access tokens from a swappable authorization server
 
 - **Status:** **Proposed.** Nothing here constrains work until the maintainer accepts it in a
-  separate pull request. The acceptance prerequisites below are unmet as of 2026-10-24.
+  separate pull request. The maintainer answered all six open questions on 2026-10-24; the
+  answers are folded into the decisions and recorded under Open questions. Acceptance
+  prerequisites 1 to 5 are unmet as of 2026-10-24.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -127,7 +129,8 @@ store of its own. That property keeps Victual's passwords inside Victual.
 
 Hydra runs as its own workload under ADR-0010: its own container, its own PostgreSQL
 database and role (ADR-0008 permits no other engine), an optional component of the Helm
-chart (ADR-0038), two replicas. If a prerequisite fails, the candidate table is reopened.
+chart (ADR-0038) that is off by default, two replicas. An upgrade therefore adds no
+workload until an operator turns the component on (open question 5). If a prerequisite fails, the candidate table is reopened.
 The rest of this record still holds, because it depends on Hydra only for token exchange
 (decision 7) and through decision 8's registration adapter.
 
@@ -167,14 +170,28 @@ a user, and ADR-0056 reuses it unchanged. Email is never part of the key.
 - **Client credentials:** the token's subject is the client. A client may use this grant
   only after a Victual user registers it and becomes its owner; the mapping row binds the
   client to that owner. The client then acts as its owner, narrowed by scope, in the same
-  way as an API key.
+  way as an API key. Its scope ceiling is fixed at registration, as ADR-0044 decision 5
+  fixes a key's scope at creation. A different ceiling means registering a new client
+  (open question 6).
 
 An unmapped subject is refused with `401`. A mapped user who is deleted or disabled is
 refused on the next request, because the lookup is a database read on every request.
 
 ### 5. Scope narrows; it never adds
 
-Scopes are server-defined bundles of permission leaves from `controllers/Users/User.php`.
+Scopes are defined by the server, in two kinds (open question 1):
+
+- **Four bundles.** `victual:read` (every view leaf), `victual:shopping` (shopping-list
+  writes), `victual:stock` (the five bookings, undo and due dates) and `victual:catalog`
+  (master-data creation and edits). They match ADR-0052's tool groups.
+- **Leaf scopes.** One scope per permission leaf in `controllers/Users/User.php`, as
+  ADR-0044 lets a key list single leaves.
+
+The consent screen shows the four bundles by default. Leaf scopes sit behind an advanced
+view, where ticking a bundle ticks its leaves and a user may untick some. A client that
+requests leaf scopes is shown them in the advanced view already open, so nothing a client
+asks for is hidden from the user approving it.
+
 A request made with a token holds the permissions that are in both the owner's resolved
 set (ADR-0018) and the set the token's scopes expand to. This is ADR-0044 decision 2's
 intersection, applied at the same place, ADR-0044 decision 3's seam:
@@ -183,7 +200,8 @@ ADR-0044 is accepted first, tokens reuse its resolution code. If it is not, this
 carries the same rule on its own.
 
 - No scope confers user administration, role management, key management or client
-  management. Those stay session-only, as API keys cannot reach `/manageapikeys` today.
+  management, and no leaf scope exists for `ADMIN` or the `USERS_*` leaves. Those stay
+  session-only, as API keys cannot reach `/manageapikeys` today.
 - A token with no write scope is treated as `read_only`:
   `BaseAuthMiddleware::ReadOnlyKeyRefusal` answers its non-GET requests with `403`, so the
   method-level backstop survives the change of credential.
@@ -193,8 +211,6 @@ carries the same rule on its own.
 - `scopes_supported` lists only the read scope. Write scopes are requested by step-up.
   Claude Code 2.1.277 requested every listed scope in the spike, so listing only the read
   scope is what keeps a first connection read-only.
-
-The initial scope names are open question 1.
 
 ### 6. Grants, lifetimes and revocation
 
@@ -208,7 +224,8 @@ The initial scope names are open question 1.
 - Victual can also cut access at once, without introspection. It keeps a row per client
   grant (owner, client id, scope ceiling, last used, revoked). A request whose token names
   a revoked client, an unmapped subject or a disabled user is refused on that request.
-  Whether write scopes should introspect as well is open question 3.
+- Write scopes do not introspect either (open question 3). The five-minute worst case
+  above, together with Victual's own grant-row revocation, is the revocation design.
 
 ### 7. The sidecar exchanges the user's token; it does not forward it
 
@@ -221,8 +238,9 @@ Victual it needs a token whose audience is `/api`. It gets one by OAuth 2.0 Toke
 - the issued token keeps the user as subject, records the sidecar in `act`, and carries
   no scope the subject token lacked.
 
-Victual writes `act` to the application log beside the user; it has no audit table
-(ADR-0056 open question 6). The sidecar may cache an
+Victual records the first use of each exchanged token in the authentication audit table
+that ADR-0056 decision 11 defines: the user, the `act` subject and the client. The sidecar
+may cache an
 exchanged token in memory, keyed by a hash of the inbound token, until it expires; that is
 a pure cache. The resolver seam ADR-0052 decision 8 names (`mcp/src/auth/resolver.ts`)
 is where this change lands, and no tool changes.
@@ -245,25 +263,35 @@ registration endpoint is off, its metadata advertises Victual's endpoint, and Vi
 creates the client through Hydra's admin API. That adapter is the one Hydra-specific piece
 of Victual.
 
-Client ID Metadata Documents, which the 2026-07-28 MCP revision prefers, require the
-authorization server to fetch a URL the client chooses. That is an outbound request to a
-caller-supplied URL, which AGENTS.md's security posture keeps out of this project. Whether
-to accept that surface in the authorization server's container is open question 4.
+Clients obtain a client id by dynamic registration through that policy endpoint
+(open question 4). Client ID Metadata Documents are not supported, although the
+2026-07-28 MCP revision prefers them. They require the authorization server to fetch a URL
+the client chooses, which is an outbound request to a caller-supplied URL, and AGENTS.md's
+security posture keeps that surface out of this project. The choice is revisited if the
+clients Victual supports stop offering dynamic registration.
 
-### 9. Static API keys keep working
+### 9. User-issued static keys retire, but only where an authorization server is configured
 
 Existing keys are not converted to tokens. A bearer secret cannot become a consented grant
 without its owner going through consent, and an automatic conversion would grant
 something nobody approved.
 
-- **Phase 1:** tokens are accepted alongside keys on `/api` and the sidecar. The
-  manage-API-keys dialog, `read_only`, rotation and expiry are unchanged. The sidecar
-  accepts a static MCP key or a token, so ADR-0052 stages 1 and 2 keep working.
-- **Phase 2, if the maintainer chooses it:** an install setting stops new user-issued keys
-  being created once tokens work for that install. Existing keys run to their expiry.
-- Retiring keys altogether is open question 2.
-- Calendar-sharing, label worker, verifier and renderer keys are out of scope and
-  unchanged.
+An install with no authorization server configured, built-in or external, keeps
+user-issued keys indefinitely, exactly as today. On an install with one configured
+(an "OAuth install"), keys go through three phases (open question 2):
+
+1. **Tokens beside keys.** Tokens are accepted alongside keys on `/api` and the sidecar.
+   The manage-API-keys dialog, `read_only`, rotation and expiry are unchanged. The sidecar
+   accepts a static MCP key or a token, so ADR-0052 stages 1 and 2 keep working.
+2. **No new keys.** An install setting stops new user-issued keys being created, and
+   rotation of an existing key is refused with it. Existing keys keep working.
+3. **Existing keys retire.** User-issued keys stop authenticating on that install, and
+   callers must use a token: authorization code for interactive clients, the device flow
+   for command-line use, client credentials for unattended automation.
+
+The operator moves an install from one phase to the next. Phase 3 never applies to an
+install with no authorization server. Calendar-sharing, label worker, verifier and renderer keys are
+out of scope and unchanged in every phase.
 
 ### 10. The edge credential stays separate
 
@@ -300,9 +328,13 @@ keychain, and keep sending their per-device Access service token as before.
 ## Consequences
 
 - A household install that wants OAuth runs one more workload (Hydra) and one more
-  database. One that does not keeps static keys and runs nothing new.
+  database. One that does not keeps static keys indefinitely and runs nothing new, since
+  the chart component is off by default.
+- On an OAuth install, automation that can only send a fixed header (a shell script with
+  `curl`) stops working at phase 3 and must move to client credentials.
 - Victual gains a login-and-consent surface, a registration endpoint, two tables (the
-  identity mapping and client grants) and a JWT validator. The sidecar gains the same
+  identity mapping and client grants), rows in ADR-0056's audit table, and a JWT
+  validator. The sidecar gains the same
   validator, RFC 9728 metadata and a token-exchange client. No tool changes.
 - Revocation at the authorization server has a stated latency of up to five minutes.
   Revocation in Victual is immediate.
@@ -331,28 +363,46 @@ keychain, and keep sending their per-device Access service token as before.
 5. **A real MCP client per registration path.** Claude Code completes connection,
    step-up to a write scope and a tool call against both authorization servers. Remote
    custom connectors (claude.ai) are tested once ADR-0052 stage 3's route exists.
-6. **Open questions 1 and 4 answered.**
+6. **Open questions 1 and 4 answered.** Met 2026-10-24: the maintainer answered all six.
 
-## Open questions
+## Open questions and maintainer responses
 
-1. **What are the initial scopes?** A suggestion to argue with: `victual:read` (every view
-   leaf), `victual:shopping` (shopping-list writes), `victual:stock` (the five bookings,
-   undo and due dates), `victual:catalog` (master-data creation and edits). These match
-   ADR-0052's tool groups. Whether a scope may name a single permission leaf, as ADR-0044
-   allows for keys, affects how large the consent screen gets.
-2. **Do static user-issued keys retire?** Phase 2 stops new keys on request. Removing them
-   would break any automation that cannot do OAuth, such as a shell script with `curl`
-   and a fixed header. The device flow covers interactive command-line use; client
-   credentials cover unattended use.
-3. **Should write scopes introspect?** That would make revocation immediate for writes at
-   the cost of an authorization-server round trip per write.
-4. **Client ID Metadata Documents or dynamic registration?** Accepting metadata documents
-   means the authorization server fetches caller-chosen URLs. Staying on dynamic
-   registration depends on clients continuing to support a method the MCP specification
-   marks deprecated.
-5. **Is the built-in authorization server on by default in the chart?** Off keeps an
-   upgrade from adding a workload. On makes the remote connectors work without further
-   steps.
-6. **Does a client-credentials client hold a scope ceiling set at registration, as
-   ADR-0044 decision 5 fixes a key's scope at creation?** The suggestion is yes, with a
-   change of ceiling meaning a new client.
+All six were answered on 2026-10-24 and are folded into the decisions named in each
+response. The answers do not accept this record.
+
+1. **What are the initial scopes?** The draft suggested four bundles matching ADR-0052's
+   tool groups and asked whether a scope may name a single permission leaf.
+
+   > **Response:** datagen24, 2026-10-24: the four bundles `victual:read`,
+   > `victual:shopping`, `victual:stock` and `victual:catalog`, plus scopes that name a
+   > single permission leaf, as ADR-0044 allows for keys. The consent screen must stay
+   > usable, for example bundles shown with leaf scopes behind an advanced view. No admin
+   > scopes. (Decision 5.)
+
+2. **Do static user-issued keys retire?** Retiring them breaks automation that can only
+   send a fixed header.
+
+   > **Response:** datagen24, 2026-10-24: user-issued static keys retire after phase 2,
+   > but only on installs where an authorization server is configured. An install with
+   > none keeps keys indefinitely. Calendar, label worker, verifier and renderer keys stay
+   > out of scope. (Decision 9.)
+
+3. **Should write scopes introspect?**
+
+   > **Response:** datagen24, 2026-10-24: no introspection for writes. The five-minute
+   > worst case plus Victual's own grant-row revocation stands. (Decision 6.)
+
+4. **Client ID Metadata Documents or dynamic registration?**
+
+   > **Response:** datagen24, 2026-10-24: dynamic registration through Victual's policy
+   > endpoint. No Client ID Metadata Documents, because they add an outbound-fetch
+   > surface. Revisit if clients drop dynamic registration. (Decision 8.)
+
+5. **Is the built-in authorization server on by default in the chart?**
+
+   > **Response:** datagen24, 2026-10-24: off by default. (Decision 2.)
+
+6. **Does a client-credentials client hold a scope ceiling set at registration?**
+
+   > **Response:** datagen24, 2026-10-24: yes. The ceiling is fixed at registration, and a
+   > new ceiling means a new client. (Decision 4.)
