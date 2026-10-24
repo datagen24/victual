@@ -205,9 +205,24 @@
 	</div>
 
 	<div class="col-12 col-lg-8">
+		{{-- Issue #1034. Grid spacing and snapping are this user's, kept in this browser, and
+		not part of the template: two people editing one template keep their own grids. --}}
+		<div class="form-inline mb-2">
+			<div class="form-check mr-3">
+				<input class="form-check-input" type="checkbox" id="snap-to-grid">
+				<label class="form-check-label" for="snap-to-grid">{{ $__t('Snap to a grid') }}</label>
+			</div>
+			<label class="mr-2" for="grid-mm">{{ $__t('Grid (mm)') }}</label>
+			<input type="number" step="0.1" min="0.1" class="form-control form-control-sm" id="grid-mm" style="width: 6em">
+			<small class="form-text text-muted ml-3">
+				{{ $__t('Kept in this browser for you, not saved with the template.') }}
+			</small>
+		</div>
 		<div class="border d-inline-block">
 			<canvas id="label-canvas"></canvas>
 		</div>
+		<small class="form-text text-muted"
+			id="canvas-centre-note"></small>
 		<small class="form-text text-warning"
 			id="canvas-margin-note"
 			role="status"

@@ -109,6 +109,59 @@
 
 	var state = { document: null, revisionToken: null, selectedId: null };
 	var canvas = null;
+	var redrawing = false;  // True while draw() rebuilds the canvas; see the selection handlers.
+
+	// Issue #1034, maintainer decision 2026-10-24: grid spacing and snapping belong to the
+	// person designing, kept locally per user, and are never part of the template document.
+	// TemplateDocument refuses a canvas key it does not know, so a preference stored there
+	// would fail every save; and two people editing one template may want different grids.
+	var prefs = loadPrefs();
+
+	/** The localStorage key of this user's designer preferences. */
+	function prefsKey()
+	{
+		return 'victual_labeldesigner_prefs_' + Victual.UserId;
+	}
+
+	/**
+	 * This user's grid preferences: `snap` (boolean) and `grid_mm` (a positive number of
+	 * millimetres). Storage that is unavailable or holds something else gives the defaults,
+	 * snapping off on a 1 mm grid.
+	 */
+	function loadPrefs()
+	{
+		var loaded = { snap: false, grid_mm: 1 };
+		try
+		{
+			var stored = JSON.parse(window.localStorage.getItem(prefsKey()) || '{}');
+			if (typeof stored.snap === 'boolean')
+			{
+				loaded.snap = stored.snap;
+			}
+			if (typeof stored.grid_mm === 'number' && stored.grid_mm > 0)
+			{
+				loaded.grid_mm = stored.grid_mm;
+			}
+		}
+		catch (error)
+		{
+			// Private browsing or a hand-edited value: the defaults stand.
+		}
+		return loaded;
+	}
+
+	/** Stores this user's grid preferences, silently doing nothing where storage is unavailable. */
+	function savePrefs()
+	{
+		try
+		{
+			window.localStorage.setItem(prefsKey(), JSON.stringify(prefs));
+		}
+		catch (error)
+		{
+			// The preference then lasts until the page is left, which is all it can do.
+		}
+	}
 
 	/** Looks an element of the editor page up by its id. */
 	function region(id)
@@ -167,6 +220,7 @@
 
 	// --- The canvas -----------------------------------------------------------------------
 
+	/** Rebuilds the canvas from the document: guides first, then every element, keeping the selection. */
 	function draw()
 	{
 		// canvas.clear() fires selection:cleared, which would drop the selection and, with
@@ -183,28 +237,45 @@
 		// fabric 6 dropped setWidth()/setHeight() (issue #126); setDimensions() is the
 		// replacement for both at once.
 		canvas.setDimensions({ width: width * MM_PER_PX, height: height * MM_PER_PX });
-		canvas.clear();
-		canvas.backgroundColor = '#ffffff';
-		canvas.add(marginGuide(width, height));
-
-		state.document.elements.forEach(function(element)
+		// Set for the whole rebuild, and cleared even if building a shape throws: left set,
+		// every later selection would be ignored.
+		redrawing = true;
+		try
 		{
-			var shape = shapeFor(element);
-			if (shape === null)
+			canvas.clear();
+			canvas.backgroundColor = '#ffffff';
+			if (prefs.snap)
 			{
-				return;
+				gridLines(width, height).forEach(function(line) { canvas.add(line); });
 			}
-			// `hasRotatingPoint` is gone in fabric 6+ (issue #126); hiding the rotate handle
-			// is now a per-control call rather than a constructor-style flag.
-			shape.set({ victualId: element.id, lockRotation: true });
-			shape.setControlVisible('mtr', false);
-			placeTurned(shape, element);
-			canvas.add(shape);
-			if (element.id === selectedBefore)
+			canvas.add(marginGuide(width, height));
+			var area = printableArea();
+			centreGuides(area, width, height).forEach(function(line) { canvas.add(line); });
+			describeCentring(area);
+
+			state.document.elements.forEach(function(element)
 			{
-				canvas.setActiveObject(shape);
-			}
-		});
+				var shape = shapeFor(element);
+				if (shape === null)
+				{
+					return;
+				}
+				// `hasRotatingPoint` is gone in fabric 6+ (issue #126); hiding the rotate handle
+				// is now a per-control call rather than a constructor-style flag.
+				shape.set({ victualId: element.id, lockRotation: true });
+				shape.setControlVisible('mtr', false);
+				placeTurned(shape, element);
+				canvas.add(shape);
+				if (element.id === selectedBefore)
+				{
+					canvas.setActiveObject(shape);
+				}
+			});
+		}
+		finally
+		{
+			redrawing = false;
+		}
 
 		state.selectedId = selectedBefore !== null && find(selectedBefore) !== null ? selectedBefore : null;
 		canvas.renderAll();
@@ -235,6 +306,189 @@
 	}
 
 	/**
+	 * The printer the preview names, as the page lists it, or null when there is none.
+	 * Victual.LabelTemplate.Printers carries each printer's `printable_width_um`, read from
+	 * the combination its media profile is derived from, or null when it does not resolve.
+	 */
+	function previewPrinter()
+	{
+		var select = region('preview-printer');
+		if (select === null || select.value === '')
+		{
+			return null;
+		}
+		var id = parseInt(select.value, 10);
+		var found = Victual.LabelTemplate.Printers.filter(function(p) { return parseInt(p.id, 10) === id; });
+		return found.length === 0 ? null : found[0];
+	}
+
+	/**
+	 * The printable area in the reading frame, in millimetres from the canvas origin:
+	 * `{ width, height, mediaWidth }`, where a null width or height is an automatic length,
+	 * which has no far edge yet.
+	 *
+	 * The origin is the printable edge: since PR #1089 the canvas width is the printable width
+	 * and the tape's own unprintable strip is outside the document. Across the roll the area
+	 * ends at the canvas width or the preview printer's printable width, whichever is less,
+	 * which is the same bound RenderRequestService::AssertFitsMedia() refuses past. The media
+	 * profile states a width and no offset, so the area starts at 0 on every profile. Margins
+	 * are not subtracted: TemplateDocument::ReadingBounds() does not treat them as a bound,
+	 * and a frame drawn into them is a design.
+	 */
+	function printableArea()
+	{
+		var canvasDocument = state.document.canvas;
+		var turn = canvasDocument.orientation_deg || 0;
+		var quarter = turn === 90 || turn === 270;
+		var length = canvasDocument.height_mm || null;
+		var across = canvasDocument.width_mm;
+		var printer = previewPrinter();
+		var mediaWidth = printer !== null && printer.printable_width_um ? printer.printable_width_um / 1000 : null;
+		if (mediaWidth !== null)
+		{
+			across = Math.min(across, mediaWidth);
+		}
+		return { width: quarter ? length : across, height: quarter ? across : length, mediaWidth: mediaWidth };
+	}
+
+	/**
+	 * Dashed lines through the middle of the printable area, one per axis that has a far
+	 * edge. They are canvas objects only, never document elements, so nothing prints them.
+	 */
+	function centreGuides(area, width, height)
+	{
+		var guides = [];
+		var style = { stroke: '#e83e8c', strokeWidth: 1, strokeDashArray: [2, 4], selectable: false, evented: false, originX: 'left', originY: 'top' };
+		if (area.width !== null)
+		{
+			guides.push(new fabric.Line([area.width / 2 * MM_PER_PX, 0, area.width / 2 * MM_PER_PX, height * MM_PER_PX], style));
+		}
+		if (area.height !== null)
+		{
+			guides.push(new fabric.Line([0, area.height / 2 * MM_PER_PX, width * MM_PER_PX, area.height / 2 * MM_PER_PX], style));
+		}
+		return guides;
+	}
+
+	/**
+	 * Faint lines on the snapping grid, drawn while snapping is on. On a fine grid only every
+	 * nth line is drawn, so lines stay at least 8 screen pixels apart; snapping still uses the
+	 * full grid.
+	 */
+	function gridLines(width, height)
+	{
+		var step = prefs.grid_mm * Math.max(1, Math.ceil(8 / (prefs.grid_mm * MM_PER_PX)));
+		var style = { stroke: '#e9ecef', strokeWidth: 1, selectable: false, evented: false, originX: 'left', originY: 'top' };
+		var lines = [];
+		for (var x = step; x < width; x += step)
+		{
+			lines.push(new fabric.Line([x * MM_PER_PX, 0, x * MM_PER_PX, height * MM_PER_PX], style));
+		}
+		for (var y = step; y < height; y += step)
+		{
+			lines.push(new fabric.Line([0, y * MM_PER_PX, width * MM_PER_PX, y * MM_PER_PX], style));
+		}
+		return lines;
+	}
+
+	/** Says under the canvas which width centring uses, and why, so a guide off the canvas middle is explained. */
+	function describeCentring(area)
+	{
+		var note = region('canvas-centre-note');
+		if (note === null)
+		{
+			return;
+		}
+		while (note.firstChild !== null)
+		{
+			note.removeChild(note.firstChild);
+		}
+		var printer = previewPrinter();
+		var text;
+		if (area.mediaWidth !== null)
+		{
+			text = __t('Centring and the centre guides use the printable width of %1$s across the roll, %2$s mm, from its media profile.', printer.name, area.mediaWidth);
+		}
+		else if (printer !== null)
+		{
+			text = __t('%s has no usable media profile, so centring uses the label width.', printer.name);
+		}
+		else
+		{
+			text = __t('No printer is configured, so centring uses the label width.');
+		}
+		note.appendChild(document.createTextNode(text));
+		note.setAttribute('data-centre-width-mm', area.width === null ? '' : String(area.width));
+		note.setAttribute('data-centre-height-mm', area.height === null ? '' : String(area.height));
+	}
+
+	/**
+	 * The element's footprint in the reading frame, in millimetres: `{ x1, y1, x2, y2 }`. A
+	 * turned element's footprint is its frame with width and height swapped.
+	 */
+	function footprint(element)
+	{
+		if (element.type === 'line')
+		{
+			return {
+				x1: Math.min(element.x1_mm, element.x2_mm), y1: Math.min(element.y1_mm, element.y2_mm),
+				x2: Math.max(element.x1_mm, element.x2_mm), y2: Math.max(element.y1_mm, element.y2_mm)
+			};
+		}
+		var size = localSize(element);
+		var turnedElement = element.rotation_deg === 90 || element.rotation_deg === 270;
+		var across = turnedElement ? size.h : size.w;
+		var down = turnedElement ? size.w : size.h;
+		return { x1: element.x_mm, y1: element.y_mm, x2: element.x_mm + across, y2: element.y_mm + down };
+	}
+
+	/**
+	 * Moves an element by `dx`, `dy` millimetres in the reading frame. A line moves both its
+	 * points, so it keeps its length and direction.
+	 */
+	function moveBy(element, dx, dy)
+	{
+		if (element.type === 'line')
+		{
+			element.x1_mm = round(element.x1_mm + dx);
+			element.x2_mm = round(element.x2_mm + dx);
+			element.y1_mm = round(element.y1_mm + dy);
+			element.y2_mm = round(element.y2_mm + dy);
+			return;
+		}
+		element.x_mm = round(element.x_mm + dx);
+		element.y_mm = round(element.y_mm + dy);
+	}
+
+	/**
+	 * Centres an element in the printable area along one reading axis, `'x'` or `'y'`, and
+	 * returns false without moving it when that axis is an automatic length. An element larger
+	 * than the area is put at the origin rather than at a negative position, which the
+	 * document refuses.
+	 */
+	function centre(element, axis)
+	{
+		var area = printableArea();
+		var span = axis === 'x' ? area.width : area.height;
+		if (span === null)
+		{
+			return false;
+		}
+		var box = footprint(element);
+		var start = axis === 'x' ? box.x1 : box.y1;
+		var size = axis === 'x' ? box.x2 - box.x1 : box.y2 - box.y1;
+		var delta = round((span - size) / 2) - start;
+		moveBy(element, axis === 'x' ? delta : 0, axis === 'y' ? delta : 0);
+		return true;
+	}
+
+	/** Rounds a millimetre position to the nearest grid line. */
+	function snapToGrid(value)
+	{
+		return round(Math.round(value / prefs.grid_mm) * prefs.grid_mm);
+	}
+
+	/**
 	 * The ids of the elements whose footprint crosses a margin, in document order.
 	 *
 	 * A warning rather than a refusal: the renderer uses margins only to pad an automatic
@@ -256,22 +510,7 @@
 
 		state.document.elements.forEach(function(element)
 		{
-			var box;
-			if (element.type === 'line')
-			{
-				box = {
-					x1: Math.min(element.x1_mm, element.x2_mm), y1: Math.min(element.y1_mm, element.y2_mm),
-					x2: Math.max(element.x1_mm, element.x2_mm), y2: Math.max(element.y1_mm, element.y2_mm)
-				};
-			}
-			else
-			{
-				var size = localSize(element);
-				var turnedElement = element.rotation_deg === 90 || element.rotation_deg === 270;
-				var across = turnedElement ? size.h : size.w;
-				var down = turnedElement ? size.w : size.h;
-				box = { x1: element.x_mm, y1: element.y_mm, x2: element.x_mm + across, y2: element.y_mm + down };
-			}
+			var box = footprint(element);
 
 			// A tenth of a millimetre of slack, the precision the editor rounds to.
 			var slack = 0.05;
@@ -460,6 +699,37 @@
 		element.y_mm = round(shape.top / MM_PER_PX - offset[1]);
 	}
 
+	/**
+	 * With snapping on, keeps a shape being dragged with its footprint's top-left corner on the
+	 * grid, so the drag shows where it will land and absorb() reads a position on the grid.
+	 * The inverse of absorb()'s pixels-to-millimetres step: a line's left/top sits half its
+	 * stroke short of its points, and a turned shape's origin is a footprint corner's offset
+	 * away. Only moving snaps; a resize keeps the size it was dragged to.
+	 */
+	function snapShape(shape)
+	{
+		var element = find(shape.victualId);
+		if (!prefs.snap || !element)
+		{
+			return;
+		}
+		if (element.type === 'line')
+		{
+			var half = shape.strokeWidth / 2;
+			shape.set({
+				left: snapToGrid((shape.left + half) / MM_PER_PX) * MM_PER_PX - half,
+				top: snapToGrid((shape.top + half) / MM_PER_PX) * MM_PER_PX - half
+			});
+			return;
+		}
+		var size = localSize(element);
+		var offset = { 0: [0, 0], 90: [size.h, 0], 180: [size.w, size.h], 270: [0, size.w] }[element.rotation_deg || 0];
+		shape.set({
+			left: (snapToGrid(shape.left / MM_PER_PX - offset[0]) + offset[0]) * MM_PER_PX,
+			top: (snapToGrid(shape.top / MM_PER_PX - offset[1]) + offset[1]) * MM_PER_PX
+		});
+	}
+
 	/** Rounds to a tenth of a millimetre and never below zero. */
 	function round(value)
 	{
@@ -481,6 +751,7 @@
 
 	// --- The properties panel --------------------------------------------------------------
 
+	/** One labelled input, or a select when `options` is given, that writes back through `onChange` and redraws. */
 	function field(label, value, onChange, options)
 	{
 		var group = document.createElement('div');
@@ -633,6 +904,8 @@
 			]));
 		}
 
+		holder.appendChild(centreButtons(element));
+
 		holder.appendChild(field(__t('Colour'), element.color, function(v) { element.color = v; },
 			[{ value: 'black', label: __t('Black') }, { value: 'red', label: __t('Red') }, { value: 'white', label: __t('White') }]));
 
@@ -649,8 +922,42 @@
 		holder.appendChild(remove);
 	}
 
+	/**
+	 * The two centring buttons for an element. A button on an automatic length says why it
+	 * cannot centre along it instead of guessing a length.
+	 */
+	function centreButtons(element)
+	{
+		var group = document.createElement('div');
+		group.className = 'form-group';
+		[
+			{ axis: 'x', id: 'centre-horizontal-button', label: __t('Centre horizontally') },
+			{ axis: 'y', id: 'centre-vertical-button', label: __t('Centre vertically') }
+		].forEach(function(choice)
+		{
+			var button = document.createElement('button');
+			button.className = 'btn btn-outline-secondary btn-sm mr-2';
+			button.id = choice.id;
+			button.type = 'button';
+			button.appendChild(document.createTextNode(choice.label));
+			button.addEventListener('click', function()
+			{
+				if (!centre(element, choice.axis))
+				{
+					report('warning', __t('The label length is automatic, so it has no middle to centre on. Enter a length to centre along it.'));
+					return;
+				}
+				draw();
+				properties();
+			});
+			group.appendChild(button);
+		});
+		return group;
+	}
+
 	// --- Adding ---------------------------------------------------------------------------
 
+	/** The first `<prefix><n>` id no element has yet. */
 	function nextId(prefix)
 	{
 		var n = 1;
@@ -725,6 +1032,7 @@
 
 	// --- Loading and saving ------------------------------------------------------------------
 
+	/** Writes the canvas size and orientation fields into the document, and the schema version they need. */
 	function absorbCanvasSize()
 	{
 		state.document.canvas.width_mm = millimetres(region('canvas-width-mm').value, state.document.canvas.width_mm);
@@ -806,10 +1114,67 @@
 	{
 		canvas = new fabric.Canvas('label-canvas', { selection: false, backgroundColor: '#ffffff' });
 
-		canvas.on('selection:created', function(event) { state.selectedId = event.selected[0].victualId; properties(); });
-		canvas.on('selection:updated', function(event) { state.selectedId = event.selected[0].victualId; properties(); });
-		canvas.on('selection:cleared', function() { state.selectedId = null; properties(); });
+		// The selection events draw() causes itself - clearing the canvas, then reselecting the
+		// element that was selected - are not the designer choosing anything, and rebuilding
+		// the panel for them replaced every control in it on every redraw. Issue #1034 found
+		// it: typing a width and then pressing Centre redraws on the blur, between the press
+		// and the release, and the button under the pointer was gone before the click landed.
+		canvas.on('selection:created', function(event)
+		{
+			if (redrawing)
+			{
+				return;
+			}
+			state.selectedId = event.selected[0].victualId;
+			properties();
+		});
+		canvas.on('selection:updated', function(event)
+		{
+			if (redrawing)
+			{
+				return;
+			}
+			state.selectedId = event.selected[0].victualId;
+			properties();
+		});
+		canvas.on('selection:cleared', function()
+		{
+			if (redrawing)
+			{
+				return;
+			}
+			state.selectedId = null;
+			properties();
+		});
+		canvas.on('object:moving', function(event) { snapShape(event.target); });
 		canvas.on('object:modified', function(event) { absorb(event.target); properties(); warnAboutMargins(); });
+
+		region('snap-to-grid').checked = prefs.snap;
+		region('grid-mm').value = prefs.grid_mm;
+		$(document).find('#snap-to-grid, #grid-mm').on('change', function()
+		{
+			prefs.snap = region('snap-to-grid').checked;
+			prefs.grid_mm = millimetres(region('grid-mm').value, prefs.grid_mm);
+			if (prefs.grid_mm <= 0)
+			{
+				prefs.grid_mm = 1;
+			}
+			region('grid-mm').value = prefs.grid_mm;
+			savePrefs();
+			if (state.document !== null)
+			{
+				draw();
+			}
+		});
+
+		// The printable width centring uses is the previewed printer's.
+		$(document).find('#preview-printer').on('change', function()
+		{
+			if (state.document !== null)
+			{
+				draw();
+			}
+		});
 
 		$(document).find('#add-element-button').on('click', function() { add(region('element-kind').value); });
 
