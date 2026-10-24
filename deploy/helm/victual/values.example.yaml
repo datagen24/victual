@@ -126,6 +126,7 @@ labelWorkers:
 settings:
   CURRENCY: USD
   DEFAULT_LOCALE: en
+  # COUNTRY: US
   # ENTRY_PAGE: stock
   # CALENDAR_FIRST_DAY_OF_WEEK: "1"
 

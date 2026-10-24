@@ -10,6 +10,7 @@ use Victual\Helpers\CanonicalJson;
 use Victual\Helpers\ECanonicalizationFailed;
 use Victual\Helpers\ERequirementNotMet;
 use Victual\Helpers\Grocycode;
+use Victual\Helpers\InstallationCountry;
 use Victual\Helpers\PrerequisiteChecker;
 use Victual\Services\ApiKeyService;
 use Victual\Services\ApplicationService;
@@ -1604,6 +1605,45 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertConfigurationRefused(['CURRENCY' => 'EURO'], 'ISO 4217', 'four letters is not a code');
 		self::assertConfigurationRefused(['CURRENCY' => 'US'], 'ISO 4217', 'and neither is two');
 		self::assertConfigurationRefused(['CURRENCY' => '840'], 'ISO 4217', 'the numeric code is not the letter code');
+	}
+
+	/**
+	 * Proves that COUNTRY (issue #486) accepts empty and any assigned ISO 3166-1 alpha-2 code in
+	 * either letter case, and refuses other lengths, the numeric code and well-shaped codes that
+	 * are not assigned to a country.
+	 */
+	public function testCountryHasToBeAnAssignedAlpha2Code()
+	{
+		self::assertConfigurationAccepted(['COUNTRY' => ''], 'empty means no country is configured');
+		self::assertConfigurationAccepted(['COUNTRY' => 'US'], 'an assigned code');
+		self::assertConfigurationAccepted(['COUNTRY' => 'de'], 'the letter case does not matter');
+		self::assertConfigurationRefused(['COUNTRY' => 'USA'], 'ISO 3166-1 alpha-2', 'the alpha-3 code is not the alpha-2 code');
+		self::assertConfigurationRefused(['COUNTRY' => 'U'], 'ISO 3166-1 alpha-2', 'one letter is not a code');
+		self::assertConfigurationRefused(['COUNTRY' => '840'], 'ISO 3166-1 alpha-2', 'the numeric code is not the letter code');
+		self::assertConfigurationRefused(['COUNTRY' => 'UK'], 'ISO 3166-1 alpha-2', 'UK is reserved; the United Kingdom is GB');
+		self::assertConfigurationRefused(['COUNTRY' => 'EU'], 'ISO 3166-1 alpha-2', 'EU is reserved and is not a country');
+	}
+
+	/**
+	 * Proves that the read path reports an upper-case code or null, and that its code list is the
+	 * 249 officially assigned codes with no duplicates and none in lower case.
+	 */
+	public function testInstallationCountryNormalizesToAnUpperCaseCodeOrNull()
+	{
+		self::assertSame('US', InstallationCountry::Normalize('US'));
+		self::assertSame('US', InstallationCountry::Normalize('us'), 'the operator may write lower case');
+		self::assertSame('GB', InstallationCountry::Normalize(" gb\n"), 'surrounding whitespace is not part of the code');
+		self::assertNull(InstallationCountry::Normalize(''), 'unset is null, so consumers keep their default');
+		self::assertNull(InstallationCountry::Normalize('UK'), 'a reserved code is not a country');
+		self::assertTrue(InstallationCountry::IsAssigned('ch'));
+		self::assertFalse(InstallationCountry::IsAssigned('XX'));
+
+		self::assertCount(249, InstallationCountry::CODES, 'ISO 3166-1 assigns 249 alpha-2 codes');
+		self::assertSame(InstallationCountry::CODES, array_values(array_unique(InstallationCountry::CODES)), 'no code is listed twice');
+		self::assertSame([], preg_grep('/^[A-Z]{2}$/', InstallationCountry::CODES, PREG_GREP_INVERT), 'every code is two upper-case letters');
+
+		// The suite runs with the config-dist.php default, which is no country.
+		self::assertNull(InstallationCountry::Get());
 	}
 
 	/**
