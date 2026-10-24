@@ -1438,7 +1438,11 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 	public function testLabelPrintJobPagesAreAdministrationOnly(): void
 	{
 		self::render(fn () => self::$labelPrintJobs->Index(self::request(), self::response(), []), 'GET /labelprintjobs');
-		self::render(fn () => self::$labelPrintJobs->Printers(self::request(), self::response(), []), 'GET /labelprinters');
+		$printers = self::render(fn () => self::$labelPrintJobs->Printers(self::request(), self::response(), []), 'GET /labelprinters');
+		// Both credentials a label deployment needs are issued from this page (issue 1056).
+		self::assertStringContainsString('id="label-worker-credential"', $printers);
+		self::assertStringContainsString('id="label-renderer-credential"', $printers);
+		self::assertStringContainsString('id="label-worker-registered"', $printers);
 
 		self::grant(['USERS_READ']);
 		$before = self::stateSnapshot();
