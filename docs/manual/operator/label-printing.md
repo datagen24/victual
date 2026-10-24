@@ -31,6 +31,12 @@ than re-running whatever booking produced it.
   when the product never expires. Victual stores that case as the date 2999-12-31, and the
   stored date does not change.
 
+  An element must fit on the canvas: across the roll always, and along the tape when the
+  label has a fixed length. Saving refuses an element that runs past either edge and names
+  it. The dashed outline on the canvas is the margin. An element that crosses it is saved,
+  and the designer names it under the canvas, because it may be cut off or print too close
+  to the edge.
+
   A print uses the template's *default version*, not its draft and not its newest version.
   **Version that prints** in the designer shows which version that is, warns when a newer
   version exists, and **Print with this version** changes it. **Publish a version** makes the

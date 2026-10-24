@@ -3789,6 +3789,9 @@ msgstr ""
 msgid "The preview is built from example values, not from any real item, and cannot be printed."
 msgstr ""
 
+msgid "These elements cross the margin, the dashed outline, and may be cut off or print too close to the edge: %s"
+msgstr ""
+
 msgid "Print with the version I publish"
 msgstr ""
 
