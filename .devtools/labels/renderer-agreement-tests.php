@@ -122,4 +122,52 @@ runLabelTests(function (PDO $db, string $schema) use ($binary, $font) {
 		array_map('unlink', glob($directory . '/*'));
 		rmdir($directory);
 	}
+
+	// A text box too short for its text is refused by the real renderer, naming the element,
+	// and the refusal settles the request as invalid with that element - which is what the
+	// designer shows. The box is the 2026-10-23 stock label's: 9 pt at 1.2 spacing advances
+	// 3.81 mm a line, so a 3.2 mm box holds none, and before the renderer bounded text down
+	// it drew the lines over whatever sat below.
+	$template = tx($db, fn () => $templates->Create('Agreement label, text taller than its box', null, 'location', null));
+	$draft = $templates->GetDraft((int)$template['id']);
+	$document = ['schema_version' => 1, 'entity_kind' => 'location',
+		'canvas' => ['width_mm' => 58.42, 'height_mm' => 30.0, 'max_height_mm' => null,
+			'margins_mm' => ['top' => 1.0, 'right' => 1.0, 'bottom' => 1.0, 'left' => 1.0]],
+		'elements' => [
+			['type' => 'qr', 'id' => 'code', 'x_mm' => 2.0, 'y_mm' => 2.0, 'module_mm' => 0.6,
+				'ec_level' => 'M', 'quiet_zone_modules' => 4, 'color' => 'black', 'source' => 'label.payload'],
+			['type' => 'text', 'id' => 'name', 'x_mm' => 24.0, 'y_mm' => 4.0, 'width_mm' => 32.0, 'height_mm' => 3.2,
+				'field' => 'location.name', 'font_asset' => 'agreement-font', 'size_pt' => 9.0,
+				'align' => 'left', 'valign' => 'top', 'wrap' => true, 'line_spacing' => 1.2, 'overflow' => 'error', 'color' => 'black'],
+		]];
+	tx($db, fn () => $templates->SaveDraft((int)$template['id'], $document, $draft['revision_token'], null));
+	tx($db, fn () => $templates->Publish((int)$template['id'], null));
+	tx($db, fn () => (new LabelOperationsService($db))->IssueLocation('location', 1, 0, $printer, (int)$template['id'], null, 'en', 'UTC'));
+	$input = tx($db, fn () => (new RenderRequestService($db))->Claim());
+	check($input !== null, 'The overflowing render request is claimable');
+
+	$directory = sys_get_temp_dir() . '/' . $schema . '-overflow';
+	mkdir($directory, 0700, true);
+	foreach ($input['assets'] as $index => $stored)
+	{
+		$path = $directory . '/' . $stored['id'] . '.bin';
+		file_put_contents($path, (new LabelAssetService($db))->Bytes((int)$stored['id']));
+		$input['assets'][$index]['file'] = $path;
+	}
+	file_put_contents($directory . '/input.json', json_encode($input, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+	$lines = [];
+	$status = 0;
+	exec(escapeshellarg($binary) . ' --input ' . escapeshellarg($directory . '/input.json') . ' --out ' . escapeshellarg($directory . '/artifact.png') . ' 2>&1', $lines, $status);
+	$report = json_decode(implode('', $lines), true) ?? [];
+	check($status === 3, 'A text box too short for its text is refused, not drawn: ' . implode('', $lines));
+	check(($report['code'] ?? null) === 'TEXT_OVERFLOW', 'The refusal is TEXT_OVERFLOW');
+	check(($report['element'] ?? null) === 'name', 'The refusal names the element');
+	check(!file_exists($directory . '/artifact.png'), 'A refused render writes no artifact');
+
+	$settled = tx($db, fn () => (new RenderRequestService($db))->RecordInvalid(
+		(int)$input['render_request_id'], $input['generation_token'], $report['code'], $report['element'], (string)($report['detail'] ?? '')));
+	check($settled['state'] === 'invalid' && $settled['error_element'] === 'name', 'The request settles as invalid, naming the element the designer shows');
+
+	array_map('unlink', glob($directory . '/*'));
+	rmdir($directory);
 });

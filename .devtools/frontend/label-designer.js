@@ -274,6 +274,61 @@ async function saveDraft(page, templateId)
 		assert.equal(versions.length, 1, 'one published version');
 		assert.match(versions[0].document_digest, /^[0-9a-f]{64}$/, 'the version carries its digest');
 
+		// Which version prints is stated, because a plain print uses the default version and
+		// on 2026-10-23 publishing did not move it.
+		await page.waitForFunction(() => document.querySelector('#default-version-status').textContent.includes('version 1'), null, { timeout: 5000 });
+		assert.match(await page.locator('#default-version-status').innerText(), /print with version 1, the newest/i,
+			'the designer says which version prints');
+		assert.equal(await page.locator('#default-version').inputValue(), String(versions[0].id), 'the version that prints is selected');
+
+		// The live preview. No renderer runs in this job, so the preview request and the render
+		// status are answered here; what is under test is what the designer asks for and what it
+		// shows. A record number is required first.
+		// A preview names a printer; the job's instance may have none, and the request is
+		// answered below whatever printer it names.
+		await page.evaluate(() =>
+		{
+			const select = document.querySelector('#preview-printer');
+			if (select.options.length === 0)
+			{
+				const option = document.createElement('option');
+				option.value = '1';
+				option.textContent = 'probe printer';
+				select.appendChild(option);
+			}
+			document.querySelector('#live-preview-button').disabled = false;
+		});
+		await page.getByRole('button', { name: 'Render it' }).click();
+		await page.waitForFunction(() => /number of the record/.test(document.querySelector('#template-message').textContent), null, { timeout: 5000 });
+
+		let previewBody = null;
+		await page.route('**/api/labels/templates/' + templateId + '/preview', async route =>
+		{
+			previewBody = route.request().postDataJSON();
+			await route.fulfill({ status: 200, contentType: 'application/json',
+				body: JSON.stringify({ id: 987654, purpose: 'preview_live', template_version_id: versions[0].id }) });
+		});
+		await page.route('**/api/labels/renders/987654', route => route.fulfill({ status: 200, contentType: 'application/json',
+			body: JSON.stringify({ render_request_id: 987654, state: 'invalid', purpose: 'preview_live', artifact_id: null,
+				error_code: 'TEXT_OVERFLOW', error_element: 'name', error_detail: 'needs 3 line(s)', retryable: false }) }));
+		await page.locator('#preview-target-id').fill('5');
+		await page.getByRole('button', { name: 'Render it' }).click();
+		await page.waitForFunction(() => document.querySelector('#template-message').textContent.includes('TEXT_OVERFLOW'), null, { timeout: 10000 });
+		assert.deepEqual({ kind: previewBody.kind, target_id: previewBody.target_id, version_id: previewBody.version_id },
+			{ kind: 'live', target_id: 5, version_id: versions[0].id }, 'a live preview of record 5 with the chosen version: ' + JSON.stringify(previewBody));
+		assert.match(await page.locator('#template-message').innerText(), /TEXT_OVERFLOW \(name\)/, 'a refused render names the element');
+
+		await page.unroute('**/api/labels/renders/987654');
+		await page.route('**/api/labels/renders/987654', route => route.fulfill({ status: 200, contentType: 'application/json',
+			body: JSON.stringify({ render_request_id: 987654, state: 'ready', purpose: 'preview_live', artifact_id: 987655,
+				error_code: null, error_element: null, error_detail: null, retryable: false }) }));
+		await page.route('**/api/labels/artifacts/987655/image', route => route.fulfill({ status: 200, contentType: 'image/png',
+			body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGP4DwABAQEAWk1v8QAAAABJRU5ErkJggg==', 'base64') }));
+		await page.getByRole('button', { name: 'Render it' }).click();
+		await page.waitForFunction(() => document.querySelector('#preview-holder img') !== null, null, { timeout: 10000 });
+		assert.match(await page.locator('#preview-sample-note').innerText(), /real values of record 5/,
+			'the preview says it shows the record, not example values');
+
 		assert.deepEqual(errors, [], 'no page errors');
 		console.log('PASS label designer: ' + text.trim());
 	} finally {
