@@ -186,6 +186,50 @@ and unavailable-image cases before enabling any provider. Manual entry remains u
 through each failure. Bookmarks to open services do not establish a reliable lookup chain;
 source selection and order still depend on the experiment.
 
+## Q1 experiment: US pantry sample (2026-10-23, partial)
+
+**Sample.** 26 real barcodes from the maintainer's pantry door rack (shelves 1–5): spices,
+rubs, seasonings and two sauces. Each UPC was read from a package photo and its UPC-A
+check digit verified. The expected identity was recorded from the label before any lookup.
+The sample, each source's answer and the method are in
+[`tests/fixtures/barcodes/us-pantry-2026-10-23.json`](../../tests/fixtures/barcodes/us-pantry-2026-10-23.json).
+It is a food-only sample, so it says nothing about household (non-food) coverage.
+
+| Source | Exact matches | Wrong matches | Misses | Not measured |
+|---|---|---|---|---|
+| Open Food Facts, `GET /api/v2/product/{upc}` | 20 | 0 | 6 | 0 |
+| USDA FoodData Central, Branded search verified on `gtinUpc` | 3 | 0 | 8 | 15 |
+| Victual 0.5.4's Open Food Facts plugin, during parallel MCP lookups | 10 | 0 | 16 reported | 0 |
+
+- **Open Food Facts** identified 20 of 26, and every returned name was the right product.
+  Seven of those 20 came back with no `brands` field, and one ("Kinders") had a name too
+  short to use alone. The six misses are small or regional brands: Bearded Butcher,
+  Flatiron Sweet Heat (its two siblings were found), a Kinder's sauce packet, New Hampshire
+  Herb & Spice, and two Spiceology blends. Median response was 361 ms, max 610 ms (19 timed
+  requests). A second run at one request per second was answered `429 Too Many Requests` for
+  7 of 26 codes.
+- **FoodData Central** is unfinished. `DEMO_KEY` was rate-limited after 11 searches, and 3 of
+  those 11 were exact `gtinUpc` matches (Meat Church Holy Cow, Fire & Smoke Chicalicka Bam
+  Bam, Thundering Longhorn). The other 15 codes are still to be measured, with a registered
+  api.data.gov key or after the limit resets. No FDC conclusion is drawn from 11.
+- **Victual's own plugin** returned a suggestion for only 10 of the 20 codes Open Food Facts
+  knows. The lookups ran in parallel during the production pantry walk
+  ([`mcp/README.md`](../../mcp/README.md#real-client-runs-adr-0052-prerequisite-3)). Replayed
+  one at a time, it returned all 20. `OpenFoodFactsBarcodeLookupPlugin` maps every non-2xx
+  status to `null`, so a `429` reaches the caller as "no product for this barcode". This is
+  the failure the evaluation requirements above already name: *separate a confirmed miss from
+  an outage or rate-limit response*.
+
+**What this settles, and what it does not.** For a US spice and seasoning shelf, Open Food
+Facts alone resolves about three in four products correctly. Two things therefore come
+before any second source:
+- the plugin must report a rate-limited or failed lookup as an error, not as a miss;
+- a client must not fire lookups in parallel against one free source.
+
+Whether FoodData Central adds coverage, and in which chain order (Q2), stays open until its
+15 codes are measured. Q3 (non-food) needs the household sample the evaluation
+requirements describe.
+
 ## Effort
 
 Small. The FDC plugin is a few hours including the verification logic; the chaining plugin

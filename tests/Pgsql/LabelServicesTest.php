@@ -1977,6 +1977,31 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		self::assertSame(['STOCK_VIEW'], $seen, 'The permission asked about is the one the catalogue declares for the field');
 	}
 
+	/**
+	 * A product that never expires books its stock with the date 2999-12-31. The label prints
+	 * nothing for that date, as it does for no date, and the stock row keeps the stored value;
+	 * a real date still captures as it is stored.
+	 */
+	public function testNeverExpiresDateCapturesEmptyAndLeavesTheRowAlone(): void
+	{
+		self::$db->exec("INSERT INTO products (id, name, location_id, qu_id_purchase, qu_id_stock) VALUES (9010, 'Salt', 9001, 2, 2)");
+		self::$db->exec("INSERT INTO stock (id, product_id, amount, best_before_date, purchased_date, stock_id) VALUES (9010, 9010, 1, DATE '2999-12-31', DATE '2026-10-23', 'labelservices-never')");
+		self::$db->exec("INSERT INTO stock (id, product_id, amount, best_before_date, purchased_date, stock_id) VALUES (9011, 9010, 1, DATE '2027-03-04', DATE '2026-10-23', 'labelservices-dated')");
+		self::$db->exec("INSERT INTO stock (id, product_id, amount, best_before_date, purchased_date, stock_id) VALUES (9012, 9010, 1, NULL, DATE '2026-10-23', 'labelservices-undated')");
+		$fields = ['stock_entry.best_before_date', 'stock_entry.purchased_date'];
+
+		$never = self::tx(static fn () => self::captures()->Capture('stock_entry', 9010, null, $fields, 'en', 'UTC', 9000));
+		self::assertSame('', $never['captured_fields']['stock_entry.best_before_date'], 'The never-expires sentinel prints nothing');
+		self::assertSame('2026-10-23', $never['captured_fields']['stock_entry.purchased_date'], 'Only the field that declares the sentinel is affected');
+		self::assertSame('2999-12-31', self::$db->query('SELECT best_before_date FROM stock WHERE id=9010')->fetchColumn(), 'The stored date is unchanged');
+
+		$dated = self::tx(static fn () => self::captures()->Capture('stock_entry', 9011, null, $fields, 'en', 'UTC', 9000));
+		self::assertSame('2027-03-04', $dated['captured_fields']['stock_entry.best_before_date'], 'A real date captures as stored');
+
+		$undated = self::tx(static fn () => self::captures()->Capture('stock_entry', 9012, null, $fields, 'en', 'UTC', 9000));
+		self::assertSame('', $undated['captured_fields']['stock_entry.best_before_date'], 'No date prints nothing, by the field\'s null rule');
+	}
+
 	// --- LabelWorkerAuthorization and worker credentials -----------------------------------
 
 	/** Returns a LabelWorkerAuthorization on the test connection. */
