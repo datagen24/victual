@@ -68,7 +68,7 @@ class OrganizerLabelDisclosureTest extends PgsqlSchemaTestCase
 			$id = (int)self::tx(static fn () => $templates->Create("Organizer $kind label", null, $kind, 9000))['id'];
 			$draft = $templates->GetDraft($id);
 			$document = ['schema_version' => 1, 'entity_kind' => $kind,
-				'canvas' => ['width_mm' => 58.9, 'height_mm' => 30.0, 'max_height_mm' => null, 'margins_mm' => ['top' => 2.0, 'right' => 2.0, 'bottom' => 2.0, 'left' => 2.0]],
+				'canvas' => ['width_mm' => 58.42, 'height_mm' => 30.0, 'max_height_mm' => null, 'margins_mm' => ['top' => 2.0, 'right' => 2.0, 'bottom' => 2.0, 'left' => 2.0]],
 				'elements' => [['type' => 'qr', 'id' => 'code', 'x_mm' => 2.0, 'y_mm' => 2.0, 'module_mm' => 0.6, 'ec_level' => 'M', 'quiet_zone_modules' => 4, 'source' => 'label.payload', 'color' => 'black']]];
 			self::tx(static fn () => $templates->SaveDraft($id, $document, $draft['revision_token'], 9000));
 			self::tx(static fn () => $templates->Publish($id, 9000));

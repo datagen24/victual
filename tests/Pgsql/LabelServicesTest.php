@@ -199,10 +199,10 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 
 	// --- Documents -------------------------------------------------------------------------
 
-	/** Returns a 58.9 mm by 30 mm canvas with 2 mm margins. */
+	/** Returns a 58.42 mm by 30 mm canvas with 2 mm margins. */
 	private static function canvas(): array
 	{
-		return ['width_mm' => 58.9, 'height_mm' => 30.0, 'max_height_mm' => null,
+		return ['width_mm' => 58.42, 'height_mm' => 30.0, 'max_height_mm' => null,
 			'margins_mm' => ['top' => 2.0, 'right' => 2.0, 'bottom' => 2.0, 'left' => 2.0]];
 	}
 
@@ -443,7 +443,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			// Canvas.
 			'no canvas' => [array_merge(self::qrOnlyDocument(), ['canvas' => null]), 'canvas', 'invalid_value'],
 			'an unknown canvas property' => [self::withCanvas(['bogus' => 1]), 'canvas.bogus', 'unknown_property'],
-			'a canvas width that is not a number' => [self::withCanvas(['width_mm' => '58.9']), 'canvas.width_mm', 'invalid_value'],
+			'a canvas width that is not a number' => [self::withCanvas(['width_mm' => '58.42']), 'canvas.width_mm', 'invalid_value'],
 			'an infinite canvas width' => [self::withCanvas(['width_mm' => INF]), 'canvas.width_mm', 'invalid_value'],
 			'a canvas width of zero' => [self::withCanvas(['width_mm' => 0.0]), 'canvas.width_mm', 'value_out_of_range'],
 			'a canvas wider than the bound' => [self::withCanvas(['width_mm' => 3000.0]), 'canvas.width_mm', 'value_out_of_range'],
@@ -1047,7 +1047,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		self::assertSame('UTC', $input['capture']['timezone'], 'The pinned timezone travels with the request');
 
 		self::assertSame((int)self::$profile['id'], $input['profile']['id'], 'The input names the media profile');
-		self::assertSame(696, (int)$input['profile']['raster_width_px'], 'The raster width is the profile geometry, not the canvas');
+		self::assertSame(690, (int)$input['profile']['raster_width_px'], 'The raster width is the profile geometry, not the canvas');
 		self::assertSame(300, (int)$input['profile']['dpi_x'], 'The horizontal resolution is stated');
 		self::assertSame(300, (int)$input['profile']['dpi_y'], 'The vertical resolution is stated separately');
 
@@ -1421,7 +1421,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		self::assertSame(ArtifactService::FORM, $artifact['form'], 'The artifact is recorded under the form that was verified');
 		self::assertSame(hash('sha256', $bytes), $artifact['byte_digest'], 'The digest is computed over the bytes that arrived');
 		self::assertSame(strlen($bytes), (int)$artifact['byte_length'], 'The length is the length of those bytes');
-		self::assertSame(696, (int)$artifact['width_px'], 'The width is the profile raster width');
+		self::assertSame(690, (int)$artifact['width_px'], 'The width is the profile raster width');
 		self::assertSame(354, (int)$artifact['height_px'], 'The height is the canvas height at the profile resolution');
 		self::assertSame('retained', $artifact['retention_class'], 'A production render is retained so it can be reprinted exactly');
 
@@ -1502,7 +1502,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		$turned = TemplateDocument::Validate(self::turned(self::qrOnlyDocument()), 'location')['document'];
 		self::assertSame(2, $turned['schema_version']);
 		self::assertSame(90, $turned['canvas']['orientation_deg']);
-		self::assertSame(58.9, $turned['canvas']['width_mm'], 'width_mm is still the roll');
+		self::assertSame(58.42, $turned['canvas']['width_mm'], 'width_mm is still the roll');
 
 		$upright = TemplateDocument::Validate(self::qrOnlyDocument(), 'location')['document'];
 		self::assertSame(1, $upright['schema_version']);
@@ -1562,7 +1562,7 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 	{
 		$upright = self::withText(['x_mm' => 50.0, 'y_mm' => 2.0, 'width_mm' => 20.0, 'height_mm' => 6.0]);
 		self::assertRefused(static fn () => TemplateDocument::Validate($upright, 'location'),
-			'elements.title.width_mm', 'element_outside_canvas', 'Upright, 50 + 20 mm passes a 58.9 mm roll');
+			'elements.title.width_mm', 'element_outside_canvas', 'Upright, 50 + 20 mm passes a 58.42 mm roll');
 
 		$turned = self::turned(self::withText(['x_mm' => 50.0, 'y_mm' => 2.0, 'width_mm' => 20.0, 'height_mm' => 6.0, 'rotation_deg' => 90]), 0);
 		$element = TemplateDocument::Validate($turned, 'location')['document']['elements'][1];
@@ -3373,10 +3373,109 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		self::assertRefused(static fn () => self::tx(static fn () => self::operations()->Reprint($orphan, null)),
 			'label_uid', 'unknown_label', 'Reprinting a job whose label is not known');
 
-		// The stored bytes were produced for two-colour media at 696 px; the monochrome
+		// The stored bytes were produced for two-colour media at 690 px; the monochrome
 		// printer is a different profile, and there is no fallback to the nearest size.
 		self::assertRefused(static fn () => self::tx(static fn () => self::operations()->Reprint((int)$printed['id'], self::$monoPrinter)),
 			'printer_id', 'media_incompatible', 'Replaying stored bytes on a printer they were not rendered for');
+	}
+
+	/**
+	 * DK-22251's printable width was corrected from 58928 um to 58420 um on 2026-10-24, under
+	 * a new driver version because a registered one is immutable. An artifact rendered at the
+	 * old 696 px is not replayed afterwards: first the printer is on a version the worker no
+	 * longer advertises, then, once moved, its profile fixes 690 px and the reprint is refused
+	 * by name. A revised print renders again at 690 under the same uid.
+	 */
+	public function testAReprintAtTheOldRedTapeWidthIsRefusedAfterTheDriverMoves(): void
+	{
+		$worker = self::secondWorker();
+		$version = static function (string $schema, int $widthUm): array {
+			$definition = self::driverDefinition();
+			$definition['schema_version'] = $schema;
+			$definition['capability_document']['combinations'][0]['printable_width_um'] = $widthUm;
+			return $definition;
+		};
+		$printerOn = static fn (string $schema): array => array_merge(self::printerDefinition(),
+			['name' => 'Width move printer', 'worker_id' => $worker, 'driver_schema_version' => $schema]);
+		$registry = new DriverRegistryService(self::$db);
+		$printers = new PrinterConfigurationService(self::$db);
+
+		self::tx(static fn () => $registry->Register($worker, [$version('1.1', 58928)]));
+		$printer = self::tx(static fn () => $printers->Save($printerOn('1.1')));
+		[$job, $artifact] = self::issueAndRender(self::$qrTemplate, $printer);
+		self::assertSame(696, (int)$artifact['width_px'], 'Rendered at the old width');
+
+		self::assertRefused(static fn () => self::tx(static fn () => $registry->Register($worker, [$version('1.1', 58420)])),
+			'drivers', 'contradicting_registration', 'The correction cannot reuse the registered version');
+
+		self::tx(static fn () => $registry->Register($worker, [$version('1.2', 58420)]));
+		self::assertRefused(static fn () => self::tx(static fn () => self::operations()->Reprint((int)$job['id'], null)),
+			'printer_id', 'missing_capability', 'Before the move, the worker no longer advertises 1.1');
+
+		self::tx(static fn () => $printers->Save($printerOn('1.2'), $printer, true));
+		$profile = self::tx(static fn () => self::operations()->ResolvePrinter($printer))['profile'];
+		self::assertSame(690, (int)$profile['raster_width_px'], '58.42 mm at 300 dpi rounds to 690 px');
+		self::assertStringContainsString('/1.2/', $profile['profile_key'], 'The move derives a profile under the new version');
+		self::assertSame(1, (int)$profile['version'], 'A new profile key starts at version 1');
+
+		self::assertRefused(static fn () => self::tx(static fn () => self::operations()->Reprint((int)$job['id'], null)),
+			'printer_id', 'media_incompatible', 'A 696 px artifact is not replayed on a 690 px profile');
+
+		$revised = self::tx(static fn () => self::operations()->RevisedPrint('location', 9001, 0, $printer, self::$qrTemplate, null, 'en', 'UTC'));
+		self::assertSame($job['label_uid'], $revised['label_uid'], 'A revised print keeps the identity');
+		$request = self::requestRow((int)$revised['render_request_id']);
+		self::assertSame((int)$profile['id'], (int)$request['profile_id'], 'The revised print renders against the 690 px profile');
+	}
+
+	/**
+	 * The renderer sizes its raster from the profile, not the canvas, so an element between
+	 * the media's printable width and `canvas.width_mm` would be cropped without a word. A
+	 * 58.9 mm canvas whose elements stay inside 58.42 mm - the shape of the templates made
+	 * before the correction - still renders.
+	 */
+	public function testAnElementPastThePrintableWidthIsRefusedBeforeAnythingIsQueued(): void
+	{
+		$draft = static function (array $document): array {
+			$validated = TemplateDocument::Validate($document, 'location')['document'];
+			return self::tx(static fn () => self::requests()->CreateForDraft(
+				self::$qrTemplate, $validated, (int)self::$profile['id'], self::$sampleCaptureId, 9000));
+		};
+		$wide = self::withCanvas(['width_mm' => 58.9]);
+		$box = static fn (float $width): array => array_merge(self::rectElement(), ['x_mm' => 2.0, 'width_mm' => $width]);
+
+		$edge = $wide;
+		$edge['elements'][] = $box(56.9);
+		self::assertRefused(static fn () => $draft($edge), 'elements.box.x_mm', 'element_outside_media',
+			'A box reaching 58.9 mm does not fit 690 px');
+
+		$inside = $wide;
+		$inside['elements'][] = $box(54.9);
+		self::assertSame('pending', $draft($inside)['state'], 'A 58.9 mm canvas with content inside 56.9 mm renders');
+
+		$flush = $wide;
+		$flush['elements'][] = $box(56.42);
+		self::assertSame('pending', $draft($flush)['state'], 'A box ending at 58.42 mm ends on the last pixel');
+
+		$turned = self::turned(self::withCanvas(['width_mm' => 58.9, 'height_mm' => 70.0]));
+		$turned['elements'][] = array_merge(self::rectElement(), ['y_mm' => 50.0, 'height_mm' => 8.9]);
+		self::assertRefused(static fn () => $draft($turned), 'elements.box.y_mm', 'element_outside_media',
+			'On a quarter turn, across the roll is reading y');
+
+		$line = $wide;
+		$line['elements'][] = ['type' => 'line', 'id' => 'rule', 'x1_mm' => 58.9, 'y1_mm' => 20.0,
+			'x2_mm' => 2.0, 'y2_mm' => 20.0, 'stroke_mm' => 0.3];
+		self::assertRefused(static fn () => $draft($line), 'elements.rule.x1_mm', 'element_outside_media',
+			'A line is measured by the endpoint furthest across the roll');
+
+		// Upright 50 + 8 mm passes 58.42; turned 90, its footprint is as wide as it is tall.
+		$rotated = $wide;
+		$rotated['schema_version'] = 2;
+		$rotated['elements'][] = array_merge(self::rectElement(), ['x_mm' => 50.0, 'width_mm' => 8.0, 'height_mm' => 8.9]);
+		self::assertSame('pending', $draft($rotated)['state'], 'Unturned, the box ends at 58 mm');
+		$rotated['elements'][1]['rotation_deg'] = 90;
+		self::assertRefused(static fn () => $draft($rotated), 'elements.box.x_mm', 'element_outside_media',
+			'Turned a quarter, the box is 8.9 mm across and ends at 58.9 mm');
+		self::quiesceQueue();
 	}
 
 	/** A revised print keeps the uid and captures again; the earlier artifact is untouched. */

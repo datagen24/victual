@@ -160,7 +160,7 @@ async function saveDraft(page, templateId)
 		// Publishing a document that names a font nobody stored is deterministic either way.
 		const orphan = {
 			schema_version: 1, entity_kind: 'location',
-			canvas: { width_mm: 58.9, height_mm: 30.0, max_height_mm: null,
+			canvas: { width_mm: 58.42, height_mm: 30.0, max_height_mm: null,
 				margins_mm: { top: 1, right: 1, bottom: 1, left: 1 } },
 			elements: [{ type: 'text', id: 'name', x_mm: 2, y_mm: 2, width_mm: 30, height_mm: 8,
 				field: 'location.name', font_asset: 'no-such-font-' + Date.now(), size_pt: 10 }],

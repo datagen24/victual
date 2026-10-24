@@ -162,7 +162,7 @@ class LabelTemplateService extends LabelService
         return [
             'schema_version' => TemplateDocument::SCHEMA_VERSION,
             'entity_kind' => $entityKind,
-            'canvas' => ['width_mm' => 58.9, 'height_mm' => null, 'max_height_mm' => 100.0, 'margins_mm' => ['top' => 2.0, 'right' => 2.0, 'bottom' => 2.0, 'left' => 2.0]],
+            'canvas' => ['width_mm' => 58.42, 'height_mm' => null, 'max_height_mm' => 100.0, 'margins_mm' => ['top' => 2.0, 'right' => 2.0, 'bottom' => 2.0, 'left' => 2.0]],
             'elements' => [[
                 'type' => 'qr', 'id' => 'code', 'x_mm' => 2.0, 'y_mm' => 2.0,
                 'module_mm' => 0.6, 'ec_level' => 'M', 'quiet_zone_modules' => 4,

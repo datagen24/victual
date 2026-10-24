@@ -37,6 +37,18 @@ than re-running whatever booking produced it.
   and the designer names it under the canvas, because it may be cut off or print too close
   to the edge.
 
+  **Printable width.** Set the label width to what the printer can print, not to the tape's
+  width. On a QL-820NWB, 62 mm DK-22251 black and red tape (`62red`) prints **58.42 mm**:
+  the tape keeps a fixed 1.78 mm margin on each side. That is 690 dots at 300 dpi. Plain
+  62 mm DK-22205 tape (`62`) prints 58.9 mm, 696 dots, which is Brother's figure. A new
+  template starts 58.42 mm wide.
+
+  The renderer draws on the printer's width, whatever the canvas says. So a preview or a
+  print is refused (`element_outside_media`) when an element reaches past the printable
+  width, and the refusal names the element. A canvas wider than the printable width still
+  prints when every element stays inside it: a 58.9 mm canvas with 2 mm margins puts its
+  content within 56.9 mm.
+
   A print uses the template's *default version*, not its draft and not its newest version.
   **Version that prints** in the designer shows which version that is, warns when a newer
   version exists, and **Print with this version** changes it. **Publish a version** makes the
@@ -157,6 +169,21 @@ credential or pairing material and revoke credentials. The printer form register
 printer for a worker. The same operations are available through the administrative API:
 `label-admin-printer-*`, `label-admin-worker-*`, `label-admin-issue`,
 `label-admin-pairing` and `label-admin-revoke` in `routes.php`.
+
+**Upgrading the worker to a new driver version.** A worker registers its driver at every
+start, and a registered driver version cannot change. A worker whose geometry changed
+publishes a new version and advertises only that one. Until an administrator moves each
+printer to it, Victual refuses new prints for that printer (`missing_capability`), and a job
+that was already queued records a `blocked` attempt with zero bytes sent. On `/labelprinters`,
+open the printer, choose the new driver version and select **Move to selected driver
+version** (`POST /api/labels/printers/{printerId}/schema-version`). The move derives a new
+media profile from the new version.
+
+`brother.ql` 1.2 is such a version: it corrects `62red` from 696 to 690 dots. After the
+move, a reprint of a label rendered before it is refused with `media_incompatible`, because
+the retained bytes are 696 px wide and the printer's profile is 690. A reprint never
+resizes stored bytes. Request a revised print instead: it keeps the label's identity and
+renders it again at the new width.
 
 A worker rotates its own credential through `POST /api/labels/credentials/rotate`
 (`labels-rotate`), authenticating with that credential. Worker credentials are independent

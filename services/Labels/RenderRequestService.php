@@ -45,6 +45,10 @@ class RenderRequestService extends LabelService
         if (!in_array($purpose, ['production', 'preview_live', 'preview_sample'], true)) {
             $this->Refuse('purpose', 'invalid_value', 'A published version renders for production, preview_live or preview_sample');
         }
+        $document = $this->Query('SELECT document FROM label_template_versions WHERE id=?', [$templateVersionId])->fetchColumn();
+        if ($document !== false) {
+            $this->AssertFitsMedia(json_decode($document, true), $profileId);
+        }
         $expires = $purpose === 'production' ? null : 'CURRENT_TIMESTAMP+make_interval(secs=>' . self::PREVIEW_TTL_SECONDS . ')';
         return $this->Query('INSERT INTO label_render_requests(purpose,template_version_id,profile_id,capture_id,created_by_user_id,expires_at)
             VALUES (?,?,?,?,?,' . ($expires ?? 'NULL') . ') RETURNING *', [$purpose, $templateVersionId, $profileId, $captureId, $userId])->fetch(\PDO::FETCH_ASSOC);
@@ -57,9 +61,30 @@ class RenderRequestService extends LabelService
     public function CreateForDraft(int $templateId, array $document, int $profileId, int $captureId, ?int $userId): array
     {
         $this->Transaction();
+        $this->AssertFitsMedia($document, $profileId);
         return $this->Query('INSERT INTO label_render_requests(purpose,draft_template_id,draft_document,profile_id,capture_id,created_by_user_id,expires_at)
             VALUES (?,?,?::jsonb,?,?,?,CURRENT_TIMESTAMP+make_interval(secs=>?)) RETURNING *',
             ['preview_draft', $templateId, $this->Json($document), $profileId, $captureId, $userId, self::PREVIEW_TTL_SECONDS])->fetch(\PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Refuses a document with an element the media cannot print, before anything is queued.
+     *
+     * The comparison is in device pixels by the profile's own rounding, because that is
+     * where the renderer crops: an element that ends on the raster's last pixel prints.
+     */
+    private function AssertFitsMedia(array $document, int $profileId): void
+    {
+        $furthest = TemplateDocument::FurthestAcrossRoll($document);
+        if ($furthest === null) {
+            return;
+        }
+        $profile = (new MediaProfileService($this->db))->Get($profileId)['document'];
+        if (MediaProfileService::PixelsFromMm($furthest['extent_mm'], (int)$profile['dpi_x']) > (int)$profile['raster_width_px']) {
+            $this->Refuse('elements.' . $furthest['id'] . '.' . $furthest['field'], 'element_outside_media',
+                'The element reaches ' . round($furthest['extent_mm'], 2) . ' mm across the roll and ' . $profile['media'] . ' prints '
+                . round((int)$profile['printable_width_um'] / 1000, 2) . ' mm (' . (int)$profile['raster_width_px'] . ' px); move or narrow it');
+        }
     }
 
     public function Get(int $requestId): array
