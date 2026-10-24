@@ -4,8 +4,9 @@
 reports. Stored barcodes are canonical and self-describing. Conflicting mappings are
 held for an administrator instead of being decided silently.
 **Depends on:** [ADR-0031](../adr/0031-barcode-identity-is-canonical-and-reserved.md)
-(**Proposed**). Implementation waits for its acceptance, which lands in a separate,
-bookkeeping-only pull request. The plan does not depend on the web setup flow in
+(**Proposed**, revised 2026-10-24). Implementation waits for its acceptance, which lands
+in a separate, bookkeeping-only pull request, and for answers to its open questions 2
+and 3. The plan does not depend on the web setup flow in
 [issue 484](https://github.com/datagen24/victual/issues/484).
 **Status:** draft; design settled in [issue 483](https://github.com/datagen24/victual/issues/483)
 (revision 3, 2026-09-24), which subsumes [issue 481](https://github.com/datagen24/victual/issues/481).
@@ -27,7 +28,8 @@ After this plan:
 
 ## Current behaviour
 
-Measured against `master` at `12b032f8` on 2026-09-24 by reading the source.
+Measured against `master` at `12b032f8` on 2026-09-24 by reading the source. Re-read
+against `master` at `d40f5afb` on 2026-10-24: unchanged except where noted.
 
 ### Storage
 
@@ -67,8 +69,13 @@ row-rewriting steps (the purifier, the API key hashing) after proving the copy e
 
 - **GS1.** Nothing parses AIM identifiers, AI (01), FNC1 or GS, UPC-E, or
   restricted-circulation prefixes.
-- **`helpers/Gtin.php`** pads 8-, 12-, 13- and 14-digit codes to 14 digits. It
-  validates no check digit and has no caller.
+- **`helpers/Gtin.php`** pads 8-, 12-, 13- and 14-digit codes to 14 digits, and
+  `SameGtin()` compares two codes after padding. It validates no check digit. Its only
+  caller is `tests/Pgsql/GtinTest.php` (2026-10-24); nothing in production calls it.
+- **MCP sidecar** (ADR-0052, since 2026-10-23). `lookup_barcode` calls the by-barcode
+  details route. `add_barcode` and `create_product` write through
+  `POST /api/objects/product_barcodes`, and they treat today's 400 as a duplicate. These
+  are W3 and W5 clients; see ADR-0031's Consequences.
 - **Camera scanner.** `camerabarcodescanner.js` does not list `UPC_A` or `UPC_E`.
 - **Route shape.** The by-barcode routes take the code as a path segment, so a code
   containing `/` or the GS separator cannot reach them. This plan keeps those routes
@@ -442,6 +449,9 @@ registered (CWE-203). The generic entity read routes work the same way:
   chosen. A caller can then tell a live label of a kind they can't read (403) from an
   unknown uid (404). This remaining difference discloses nothing an attacker can
   enumerate: a uid is 64 random bits (ADR-0011), and guessing one is impractical.
+  `LabelIdentityService::Resolve` answers `unknown` in this case today, and plan 32
+  tests that. Whether `/api/scan` keeps the 403 or adopts `unknown` is ADR-0031 open
+  question 2.
 
 After authorisation, the resolver chooses the status.
 
@@ -511,7 +521,9 @@ by-barcode operation with the resolved product's canonical barcode.
 
 - **Product picker.** `productpicker.js` resolves a typed or scanned value through
   `/api/scan` and drops `FindOptionBySearchdata`'s barcode substring match. Name search
-  is unchanged.
+  is unchanged. ADR-0050 lets a `SHOPPINGLIST_VIEW`-only caller scan on the
+  shopping-list pages, so how the picker resolves there depends on ADR-0031 open
+  question 3.
 - **Pre-create check.** The picker's pre-create check uses the resolver's `unknown`
   answer. The code is URL-encoded.
 - **Camera scanner.** It adds `UPC_A` and `UPC_E` and passes the reported format as the
@@ -584,6 +596,10 @@ the page that resolves them.
    > lookup source and the default units of measure use the same setting, tracked in
    > [issue 486](https://github.com/datagen24/victual/issues/486). Until it exists, the
    > default pattern stays unset.
+
+   Issue 486 is in milestone 0.5.5 (2026-10-24). ADR-0031 open question 1 tracks two
+   points that remain: the country-to-pattern table, and whether a derived default is
+   computed at read time (issue 486 question 2).
 
 2. **A decoded sticker value in a booking.** `/api/scan` returns `decoded_value`. Should
    the purchase form use a decoded price as the unit price, and should the consume form
