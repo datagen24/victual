@@ -3,5 +3,8 @@
   "private": true,
   "type": "module",
   "description": "Throwaway spike for issue #770; versions match mcp/package.json",
-  "dependencies": { "@modelcontextprotocol/server": "^2.0.0", "zod": "^4.2.0" }
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
+    "zod": "^4.6.7"
+  }
 }
