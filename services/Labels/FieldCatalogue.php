@@ -19,7 +19,11 @@ use Victual\Controllers\Users\User;
 class FieldCatalogue
 {
     /**
-     * @return array<string, array{column: string, select?: string, permission: string, max_length: int, null: string, type: string}>
+     * `never`, where a field has one, is the sentinel the column stores for "no such date".
+     * A captured value equal to it is treated as null, so the field's `null` rule decides what
+     * prints; the stored row keeps the sentinel.
+     *
+     * @return array<string, array{column: string, select?: string, permission: string, max_length: int, null: string, type: string, never?: string}>
      */
     public static function For(string $entityKind): array
     {
@@ -116,13 +120,17 @@ class FieldCatalogue
                     'null' => 'error',
                     'type' => 'string',
                 ],
-                // never_overdue products (due_type 2) carry entries with no best_before_date.
+                // A product that never expires books its entries with the date 2999-12-31
+                // (StockService::AddProduct), not NULL. On paper that date is noise, so it
+                // prints nothing, the same as a NULL date - which the designer's description
+                // of this field already promised.
                 'stock_entry.best_before_date' => [
                     'column' => 'best_before_date',
                     'permission' => User::PERMISSION_STOCK_VIEW,
                     'max_length' => 32,
                     'null' => 'empty',
                     'type' => 'string',
+                    'never' => '2999-12-31',
                 ],
                 'stock_entry.amount' => [
                     'column' => 'amount',
