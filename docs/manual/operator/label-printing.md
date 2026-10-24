@@ -30,6 +30,12 @@ than re-running whatever booking produced it.
   as Victual stores it, with one exception: a stock entry's best before date prints nothing
   when the product never expires. Victual stores that case as the date 2999-12-31, and the
   stored date does not change.
+
+  An element must fit on the canvas: across the roll always, and along the tape when the
+  label has a fixed length. Saving refuses an element that runs past either edge and names
+  it. The dashed outline on the canvas is the margin. An element that crosses it is saved,
+  and the designer names it under the canvas, because it may be cut off or print too close
+  to the edge.
 - **`/labelprinters`** — register and edit workers and printers, issue credentials or
   pairing material, and revoke worker credentials. Requires `ADMIN`.
 - **`/labelprintjobs`** — the job queue, with the printer each job targets. States include

@@ -167,10 +167,17 @@ class TemplateDocument
     /**
      * The extent elements are bounded by, in the reading frame.
      *
-     * Upright, that is the roll's width, and the length is left to the renderer's length
-     * rules exactly as schema 1 always did. On a quarter turn the reading width is the length
-     * along the tape (fixed, or its automatic maximum) and the reading height is the roll's
-     * width, which is now a hard bound an element can fall off.
+     * Upright, that is the roll's width across, and down it is a fixed `height_mm` when the
+     * canvas has one. An automatic length is left to the renderer's length rules, which grow
+     * the label to its content. A fixed length is a hard bound: the renderer draws at that
+     * size and crops what passes it, which is how a box at 20.8 mm + 4.6 mm on a 25 mm label
+     * lost its bottom on paper on 2026-10-23. On a quarter turn the reading width is the
+     * length along the tape (fixed, or its automatic maximum) and the reading height is the
+     * roll's width.
+     *
+     * Margins are not a bound here. The renderer uses them only to pad an automatic length,
+     * and a frame drawn into the margin is a design, so the designer warns about an element
+     * that crosses one rather than this refusing it.
      *
      * @return array{width_mm: float, height_mm: ?float}
      */
@@ -180,7 +187,7 @@ class TemplateDocument
         if ($orientation === 90 || $orientation === 270) {
             return ['width_mm' => $canvas['height_mm'] ?? $canvas['max_height_mm'], 'height_mm' => $canvas['width_mm']];
         }
-        return ['width_mm' => $canvas['width_mm'], 'height_mm' => null];
+        return ['width_mm' => $canvas['width_mm'], 'height_mm' => $canvas['height_mm']];
     }
 
     private static function ValidateCanvas(mixed $canvas, int $schema): array
@@ -423,7 +430,7 @@ class TemplateDocument
             self::Refuse("elements.$id.width_mm", 'element_outside_canvas', 'The element extends past the canvas width');
         }
         if ($canvas['height_mm'] !== null && $y + $down > $canvas['height_mm'] + 0.0001) {
-            self::Refuse("elements.$id.height_mm", 'element_outside_canvas', 'The element extends past the roll, which is the canvas height when the design is turned');
+            self::Refuse("elements.$id.height_mm", 'element_outside_canvas', 'The element extends past the bottom of the canvas: its fixed length when upright, the roll when the design is turned');
         }
         return ['x_mm' => $x, 'y_mm' => $y, 'width_mm' => $w, 'height_mm' => $h];
     }

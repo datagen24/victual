@@ -158,6 +158,10 @@
 		<div class="border d-inline-block">
 			<canvas id="label-canvas"></canvas>
 		</div>
+		<small class="form-text text-warning"
+			id="canvas-margin-note"
+			role="status"
+			aria-live="polite"></small>
 		<small class="form-text text-muted" id="canvas-sample-note">
 			{{ $__t('A field is drawn here as its key. The explanation under Field says what a printed label shows in its place.') }}
 		</small>
