@@ -26,7 +26,10 @@ than re-running whatever booking produced it.
   label length along the tape. **Reading orientation** sets which edge is the top of the
   design: turned 90°, the tape length runs across the canvas, so a long label can be read
   sideways. Each element except a line can also be rotated in 90° steps from its properties.
-  The rendered preview shows the label as it leaves the printer.
+  The rendered preview shows the label as it leaves the printer. A field prints the value
+  as Victual stores it, with one exception: a stock entry's best before date prints nothing
+  when the product never expires. Victual stores that case as the date 2999-12-31, and the
+  stored date does not change.
 - **`/labelprinters`** — register and edit workers and printers, issue credentials or
   pairing material, and revoke worker credentials. Requires `ADMIN`.
 - **`/labelprintjobs`** — the job queue, with the printer each job targets. States include
