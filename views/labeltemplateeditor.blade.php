@@ -12,7 +12,9 @@
 		EntityKind: '{{ $template['entity_kind'] }}',
 		Name: {!! json_encode($template['name']) !!},
 		Assets: {!! json_encode($assets) !!},
-		Printers: {!! json_encode($printers) !!}
+		Printers: {!! json_encode($printers) !!},
+		Versions: {!! json_encode($versions) !!},
+		DefaultVersionId: {!! json_encode($template['default_version_id'] === null ? null : (int)$template['default_version_id']) !!}
 	};
 </script>
 
@@ -88,6 +90,30 @@
 		<button class="btn btn-success" id="publish-button">
 			<i class="fa-solid fa-upload"></i>&nbsp;{{ $__t('Publish a version') }}
 		</button>
+		<div class="form-check mt-2">
+			<input class="form-check-input" type="checkbox" id="publish-make-default" checked>
+			<label class="form-check-label" for="publish-make-default">{{ $__t('Print with the version I publish') }}</label>
+		</div>
+
+		{{-- Which version prints. A plain print and a live preview use the template's default
+		version, and on 2026-10-23 two versions were published while the default stayed on the
+		first, so this is stated rather than left to the template list. --}}
+		<div class="form-group mt-3">
+			<label for="default-version">{{ $__t('Version that prints') }}</label>
+			<div class="input-group">
+				<select class="form-control" id="default-version">
+					@foreach($versions as $version)
+					<option value="{{ $version['id'] }}" @if($version['id'] === (int)$template['default_version_id']) selected @endif>{{ $__t('Version %s', $version['version']) }}</option>
+					@endforeach
+				</select>
+				<div class="input-group-append">
+					<button class="btn btn-outline-secondary" id="default-version-button" @if(count($versions) === 0) disabled @endif>
+						{{ $__t('Print with this version') }}
+					</button>
+				</div>
+			</div>
+			<small class="form-text" id="default-version-status"></small>
+		</div>
 
 		<hr>
 
@@ -147,6 +173,30 @@
 		<button class="btn btn-info" id="preview-button" @if(count($printers) === 0) disabled @endif>
 			<i class="fa-solid fa-eye"></i>&nbsp;{{ $__t('Render a preview') }}
 		</button>
+
+		{{-- What will print. The canvas draws a field as its key and the preview above uses
+		example values, so a real value too long for its box is invisible in both. A live
+		preview captures the real values of one record and renders them with a published
+		version, the same way a print does. --}}
+		<div class="form-group mt-3">
+			<label for="preview-target-id">{{ $__t('Preview a real record') }}</label>
+			<div class="input-group">
+				<input type="number"
+					min="1"
+					step="1"
+					class="form-control"
+					id="preview-target-id"
+					placeholder="{{ $__t('Record number') }}">
+				<div class="input-group-append">
+					<button class="btn btn-info" id="live-preview-button" @if(count($printers) === 0) disabled @endif>
+						<i class="fa-solid fa-eye"></i>&nbsp;{{ $__t('Render it') }}
+					</button>
+				</div>
+			</div>
+			<small class="form-text text-muted">
+				{{ $__t('Renders the version chosen under Version that prints with the real values of this record, as a print of it would come out. The record number is the number at the end of its edit page address. The draft is not used, so publish an edit before previewing it. A record that has no label yet is shown with example values.') }}
+			</small>
+		</div>
 
 		<div id="template-message"
 			class="mt-3"

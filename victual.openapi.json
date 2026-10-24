@@ -11018,7 +11018,7 @@
 					"Label templates"
 				],
 				"summary": "Publish the draft as an immutable version",
-				"description": "Validates the document and every asset it references, and records the RFC 8785 digest.",
+				"description": "Validates the document and every asset it references, and records the RFC 8785 digest. The first published version becomes the template's default. A later one becomes the default only when the body sends make_default true; otherwise the default, which plain prints and live previews use, stays where it was.",
 				"parameters": [
 					{
 						"name": "templateId",
@@ -11030,6 +11030,23 @@
 						}
 					}
 				],
+				"requestBody": {
+					"required": false,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"make_default": {
+										"type": "boolean",
+										"default": false,
+										"description": "Make the new version the template's default"
+									}
+								}
+							}
+						}
+					}
+				},
 				"responses": {
 					"200": {
 						"description": "Publish the draft as an immutable version",

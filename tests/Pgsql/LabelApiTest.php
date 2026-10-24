@@ -1210,6 +1210,40 @@ class LabelApiTest extends PgsqlSchemaTestCase
 	}
 
 	/**
+	 * A later version moves the default only when the publish asks it to; a non-boolean
+	 * make_default is refused and publishes nothing. On 2026-10-23 two published versions
+	 * left the default on version 1, and plain prints used it.
+	 */
+	#[Depends('testSavingAndPublishingADraftProducesADefaultVersion')]
+	public function testPublishMovesTheDefaultOnlyWhenAsked(): void
+	{
+		$created = self::Send('POST', '/api/labels/templates', ['name' => 'Labelapi publish default', 'entity_kind' => 'location'], self::$adminKey);
+		$templateId = (int)$created['json']['id'];
+		$default = static fn () => (int)self::Row('SELECT default_version_id FROM label_templates WHERE id = ?', [$templateId])['default_version_id'];
+
+		$first = self::Send('POST', "/api/labels/templates/$templateId/publish", ['make_default' => false], self::$adminKey);
+		self::assertSame(200, $first['status'], $first['body']);
+		self::assertSame((int)$first['json']['id'], $default(), 'the first version becomes the default even when not asked');
+
+		$second = self::Send('POST', "/api/labels/templates/$templateId/publish", [], self::$adminKey);
+		self::assertSame(200, $second['status'], $second['body']);
+		self::assertSame((int)$first['json']['id'], $default(), 'a client that says nothing keeps the default where it was');
+
+		$third = self::Send('POST', "/api/labels/templates/$templateId/publish", ['make_default' => true], self::$adminKey);
+		self::assertSame(200, $third['status'], $third['body']);
+		self::assertSame(3, (int)$third['json']['version']);
+		self::assertSame((int)$third['json']['id'], $default(), 'make_default moves the default to the new version');
+
+		self::AssertRefusal(self::Send('POST', "/api/labels/templates/$templateId/publish", ['make_default' => 'yes'], self::$adminKey),
+			422, 'make_default', 'invalid_value');
+		self::assertSame(3, (int)self::Row('SELECT COUNT(*) AS n FROM label_template_versions WHERE template_id = ?', [$templateId])['n'],
+			'a refused publish creates no version');
+
+		$archived = self::Send('POST', "/api/labels/templates/$templateId/archive", [], self::$adminKey);
+		self::assertSame(200, $archived['status'], $archived['body']);
+	}
+
+	/**
 	 * The template list shows each template's default version number and name.
 	 */
 	#[Depends('testSavingAndPublishingADraftProducesADefaultVersion')]
@@ -2323,6 +2357,35 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame('queued', $promote['json']['state'], 'a promotion carries bytes already, so it is queued rather than awaiting one');
 		self::assertSame($before['print_jobs'] + 1, self::Counts()['print_jobs']);
 		self::assertSame($before['print_requests'] + 1, self::Counts()['print_requests']);
+	}
+
+	/**
+	 * The designer's live preview: a chosen published version, not only the default, rendered
+	 * with the real values of a labelled stock entry. On 2026-10-23 the designer could show only
+	 * field keys and sample values, so a real product name too long for its box was invisible.
+	 */
+	#[Depends('testPrintingEachKindCreatesTheLabelAndTheOutboxEventTogether')]
+	public function testALivePreviewRendersTheChosenVersionWithTheRecordsRealValues(): void
+	{
+		$templateId = self::$templates['stock_entry'];
+		$default = (int)self::Row('SELECT default_version_id FROM label_templates WHERE id = ?', [$templateId])['default_version_id'];
+		$newer = self::Send('POST', "/api/labels/templates/$templateId/publish", [], self::$adminKey);
+		self::assertSame(200, $newer['status'], $newer['body']);
+		self::assertNotSame($default, (int)$newer['json']['id']);
+
+		$response = self::Send('POST', "/api/labels/templates/$templateId/preview",
+			['kind' => 'live', 'printer_id' => self::$printerId, 'target_id' => self::$targets['stock_entry'], 'version_id' => (int)$newer['json']['id']], self::$adminKey);
+
+		self::assertSame(200, $response['status'], $response['body']);
+		self::assertSame('preview_live', $response['json']['purpose'], 'a labelled record is previewed with its real values');
+		self::assertSame((int)$newer['json']['id'], (int)$response['json']['template_version_id'], 'the chosen version is rendered, not the default');
+		self::assertSame($default, (int)self::Row('SELECT default_version_id FROM label_templates WHERE id = ?', [$templateId])['default_version_id'],
+			'previewing a version does not make it the default');
+
+		$capture = self::Row('SELECT target_id, is_sample, captured_fields FROM label_captures WHERE id = ?', [(int)$response['json']['capture_id']]);
+		self::assertSame(self::$targets['stock_entry'], (int)$capture['target_id']);
+		self::assertSame(0, (int)$capture['is_sample']);
+		self::assertSame('Labelapi beans', json_decode($capture['captured_fields'], true)['stock_entry.product_name'], 'the value is the record\'s, read from the database');
 	}
 
 	/**

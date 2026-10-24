@@ -3791,3 +3791,51 @@ msgstr ""
 
 msgid "These elements cross the margin, the dashed outline, and may be cut off or print too close to the edge: %s"
 msgstr ""
+
+msgid "Print with the version I publish"
+msgstr ""
+
+msgid "Version that prints"
+msgstr ""
+
+msgid "Version %s"
+msgstr ""
+
+msgid "Print with this version"
+msgstr ""
+
+msgid "Labels now print with version %s"
+msgstr ""
+
+msgid "Nothing is published yet, so nothing prints from this template."
+msgstr ""
+
+msgid "Labels print with version %s, not the newest version %s."
+msgstr ""
+
+msgid "Labels print with version %s, the newest."
+msgstr ""
+
+msgid "Preview a real record"
+msgstr ""
+
+msgid "Record number"
+msgstr ""
+
+msgid "Render it"
+msgstr ""
+
+msgid "Renders the version chosen under Version that prints with the real values of this record, as a print of it would come out. The record number is the number at the end of its edit page address. The draft is not used, so publish an edit before previewing it. A record that has no label yet is shown with example values."
+msgstr ""
+
+msgid "Enter the number of the record to preview"
+msgstr ""
+
+msgid "Publish a version first: a live preview renders a published version, as a print does."
+msgstr ""
+
+msgid "Record %s has no label yet, or does not exist, so this preview of version %s uses example values."
+msgstr ""
+
+msgid "Version %s with the real values of record %s, as a print of it would come out."
+msgstr ""
