@@ -4,8 +4,9 @@
 reports. Stored barcodes are canonical and self-describing. Conflicting mappings are
 held for an administrator instead of being decided silently.
 **Depends on:** [ADR-0031](../adr/0031-barcode-identity-is-canonical-and-reserved.md)
-(**Proposed**). Implementation waits for its acceptance, which lands in a separate,
-bookkeeping-only pull request. The plan does not depend on the web setup flow in
+(**Proposed**, revised 2026-10-24). Implementation waits for its acceptance, which lands
+in a separate, bookkeeping-only pull request. Its open questions were answered on
+2026-10-24. The plan does not depend on the web setup flow in
 [issue 484](https://github.com/datagen24/victual/issues/484).
 **Status:** draft; design settled in [issue 483](https://github.com/datagen24/victual/issues/483)
 (revision 3, 2026-09-24), which subsumes [issue 481](https://github.com/datagen24/victual/issues/481).
@@ -27,7 +28,8 @@ After this plan:
 
 ## Current behaviour
 
-Measured against `master` at `12b032f8` on 2026-09-24 by reading the source.
+Measured against `master` at `12b032f8` on 2026-09-24 by reading the source. Re-read
+against `master` at `d40f5afb` on 2026-10-24: unchanged except where noted.
 
 ### Storage
 
@@ -67,8 +69,13 @@ row-rewriting steps (the purifier, the API key hashing) after proving the copy e
 
 - **GS1.** Nothing parses AIM identifiers, AI (01), FNC1 or GS, UPC-E, or
   restricted-circulation prefixes.
-- **`helpers/Gtin.php`** pads 8-, 12-, 13- and 14-digit codes to 14 digits. It
-  validates no check digit and has no caller.
+- **`helpers/Gtin.php`** pads 8-, 12-, 13- and 14-digit codes to 14 digits, and
+  `SameGtin()` compares two codes after padding. It validates no check digit. Its only
+  caller is `tests/Pgsql/GtinTest.php` (2026-10-24); nothing in production calls it.
+- **MCP sidecar** (ADR-0052, since 2026-10-23). `lookup_barcode` calls the by-barcode
+  details route. `add_barcode` and `create_product` write through
+  `POST /api/objects/product_barcodes`, and they treat today's 400 as a duplicate. These
+  are W3 and W5 clients; see ADR-0031's Consequences.
 - **Camera scanner.** `camerabarcodescanner.js` does not list `UPC_A` or `UPC_E`.
 - **Route shape.** The by-barcode routes take the code as a path segment, so a code
   containing `/` or the GS separator cannot reach them. This plan keeps those routes
@@ -215,7 +222,7 @@ A pattern is an immutable `barcode_patterns` row with these fields:
 
 | Field | Meaning |
 |---|---|
-| `layout` | One character per digit position of the 12- or 13-digit form. A literal digit is a required prefix, `I` an item reference digit, `P` a price digit, `W` a weight digit, `V` the price/weight verifier digit, and `C` the check digit. The common US random-weight layout is `2IIIIIPPPPPC`. Matching pads it to 14 characters (canonicalisation step 6). |
+| `layout` | One character per digit position of the 12- or 13-digit form. A literal digit is a required prefix, `I` an item reference digit, `P` a price digit, `W` a weight digit, `V` the price/weight verifier digit, and `C` the check digit. The GS1 US random-weight layout, and the `US` country default, is `2IIIIIVPPPPC`. Matching pads it to 14 characters (canonicalisation step 6). |
 | `value_kind` | `price` or `weight` |
 | `decimals` | implied decimal places of the value field |
 | `weight_unit` | `g`, `kg`, `lb` or `oz`; required for `weight` |
@@ -244,6 +251,84 @@ together with the rows it collides with.
 **The installation default pattern** decodes a sticker scanned without a store. A
 default-pattern match is `restricted` but has no scope. The resolver accepts it only if
 exactly one store's active rows match under that store's own bound patterns.
+
+### Country default table
+
+The installation default is a set of pattern versions, one for each literal prefix in
+the installation country's table (ADR-0031 decision 6). The set is looked up at read time
+from `InstallationCountry::Get()`. Within one country the prefixes do not overlap, so a
+store-less scan matches at most one default pattern. An unset country gets no default,
+and so does a country without a row below; a store-less scan then answers
+`store_required`.
+
+**How the sources were read.** On 2026-10-24, each source below was fetched and read.
+To reproduce, open the URL and read the cited section. "Verified" means the full layout
+was read from that primary GS1 source: prefix, field widths, value kind, unit and
+verifier. Any other row ships no default.
+- The General Specifications citations are to Release 18 (January 2018), read from GS1
+  Canada's mirror. Section numbers move between releases, so prerequisite 7 re-checks
+  every row against the current release.
+- GS1's "Summary of GS1 Prefixes 20-29 by GS1 Member Organisation" answered 403 to every
+  automated fetch. The accepting PR should read it by hand:
+  <https://www.gs1.org/docs/barcodes/SummaryOfGS1MOPrefixes20-29.pdf>.
+
+**General Specifications.** [Release 18](https://gs1ca.org/documents/standards/GS1-General-Specifications.pdf):
+- §2.1.14.2, pp. 72–73, and §2.1.13.4, p. 69: prefixes 02 and 20–29 (GTIN-13 form) and
+  2 (UPC-A) are restricted circulation. Each member organisation defines the layout, and
+  a price verifier "should" be used.
+- §7.9.2–§7.9.4, pp. 436–438: the four- and five-digit price verifier algorithms that
+  prerequisite 2 tests.
+
+**Verified rows.** These ship as defaults.
+
+| Country | Prefix | Layout | Value | Verifier | Source |
+|---|---|---|---|---|---|
+| `GB` | 20 | `20IIIIIVPPPPC` | price, GBP, 2 decimals | `four_digit` | [GS1 UK, "How to calculate variable measure items"](https://test.gs1uk.org/sites/default/files/How_to_calculate_variable_measure_items_0.pdf) (08/16), p. 3, branded layout |
+| `DE` | 23 | `23IIIIVPPPPPC` | price, EUR, 2 decimals | `five_digit` | [GS1 Germany, "GTIN in der Anwendung" v1.1](https://www.gs1-germany.de/fileadmin/gs1/fachpublikationen/globale-artikelnummer-gtin-in-der-anwendung.pdf) (2019-08), §5.2, pp. 26–27, Tabelle 9 |
+| `AT` | 21, 27 | `21IIIIIWWWWWC`, `27IIIIIWWWWWC` | weight, kg, 3 decimals | `none` | [GS1 Austria, Nationale GS1 Spezifikationen V23](https://www.gs1.at/sites/default/files/2023-04/Nationale-GS1-Spezifikationen-V23-AT.pdf) (2023-04), Abb. 10.2.2-2 and 10.2.2.1-1 to -3, pp. 9–12; [Kurzinfo](https://www.gs1.at/sites/default/files/2020-05/Kurzinfo-GS1-Austria-variable-Endverbrauchereinheiten.pdf), p. 1 |
+| `AT` | 22, 23, 24 | `22IIIIIPPPPPC`, `23IIIIIPPPPPC`, `24IIIIIPPPPPC` | price, EUR, 2 decimals | `none` | as above |
+| `CH` | 21 | `21IIIIVPPPPPC` | price, CHF, 2 decimals | `five_digit` | [GS1 Switzerland, Nationale Spezifikationen V23](https://www.gs1.ch/de/media/1633) (2023-09), §10.1.1 and §10.1.3, pp. 3–6 |
+| `CH` | 22 | `22IIIIIPPPPPC` | price, CHF, 2 decimals | `none` | as above |
+| `CH` | 28 | `28IIIIVWWWWWC` | weight, g, 0 decimals | `five_digit` | as above |
+| `CH` | 29 | `29IIIIIWWWWWC` | weight, g, 0 decimals | `none` | as above |
+| `DK` | 27 | `27IIIIIWWWWWC` | weight, g, 0 decimals | `none` | [GS1 Denmark, GTIN-13 vægt](https://www.gs1.dk/en/gs1-standarder/gtin-13-vaegt); [how-to](https://www.gs1.dk/en/vejledninger/sadan-opretter-du-vaegtvariable-stregkoder-og-produkter) |
+
+In the Austrian, Swiss and Danish rows, a SAN, HPID or pack-type digit is folded into
+the `I` positions. Identity takes the item reference whole, so the split inside it does
+not matter here. Austria 28–29 and Denmark 26 and 28 encode a piece count or a
+six-digit quantity, which `value_kind` cannot express, so they ship no default.
+
+**The US row.**
+
+| Country | Prefix | Layout | Value | Verifier | Source |
+|---|---|---|---|---|---|
+| `US` | 2 | `2IIIIIVPPPPC` | price, USD, 2 decimals | `four_digit` | General Specifications Release 18, Fig. 2.1.14.2-1 row 1, "the structure specified by GS1 US" |
+
+The maintainer chose this layout on 2026-10-24, replacing the `2IIIIIPPPPPC` named
+earlier that day.
+- **`2IIIIIPPPPPC` is a per-store pattern.** It has a five-digit price and no verifier,
+  and it matches only one of that figure's generic alternatives. It is not a country
+  default. A store that prints it gets the pattern as its own `barcode_pattern_id`
+  through the pattern editor, and its rows bind to it as decision 6 describes. A
+  store-less scan of such a sticker decodes under the country default, so it reads as
+  the GS1 US layout.
+- **Still unverified.** No gs1us.org document stating the layout was found. The cents
+  reading (USD, 2 decimals) is US convention. Prerequisite 7 re-checks both against the
+  current General Specifications.
+
+**Unverified or not found.** These ship no default until a primary source gives the
+whole layout.
+
+| Country | What a primary source gives | Missing | Source |
+|---|---|---|---|
+| `GB` (02, in-store) | `02` + item + price + check | the cell widths contradict the prose: it computes a five-digit verifier but has no room for one | GS1 UK PDF above, p. 3 |
+| `DE` (22, 25, 26, 28, 29) | the meaning of each prefix (price, pieces, weight; retailer or SAN) | field widths, verifier and unit | GS1 Germany above, Tabelle 8 |
+| `BE`, `LU` | supplier prefixes 295, 296 and 28; retailer prefixes 02 and 20–27 | the digit layout | [GS1 Belgium & Luxembourg](https://www.gs1belu.org/fr/media/1601/download) (2021-03), p. 1 |
+| `SE` | `2X`, where X sets the unit and decimals (SEK 0–2 decimals, kg 1–3 decimals) | the width of the value field | [GS1 Sweden](https://gs1.se/en/support/how-do-i-create-my-variable-weight-numbers/) |
+| `NO` | 20–22 carry a price, 23–25 a weight; four-digit value | the decimals | [GS1 Norway](https://gs1.no/gs1-vektvareprefiks/) |
+| `IT` | prefix 2 is assigned by GS1 Italy; price for retail, kg for cash and carry | field widths, which appear only in a figure | [GS1 Italy, Guida pratica](https://gs1it.org/files/sharing/1463583138/163), §3.4.1, pp. 18–19 |
+| `FI` | weight classes 23–25, from a search snippet only | the whole layout; the page failed TLS | gs1.fi |
+| `FR`, `NL`, `ES`, `PL`, `IE`, `CA`, `AU`, `NZ` | no layout found | everything | gs1.fr, gs1.nl, aecoc.es, gs1pl.org, gs1ie.org, gs1ca.org, gs1nz.org |
 
 ### Write functions and the locking protocol
 
@@ -432,16 +517,27 @@ registered (CWE-203). The generic entity read routes work the same way:
 `EntityReadPolicy::Check` runs before any row is read.
 
 - **Product barcodes.** Every non-label, non-Grocycode code can only resolve to a
-  product, so a caller without `STOCK_VIEW` receives 403 before canonicalisation or
-  lookup. This covers a registered code, an unknown code, a quarantined identity and
-  an invalid check digit alike.
+  product. A caller with neither `STOCK_VIEW` nor `SHOPPINGLIST_VIEW` receives 403
+  before canonicalisation or lookup. The 403 is the same for a registered code, an
+  unknown code, a quarantined identity and an invalid check digit.
+- **`SHOPPINGLIST_VIEW` without `STOCK_VIEW`** (ADR-0050 decision 1; maintainer
+  decision, 2026-10-24). The resolver runs, and the answer is reduced:
+  - `matched` carries the product's `id` and `name` and the matched row's `qu_id` and
+    `amount`;
+  - `ambiguous` lists each candidate by `id` and `name`;
+  - nothing carries stock, prices or `GetProductDetails()`.
+
+  This is how the product picker on the shopping-list pages resolves a scan. A
+  Grocycode still needs `STOCK_VIEW`.
 - **Grocycodes.** The type letter (`p`, `r`, `c`, `b`) names the kind, so its read
   permission is checked before the id is looked up.
 - **`vctl:` labels.** The kind is known only after the uid is looked up, so the
   permission for the matched kind is checked after lookup and before any status is
-  chosen. A caller can then tell a live label of a kind they can't read (403) from an
-  unknown uid (404). This remaining difference discloses nothing an attacker can
-  enumerate: a uid is 64 random bits (ADR-0011), and guessing one is impractical.
+  chosen. A label of a kind the caller can't read answers `unknown` (404). That is the
+  same status and body as an unknown uid, and it carries no kind and no retirement
+  snapshot. This matches `LabelIdentityService::Resolve`, which plan 32 tests. No label
+  answer is a 403. (Maintainer decision, 2026-10-24, revising issue 483's D18 for labels
+  only.)
 
 After authorisation, the resolver chooses the status.
 
@@ -457,13 +553,13 @@ After authorisation, the resolver chooses the status.
 | `retired_label` | 410 | per ADR-0011 |
 | `invalid_check_digit` | 422 | none |
 | `malformed` | 400 | none |
-| denied | 403 | a generic denial with no kind, id, name, contents, snapshot or candidates; for product barcodes and Grocycodes, returned before lookup, so it says nothing about whether the code exists |
+| denied | 403 | product barcodes and Grocycodes only, returned before lookup: a generic denial with no kind, id, name, contents or candidates, so it says nothing about whether the code exists. A `vctl:` label the caller may not read answers `unknown` instead |
 
 The kind payloads and the read permission each kind requires:
 
 | Kind | Payload | Read permission |
 |---|---|---|
-| `product` | `GetProductDetails()` | `STOCK_VIEW` |
+| `product` | `GetProductDetails()`; with `SHOPPINGLIST_VIEW` and not `STOCK_VIEW`, only `id`, `name`, and the matched row's `qu_id` and `amount` | `STOCK_VIEW`, or `SHOPPINGLIST_VIEW` for a product-barcode code (ADR-0050) |
 | `stock_entry` | the entry plus its product details | `STOCK_VIEW` |
 | `location` | the location plus its stock | `STOCK_VIEW` |
 | `recipe` | the recipe | `RECIPES_VIEW` |
@@ -511,7 +607,9 @@ by-barcode operation with the resolved product's canonical barcode.
 
 - **Product picker.** `productpicker.js` resolves a typed or scanned value through
   `/api/scan` and drops `FindOptionBySearchdata`'s barcode substring match. Name search
-  is unchanged.
+  is unchanged. On the shopping-list pages, a caller with `SHOPPINGLIST_VIEW` but not
+  `STOCK_VIEW` gets the reduced product answer, which carries all the picker needs
+  (ADR-0050).
 - **Pre-create check.** The picker's pre-create check uses the resolver's `unknown`
   answer. The code is URL-encoded.
 - **Camera scanner.** It adds `UPC_A` and `UPC_E` and passes the reported format as the
@@ -540,7 +638,7 @@ this plan also had credible alternatives:
 ## Dependencies
 
 - **[ADR-0031](../adr/0031-barcode-identity-is-canonical-and-reserved.md) accepted.** Its
-  six acceptance prerequisites include the concurrency demonstration and the upgrade-load
+  seven acceptance prerequisites include the concurrency demonstration and the upgrade-load
   measurement this plan's verification describes.
 - **[ADR-0011](../adr/0011-label-namespace.md)** (Accepted) fixes the resolution order and
   `LabelIdentityService::Resolve`.
@@ -584,6 +682,26 @@ the page that resolves them.
    > lookup source and the default units of measure use the same setting, tracked in
    > [issue 486](https://github.com/datagen24/victual/issues/486). Until it exists, the
    > default pattern stays unset.
+
+   > **Response:** (datagen24, 2026-10-24)
+   > - **Which countries.** Ship `US` (`2IIIIIPPPPPC`) and the common European GS1
+   >   member-organisation layouts, each verified against a primary GS1 source. See
+   >   "Country default table", which also records that the General Specifications give
+   >   GS1 US's layout as `2IIIIIVPPPPC`.
+   >
+   > **Response:** (datagen24, 2026-10-24, later) The `US` default is GS1's `2IIIIIVPPPPC`.
+   > `2IIIIIPPPPPC` is for a store that prints it, which configures it as that store's
+   > own pattern.
+   > - **When it is computed.** At read time, from `InstallationCountry::Get()`.
+   >   [PR 1096](https://github.com/datagen24/victual/pull/1096) ships
+   >   `VICTUAL_COUNTRY` as an environment setting, and this matches it.
+   > - **No match.** An unset or unmapped country gives no default, so a store-less scan
+   >   answers `store_required`.
+
+   **Consequence.** The default is computed at read time, so changing the country
+   changes how a store-less scan of an already-printed sticker decodes. It changes no
+   stored row: every `restricted` row is bound to its issuing store's pattern version,
+   never to the installation default (ADR-0031 decision 6).
 
 2. **A decoded sticker value in a booking.** `/api/scan` returns `decoded_value`. Should
    the purchase form use a decoded price as the unit price, and should the consume form
@@ -639,8 +757,13 @@ the page that resolves them.
 - **Contract tests:**
   - every `/api/scan` status and HTTP code;
   - every kind, matched and denied;
-  - a caller without `STOCK_VIEW` receives the same 403 for a registered product
-    barcode, an unknown code, a quarantined identity and an invalid check digit;
+  - a caller with neither `STOCK_VIEW` nor `SHOPPINGLIST_VIEW` receives the same 403
+    for a registered product barcode, an unknown code, a quarantined identity and an
+    invalid check digit;
+  - a caller with `SHOPPINGLIST_VIEW` and not `STOCK_VIEW` receives exactly the reduced
+    `matched` and `ambiguous` bodies, with no stock or price field;
+  - a `vctl:` label of a kind the caller may not read answers `unknown`. The answer is
+    byte-identical to the one for a nonexistent uid;
   - a `grcy:r:` code is denied before lookup for a caller without `RECIPES_VIEW`;
   - a denial carries no identity, contents or snapshot, including for retired,
     quarantined and ambiguous results;
