@@ -34,7 +34,7 @@ still holds on current `master` and covers what was added since.
 | Paths / operations / component schemas | 148 / 180 / 103 | 150 / 182 / 107 |
 | Errors against the official OAS 3.2 schema | 1 (the version string) | 0 |
 | Schema `example` values that fail their schema | 17 of 40 | 0 of 43 |
-| Error responses with no body schema | 93 | 0 |
+| Error responses with no body schema, counting the 12 shared `components/responses` | 93 | 0 (the shared 503 body is `text/plain`, typed `string`) |
 | Error bodies typed only `{"type": "object"}` | not counted | 0 |
 | Operations declaring a 5XX response | 0 | 182 (`500` and `503` on every operation) |
 | Local `$ref` occurrences | 544 | 1,201, all resolving |
@@ -43,7 +43,7 @@ The two added operations are `POST /labels/assets/starter-fonts` and
 `POST /labels/locations/{locationId}/print-subtree`.
 
 The external scan cited in the issue reported a 45% score, 208 gaps and 12 TDS scenarios.
-Those figures are still unreconciled because its report and counting rules were not supplied.
+Those figures were unreconciled on 2026-10-24 because its report and counting rules were not supplied.
 The counts above measure different things, overlap, and must not be summed into a substitute
 score.
 
@@ -78,7 +78,7 @@ forced to `3.1.0` fails, along with the other fixtures in `.devtools/ci/fixtures
 
 ### Served document
 
-The served document is the committed file with five changes made by
+The served document is the committed file with three fields changed and five enums rebuilt by
 `OpenApiController::DocumentationSpec`. It sets `info.version` and `servers[0].url`,
 replaces `PlaceHolderManageApiKeysUrl` in `info.description`, and rebuilds five
 `ExposedEntity_*` enums from `StringEnumTemplate`, `ExposedEntity*` and
@@ -214,7 +214,8 @@ That is the deliberate outcome of [#648](https://github.com/datagen24/victual/is
 and the shape check confirms it for every unmapped entity in the snapshot, including
 `recipes`, `tasks`, `roles` and `product_groups`.
 
-Every mapped entity's list rows validate against its own member. The single-object reads of
+The list rows of 12 of the 13 mapped entities validate against their own members. The
+exception is `userfields`, which had no rows in the admin fixture. The single-object reads of
 the mapped entities fail only on `userfields`, and only because of the A3 blind spot.
 `GetObject` sends `{}`, the snapshot records it as `__empty_list__`, and the synthesized `[]`
 fails `type: object`.
