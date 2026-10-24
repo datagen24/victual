@@ -1,0 +1,529 @@
+[
+ {
+  "number": 1108,
+  "title": "build(deps): clear the zod and MCP client alerts in two devtools manifests",
+  "html_url": "https://github.com/datagen24/victual/pull/1108",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T22:35:48Z",
+  "updated_at": "2026-10-24T22:35:50Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1108",
+   "html_url": "https://github.com/datagen24/victual/pull/1108",
+   "diff_url": "https://github.com/datagen24/victual/pull/1108.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1108.patch",
+   "merged_at": "2026-10-24T22:35:48Z"
+  }
+ },
+ {
+  "number": 1107,
+  "title": "docs: accept ADR-0053, label dead-letter questions from ADR-0049 part 2",
+  "html_url": "https://github.com/datagen24/victual/pull/1107",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T21:10:39Z",
+  "updated_at": "2026-10-24T21:10:41Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1107",
+   "html_url": "https://github.com/datagen24/victual/pull/1107",
+   "diff_url": "https://github.com/datagen24/victual/pull/1107.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1107.patch",
+   "merged_at": "2026-10-24T21:10:39Z"
+  }
+ },
+ {
+  "number": 1106,
+  "title": "feat: victual_barcode_canonicalize, ADR-0031 prerequisite 1",
+  "html_url": "https://github.com/datagen24/victual/pull/1106",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T21:28:38Z",
+  "updated_at": "2026-10-24T21:28:40Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1106",
+   "html_url": "https://github.com/datagen24/victual/pull/1106",
+   "diff_url": "https://github.com/datagen24/victual/pull/1106.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1106.patch",
+   "merged_at": "2026-10-24T21:28:38Z"
+  }
+ },
+ {
+  "number": 1105,
+  "title": "fix: keep a deactivated printer's queued label jobs queued (ADR-0053 Q1(b))",
+  "html_url": "https://github.com/datagen24/victual/pull/1105",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T21:27:17Z",
+  "updated_at": "2026-10-24T21:27:19Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1105",
+   "html_url": "https://github.com/datagen24/victual/pull/1105",
+   "diff_url": "https://github.com/datagen24/victual/pull/1105.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1105.patch",
+   "merged_at": "2026-10-24T21:27:17Z"
+  }
+ },
+ {
+  "number": 1104,
+  "title": "ADR-0031 prerequisite 1: victual_barcode_canonicalize with pgTAP coverage",
+  "html_url": "https://github.com/datagen24/victual/issues/1104",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T21:28:39Z",
+  "updated_at": "2026-10-24T21:28:39Z"
+ },
+ {
+  "number": 1103,
+  "title": "Keep a deactivated printer's queued label jobs queued (ADR-0053 Q1(b))",
+  "html_url": "https://github.com/datagen24/victual/issues/1103",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "enhancement"
+   },
+   {
+    "name": "php"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T21:27:18Z",
+  "updated_at": "2026-10-24T21:27:18Z"
+ },
+ {
+  "number": 1101,
+  "title": "build(deps): Bump zod from 4.6.5 to 4.6.7 in /mcp",
+  "html_url": "https://github.com/datagen24/victual/pull/1101",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "dependencies"
+   },
+   {
+    "name": "javascript"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T21:38:30Z",
+  "updated_at": "2026-10-24T21:38:33Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1101",
+   "html_url": "https://github.com/datagen24/victual/pull/1101",
+   "diff_url": "https://github.com/datagen24/victual/pull/1101.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1101.patch",
+   "merged_at": "2026-10-24T21:38:30Z"
+  }
+ },
+ {
+  "number": 1100,
+  "title": "feat: centre, centre guides and snap-to-grid in the label designer",
+  "html_url": "https://github.com/datagen24/victual/pull/1100",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T21:36:20Z",
+  "updated_at": "2026-10-24T21:36:22Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1100",
+   "html_url": "https://github.com/datagen24/victual/pull/1100",
+   "diff_url": "https://github.com/datagen24/victual/pull/1100.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1100.patch",
+   "merged_at": "2026-10-24T21:36:20Z"
+  }
+ },
+ {
+  "number": 1099,
+  "title": "docs: OpenAPI 3.2 re-audit findings record (#796)",
+  "html_url": "https://github.com/datagen24/victual/pull/1099",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T21:04:51Z",
+  "updated_at": "2026-10-24T21:04:54Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1099",
+   "html_url": "https://github.com/datagen24/victual/pull/1099",
+   "diff_url": "https://github.com/datagen24/victual/pull/1099.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1099.patch",
+   "merged_at": "2026-10-24T21:04:51Z"
+  }
+ },
+ {
+  "number": 1098,
+  "title": "docs: propose ADR-0055 (OAuth 2.1 access tokens) and ADR-0056 (external identity provider)",
+  "html_url": "https://github.com/datagen24/victual/pull/1098",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T21:36:02Z",
+  "updated_at": "2026-10-24T21:36:04Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1098",
+   "html_url": "https://github.com/datagen24/victual/pull/1098",
+   "diff_url": "https://github.com/datagen24/victual/pull/1098.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1098.patch",
+   "merged_at": "2026-10-24T21:36:02Z"
+  }
+ },
+ {
+  "number": 1097,
+  "title": "docs: revise proposed ADR-0031 (barcode identity) against today's tree",
+  "html_url": "https://github.com/datagen24/victual/pull/1097",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T21:27:59Z",
+  "updated_at": "2026-10-24T21:28:02Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1097",
+   "html_url": "https://github.com/datagen24/victual/pull/1097",
+   "diff_url": "https://github.com/datagen24/victual/pull/1097.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1097.patch",
+   "merged_at": "2026-10-24T21:27:59Z"
+  }
+ },
+ {
+  "number": 1096,
+  "title": "feat: installation country setting (COUNTRY), environment half of #486",
+  "html_url": "https://github.com/datagen24/victual/pull/1096",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T21:04:36Z",
+  "updated_at": "2026-10-24T21:04:39Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1096",
+   "html_url": "https://github.com/datagen24/victual/pull/1096",
+   "diff_url": "https://github.com/datagen24/victual/pull/1096.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1096.patch",
+   "merged_at": "2026-10-24T21:04:36Z"
+  }
+ },
+ {
+  "number": 1095,
+  "title": "docs: propose ADR-0053, deciding ADR-0049 part 2's label dead-letter questions (#1021)",
+  "html_url": "https://github.com/datagen24/victual/pull/1095",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T21:10:18Z",
+  "updated_at": "2026-10-24T21:10:20Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1095",
+   "html_url": "https://github.com/datagen24/victual/pull/1095",
+   "diff_url": "https://github.com/datagen24/victual/pull/1095.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1095.patch",
+   "merged_at": "2026-10-24T21:10:18Z"
+  }
+ },
+ {
+  "number": 1094,
+  "title": "fix: route the remaining direct json_encode writes through a checked encode (#1047)",
+  "html_url": "https://github.com/datagen24/victual/pull/1094",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T21:04:18Z",
+  "updated_at": "2026-10-24T21:04:20Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1094",
+   "html_url": "https://github.com/datagen24/victual/pull/1094",
+   "diff_url": "https://github.com/datagen24/victual/pull/1094.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1094.patch",
+   "merged_at": "2026-10-24T21:04:17Z"
+  }
+ },
+ {
+  "number": 1093,
+  "title": "feat: issue the renderer key from /labelprinters",
+  "html_url": "https://github.com/datagen24/victual/pull/1093",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T21:04:04Z",
+  "updated_at": "2026-10-24T21:04:06Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1093",
+   "html_url": "https://github.com/datagen24/victual/pull/1093",
+   "diff_url": "https://github.com/datagen24/victual/pull/1093.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1093.patch",
+   "merged_at": "2026-10-24T21:04:04Z"
+  }
+ },
+ {
+  "number": 1089,
+  "title": "fix: print 62red at its measured 58.42 mm, and refuse elements past the media",
+  "html_url": "https://github.com/datagen24/victual/pull/1089",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T15:22:37Z",
+  "updated_at": "2026-10-24T19:49:27Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1089",
+   "html_url": "https://github.com/datagen24/victual/pull/1089",
+   "diff_url": "https://github.com/datagen24/victual/pull/1089.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1089.patch",
+   "merged_at": "2026-10-24T15:22:37Z"
+  }
+ },
+ {
+  "number": 1087,
+  "title": "feat(labels): preview a template with a real record in the designer",
+  "html_url": "https://github.com/datagen24/victual/pull/1087",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T13:31:38Z",
+  "updated_at": "2026-10-24T19:49:26Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1087",
+   "html_url": "https://github.com/datagen24/victual/pull/1087",
+   "diff_url": "https://github.com/datagen24/victual/pull/1087.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1087.patch",
+   "merged_at": "2026-10-24T13:31:38Z"
+  }
+ },
+ {
+  "number": 1086,
+  "title": "fix(labels): pin the renderer that bounds text down as well as across",
+  "html_url": "https://github.com/datagen24/victual/pull/1086",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T13:31:37Z",
+  "updated_at": "2026-10-24T19:49:25Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1086",
+   "html_url": "https://github.com/datagen24/victual/pull/1086",
+   "diff_url": "https://github.com/datagen24/victual/pull/1086.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1086.patch",
+   "merged_at": "2026-10-24T13:31:37Z"
+  }
+ },
+ {
+  "number": 1085,
+  "title": "feat(labels): say which template version prints, and let publish move it",
+  "html_url": "https://github.com/datagen24/victual/pull/1085",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T13:31:36Z",
+  "updated_at": "2026-10-24T19:49:25Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1085",
+   "html_url": "https://github.com/datagen24/victual/pull/1085",
+   "diff_url": "https://github.com/datagen24/victual/pull/1085.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1085.patch",
+   "merged_at": "2026-10-24T13:31:36Z"
+  }
+ },
+ {
+  "number": 1084,
+  "title": "fix: refuse a label element past a fixed canvas length",
+  "html_url": "https://github.com/datagen24/victual/pull/1084",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T13:24:15Z",
+  "updated_at": "2026-10-24T19:49:24Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1084",
+   "html_url": "https://github.com/datagen24/victual/pull/1084",
+   "diff_url": "https://github.com/datagen24/victual/pull/1084.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1084.patch",
+   "merged_at": "2026-10-24T13:24:15Z"
+  }
+ },
+ {
+  "number": 1083,
+  "title": "fix: print nothing for a never-expires best before date",
+  "html_url": "https://github.com/datagen24/victual/pull/1083",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T11:41:10Z",
+  "updated_at": "2026-10-24T19:49:23Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1083",
+   "html_url": "https://github.com/datagen24/victual/pull/1083",
+   "diff_url": "https://github.com/datagen24/victual/pull/1083.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1083.patch",
+   "merged_at": "2026-10-24T11:41:10Z"
+  }
+ },
+ {
+  "number": 1082,
+  "title": "docs: record plan 09's Q1 pantry experiment, FDC partial",
+  "html_url": "https://github.com/datagen24/victual/pull/1082",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T11:40:22Z",
+  "updated_at": "2026-10-24T19:49:23Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1082",
+   "html_url": "https://github.com/datagen24/victual/pull/1082",
+   "diff_url": "https://github.com/datagen24/victual/pull/1082.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1082.patch",
+   "merged_at": "2026-10-24T11:40:22Z"
+  }
+ },
+ {
+  "number": 1081,
+  "title": "docs: accept ADR-0052, MCP catalog and stock-count tools",
+  "html_url": "https://github.com/datagen24/victual/pull/1081",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T11:39:10Z",
+  "updated_at": "2026-10-24T19:49:22Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1081",
+   "html_url": "https://github.com/datagen24/victual/pull/1081",
+   "diff_url": "https://github.com/datagen24/victual/pull/1081.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1081.patch",
+   "merged_at": "2026-10-24T11:39:10Z"
+  }
+ },
+ {
+  "number": 1080,
+  "title": "docs: record the production real-client run for ADR-0052",
+  "html_url": "https://github.com/datagen24/victual/pull/1080",
+  "state": "closed",
+  "labels": [],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T11:38:41Z",
+  "updated_at": "2026-10-24T19:49:22Z",
+  "pull_request": {
+   "url": "https://api.github.com/repos/datagen24/victual/pulls/1080",
+   "html_url": "https://github.com/datagen24/victual/pull/1080",
+   "diff_url": "https://github.com/datagen24/victual/pull/1080.diff",
+   "patch_url": "https://github.com/datagen24/victual/pull/1080.patch",
+   "merged_at": "2026-10-24T11:38:41Z"
+  }
+ },
+ {
+  "number": 1056,
+  "title": "Label printers page cannot issue a renderer credential; label setup needs a UI workflow",
+  "html_url": "https://github.com/datagen24/victual/issues/1056",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T21:04:05Z",
+  "updated_at": "2026-10-24T21:04:05Z"
+ },
+ {
+  "number": 1047,
+  "title": "Route the remaining direct json_encode writes through a checked encode (from #912)",
+  "html_url": "https://github.com/datagen24/victual/issues/1047",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "enhancement"
+   },
+   {
+    "name": "php"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T21:04:19Z",
+  "updated_at": "2026-10-24T21:04:19Z"
+ },
+ {
+  "number": 1034,
+  "title": "Label designer: centre, centre guides and snap-to-grid (split from #948)",
+  "html_url": "https://github.com/datagen24/victual/issues/1034",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T21:36:22Z",
+  "updated_at": "2026-10-24T21:36:22Z"
+ },
+ {
+  "number": 1021,
+  "title": "Decide ADR-0049 part 2: when a label print job becomes unclaimable or dead-lettered",
+  "html_url": "https://github.com/datagen24/victual/issues/1021",
+  "state": "closed",
+  "labels": [
+   {
+    "name": "documentation"
+   }
+  ],
+  "milestone": {
+   "title": "0.5.5"
+  },
+  "closed_at": "2026-10-24T21:10:40Z",
+  "updated_at": "2026-10-24T21:10:40Z"
+ }
+]
