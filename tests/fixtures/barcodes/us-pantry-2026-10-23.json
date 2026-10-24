@@ -1,0 +1,565 @@
+{
+	"title": "US pantry barcodes, maintainer's household, 2026-10-23",
+	"purpose": "Real barcodes for plan 09 Q1 (issue 80): each UPC was read off the package photo, its UPC-A check digit verified, and its expected identity recorded from the label before any lookup.",
+	"sample": "Pantry door rack, shelves 1–5: 29 products, 26 with a photographed barcode. All food: spices, rubs, seasonings and two sauces. Not a household (non-food) sample.",
+	"sources": {
+		"open_food_facts": "GET https://world.openfoodfacts.org/api/v2/product/{upc}, one request per second, 2026-10-23; a second, timed run the same day was answered 429 for 7 codes, whose found/name come from the first run (from_first_run)",
+		"usda_fdc": "GET https://api.nal.usda.gov/fdc/v1/foods/search?query={upc}&dataType=Branded with DEMO_KEY; a hit is a result whose gtinUpc equals the UPC without leading zeros",
+		"victual_plugin_during_walk": "Victual 0.5.4's OpenFoodFactsBarcodeLookupPlugin as reached by the MCP lookup_barcode tool during the production pantry walk, with up to several lookups in parallel"
+	},
+	"items": [
+		{
+			"upc": "638392004308",
+			"expected": {
+				"product": "Bearded Butcher Cinnamon Swirl Seasoning",
+				"size": "11 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 1",
+			"photos": "IMG_0683–IMG_0684",
+			"open_food_facts": {
+				"http_status": 404,
+				"found": false,
+				"product_name": null,
+				"brands": null,
+				"ms": 610
+			},
+			"usda_fdc": {
+				"result": "no exact gtinUpc match",
+				"description": null
+			},
+			"victual_plugin_during_walk": "none"
+		},
+		{
+			"upc": "011711552597",
+			"expected": {
+				"product": "Meat Church Holy Cow BBQ Rub",
+				"size": "12 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 1",
+			"photos": "IMG_0685–IMG_0686",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "Meat church BBQ rub",
+				"brands": "Holy Cow",
+				"ms": 345
+			},
+			"usda_fdc": {
+				"result": "exact match",
+				"description": "B & B Games Inc. HOLY COW BBQ RUB, BBQ"
+			},
+			"victual_plugin_during_walk": "suggestion"
+		},
+		{
+			"upc": "850004216552",
+			"expected": {
+				"product": "Fire & Smoke Sweet Preacher BBQ Rub",
+				"size": "11.9 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 1",
+			"photos": "IMG_0687–IMG_0688",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "Sweet preacher southern pork rub",
+				"brands": "Fire & Smoke Society",
+				"ms": 361
+			},
+			"usda_fdc": {
+				"result": "no exact gtinUpc match",
+				"description": null
+			},
+			"victual_plugin_during_walk": "suggestion"
+		},
+		{
+			"upc": "850004216095",
+			"expected": {
+				"product": "Fire & Smoke Chicalicka Bam Bam Chicken Rub",
+				"size": "10.7 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 1",
+			"photos": "IMG_0689–IMG_0690",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "Chica licka bam bam",
+				"brands": null,
+				"ms": 376
+			},
+			"usda_fdc": {
+				"result": "exact match",
+				"description": "Fire & Smoke Society, LLC THE PERFECT BLEND CHICA LICKA BAM "
+			},
+			"victual_plugin_during_walk": "suggestion"
+		},
+		{
+			"upc": "867342000309",
+			"expected": {
+				"product": "Flatiron Pepper Co Four Pepper Blend",
+				"size": "2.0 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 2",
+			"photos": "IMG_0692–IMG_0693",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "Four pepper blend",
+				"brands": "Flatiron Pepper Co.",
+				"ms": 341
+			},
+			"usda_fdc": {
+				"result": "no exact gtinUpc match",
+				"description": null
+			},
+			"victual_plugin_during_walk": "suggestion"
+		},
+		{
+			"upc": "867342000316",
+			"expected": {
+				"product": "Flatiron Pepper Co Hatch Valley Green",
+				"size": "2.2 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 2",
+			"photos": "IMG_0694–IMG_0695",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "Hatch Valley Green",
+				"brands": null,
+				"ms": 392
+			},
+			"usda_fdc": {
+				"result": "no exact gtinUpc match",
+				"description": null
+			},
+			"victual_plugin_during_walk": "suggestion"
+		},
+		{
+			"upc": "867342000385",
+			"expected": {
+				"product": "Flatiron Pepper Co Sweet Heat",
+				"size": "2.6 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 2",
+			"photos": "IMG_0696–IMG_0697",
+			"open_food_facts": {
+				"http_status": 404,
+				"found": false,
+				"product_name": null,
+				"brands": null,
+				"ms": 339
+			},
+			"usda_fdc": {
+				"result": "no exact gtinUpc match",
+				"description": null
+			},
+			"victual_plugin_during_walk": "none"
+		},
+		{
+			"upc": "850037992416",
+			"expected": {
+				"product": "Fire & Smoke Thundering Longhorn Brisket & Burgers Rub",
+				"size": "6.1 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 2",
+			"photos": "IMG_0698–IMG_0699",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "Brisket & Burgers Thundering Longhorn, Brisket & Burgers",
+				"brands": "Fire & Smoke Society",
+				"ms": 370
+			},
+			"usda_fdc": {
+				"result": "exact match",
+				"description": "2178 Kensington Ave., Inc. BRISKET & BURGERS THUNDERING LONG"
+			},
+			"victual_plugin_during_walk": "suggestion"
+		},
+		{
+			"upc": "850037992478",
+			"expected": {
+				"product": "Fire & Smoke Steak King Chophouse Blend",
+				"size": "6.2 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 2",
+			"photos": "IMG_0700–IMG_0701",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "Steak king - chop House Blend",
+				"brands": "Steak King",
+				"ms": 357
+			},
+			"usda_fdc": {
+				"result": "no exact gtinUpc match",
+				"description": null
+			},
+			"victual_plugin_during_walk": "suggestion"
+		},
+		{
+			"upc": "755795950091",
+			"expected": {
+				"product": "Kinder's Buttery Poultry Blend",
+				"size": "8 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 2",
+			"photos": "IMG_0703–IMG_0704",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "Kinders",
+				"brands": "Kinder's",
+				"ms": 350
+			},
+			"usda_fdc": {
+				"result": "no exact gtinUpc match",
+				"description": null
+			},
+			"victual_plugin_during_walk": "suggestion"
+		},
+		{
+			"upc": "052100063300",
+			"expected": {
+				"product": "McCormick Meat Tenderizer Unseasoned",
+				"size": "5.75 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 3",
+			"photos": "IMG_0708–IMG_0709",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "Unseasoned meat tenderizer, unseasoned",
+				"brands": "Mccormick, Mccormick & Co.  Inc.",
+				"ms": 394
+			},
+			"usda_fdc": {
+				"result": "not measured (DEMO_KEY rate limit)",
+				"description": null
+			},
+			"victual_plugin_during_walk": "suggestion"
+		},
+		{
+			"upc": "052100041155",
+			"expected": {
+				"product": "McCormick Himalayan Pink Salt with Black Pepper & Garlic",
+				"size": null
+			},
+			"shelf": "Pantry / Door Rack / Shelf 3",
+			"photos": "IMG_0710–IMG_0711",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "All Purpose Seasoning Himalayan Pink Salt With Black Pepper And Garlic",
+				"brands": "McCormick",
+				"ms": 440
+			},
+			"usda_fdc": {
+				"result": "not measured (DEMO_KEY rate limit)",
+				"description": null
+			},
+			"victual_plugin_during_walk": "suggestion"
+		},
+		{
+			"upc": "755795255592",
+			"expected": {
+				"product": "Kinder's Teriyaki Sauce with Sesame & Ginger (packet)",
+				"size": "1.1 fl oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 3",
+			"photos": "IMG_0712–IMG_0713",
+			"open_food_facts": {
+				"http_status": 404,
+				"found": false,
+				"product_name": null,
+				"brands": null,
+				"ms": 353
+			},
+			"usda_fdc": {
+				"result": "not measured (DEMO_KEY rate limit)",
+				"description": null
+			},
+			"victual_plugin_during_walk": "none"
+		},
+		{
+			"upc": "052100030258",
+			"expected": {
+				"product": "McCormick Black Pepper Coarse Ground",
+				"size": "3.12 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 3",
+			"photos": "IMG_0714–IMG_0715",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "Coarse ground black pepper",
+				"brands": "Mccormick",
+				"ms": 365
+			},
+			"usda_fdc": {
+				"result": "not measured (DEMO_KEY rate limit)",
+				"description": null
+			},
+			"victual_plugin_during_walk": "none"
+		},
+		{
+			"upc": "755795256094",
+			"expected": {
+				"product": "Kinder's Teriyaki Sauce & Glaze with Sesame & Ginger",
+				"size": "2 fl oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 3",
+			"photos": "IMG_0716–IMG_0717",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "Teriyaki With Sesame And Ginger",
+				"brands": "Kinder’s",
+				"ms": 360
+			},
+			"usda_fdc": {
+				"result": "not measured (DEMO_KEY rate limit)",
+				"description": null
+			},
+			"victual_plugin_during_walk": "none"
+		},
+		{
+			"upc": "755795375702",
+			"expected": {
+				"product": "Kinder's Prime Steak with Black Garlic & Truffle",
+				"size": "5 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 4",
+			"photos": "IMG_0725–IMG_0726",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "Prime Steak With Black Garlic & Truffle Seasoning",
+				"brands": "Kinder’s",
+				"ms": 368
+			},
+			"usda_fdc": {
+				"result": "not measured (DEMO_KEY rate limit)",
+				"description": null
+			},
+			"victual_plugin_during_walk": "none"
+		},
+		{
+			"upc": "810112251487",
+			"expected": {
+				"product": "Dan-O's Cajun Seasoning",
+				"size": "2.8 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 4",
+			"photos": "IMG_0727–IMG_0728",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "Dan-O’s Cajun Seasoning",
+				"brands": null,
+				"timed_run": "rate limited (429)",
+				"from_first_run": true
+			},
+			"usda_fdc": {
+				"result": "not measured (DEMO_KEY rate limit)",
+				"description": null
+			},
+			"victual_plugin_during_walk": "none"
+		},
+		{
+			"upc": "759952077300",
+			"expected": {
+				"product": "New Hampshire Herb & Spice Co Monadnock Maple BBQ Mild",
+				"size": "2.3 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 4",
+			"photos": "IMG_0729–IMG_0730",
+			"open_food_facts": {
+				"http_status": 404,
+				"found": false,
+				"product_name": null,
+				"brands": null,
+				"timed_run": "rate limited (429)",
+				"from_first_run": true
+			},
+			"usda_fdc": {
+				"result": "not measured (DEMO_KEY rate limit)",
+				"description": null
+			},
+			"victual_plugin_during_walk": "none"
+		},
+		{
+			"upc": "755795950060",
+			"expected": {
+				"product": "Kinder's Woodfired Garlic with Hardwood Smoked Flavor",
+				"size": "9.5 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 4",
+			"photos": "IMG_0731–IMG_0732",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "Woodfired garlic",
+				"brands": "Kinder's",
+				"ms": 397
+			},
+			"usda_fdc": {
+				"result": "not measured (DEMO_KEY rate limit)",
+				"description": null
+			},
+			"victual_plugin_during_walk": "none"
+		},
+		{
+			"upc": "682574000428",
+			"expected": {
+				"product": "The Garlic Box Garlic Mashed Potato Seasoning",
+				"size": null
+			},
+			"shelf": "Pantry / Door Rack / Shelf 4",
+			"photos": "IMG_0733–IMG_0734",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "Garlic Mashed Potato Seasoning",
+				"brands": null,
+				"timed_run": "rate limited (429)",
+				"from_first_run": true
+			},
+			"usda_fdc": {
+				"result": "no exact gtinUpc match",
+				"description": null
+			},
+			"victual_plugin_during_walk": "none"
+		},
+		{
+			"upc": "755795857123",
+			"expected": {
+				"product": "Kinder's Cowboy Butter (organic)",
+				"size": "11.5 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 4",
+			"photos": "IMG_0735–IMG_0736",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "Kinder's Cowboy Butter",
+				"brands": null,
+				"timed_run": "rate limited (429)",
+				"from_first_run": true
+			},
+			"usda_fdc": {
+				"result": "not measured (DEMO_KEY rate limit)",
+				"description": null
+			},
+			"victual_plugin_during_walk": "none"
+		},
+		{
+			"upc": "814076025429",
+			"expected": {
+				"product": "Spiceology S'mores Blend",
+				"size": "16 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 5",
+			"photos": "IMG_0738–IMG_0739",
+			"open_food_facts": {
+				"http_status": 404,
+				"found": false,
+				"product_name": null,
+				"brands": null,
+				"ms": 354
+			},
+			"usda_fdc": {
+				"result": "not measured (DEMO_KEY rate limit)",
+				"description": null
+			},
+			"victual_plugin_during_walk": "none"
+		},
+		{
+			"upc": "814076025436",
+			"expected": {
+				"product": "Spiceology Apple Cinnamon Blend",
+				"size": "16 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 5",
+			"photos": "IMG_0740–IMG_0741",
+			"open_food_facts": {
+				"http_status": 404,
+				"found": false,
+				"product_name": null,
+				"brands": null,
+				"timed_run": "rate limited (429)",
+				"from_first_run": true
+			},
+			"usda_fdc": {
+				"result": "not measured (DEMO_KEY rate limit)",
+				"description": null
+			},
+			"victual_plugin_during_walk": "none"
+		},
+		{
+			"upc": "052100002361",
+			"expected": {
+				"product": "McCormick Cream of Tartar",
+				"size": "1.5 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 5",
+			"photos": "IMG_0742–IMG_0743",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "McCormick Cream of Tartar",
+				"brands": null,
+				"timed_run": "rate limited (429)",
+				"from_first_run": true
+			},
+			"usda_fdc": {
+				"result": "not measured (DEMO_KEY rate limit)",
+				"description": null
+			},
+			"victual_plugin_during_walk": "none"
+		},
+		{
+			"upc": "078742116617",
+			"expected": {
+				"product": "Great Value Pure Vanilla Extract",
+				"size": "1 fl oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 5",
+			"photos": "IMG_0744–IMG_0745",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "Pure Vanilla Extract",
+				"brands": "Great Value",
+				"ms": 348
+			},
+			"usda_fdc": {
+				"result": "not measured (DEMO_KEY rate limit)",
+				"description": null
+			},
+			"victual_plugin_during_walk": "none"
+		},
+		{
+			"upc": "041351917104",
+			"expected": {
+				"product": "Twix Shakers Seasoning Blend",
+				"size": "6.5 oz"
+			},
+			"shelf": "Pantry / Door Rack / Shelf 5",
+			"photos": "IMG_0746–IMG_0747",
+			"open_food_facts": {
+				"http_status": 200,
+				"found": true,
+				"product_name": "Twix shakers seasoning blend",
+				"brands": null,
+				"timed_run": "rate limited (429)",
+				"from_first_run": true
+			},
+			"usda_fdc": {
+				"result": "not measured (DEMO_KEY rate limit)",
+				"description": null
+			},
+			"victual_plugin_during_walk": "none"
+		}
+	]
+}

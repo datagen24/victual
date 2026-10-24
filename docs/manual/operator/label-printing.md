@@ -26,7 +26,10 @@ than re-running whatever booking produced it.
   label length along the tape. **Reading orientation** sets which edge is the top of the
   design: turned 90°, the tape length runs across the canvas, so a long label can be read
   sideways. Each element except a line can also be rotated in 90° steps from its properties.
-  The rendered preview shows the label as it leaves the printer.
+  The rendered preview shows the label as it leaves the printer. A field prints the value
+  as Victual stores it, with one exception: a stock entry's best before date prints nothing
+  when the product never expires. Victual stores that case as the date 2999-12-31, and the
+  stored date does not change.
 
   A text element's box bounds its text down as well as across. Each line takes the type size
   times the line spacing, so 9 pt at 1.2 needs a box at least 3.9 mm tall for one line.
