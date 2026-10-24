@@ -11,6 +11,7 @@ const base = index < 0 ? 'http://127.0.0.1:8200' : process.argv[index + 1];
   page.setDefaultTimeout(30000);
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
+  /** POSTs JSON to the API, asserts a 2xx answer and returns the decoded body. */
   async function post(path, data, headers = {}) {
    const response = await page.request.post(base + '/api/' + path, { data, headers });
    assert.ok(response.ok(), path + ': ' + await response.text()); try { return await response.json(); } catch (error) { throw new Error(path + ': ' + await response.text()); }
@@ -25,6 +26,16 @@ const base = index < 0 ? 'http://127.0.0.1:8200' : process.argv[index + 1];
   const credential = await post('labels/workers/' + worker.id + '/credentials', {});
   await post('labels/register', { drivers: [driver] }, { 'VICTUAL-API-KEY': credential.credential });
   await page.goto(base + '/labelprinters');
+  // Both keys come from the worker form, each shown once under the Secret field it belongs in.
+  await page.locator('#label-worker-select').selectOption({ label: name });
+  await page.waitForFunction(() => document.querySelector('#label-worker-registered').textContent.startsWith('Last registration: '));
+  await page.getByRole('button', { name: 'Issue renderer credential', exact: true }).click();
+  await page.waitForFunction(() => /^renderer-key:\n[0-9a-f]{64}$/.test(document.querySelector('#label-worker-secret').textContent));
+  const renderer = (await page.locator('#label-worker-secret').textContent()).slice('renderer-key:\n'.length);
+  const claim = await page.request.post(base + '/api/labels/jobs/claim', { data: {}, headers: { 'VICTUAL-API-KEY': renderer } });
+  assert.equal(claim.status(), 401, 'a renderer key must be refused on the worker claim route');
+  await page.getByRole('button', { name: 'Issue credential or pairing material', exact: true }).click();
+  await page.waitForFunction(() => /^worker-key:\n[0-9a-f]{64}$/.test(document.querySelector('#label-worker-secret').textContent));
   await page.locator('#label-printer-worker').selectOption({ label: name });
   await page.locator('#label-printer-driver').selectOption({ label: driver.driver_id + ' / ' + driver.schema_version });
   await page.locator('#label-printer-name').fill(name);
@@ -63,6 +74,6 @@ const base = index < 0 ? 'http://127.0.0.1:8200' : process.argv[index + 1];
   await page.goto(base + '/labelprintjobs');
   await page.waitForFunction(() => document.querySelector('#label-jobs-rows').textContent.includes('Waiting for label rendering'));
   assert.deepEqual(errors, []);
-  console.log('PASS schema-generated printer form, 422 combination refusal, saved configuration, queued artifact gate and monitor');
+  console.log('PASS renderer and worker keys issued from the page, schema-generated printer form, 422 combination refusal, saved configuration, queued artifact gate and monitor');
  } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

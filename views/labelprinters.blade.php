@@ -14,9 +14,12 @@
    <label><input type="checkbox" id="label-worker-active" checked> {{ $__t('Active') }}</label>
    <button class="btn btn-primary" type="submit">{{ $__t('Save worker') }}</button>
   </form>
+  <p id="label-worker-registered" role="status"></p>
   <button id="label-worker-credential" class="btn btn-secondary mt-2">{{ $__t('Issue credential or pairing material') }}</button>
+  <button id="label-renderer-credential" class="btn btn-secondary mt-2">{{ $__t('Issue renderer credential') }}</button>
   <button id="label-worker-revoke" class="btn btn-danger mt-2">{{ $__t('Revoke worker credentials') }}</button>
   <p>{{ $__t('New credentials and pairing material are shown once. Store them before leaving this page.') }}</p>
+  <p>{{ $__t('Revoking removes every worker and renderer credential issued for this worker, and ends its pairing sessions.') }}</p>
   <pre id="label-worker-secret" class="text-wrap"></pre>
  </div>
  <div class="col-lg-6">
