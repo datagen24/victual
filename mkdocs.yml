@@ -172,6 +172,8 @@ nav:
           - 0050 Shopping-list workflows show barcodes; stock shortfalls need STOCK_VIEW: development/adr/0050-shopping-list-workflows-show-barcodes-and-stock-shortfalls-need-stock-view.md
           - 0051 WebhookRunner never had an InfluxDB caller; the webhook residue goes: development/adr/0051-webhookrunner-had-no-influxdb-caller-and-the-webhook-residue-goes.md
           - 0052 The MCP sidecar builds the catalog; the chart exposes it: development/adr/0052-the-mcp-sidecar-builds-the-catalog-and-the-chart-exposes-it.md
+          - 0055 API and MCP callers present OAuth tokens from a swappable authorization server: development/adr/0055-api-and-mcp-callers-present-oauth-access-tokens-from-a-swappable-authorization-server.md
+          - 0056 An external identity provider replaces the built-in authorization server: development/adr/0056-an-external-identity-provider-replaces-the-built-in-authorization-server.md
       - Build and deployment:
           - Container images: development/images.md
           - Deployment: development/deployment.md
