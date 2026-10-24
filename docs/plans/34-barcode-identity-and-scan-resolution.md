@@ -222,7 +222,7 @@ A pattern is an immutable `barcode_patterns` row with these fields:
 
 | Field | Meaning |
 |---|---|
-| `layout` | One character per digit position of the 12- or 13-digit form. A literal digit is a required prefix, `I` an item reference digit, `P` a price digit, `W` a weight digit, `V` the price/weight verifier digit, and `C` the check digit. One US random-weight layout is `2IIIIIPPPPPC`; "Country default table" covers which one GS1 US specifies. Matching pads it to 14 characters (canonicalisation step 6). |
+| `layout` | One character per digit position of the 12- or 13-digit form. A literal digit is a required prefix, `I` an item reference digit, `P` a price digit, `W` a weight digit, `V` the price/weight verifier digit, and `C` the check digit. The GS1 US random-weight layout, and the `US` country default, is `2IIIIIVPPPPC`. Matching pads it to 14 characters (canonicalisation step 6). |
 | `value_kind` | `price` or `weight` |
 | `decimals` | implied decimal places of the value field |
 | `weight_unit` | `g`, `kg`, `lb` or `oz`; required for `weight` |
@@ -298,13 +298,23 @@ the `I` positions. Identity takes the item reference whole, so the split inside 
 not matter here. Austria 28–29 and Denmark 26 and 28 encode a piece count or a
 six-digit quantity, which `value_kind` cannot express, so they ship no default.
 
-**The US row needs the maintainer.** The maintainer named `2IIIIIPPPPPC` on 2026-10-24.
-General Specifications Release 18, Fig. 2.1.14.2-1 row 1, gives "the structure specified
-by GS1 US" as `2IIIIIVPPPPC`: a four-digit price with a price verifier. `2IIIIIPPPPPC`
-matches only one of that figure's generic alternatives. No gs1us.org document stating
-either layout was found. Until the maintainer chooses and a primary GS1 US source
-confirms the choice, `US` ships no default (prerequisite 7). The cents interpretation
-(USD, 2 decimals) is US convention and also unverified.
+**The US row.**
+
+| Country | Prefix | Layout | Value | Verifier | Source |
+|---|---|---|---|---|---|
+| `US` | 2 | `2IIIIIVPPPPC` | price, USD, 2 decimals | `four_digit` | General Specifications Release 18, Fig. 2.1.14.2-1 row 1, "the structure specified by GS1 US" |
+
+The maintainer chose this layout on 2026-10-24, replacing the `2IIIIIPPPPPC` named
+earlier that day.
+- **`2IIIIIPPPPPC` is a per-store pattern.** It has a five-digit price and no verifier,
+  and it matches only one of that figure's generic alternatives. It is not a country
+  default. A store that prints it gets the pattern as its own `barcode_pattern_id`
+  through the pattern editor, and its rows bind to it as decision 6 describes. A
+  store-less scan of such a sticker decodes under the country default, so it reads as
+  the GS1 US layout.
+- **Still unverified.** No gs1us.org document stating the layout was found. The cents
+  reading (USD, 2 decimals) is US convention. Prerequisite 7 re-checks both against the
+  current General Specifications.
 
 **Unverified or not found.** These ship no default until a primary source gives the
 whole layout.
@@ -678,6 +688,10 @@ the page that resolves them.
    >   member-organisation layouts, each verified against a primary GS1 source. See
    >   "Country default table", which also records that the General Specifications give
    >   GS1 US's layout as `2IIIIIVPPPPC`.
+   >
+   > **Response:** (datagen24, 2026-10-24, later) The `US` default is GS1's `2IIIIIVPPPPC`.
+   > `2IIIIIPPPPPC` is for a store that prints it, which configures it as that store's
+   > own pattern.
    > - **When it is computed.** At read time, from `InstallationCountry::Get()`.
    >   [PR 1096](https://github.com/datagen24/victual/pull/1096) ships
    >   `VICTUAL_COUNTRY` as an environment setting, and this matches it.

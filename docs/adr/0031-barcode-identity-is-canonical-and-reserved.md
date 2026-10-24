@@ -124,9 +124,11 @@ of the five matchers.
        Maintainer decision, 2026-10-24.
      - Plan 34's "Country default table" lists each entry with its primary GS1 source.
        Entries it could not verify from a primary source ship nothing.
-     - For `US`, the maintainer named `2IIIIIPPPPPC`. The General Specifications attribute
-       `2IIIIIVPPPPC` to GS1 US, so that entry waits for the maintainer to choose
-       (prerequisite 7).
+     - The `US` default is `2IIIIIVPPPPC`, the structure the General Specifications
+       attribute to GS1 US: a price verifier and a four-digit price. The maintainer chose
+       it on 2026-10-24, replacing the `2IIIIIPPPPPC` named earlier that day.
+       `2IIIIIPPPPPC` has a five-digit price and no verifier. A store that prints it
+       configures it as that store's own pattern; it is never a country default.
      - An unset country, or one with no entry in the table, has no default. A
        store-less scan of a restricted-circulation number then answers `store_required`.
      - A change of country therefore changes how a store-less scan of an already-printed
@@ -360,8 +362,8 @@ label namespace.
    is not shipped.
    - The accepting PR names the source and section for each entry, checked against the
      current release of the General Specifications.
-   - The maintainer has chosen the `US` layout, and a primary GS1 US source confirms
-     it.
+   - The `US` entry (`2IIIIIVPPPPC`) is confirmed against the current General
+     Specifications' GS1 US structure, together with the cents reading.
 
 ## Open questions
 
@@ -371,7 +373,7 @@ same day, and the answers are now in the decisions:
 1. **The installation default pattern.** It is looked up at read time from issue 486's
    country, through a shipped table covering `US` and the common European layouts. No
    entry or no country means no default. See decision 6 and prerequisite 7.
-   Prerequisite 7 leaves one point to the maintainer: which `US` layout to ship.
+   The `US` default is `2IIIIIVPPPPC`. `2IIIIIPPPPPC` is a per-store pattern only.
 2. **A `vctl:` label of a kind the caller may not read.** It answers `unknown`, matching
    `LabelIdentityService::Resolve`. See decision 10.
 3. **Scanning on a shopping-list page without `STOCK_VIEW`.** `SHOPPINGLIST_VIEW` suffices
