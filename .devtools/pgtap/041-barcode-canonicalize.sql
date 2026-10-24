@@ -11,7 +11,7 @@
 
 BEGIN;
 
-SELECT plan(126);
+SELECT plan(127);
 
 CREATE FUNCTION pg_temp.r(code TEXT, carrier TEXT DEFAULT NULL, patterns JSONB DEFAULT NULL) RETURNS TEXT
 LANGUAGE sql AS $$
@@ -19,14 +19,16 @@ LANGUAGE sql AS $$
 	FROM victual_barcode_canonicalize(code, carrier, patterns) WITH ORDINALITY AS t(identifier_type, canonical, pattern_id, decoded_value, value_kind, status, n)
 $$;
 
--- The US random-weight price layout (plan 34), a 13-digit weight layout, and the two verifier
--- layouts, which this migration refuses to decode (prerequisite 2).
-CREATE FUNCTION pg_temp.us() RETURNS JSONB LANGUAGE sql AS
+-- A 12-digit price layout without a verifier digit (p12), a 13-digit weight layout (kg), and two
+-- verifier layouts. The function takes every layout as an argument, so none is privileged here. The
+-- maintainer chose 2IIIIIVPPPPC, with its price verifier digit, as the US default: that is us().
+-- This migration refuses to decode a verifier layout (prerequisite 2).
+CREATE FUNCTION pg_temp.p12() RETURNS JSONB LANGUAGE sql AS
 $$ SELECT '{"id": 1, "layout": "2IIIIIPPPPPC", "value_kind": "price", "decimals": 2, "currency": "USD", "weight_unit": null, "verifier": "none"}'::JSONB $$;
 CREATE FUNCTION pg_temp.kg() RETURNS JSONB LANGUAGE sql AS
 $$ SELECT '{"id": 2, "layout": "21IIIIIWWWWWC", "value_kind": "weight", "decimals": 3, "weight_unit": "kg", "verifier": "none"}'::JSONB $$;
-CREATE FUNCTION pg_temp.v4() RETURNS JSONB LANGUAGE sql AS
-$$ SELECT '{"id": 3, "layout": "2IIIIIVPPPPC", "value_kind": "price", "decimals": 2, "currency": "EUR", "verifier": "four_digit"}'::JSONB $$;
+CREATE FUNCTION pg_temp.us() RETURNS JSONB LANGUAGE sql AS
+$$ SELECT '{"id": 3, "layout": "2IIIIIVPPPPC", "value_kind": "price", "decimals": 2, "currency": "USD", "verifier": "four_digit"}'::JSONB $$;
 CREATE FUNCTION pg_temp.v5() RETURNS JSONB LANGUAGE sql AS
 $$ SELECT '{"id": 4, "layout": "2IIIIIVPPPPPC", "value_kind": "price", "decimals": 2, "currency": "EUR", "verifier": "five_digit"}'::JSONB $$;
 
@@ -98,7 +100,7 @@ SELECT is(pg_temp.r('(01)00012345678906'), 'gtin|00012345678906||||invalid_check
 SELECT is(pg_temp.r(']E0' || '0012345678906'), 'gtin|00012345678906||||invalid_check_digit', 'an AIM-prefixed GTIN with a wrong check digit');
 SELECT is(
 	(SELECT count(*) FROM unnest(ARRAY['96385075', '012345678906', '4006381333932', '10012345678903', '(01)00012345678906', '201234012994']) AS c,
-		LATERAL victual_barcode_canonicalize(c, NULL, jsonb_build_array(pg_temp.us())) AS t
+		LATERAL victual_barcode_canonicalize(c, NULL, jsonb_build_array(pg_temp.p12())) AS t
 	 WHERE t.identifier_type = 'opaque' OR t.status <> 'invalid_check_digit'),
 	0::BIGINT, 'no check-digit failure is read as opaque, with or without patterns');
 
@@ -121,94 +123,96 @@ SELECT is(pg_temp.r(E'ABC\r'), '|||||malformed', 'a CR is a control character');
 
 -- Restricted-circulation patterns ------------------------------------------------------------------
 
-SELECT is(pg_temp.r('201234012993', NULL, jsonb_build_array(pg_temp.us())),
+SELECT is(pg_temp.r('201234012993', NULL, jsonb_build_array(pg_temp.p12())),
 	'restricted|00201234000000|1|12.99|price|ok;gtin|00201234012993||||ok',
 	'a 12-digit sticker: the restricted reading, then the non-pattern reading');
-SELECT is(pg_temp.r('0201234012993', NULL, jsonb_build_array(pg_temp.us())),
+SELECT is(pg_temp.r('0201234012993', NULL, jsonb_build_array(pg_temp.p12())),
 	'restricted|00201234000000|1|12.99|price|ok;gtin|00201234012993||||ok',
 	'its 13-digit leading-zero reading matches the same layout and shares the canonical value');
-SELECT is(pg_temp.r('201234003496', NULL, jsonb_build_array(pg_temp.us())),
+SELECT is(pg_temp.r('201234003496', NULL, jsonb_build_array(pg_temp.p12())),
 	'restricted|00201234000000|1|3.49|price|ok;gtin|00201234003496||||ok',
 	'another sticker for the same item shares the canonical value, with its own price');
-SELECT is(pg_temp.r('205678012991', NULL, jsonb_build_array(pg_temp.us())),
+SELECT is(pg_temp.r('205678012991', NULL, jsonb_build_array(pg_temp.p12())),
 	'restricted|00205678000000|1|12.99|price|ok;gtin|00205678012991||||ok',
 	'another item reference gives another canonical value');
 SELECT is(pg_temp.r('2112345012506', NULL, jsonb_build_array(pg_temp.kg())),
 	'restricted|02112345000000|2|1.250|weight|ok;gtin|02112345012506||||ok',
 	'a 13-digit weight layout: W positions masked, value_kind weight, three decimals');
-SELECT is(pg_temp.r('012345678905', NULL, jsonb_build_array(pg_temp.us())), 'gtin|00012345678905||||ok',
+SELECT is(pg_temp.r('012345678905', NULL, jsonb_build_array(pg_temp.p12())), 'gtin|00012345678905||||ok',
 	'layout: a literal prefix mismatch leaves a GTIN');
-SELECT is(pg_temp.r('2012340129905', NULL, jsonb_build_array(pg_temp.us())), 'gtin|02012340129905||||ok',
+SELECT is(pg_temp.r('2012340129905', NULL, jsonb_build_array(pg_temp.p12())), 'gtin|02012340129905||||ok',
 	'layout: a 12-digit layout does not match a 13-digit code that starts with 2');
 SELECT is(pg_temp.r('201234012993', NULL, jsonb_build_array(pg_temp.kg())), 'gtin|00201234012993||||ok',
 	'layout: a 13-digit layout does not match a 12-digit sticker');
-SELECT is(pg_temp.r('96385074', NULL, jsonb_build_array(pg_temp.us(), pg_temp.kg())), 'gtin|00000096385074||||ok',
+SELECT is(pg_temp.r('96385074', NULL, jsonb_build_array(pg_temp.p12(), pg_temp.kg())), 'gtin|00000096385074||||ok',
 	'layout: no 12- or 13-digit layout matches a GTIN-8');
-SELECT is(pg_temp.r('201234012994', NULL, jsonb_build_array(pg_temp.us())), 'gtin|00201234012994||||invalid_check_digit',
+SELECT is(pg_temp.r('201234012994', NULL, jsonb_build_array(pg_temp.p12())), 'gtin|00201234012994||||invalid_check_digit',
 	'a sticker with a wrong check digit is refused before any pattern is matched');
-SELECT is(pg_temp.r('201234012993', NULL, jsonb_build_array(pg_temp.us() || '{"decimals": 0}')),
+SELECT is(pg_temp.r('201234012993', NULL, jsonb_build_array(pg_temp.p12() || '{"decimals": 0}')),
 	'restricted|00201234000000|1|1299|price|ok;gtin|00201234012993||||ok', 'decimals: 0 decimals read the value digits whole');
-SELECT is(pg_temp.r('201234012993', NULL, jsonb_build_array(pg_temp.us() || '{"decimals": 4}')),
+SELECT is(pg_temp.r('201234012993', NULL, jsonb_build_array(pg_temp.p12() || '{"decimals": 4}')),
 	'restricted|00201234000000|1|0.1299|price|ok;gtin|00201234012993||||ok', 'decimals: 4 decimals');
-SELECT is(pg_temp.r('201234012993', NULL, jsonb_build_array(pg_temp.us() || '{"id": 77}')),
+SELECT is(pg_temp.r('201234012993', NULL, jsonb_build_array(pg_temp.p12() || '{"id": 77}')),
 	'restricted|00201234000000|77|12.99|price|ok;gtin|00201234012993||||ok', 'id: the matched pattern is named by its id');
-SELECT is(pg_temp.r('201234012993', NULL, jsonb_build_array(pg_temp.us() || '{"currency": "CAD"}')),
-	pg_temp.r('201234012993', NULL, jsonb_build_array(pg_temp.us())), 'currency: not part of the reading, so CAD reads as USD does');
+SELECT is(pg_temp.r('201234012993', NULL, jsonb_build_array(pg_temp.p12() || '{"currency": "CAD"}')),
+	pg_temp.r('201234012993', NULL, jsonb_build_array(pg_temp.p12())), 'currency: not part of the reading, so CAD reads as USD does');
 SELECT is(pg_temp.r('2112345012506', NULL, jsonb_build_array(pg_temp.kg() || '{"weight_unit": "lb"}')),
 	pg_temp.r('2112345012506', NULL, jsonb_build_array(pg_temp.kg())), 'weight_unit: not part of the reading, so lb reads as kg does');
-SELECT is(pg_temp.r('201234012993', NULL, jsonb_build_array(pg_temp.us() || '{"supersedes_pattern_id": 9}')),
-	pg_temp.r('201234012993', NULL, jsonb_build_array(pg_temp.us())), 'supersedes_pattern_id: not part of the reading');
-SELECT is(pg_temp.r('201234012993', NULL, jsonb_build_array(pg_temp.kg(), pg_temp.us(), pg_temp.us() || '{"id": 5, "decimals": 0}')),
+SELECT is(pg_temp.r('201234012993', NULL, jsonb_build_array(pg_temp.p12() || '{"supersedes_pattern_id": 9}')),
+	pg_temp.r('201234012993', NULL, jsonb_build_array(pg_temp.p12())), 'supersedes_pattern_id: not part of the reading');
+SELECT is(pg_temp.r('201234012993', NULL, jsonb_build_array(pg_temp.kg(), pg_temp.p12(), pg_temp.p12() || '{"id": 5, "decimals": 0}')),
 	'restricted|00201234000000|1|12.99|price|ok;restricted|00201234000000|5|1299|price|ok;gtin|00201234012993||||ok',
 	'one row per matching pattern, in the order given, then the non-pattern reading');
 SELECT is(pg_temp.r('201234012993', NULL, '[]'), 'gtin|00201234012993||||ok', 'an empty pattern list gives the GTIN reading alone');
 SELECT is(pg_temp.r('201234012993'), 'gtin|00201234012993||||ok', 'no patterns gives the GTIN reading alone');
-SELECT is(pg_temp.r('ABC', NULL, jsonb_build_array(pg_temp.us())), 'opaque|ABC||||ok', 'patterns do not apply to opaque input');
+SELECT is(pg_temp.r('ABC', NULL, jsonb_build_array(pg_temp.p12())), 'opaque|ABC||||ok', 'patterns do not apply to opaque input');
 
 -- verifier: none decodes (above); four_digit and five_digit are refused where they match (prerequisite 2)
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('201234512998', NULL, jsonb_build_array(pg_temp.v4()))$$,
-	'0A000', NULL, 'verifier: a matching four_digit pattern is refused as not implemented');
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('201234512998', NULL, jsonb_build_array(pg_temp.us()))$$,
+	'0A000', NULL, 'verifier: the US default 2IIIIIVPPPPC (four_digit) is refused where it matches, as not implemented');
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('0201234512998', NULL, jsonb_build_array(pg_temp.us()))$$,
+	'0A000', NULL, 'verifier: the US default matches, and is refused for, the 13-digit leading-zero reading too');
 SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('2012345129993', NULL, jsonb_build_array(pg_temp.v5()))$$,
 	'0A000', NULL, 'verifier: a matching five_digit pattern is refused as not implemented');
-SELECT is(pg_temp.r('012345678905', NULL, jsonb_build_array(pg_temp.v4(), pg_temp.v5())), 'gtin|00012345678905||||ok',
-	'verifier: verifier patterns that do not match are not refused');
+SELECT is(pg_temp.r('012345678905', NULL, jsonb_build_array(pg_temp.us(), pg_temp.v5())), 'gtin|00012345678905||||ok',
+	'verifier: verifier patterns, the US default among them, are not refused where they do not match');
 
 -- Patterns whose fields disagree are a caller error (22023), whatever the code
 SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, '{}')$$, '22023', NULL, 'patterns must be an array');
 SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, '[1]')$$, '22023', NULL, 'a pattern must be an object');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('ABC', NULL, jsonb_build_array(pg_temp.us() - 'id'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('ABC', NULL, jsonb_build_array(pg_temp.p12() - 'id'))$$, '22023', NULL,
 	'id: required, even when the code is opaque');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize(NULL, NULL, jsonb_build_array(pg_temp.us() || '{"id": "1"}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize(NULL, NULL, jsonb_build_array(pg_temp.p12() || '{"id": "1"}'))$$, '22023', NULL,
 	'id: a string is refused, even when the code is malformed');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"id": 1.5}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() || '{"id": 1.5}'))$$, '22023', NULL,
 	'id: a fraction is refused');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"layout": "2IIIIPPPPPC"}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() || '{"layout": "2IIIIPPPPPC"}'))$$, '22023', NULL,
 	'layout: 11 positions are refused');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"layout": "2IIIIIPPPPPPPC"}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() || '{"layout": "2IIIIIPPPPPPPC"}'))$$, '22023', NULL,
 	'layout: 14 positions are refused');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"layout": "2IIIIXPPPPPC"}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() || '{"layout": "2IIIIXPPPPPC"}'))$$, '22023', NULL,
 	'layout: an unknown position letter is refused');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"layout": "2IIIIIPPPPP1"}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() || '{"layout": "2IIIIIPPPPP1"}'))$$, '22023', NULL,
 	'layout: a layout must end in C');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"layout": "2IIIICPPPPPC"}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() || '{"layout": "2IIIICPPPPPC"}'))$$, '22023', NULL,
 	'layout: a second C is refused');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"layout": "IIIIIIPPPPPC"}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() || '{"layout": "IIIIIIPPPPPC"}'))$$, '22023', NULL,
 	'layout: a layout with no literal digit is refused');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"layout": 2}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() || '{"layout": 2}'))$$, '22023', NULL,
 	'layout: a number is refused');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"value_kind": "count"}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() || '{"value_kind": "count"}'))$$, '22023', NULL,
 	'value_kind: only price or weight');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"layout": "2IIIIIWWWWWC"}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() || '{"layout": "2IIIIIWWWWWC"}'))$$, '22023', NULL,
 	'value_kind: a price layout with W positions is refused');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"layout": "2IIIIPPPWWWC"}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() || '{"layout": "2IIIIPPPWWWC"}'))$$, '22023', NULL,
 	'value_kind: a layout with both P and W is refused');
 SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.kg() || '{"layout": "21IIIIIPPPPPC"}'))$$, '22023', NULL,
 	'value_kind: a weight layout with P positions is refused');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() - 'currency'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() - 'currency'))$$, '22023', NULL,
 	'currency: required for price');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"currency": "usd"}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() || '{"currency": "usd"}'))$$, '22023', NULL,
 	'currency: three upper-case letters');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"weight_unit": "kg"}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() || '{"weight_unit": "kg"}'))$$, '22023', NULL,
 	'weight_unit: a price pattern has none');
 SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.kg() - 'weight_unit'))$$, '22023', NULL,
 	'weight_unit: required for weight');
@@ -216,23 +220,23 @@ SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NU
 	'weight_unit: only g, kg, lb or oz');
 SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.kg() || '{"currency": "EUR"}'))$$, '22023', NULL,
 	'currency: a weight pattern has none');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() - 'decimals'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() - 'decimals'))$$, '22023', NULL,
 	'decimals: required');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"decimals": -1}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() || '{"decimals": -1}'))$$, '22023', NULL,
 	'decimals: not negative');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"decimals": 1.5}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() || '{"decimals": 1.5}'))$$, '22023', NULL,
 	'decimals: an integer');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"decimals": "2"}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() || '{"decimals": "2"}'))$$, '22023', NULL,
 	'decimals: a number, not a string');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() - 'verifier'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() - 'verifier'))$$, '22023', NULL,
 	'verifier: required');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"verifier": "luhn"}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() || '{"verifier": "luhn"}'))$$, '22023', NULL,
 	'verifier: only none, four_digit or five_digit');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.v4() || '{"verifier": "none"}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"verifier": "none"}'))$$, '22023', NULL,
 	'verifier: none with a V position is refused');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"verifier": "five_digit"}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.p12() || '{"verifier": "five_digit"}'))$$, '22023', NULL,
 	'verifier: five_digit without a V position is refused');
-SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.v4() || '{"verifier": "five_digit"}'))$$, '22023', NULL,
+SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.us() || '{"verifier": "five_digit"}'))$$, '22023', NULL,
 	'verifier: five_digit needs five value positions');
 SELECT throws_ok($$SELECT * FROM victual_barcode_canonicalize('012345678905', NULL, jsonb_build_array(pg_temp.v5() || '{"verifier": "four_digit"}'))$$, '22023', NULL,
 	'verifier: four_digit needs four value positions');
@@ -261,7 +265,7 @@ SELECT count(*) AS readings FROM (VALUES
 	('06543208', 'upc_e'), ('123456', 'upc_e'), ('0123456', 'upc_e'), (']C1' || '0100012345678905', NULL),
 	('(01)00012345678905(17)261231', NULL), ('ABC-123', NULL), ('', NULL), ('201234012993', NULL),
 	('0201234012993', NULL), ('2112345012506', NULL), ('201234012994', NULL)
-) AS v(code, carrier), LATERAL victual_barcode_canonicalize(v.code, v.carrier, jsonb_build_array(pg_temp.us(), pg_temp.kg())) \gset
+) AS v(code, carrier), LATERAL victual_barcode_canonicalize(v.code, v.carrier, jsonb_build_array(pg_temp.p12(), pg_temp.kg())) \gset
 SELECT pg_temp.scans() AS scans_after \gset
 SELECT is(:readings::INTEGER, 18, 'the no-table-read sample ran through every step');
 SELECT is(:scans_after::BIGINT - :scans_control::BIGINT, 0::BIGINT, 'canonicalising every kind of input read no table');
