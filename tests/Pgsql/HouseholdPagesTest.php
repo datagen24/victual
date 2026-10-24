@@ -1627,6 +1627,20 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 	}
 
 	/**
+	 * Issue #1047: the "data" pair is the caller's own bytes, so it can be invalid UTF-8.
+	 * That is the standard JSON 500 body, not an empty 200 - and JSON rather than the HTML
+	 * error page, which is what a throw from this non-API route would have rendered.
+	 */
+	public function testManifestWithAnUnencodableNameIsTheStandardJson500(): void
+	{
+		$response = self::$system->Manifest(self::request('GET', ['data' => base64_encode("bad \xFF name#/choresoverview")]), self::response(), []);
+
+		self::assertSame(500, $response->getStatusCode());
+		self::assertSame('application/json', $response->getHeaderLine('Content-Type'));
+		self::assertSame(['error_message' => 'The response could not be encoded as JSON'], json_decode((string)$response->getBody(), true, 512, JSON_THROW_ON_ERROR));
+	}
+
+	/**
 	 * GET / chooses where a caller lands. VICTUAL_ENTRY_PAGE is 'stock' here, so an
 	 * administrator goes to the stock overview and somebody who may not see stock is sent
 	 * to /about rather than to a page that would refuse them.

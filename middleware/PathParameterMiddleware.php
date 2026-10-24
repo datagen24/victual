@@ -6,6 +6,7 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Server\RequestHandlerInterface as RequestHandler;
 use Slim\Routing\RouteContext;
+use Victual\Helpers\JsonBody;
 
 /**
  * Refuses an API request whose path carries a non-integer where the endpoint takes an
@@ -164,10 +165,8 @@ class PathParameterMiddleware extends BaseMiddleware
 	private function InvalidPathParameterResponse(string $parameterName): Response
 	{
 		$response = $this->ResponseFactory->createResponse(400)->withHeader('Content-Type', 'application/json');
-		$response->getBody()->write(json_encode([
+		return JsonBody::WriteRefusal($response, [
 			'error_message' => 'Invalid path parameter: {' . $parameterName . '} has to be an integer'
-		]));
-
-		return $response;
+		]);
 	}
 }

@@ -2,6 +2,7 @@
 
 namespace Victual\Middleware\Auth;
 
+use Victual\Helpers\JsonBody;
 use Victual\Middleware\BaseMiddleware;
 use Victual\Services\ApiKeyService;
 use Victual\Services\DatabaseService;
@@ -471,12 +472,9 @@ abstract class BaseAuthMiddleware extends BaseMiddleware
 				return null;
 			}
 
-			$response = $this->ResponseFactory->createResponse();
-			$response->getBody()->write(json_encode([
+			return JsonBody::WriteRefusal($this->ResponseFactory->createResponse(403), [
 				'error_message' => 'This account must change its password before it can use the API: PUT /api/users/' . $userId . ' with the new password and current_password'
-			]));
-
-			return $response->withStatus(403);
+			]);
 		}
 
 		$path = $request->getUri()->getPath();

@@ -3104,4 +3104,89 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 
 		self::assertNotEmpty($logger->Records, 'the cause is logged');
 	}
+
+	/**
+	 * Issue #1047: JsonBody::Encode() is ApiResponse()'s checked encode for the writes that
+	 * do not go through it. A value with no JSON form throws EResponseNotEncodable, which
+	 * ExceptionController answers as a 500, with the cause logged once; an encodable value
+	 * gives the bytes json_encode() always gave.
+	 */
+	public function testJsonBodyEncodeThrowsTheStandard500WithTheCauseLogged()
+	{
+		foreach (['INF' => ['value' => INF], 'NAN' => ['value' => NAN], 'invalid UTF-8' => ['value' => "bad \xFF byte"]] as $label => $value)
+		{
+			$logger = self::recordingLogger();
+
+			try
+			{
+				\Victual\Helpers\JsonBody::Encode($value, $logger);
+				self::fail($label . ': an unencodable value must throw');
+			}
+			catch (\Victual\Controllers\Api\EResponseNotEncodable $ex)
+			{
+				self::assertSame('The response could not be encoded as JSON', $ex->getMessage(), $label);
+				self::assertInstanceOf(\JsonException::class, $ex->getPrevious(), $label . ': the cause is kept');
+			}
+
+			self::assertCount(1, $logger->Records, $label . ': the cause is logged once');
+			self::assertSame('error', $logger->Records[0]['level']);
+			self::assertStringContainsString('could not be encoded', $logger->Records[0]['message']);
+			self::assertNotSame(0, $logger->Records[0]['context']['json_error_code'], $label);
+			self::assertSame('array', $logger->Records[0]['context']['body_type'], $label . ': the type is logged, not the value');
+		}
+
+		$logger = self::recordingLogger();
+		$body = ['name' => 'Milk / "2%"', 'unicode' => "caf\u{E9}", 'amount' => 1.5];
+		self::assertSame(json_encode($body), \Victual\Helpers\JsonBody::Encode($body, $logger), 'success bytes are unchanged');
+		self::assertSame([], $logger->Records, 'nothing is logged on success');
+	}
+
+	/**
+	 * Issue #1047: a middleware refusal whose message has no JSON form keeps its own status
+	 * (400 and 403 are the two middleware refusals that build their message from data) and
+	 * sends the fixed literal, as GenericErrorResponse() does, instead of an empty body.
+	 */
+	public function testJsonBodyWriteRefusalKeepsTheStatusAndSendsTheFixedLiteral()
+	{
+		foreach ([400, 403] as $status)
+		{
+			$logger = self::recordingLogger();
+			$base = (new \Slim\Psr7\Factory\ResponseFactory())->createResponse($status)->withHeader('Content-Type', 'application/json');
+
+			$response = \Victual\Helpers\JsonBody::WriteRefusal($base, ['error_message' => "bad \xFF byte"], $logger);
+
+			self::assertSame($status, $response->getStatusCode(), "$status: the status is kept");
+			self::assertSame('application/json', $response->getHeaderLine('Content-Type'), "$status: headers are kept");
+			self::assertSame('{"error_message":"The error message could not be encoded as JSON"}', (string)$response->getBody(), "$status: the fixed literal");
+			self::assertCount(1, $logger->Records, "$status: the cause is logged once");
+			self::assertStringContainsString('fixed literal', $logger->Records[0]['message']);
+		}
+
+		$logger = self::recordingLogger();
+		$response = \Victual\Helpers\JsonBody::WriteRefusal((new \Slim\Psr7\Factory\ResponseFactory())->createResponse(403), ['error_message' => 'This API key is read-only'], $logger);
+		self::assertSame('{"error_message":"This API key is read-only"}', (string)$response->getBody(), 'an encodable refusal is written as json_encode() wrote it');
+		self::assertSame([], $logger->Records);
+	}
+
+	/**
+	 * Issue #1047: PathParameterMiddleware's 400 goes through the checked write. Its
+	 * parameter name comes from the OpenAPI document, so no request can make it invalid
+	 * UTF-8; the private builder is called directly to show what an unencodable name would
+	 * give, and that a real name's bytes are unchanged.
+	 */
+	public function testThePathParameterRefusalIsWrittenThroughTheCheckedEncode()
+	{
+		$middleware = new \Victual\Middleware\PathParameterMiddleware(new \DI\Container(), new \Slim\Psr7\Factory\ResponseFactory());
+		$build = new \ReflectionMethod($middleware, 'InvalidPathParameterResponse');
+
+		$response = $build->invoke($middleware, 'objectId');
+		self::assertSame(400, $response->getStatusCode());
+		self::assertSame('application/json', $response->getHeaderLine('Content-Type'));
+		self::assertSame('{"error_message":"Invalid path parameter: {objectId} has to be an integer"}', (string)$response->getBody());
+
+		$response = $build->invoke($middleware, "bad\xFF");
+		self::assertSame(400, $response->getStatusCode(), 'the refusal stays a 400');
+		self::assertSame('application/json', $response->getHeaderLine('Content-Type'));
+		self::assertSame('{"error_message":"The error message could not be encoded as JSON"}', (string)$response->getBody(), 'not an empty body');
+	}
 }
