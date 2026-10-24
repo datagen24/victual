@@ -234,9 +234,9 @@ says so by not pretending to be one.
 
 | Container | Image | Port |
 |---|---|---|
-| `parity-victual-app` | `localhost/victual-app:0.5.4`, in pod `parity-victual` | — (FastCGI on the pod's loopback) |
-| `parity-victual-web` | `localhost/victual-web:0.5.4`, in the same pod | 8080, published by the pod |
-| — | `localhost/victual-migrate:0.5.4`, run once and removed | — |
+| `parity-victual-app` | `localhost/victual-app:0.5.5`, in pod `parity-victual` | — (FastCGI on the pod's loopback) |
+| `parity-victual-web` | `localhost/victual-web:0.5.5`, in the same pod | 8080, published by the pod |
+| — | `localhost/victual-migrate:0.5.5`, run once and removed | — |
 | `parity-upstream` | `docker.io/linuxserver/grocy:version-v4.6.0` | 8081 |
 | `parity-postgres` | `postgres:16`, on a tmpfs | — |
 | `parity-mosquitto` | `eclipse-mosquitto:2` | 1883 |
