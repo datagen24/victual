@@ -5,8 +5,8 @@ reports. Stored barcodes are canonical and self-describing. Conflicting mappings
 held for an administrator instead of being decided silently.
 **Depends on:** [ADR-0031](../adr/0031-barcode-identity-is-canonical-and-reserved.md)
 (**Proposed**, revised 2026-10-24). Implementation waits for its acceptance, which lands
-in a separate, bookkeeping-only pull request, and for answers to its open questions 2
-and 3. The plan does not depend on the web setup flow in
+in a separate, bookkeeping-only pull request. Its open questions were answered on
+2026-10-24. The plan does not depend on the web setup flow in
 [issue 484](https://github.com/datagen24/victual/issues/484).
 **Status:** draft; design settled in [issue 483](https://github.com/datagen24/victual/issues/483)
 (revision 3, 2026-09-24), which subsumes [issue 481](https://github.com/datagen24/victual/issues/481).
@@ -439,19 +439,27 @@ registered (CWE-203). The generic entity read routes work the same way:
 `EntityReadPolicy::Check` runs before any row is read.
 
 - **Product barcodes.** Every non-label, non-Grocycode code can only resolve to a
-  product, so a caller without `STOCK_VIEW` receives 403 before canonicalisation or
-  lookup. This covers a registered code, an unknown code, a quarantined identity and
-  an invalid check digit alike.
+  product. A caller with neither `STOCK_VIEW` nor `SHOPPINGLIST_VIEW` receives 403
+  before canonicalisation or lookup. The 403 is the same for a registered code, an
+  unknown code, a quarantined identity and an invalid check digit.
+- **`SHOPPINGLIST_VIEW` without `STOCK_VIEW`** (ADR-0050 decision 1; maintainer
+  decision, 2026-10-24). The resolver runs, and the answer is reduced:
+  - `matched` carries the product's `id` and `name` and the matched row's `qu_id` and
+    `amount`;
+  - `ambiguous` lists each candidate by `id` and `name`;
+  - nothing carries stock, prices or `GetProductDetails()`.
+
+  This is how the product picker on the shopping-list pages resolves a scan. A
+  Grocycode still needs `STOCK_VIEW`.
 - **Grocycodes.** The type letter (`p`, `r`, `c`, `b`) names the kind, so its read
   permission is checked before the id is looked up.
 - **`vctl:` labels.** The kind is known only after the uid is looked up, so the
   permission for the matched kind is checked after lookup and before any status is
-  chosen. A caller can then tell a live label of a kind they can't read (403) from an
-  unknown uid (404). This remaining difference discloses nothing an attacker can
-  enumerate: a uid is 64 random bits (ADR-0011), and guessing one is impractical.
-  `LabelIdentityService::Resolve` answers `unknown` in this case today, and plan 32
-  tests that. Whether `/api/scan` keeps the 403 or adopts `unknown` is ADR-0031 open
-  question 2.
+  chosen. A label of a kind the caller can't read answers `unknown` (404). That is the
+  same status and body as an unknown uid, and it carries no kind and no retirement
+  snapshot. This matches `LabelIdentityService::Resolve`, which plan 32 tests. No label
+  answer is a 403. (Maintainer decision, 2026-10-24, revising issue 483's D18 for labels
+  only.)
 
 After authorisation, the resolver chooses the status.
 
@@ -467,13 +475,13 @@ After authorisation, the resolver chooses the status.
 | `retired_label` | 410 | per ADR-0011 |
 | `invalid_check_digit` | 422 | none |
 | `malformed` | 400 | none |
-| denied | 403 | a generic denial with no kind, id, name, contents, snapshot or candidates; for product barcodes and Grocycodes, returned before lookup, so it says nothing about whether the code exists |
+| denied | 403 | product barcodes and Grocycodes only, returned before lookup: a generic denial with no kind, id, name, contents or candidates, so it says nothing about whether the code exists. A `vctl:` label the caller may not read answers `unknown` instead |
 
 The kind payloads and the read permission each kind requires:
 
 | Kind | Payload | Read permission |
 |---|---|---|
-| `product` | `GetProductDetails()` | `STOCK_VIEW` |
+| `product` | `GetProductDetails()`; with `SHOPPINGLIST_VIEW` and not `STOCK_VIEW`, only `id`, `name`, and the matched row's `qu_id` and `amount` | `STOCK_VIEW`, or `SHOPPINGLIST_VIEW` for a product-barcode code (ADR-0050) |
 | `stock_entry` | the entry plus its product details | `STOCK_VIEW` |
 | `location` | the location plus its stock | `STOCK_VIEW` |
 | `recipe` | the recipe | `RECIPES_VIEW` |
@@ -521,9 +529,9 @@ by-barcode operation with the resolved product's canonical barcode.
 
 - **Product picker.** `productpicker.js` resolves a typed or scanned value through
   `/api/scan` and drops `FindOptionBySearchdata`'s barcode substring match. Name search
-  is unchanged. ADR-0050 lets a `SHOPPINGLIST_VIEW`-only caller scan on the
-  shopping-list pages, so how the picker resolves there depends on ADR-0031 open
-  question 3.
+  is unchanged. On the shopping-list pages, a caller with `SHOPPINGLIST_VIEW` but not
+  `STOCK_VIEW` gets the reduced product answer, which carries all the picker needs
+  (ADR-0050).
 - **Pre-create check.** The picker's pre-create check uses the resolver's `unknown`
   answer. The code is URL-encoded.
 - **Camera scanner.** It adds `UPC_A` and `UPC_E` and passes the reported format as the
@@ -552,7 +560,7 @@ this plan also had credible alternatives:
 ## Dependencies
 
 - **[ADR-0031](../adr/0031-barcode-identity-is-canonical-and-reserved.md) accepted.** Its
-  six acceptance prerequisites include the concurrency demonstration and the upgrade-load
+  seven acceptance prerequisites include the concurrency demonstration and the upgrade-load
   measurement this plan's verification describes.
 - **[ADR-0011](../adr/0011-label-namespace.md)** (Accepted) fixes the resolution order and
   `LabelIdentityService::Resolve`.
@@ -597,9 +605,20 @@ the page that resolves them.
    > [issue 486](https://github.com/datagen24/victual/issues/486). Until it exists, the
    > default pattern stays unset.
 
-   Issue 486 is in milestone 0.5.5 (2026-10-24). ADR-0031 open question 1 tracks two
-   points that remain: the country-to-pattern table, and whether a derived default is
-   computed at read time (issue 486 question 2).
+   > **Response:** (datagen24, 2026-10-24)
+   > - **Which countries.** Ship `US` (`2IIIIIPPPPPC`) and the common European GS1
+   >   member-organisation layouts, each verified against a primary GS1 source. See
+   >   "Country default table".
+   > - **When it is computed.** At read time, from `InstallationCountry::Get()`.
+   >   [PR 1096](https://github.com/datagen24/victual/pull/1096) ships
+   >   `VICTUAL_COUNTRY` as an environment setting, and this matches it.
+   > - **No match.** An unset or unmapped country gives no default, so a store-less scan
+   >   answers `store_required`.
+
+   **Consequence.** The default is computed at read time, so changing the country
+   changes how a store-less scan of an already-printed sticker decodes. It changes no
+   stored row: every `restricted` row is bound to its issuing store's pattern version,
+   never to the installation default (ADR-0031 decision 6).
 
 2. **A decoded sticker value in a booking.** `/api/scan` returns `decoded_value`. Should
    the purchase form use a decoded price as the unit price, and should the consume form
@@ -655,8 +674,13 @@ the page that resolves them.
 - **Contract tests:**
   - every `/api/scan` status and HTTP code;
   - every kind, matched and denied;
-  - a caller without `STOCK_VIEW` receives the same 403 for a registered product
-    barcode, an unknown code, a quarantined identity and an invalid check digit;
+  - a caller with neither `STOCK_VIEW` nor `SHOPPINGLIST_VIEW` receives the same 403
+    for a registered product barcode, an unknown code, a quarantined identity and an
+    invalid check digit;
+  - a caller with `SHOPPINGLIST_VIEW` and not `STOCK_VIEW` receives exactly the reduced
+    `matched` and `ambiguous` bodies, with no stock or price field;
+  - a `vctl:` label of a kind the caller may not read answers `unknown`. The answer is
+    byte-identical to the one for a nonexistent uid;
   - a `grcy:r:` code is denied before lookup for a caller without `RECIPES_VIEW`;
   - a denial carries no identity, contents or snapshot, including for retired,
     quarantined and ambiguous results;

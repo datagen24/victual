@@ -4,14 +4,15 @@
 - **Decider:** datagen24
 - **Recorded:** 2026-09-24, revised 2026-10-24 against `master` at `d40f5afb`: the
   context re-measured, and the record reconciled with ADRs 0011, 0021, 0050 and 0052 and
-  with issue 486. The decisions the maintainer answered in issue 483 are unchanged.
+  with issue 486. The maintainer answered its open questions the same day (decisions 6
+  and 10, W4, prerequisite 7). That revises issue 483's answer D18 for `vctl:` labels
+  only.
 - **Referenced by:** [plan 34](../plans/34-barcode-identity-and-scan-resolution.md), [issue 483](https://github.com/datagen24/victual/issues/483), [issue 481](https://github.com/datagen24/victual/issues/481)
 - **Relationship:** keeps [ADR-0011](0011-label-namespace.md)'s resolution order and its
   `vctl:` canonicalisation (Accepted). Composes with [ADR-0021](0021-label-templates-are-application-data.md)
   decision 3's import refusal and import epoch (Accepted) without changing them; see
   *Relationship to the label records*. Must honour [ADR-0050](0050-shopping-list-workflows-show-barcodes-and-stock-shortfalls-need-stock-view.md)
-  decision 1 (Accepted), which open question 3 leaves to the maintainer. Supersedes
-  nothing.
+  decision 1 (Accepted), which decision 10's reduced answer does. Supersedes nothing.
 
 ## Context
 
@@ -112,13 +113,21 @@ of the five matchers.
      answer is `ambiguous`.
    - An installation default pattern can decode a sticker. It cannot establish which
      store issued it.
-   - The installation default is a reference to one immutable pattern version, chosen
-     from the installation country ([issue 486](https://github.com/datagen24/victual/issues/486)).
-     A change of country or default changes only how store-less scans are decoded. No
-     `restricted` row is bound to the installation default, because every such row has
-     an issuing store. A change therefore reinterprets no stored row. While no default
-     exists, a store-less scan of a restricted-circulation number answers
-     `store_required`.
+   - The installation default is one immutable pattern version, looked up from the
+     installation country ([issue 486](https://github.com/datagen24/victual/issues/486)).
+     That country is read through `InstallationCountry::Get()`, which serves
+     `Setting('COUNTRY')` and `VICTUAL_COUNTRY`.
+     - The lookup runs at read time. Maintainer decision, 2026-10-24, answering issue 486
+       question 2.
+     - Victual ships a country-to-pattern table. It covers `US` (`2IIIIIPPPPPC`) and the
+       restricted-circulation layouts of the common European GS1 member organisations.
+       Plan 34 lists each entry with its primary GS1 source and marks any it could not
+       verify from one. Maintainer decision, 2026-10-24.
+     - An unset country, or one with no entry in the table, has no default. A
+       store-less scan of a restricted-circulation number then answers `store_required`.
+     - A change of country therefore changes how a store-less scan of an already-printed
+       sticker decodes. It changes no stored row: no `restricted` row is bound to the
+       installation default, because every such row has an issuing store.
 
 7. **Uniqueness holds at all times.**
    - A partial unique index `NULLS NOT DISTINCT` covers the identity of `active` rows.
@@ -169,18 +178,30 @@ of the five matchers.
     - The six by-barcode routes call the same resolver and keep their own operation
       permissions and response contracts.
     - Authorisation is checked before a status is chosen, and before the lookup
-      wherever the code itself determines the kind. A product-barcode code requires
-      `STOCK_VIEW`, and a Grocycode requires its type's read permission; both are
-      checked before any row is read, so a denial does not reveal whether the code is
-      registered. Only a `vctl:` label is authorised after lookup, because its uid does
-      not reveal its kind; the uid's 64 random bits make that difference impractical to
-      enumerate. A caller without the read permission receives a generic 403 that names
-      no entity and carries no contents, retirement snapshot or candidate list.
-    - Two Accepted records constrain this item, and the open questions carry them.
-      Today `Resolve()` answers `unknown` for a label of a kind the caller may not read,
-      the same answer as for a uid that does not exist (open question 2). Under
-      ADR-0050, `SHOPPINGLIST_VIEW` alone permits scanning a product barcode within the
-      shopping-list workflow (open question 3).
+      wherever the code itself determines the kind.
+      - A product-barcode code requires `STOCK_VIEW` or `SHOPPINGLIST_VIEW`, and a
+        Grocycode requires its type's read permission. Both are checked before
+        canonicalisation or any row is read, so a denial does not reveal whether the
+        code is registered.
+      - A caller denied there receives a generic 403 that names no entity and carries
+        no contents, candidate list or pointer.
+    - **A caller with `SHOPPINGLIST_VIEW` but not `STOCK_VIEW` gets a reduced
+      product-barcode answer**, under [ADR-0050](0050-shopping-list-workflows-show-barcodes-and-stock-shortfalls-need-stock-view.md)
+      decision 1. Maintainer decision, 2026-10-24.
+      - A `matched` body carries the product's `id` and `name` and the matched row's
+        `qu_id` and `amount`, and nothing else: no stock, no price, no
+        `GetProductDetails()`.
+      - An `ambiguous` body lists each candidate by `id` and `name` only.
+      - The other statuses carry no product data.
+      - The allowance covers product-barcode codes only. A Grocycode still requires
+        `STOCK_VIEW`.
+    - **A `vctl:` label is authorised after lookup**, because its uid does not reveal
+      its kind. `/api/scan` answers it exactly as
+      `LabelIdentityService::Resolve` does today. A label of a kind the caller may not
+      read gets `unknown`: the same status, HTTP code and body as a uid that does not
+      exist, with no kind and no retirement snapshot. No label answer is a 403.
+      Maintainer decision, 2026-10-24. This revises answer D18 in issue 483 for labels;
+      D18's generic 403 still covers product barcodes and Grocycodes.
     - Price fields stay subject to `STOCK_PRICES_VIEW`.
 
 11. **Wire changes authorised by this record.** [ADR-0005](0005-wire-contract-is-the-invariant.md)
@@ -195,7 +216,10 @@ of the five matchers.
       `shopping_locations` gains `barcode_pattern_id`.
     - **W3:** a `product_barcodes` write can answer 422 for a failed check digit or
       malformed input, and 409 for a collision with an active row or a reserved identity.
-    - **W4:** `GET /api/scan` is new, with the statuses and bodies plan 34 specifies.
+    - **W4:** `GET /api/scan` is new, with the statuses and bodies plan 34 specifies. This
+      includes decision 10's reduced product-barcode body for a caller with
+      `SHOPPINGLIST_VIEW` but not `STOCK_VIEW`, and `unknown` for a `vctl:` label the
+      caller may not read.
     - **W5:** the six by-barcode routes resolve every equivalent form of a registered
       code that a URL path segment can carry. Their status codes and body shapes are
       unchanged. A form containing `/`, GS or another control character, such as a GS1
@@ -327,49 +351,19 @@ label namespace.
    `victual.openapi.json` diff contain W1 through W6 and nothing else.
 6. **Maintainer decision.** The maintainer confirms decisions 1 through 11. Issue 483
    records the answers these decisions restate.
+7. **Country table verified.** Each entry in the country-to-pattern table (decision 6) is
+   verified against the GS1 source plan 34 cites for it. An entry that is not verified
+   is not shipped. The accepting PR names the source and section for each entry.
 
 ## Open questions
 
-1. **Installation default pattern.** Issue 483 says to seed the default "from the country
-   convention", and on 2026-10-24 the tree has no country setting to seed it from. The
-   maintainer answered plan 34's question 1 with an installation country, set during
-   onboarding or by an environment variable. That setting is
-   [issue 486](https://github.com/datagen24/victual/issues/486): open, in milestone
-   0.5.5, and being built in parallel with this revision. It proposes
-   `Setting('COUNTRY', '')`, overridable as `VICTUAL_COUNTRY`, holding an ISO 3166-1
-   alpha-2 code. The default pattern stays unset until the setting exists, and then
-   comes from the country.
+None are open. Three questions recorded on 2026-10-24 were answered by the maintainer the
+same day, and the answers are now in the decisions:
 
-   This record's decisions do not depend on issue 486, because decision 6 already treats
-   the default as optional. Two things remain open here:
-   - **The country-to-pattern table.** Which pattern each country maps to, starting with
-     `US` (`2IIIIIPPPPPC`), and what an unmapped country yields.
-   - **Issue 486 question 2.** Whether a derived default is computed when it is read or
-     written once. Either answer satisfies decision 6, because no stored row is bound to
-     the default. But if the default is computed at read time, a change of country also
-     changes the answer to an already printed sticker scanned without a store. Plan 34
-     should say which behaviour it expects.
-2. **A `vctl:` label of a kind the caller may not read.** Decision 10 and plan 34 answer
-   with a generic 403 after lookup, so a denied label is distinguishable from an unknown
-   uid. That follows the maintainer's answer D18 in issue 483. Today
-   `LabelIdentityService::Resolve` answers `{"status":"unknown"}` for both cases, and
-   plan 32 tests that they are indistinguishable. Before acceptance, the maintainer
-   either:
-   - has `/api/scan` adopt `unknown` for labels, so the two resolvers agree; or
-   - confirms the 403, with the reason the two endpoints differ.
-
-   The recommendation is `unknown`. One answer for one code on two routes is the
-   simpler contract, and the 403 adds no protection that the uid's 64 bits do not
-   already give.
-3. **Scanning on a shopping-list page without `STOCK_VIEW`.** ADR-0050 decision 1
-   (Accepted 2026-10-18) lets `SHOPPINGLIST_VIEW` alone display, scan and search product
-   barcodes within the shopping-list workflow. Decision 10 requires `STOCK_VIEW` for a
-   product-barcode code, and plan 34 moves the product picker onto `/api/scan`. A
-   shopping-only member would then receive 403 where ADR-0050 guarantees a working scan.
-   Before acceptance, the record names one of these:
-   - `SHOPPINGLIST_VIEW` suffices for a product-barcode code with a reduced payload.
-     That is the product's id and name, its matched row's `qu_id` and `amount`, and no
-     stock or price.
-   - The shopping-list picker keeps its own ADR-0050-scoped path.
-
-   Either way, the permission is still checked before canonicalisation or lookup.
+1. **The installation default pattern.** It is looked up at read time from issue 486's
+   country, through a shipped table covering `US` and the common European layouts. No
+   entry or no country means no default. See decision 6 and prerequisite 7.
+2. **A `vctl:` label of a kind the caller may not read.** It answers `unknown`, matching
+   `LabelIdentityService::Resolve`. See decision 10.
+3. **Scanning on a shopping-list page without `STOCK_VIEW`.** `SHOPPINGLIST_VIEW` suffices
+   for a product-barcode code, with a reduced payload. See decision 10 and W4.
