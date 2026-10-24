@@ -46,5 +46,8 @@
   # Moved 2026-10-21 for the client 2.3.0 / server 2.3.1 / hono 4.13.13 bump. Computed with
   # `nix run nixpkgs#prefetch-npm-deps -- mcp/package-lock.json`, which reproduces the
   # previous value on the previous lockfile.
-  mcpNpmDeps = "sha256-+wlzN2SGoQUolLlJ7Slyo6W/uT/LLXjdQA1QB7khccQ=";
+  #
+  # Moved 2026-10-24 for the zod 4.6.5 -> 4.6.7 bump (PR 1101), from the "got:" value of
+  # that PR's failing `flake` check.
+  mcpNpmDeps = "sha256-1fQMaQ9M6KmUF7S4N3Q3qMXlhG5iKuAK1dW0IBtmsBo=";
 }
