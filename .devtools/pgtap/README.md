@@ -73,6 +73,17 @@ outside it, a chain that overflows, a chain that underflows to a subnormal, and 
 longer out-of-range path win. The API's message for the refusal is PHP, in
 `tests/Pgsql/ConversionChainRangeTest.php`.
 
+The [barcode canonicalisation tests](041-barcode-canonicalize.sql) cover migration 0319 (issue #1104),
+[ADR-0031](../../docs/adr/0031-barcode-identity-is-canonical-and-reserved.md) acceptance prerequisite 1. Nothing
+calls the function yet. They check every GTIN width, hinted UPC-E for each row of plan 34's expansion table,
+an unhinted 8-digit value staying GTIN-8, AIM identifiers and AI (01) element strings, check-digit failures
+that are never opaque, malformed input, and the restricted-circulation reading of each pattern field. The
+four- and five-digit verifiers are refused (prerequisite 2).
+
+The last block reads `pg_proc` for `IMMUTABLE`
+and `PARALLEL SAFE`, and counts this transaction's table scans in `pg_stat_xact_user_tables` around a
+sample of every kind of input. A control read of `products` shows that the counter moves.
+
 The [price reader tests](039-price-readers.sql) cover migration 0316 (issue #774, ADR-0045
 option B): `stock_current.value_incomplete` and the overview's copy, and the accepted differences D1
 to D4 in `products_price_history`, `products_average_price`, `products_last_purchased`,
@@ -215,6 +226,8 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `raise_quantity_unit_conversion_out_of_range` | function | 0318 | `040-conversion-chain-range.sql` |
 | `refresh_quantity_unit_conversion_cache` | function | 0318 | `040-conversion-chain-range.sql` |
 | `trg_quantity_unit_conversions_INS`, `trg_quantity_unit_conversions_UPD`, `trg_quantity_unit_conversions_DEL` (refuse an out-of-range factor) | function | redefined 0318 | `040-conversion-chain-range.sql` |
+| `victual_barcode_canonicalize` | function | 0319 | `041-barcode-canonicalize.sql` |
+| `victual_gs1_check_digit` | function | 0319 | `041-barcode-canonicalize.sql` |
 
 ## Completeness
 
