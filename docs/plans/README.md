@@ -151,6 +151,7 @@ Use these sources for findings, evidence, and verification details:
 - [Architecture review](../architecture-review.md): original defects and hardening work.
 - [Security sweep](../security-sweep.md): findings by S-number and remediation history.
 - [Architecture rigor review](../architecture-rigor-review.md): documentation and design gaps.
+- [OpenAPI 3.2 audit](../openapi-audit.md): specification compliance and contract gaps, issue 796.
 - [Parity suite](../../.devtools/parity/README.md): manual comparison with upstream grocy.
 - [Database suite](../../db/pgsql/README.md): engine, view, trigger, and migration checks.
 

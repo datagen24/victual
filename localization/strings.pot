@@ -2886,10 +2886,16 @@ msgstr ""
 msgid "Issue credential or pairing material"
 msgstr ""
 
+msgid "Issue renderer credential"
+msgstr ""
+
 msgid "Revoke worker credentials"
 msgstr ""
 
 msgid "New credentials and pairing material are shown once. Store them before leaving this page."
+msgstr ""
+
+msgid "Revoking removes every worker and renderer credential issued for this worker, and ends its pairing sessions."
 msgstr ""
 
 msgid "Printers"

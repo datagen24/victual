@@ -2,6 +2,7 @@
 
 namespace Victual\Controllers;
 
+use Victual\Helpers\JsonBody;
 use Victual\Services\FieldPolicy;
 use Victual\Services\RecipesService;
 use Victual\Services\StockService;
@@ -135,10 +136,12 @@ class RecipesController extends BaseController
 				'title' => $title,
 				'start' => $mealPlanEntry['day'],
 				'date_format' => 'date',
-				'recipe' => json_encode($recipe),
-				'mealPlanEntry' => json_encode($mealPlanEntry),
+				// Checked (issue #1047): json_encode()'s false would reach the page script as
+				// an empty value; an unencodable row is the 500 error page instead
+				'recipe' => JsonBody::Encode($recipe),
+				'mealPlanEntry' => JsonBody::Encode($mealPlanEntry),
 				'type' => $mealPlanEntry['type'],
-				'productDetails' => json_encode($productDetails)
+				'productDetails' => JsonBody::Encode($productDetails)
 			];
 		}
 

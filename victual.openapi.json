@@ -663,7 +663,15 @@
 							"application/json": {
 								"schema": {
 									"type": "object",
-									"description": "Key/value pairs of the subset of config settings which are safe to expose to clients"
+									"description": "Key/value pairs of the subset of config settings which are safe to expose to clients",
+									"properties": {
+										"COUNTRY": {
+											"type": "string",
+											"pattern": "^([A-Z]{2})?$",
+											"description": "The installation country as an upper-case ISO 3166-1 alpha-2 code (for example US), or an empty string when none is configured (issue #486)",
+											"example": "US"
+										}
+									}
 								}
 							}
 						}

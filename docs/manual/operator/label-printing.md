@@ -77,8 +77,8 @@ than re-running whatever booking produced it.
   - *Shrink, to a floor* makes the type smaller, down to the smallest size, then refuses.
 
   A refused preview or print names the element in the designer and on the job.
-- **`/labelprinters`** — register and edit workers and printers, issue credentials or
-  pairing material, and revoke worker credentials. Requires `ADMIN`.
+- **`/labelprinters`** — register and edit workers and printers, issue worker credentials,
+  renderer credentials or pairing material, and revoke them. Requires `ADMIN`.
 - **`/labelprintjobs`** — the job queue, with the printer each job targets. States include
   `awaiting_artifact`, `queued`, `claimed`, `sent`, `reported`, `failed`, `blocked`,
   `uncertain`, `uncertain_but_reported`, `awaiting_authorization`, `cancelled` and
@@ -163,12 +163,25 @@ comes back, even if a retry was authorized; request a new print or reprint inste
 read the same counts from the `Victual-Label-Revival` response header of the three undo
 operations ([REST API](rest-api.md)).
 
-**Registering a printer and a worker.** Use the forms on `/labelprinters` (`ADMIN`).
-The worker form registers a worker in declared or paired mode; its buttons issue a
-credential or pairing material and revoke credentials. The printer form registers a
-printer for a worker. The same operations are available through the administrative API:
-`label-admin-printer-*`, `label-admin-worker-*`, `label-admin-issue`,
-`label-admin-pairing` and `label-admin-revoke` in `routes.php`.
+**Registering a printer and a worker.** Use the forms on `/labelprinters` (`ADMIN`), in
+this order:
+
+1. Save a worker in declared or paired mode in the worker form.
+2. Select the worker. **Issue credential or pairing material** issues the worker key
+   (declared mode) or pairing material (paired mode). **Issue renderer credential** issues
+   the renderer key for the same worker. The page shows each value once, prefixed with the
+   field name a deployment stores it under: `worker-key` or `renderer-key`, the two keys of
+   the Helm chart's label credentials Secret. Store the value before you leave the page.
+3. Deploy the worker and the renderer with those keys. When the worker starts, it
+   registers its driver, and the worker form shows the time of its last registration.
+4. Register the printer for that worker in the printer form, choosing the driver version
+   the worker published.
+
+**Revoke worker credentials** invalidates every worker key and renderer key issued for the
+selected worker and ends its pairing sessions. Issue both keys again afterwards. The same
+operations are available through the administrative API: `label-admin-printer-*`,
+`label-admin-worker-*`, `label-admin-issue`, `label-admin-pairing`,
+`label-renderer-credential` and `label-admin-revoke` in `routes.php`.
 
 **Upgrading the worker to a new driver version.** A worker registers its driver at every
 start, and a registered driver version cannot change. A worker whose geometry changed

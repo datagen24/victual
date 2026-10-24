@@ -1,14 +1,18 @@
 (function ()
 {
  var workers = [], printers = [], drivers = [];
+ /** Parses a JSON column that the objects API may return as a string. */
  function Decode(value) { return typeof value === 'string' ? JSON.parse(value) : value; }
+ /** Shows a status line above the forms. */
  function Message(value) { $('#label-admin-message').text(value); }
+ /** Shows an API refusal's field and message, or a generic failure. */
  function Failed(xhr)
  {
   var detail = {};
   try { detail = JSON.parse(xhr.responseText || '{}'); } catch (error) { /* Use the fallback for non-JSON failures. */ }
   Message((detail.field ? detail.field + ': ' : '') + (detail.error_message || __t('Could not save label configuration.')));
  }
+ /** Replaces a select's options with one per row, valued by row index. */
  function Options(selector, rows, label, empty)
  {
   var select = $(document).find(selector).empty();
@@ -16,7 +20,9 @@
   rows.forEach(function (row, index) { select.append($('<option>').val(index).text(label(row))); });
  }
  var loadGeneration = 0;
+ /** Wraps a GET on the API in a promise. */
  function Read(path) { return new Promise(function (resolve, reject) { Victual.Api.Get(path, resolve, reject); }); }
+ /** Reloads workers, printers and drivers, then reselects the given worker or printer. */
  function Load(selection)
  {
   selection = selection || {};
@@ -40,7 +46,9 @@
    $('#label-printer-select').trigger('change');
   }).catch(Failed);
  }
+ /** Returns the driver version selected in the printer form. */
  function CurrentDriver() { return drivers[Number($('#label-printer-driver').val())]; }
+ /** Rebuilds the combination, model and connection selects for the selected driver. */
  function DriverChanged()
  {
   var driver = CurrentDriver();
@@ -50,6 +58,7 @@
   Options('#label-printer-connection-type', driver.capability_document.connection_types, function (s) { return s; });
   SettingsChanged();
  }
+ /** Renders the settings fields of the selected model-and-media combination. */
  function SettingsChanged(values)
  {
   var driver = CurrentDriver(); if (!driver) return;
@@ -80,6 +89,7 @@
    container.append($('<label>').attr('for', 'label-setting-' + index).text(schema.title || key), input);
   });
  }
+ /** Saves the printer, or moves it to the selected driver version when move is true. */
  function SavePrinter(move)
  {
   if (!document.getElementById('label-printer-form').reportValidity()) return;
@@ -121,11 +131,16 @@
   $('#label-printer-model').val(driver.capability_document.models.indexOf(printer.model));
   $('#label-printer-connection-type').val(driver.capability_document.connection_types.indexOf(printer.connection_type)); SettingsChanged(settings);
  });
+ /** Returns the worker selected in the worker form, or null for a new one. */
+ function SelectedWorker() { var value = $('#label-worker-select').val(); return value === '' ? null : workers[Number(value)]; }
+ /** Shows a secret once, labelled with its type and the field name a deployment stores it under. */
+ function ShowSecret(label, value) { $('#label-worker-secret').text(label + ':\n' + value); }
  $('#label-worker-select').on('change', function ()
  {
-  var value = $(this).val(), worker = value === '' ? null : workers[Number(value)];
+  var worker = SelectedWorker();
   $('#label-worker-name').val(worker ? worker.name : ''); $('#label-worker-mode').val(worker ? worker.configuration_mode : 'declared').prop('disabled', !!worker);
   $('#label-worker-active').prop('checked', !worker || !!worker.active); $('#label-worker-secret').text('');
+  $('#label-worker-registered').text(!worker ? '' : worker.last_registered_at ? __t('Last registration: %s', worker.last_registered_at) : __t('This worker has not registered yet.'));
  });
  $('#label-worker-form').on('submit', function (event)
  {
@@ -136,14 +151,20 @@
  });
  $('#label-worker-credential').on('click', function ()
  {
-  var value = $('#label-worker-select').val(); if (value === '') return;
-  var worker = workers[Number(value)];
-  Victual.Api.Post('labels/workers/' + worker.id + (worker.configuration_mode === 'paired' ? '/pairing-material' : '/credentials'), {}, function (result) { $('#label-worker-secret').text(result.credential || result.material); }, Failed);
+  var worker = SelectedWorker(); if (!worker) return;
+  var paired = worker.configuration_mode === 'paired';
+  Victual.Api.Post('labels/workers/' + worker.id + (paired ? '/pairing-material' : '/credentials'), {}, function (result) { if (paired) ShowSecret(__t('Pairing material'), result.material); else ShowSecret('worker-key', result.credential); }, Failed);
+ });
+ // A renderer key authenticates the renderer workload against the same worker row; the key type keeps it off the worker's routes.
+ $('#label-renderer-credential').on('click', function ()
+ {
+  var worker = SelectedWorker(); if (!worker) return;
+  Victual.Api.Post('labels/workers/' + worker.id + '/renderer-credentials', {}, function (result) { ShowSecret('renderer-key', result.credential); }, Failed);
  });
  $('#label-worker-revoke').on('click', function ()
  {
-  var value = $('#label-worker-select').val(); if (value === '' || !window.confirm(__t('Revoke all credentials for this worker?'))) return;
-  Victual.Api.Delete('labels/workers/' + workers[Number(value)].id + '/credentials', {}, function () { $('#label-worker-secret').text(''); Message(__t('Worker credentials revoked')); }, Failed);
+  var worker = SelectedWorker(); if (!worker || !window.confirm(__t('Revoke all worker and renderer credentials for this worker?'))) return;
+  Victual.Api.Delete('labels/workers/' + worker.id + '/credentials', {}, function () { $('#label-worker-secret').text(''); Message(__t('Worker and renderer credentials revoked')); }, Failed);
  });
  Load();
 })();

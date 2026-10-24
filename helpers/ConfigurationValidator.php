@@ -14,8 +14,8 @@ class EInvalidConfig extends \Exception
 
 /**
  * Validates the VICTUAL_* configuration constants (mode, database driver, file storage,
- * locale, currency, entry page, week start days, auto night mode range, and the MQTT and
- * InfluxDB outbound targets) on application startup, in that order.
+ * locale, currency, installation country, entry page, week start days, auto night mode
+ * range, and the MQTT and InfluxDB outbound targets) on application startup, in that order.
  */
 class ConfigurationValidator
 {
@@ -33,6 +33,7 @@ class ConfigurationValidator
 		self::checkLabelSubsystem();
 		self::checkDefaultLocale();
 		self::checkCurrencyFormat();
+		self::checkCountry();
 		self::checkFirstDayOfWeek();
 		self::checkEntryPage();
 		self::checkMealplanFirstDayOfWeek();
@@ -258,6 +259,20 @@ class ConfigurationValidator
 		if (!(preg_match('/^([A-z]){3}$/', VICTUAL_CURRENCY)))
 		{
 			throw new EInvalidConfig('CURRENCY is not in ISO 4217 format (three letter code)');
+		}
+	}
+
+	/**
+	 * COUNTRY is empty or an officially assigned ISO 3166-1 alpha-2 code, in any letter case
+	 * (issue #486). A list check rather than a pattern: "UK" and "EU" have the right shape
+	 * and would otherwise pass while matching no country-dependent default.
+	 */
+	private function checkCountry()
+	{
+		$country = trim((string)VICTUAL_COUNTRY);
+		if ($country !== '' && !InstallationCountry::IsAssigned($country))
+		{
+			throw new EInvalidConfig('COUNTRY "' . $country . '" is not an ISO 3166-1 alpha-2 country code (for example US, DE or GB), leave it empty to set no country');
 		}
 	}
 

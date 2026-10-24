@@ -148,8 +148,8 @@ class BaseApiController extends BaseController
 		}
 	}
 
-	/** The body of an error answer whose own message could not be JSON-encoded. */
-	protected const FIXED_ERROR_BODY = '{"error_message":"The error message could not be encoded as JSON"}';
+	/** The body of an error answer whose own message could not be JSON-encoded; one copy, in JsonBody. */
+	protected const FIXED_ERROR_BODY = \Victual\Helpers\JsonBody::FIXED_ERROR_BODY;
 
 	/**
 	 * The message to put on the wire in place of a database driver's own, and with the

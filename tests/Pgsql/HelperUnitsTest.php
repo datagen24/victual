@@ -10,6 +10,7 @@ use Victual\Helpers\CanonicalJson;
 use Victual\Helpers\ECanonicalizationFailed;
 use Victual\Helpers\ERequirementNotMet;
 use Victual\Helpers\Grocycode;
+use Victual\Helpers\InstallationCountry;
 use Victual\Helpers\PrerequisiteChecker;
 use Victual\Services\ApiKeyService;
 use Victual\Services\ApplicationService;
@@ -1607,6 +1608,45 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 	}
 
 	/**
+	 * Proves that COUNTRY (issue #486) accepts empty and any assigned ISO 3166-1 alpha-2 code in
+	 * either letter case, and refuses other lengths, the numeric code and well-shaped codes that
+	 * are not assigned to a country.
+	 */
+	public function testCountryHasToBeAnAssignedAlpha2Code()
+	{
+		self::assertConfigurationAccepted(['COUNTRY' => ''], 'empty means no country is configured');
+		self::assertConfigurationAccepted(['COUNTRY' => 'US'], 'an assigned code');
+		self::assertConfigurationAccepted(['COUNTRY' => 'de'], 'the letter case does not matter');
+		self::assertConfigurationRefused(['COUNTRY' => 'USA'], 'ISO 3166-1 alpha-2', 'the alpha-3 code is not the alpha-2 code');
+		self::assertConfigurationRefused(['COUNTRY' => 'U'], 'ISO 3166-1 alpha-2', 'one letter is not a code');
+		self::assertConfigurationRefused(['COUNTRY' => '840'], 'ISO 3166-1 alpha-2', 'the numeric code is not the letter code');
+		self::assertConfigurationRefused(['COUNTRY' => 'UK'], 'ISO 3166-1 alpha-2', 'UK is reserved; the United Kingdom is GB');
+		self::assertConfigurationRefused(['COUNTRY' => 'EU'], 'ISO 3166-1 alpha-2', 'EU is reserved and is not a country');
+	}
+
+	/**
+	 * Proves that the read path reports an upper-case code or null, and that its code list is the
+	 * 249 officially assigned codes with no duplicates and none in lower case.
+	 */
+	public function testInstallationCountryNormalizesToAnUpperCaseCodeOrNull()
+	{
+		self::assertSame('US', InstallationCountry::Normalize('US'));
+		self::assertSame('US', InstallationCountry::Normalize('us'), 'the operator may write lower case');
+		self::assertSame('GB', InstallationCountry::Normalize(" gb\n"), 'surrounding whitespace is not part of the code');
+		self::assertNull(InstallationCountry::Normalize(''), 'unset is null, so consumers keep their default');
+		self::assertNull(InstallationCountry::Normalize('UK'), 'a reserved code is not a country');
+		self::assertTrue(InstallationCountry::IsAssigned('ch'));
+		self::assertFalse(InstallationCountry::IsAssigned('XX'));
+
+		self::assertCount(249, InstallationCountry::CODES, 'ISO 3166-1 assigns 249 alpha-2 codes');
+		self::assertSame(InstallationCountry::CODES, array_values(array_unique(InstallationCountry::CODES)), 'no code is listed twice');
+		self::assertSame([], preg_grep('/^[A-Z]{2}$/', InstallationCountry::CODES, PREG_GREP_INVERT), 'every code is two upper-case letters');
+
+		// The suite runs with the config-dist.php default, which is no country.
+		self::assertNull(InstallationCountry::Get());
+	}
+
+	/**
 	 * Proves that CALENDAR_FIRST_DAY_OF_WEEK accepts empty or 0 to 6, while
 	 * MEAL_PLAN_FIRST_DAY_OF_WEEK also accepts -1, and that values outside each range are refused.
 	 */
@@ -3103,5 +3143,90 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		}
 
 		self::assertNotEmpty($logger->Records, 'the cause is logged');
+	}
+
+	/**
+	 * Issue #1047: JsonBody::Encode() is ApiResponse()'s checked encode for the writes that
+	 * do not go through it. A value with no JSON form throws EResponseNotEncodable, which
+	 * ExceptionController answers as a 500, with the cause logged once; an encodable value
+	 * gives the bytes json_encode() always gave.
+	 */
+	public function testJsonBodyEncodeThrowsTheStandard500WithTheCauseLogged()
+	{
+		foreach (['INF' => ['value' => INF], 'NAN' => ['value' => NAN], 'invalid UTF-8' => ['value' => "bad \xFF byte"]] as $label => $value)
+		{
+			$logger = self::recordingLogger();
+
+			try
+			{
+				\Victual\Helpers\JsonBody::Encode($value, $logger);
+				self::fail($label . ': an unencodable value must throw');
+			}
+			catch (\Victual\Controllers\Api\EResponseNotEncodable $ex)
+			{
+				self::assertSame('The response could not be encoded as JSON', $ex->getMessage(), $label);
+				self::assertInstanceOf(\JsonException::class, $ex->getPrevious(), $label . ': the cause is kept');
+			}
+
+			self::assertCount(1, $logger->Records, $label . ': the cause is logged once');
+			self::assertSame('error', $logger->Records[0]['level']);
+			self::assertStringContainsString('could not be encoded', $logger->Records[0]['message']);
+			self::assertNotSame(0, $logger->Records[0]['context']['json_error_code'], $label);
+			self::assertSame('array', $logger->Records[0]['context']['body_type'], $label . ': the type is logged, not the value');
+		}
+
+		$logger = self::recordingLogger();
+		$body = ['name' => 'Milk / "2%"', 'unicode' => "caf\u{E9}", 'amount' => 1.5];
+		self::assertSame(json_encode($body), \Victual\Helpers\JsonBody::Encode($body, $logger), 'success bytes are unchanged');
+		self::assertSame([], $logger->Records, 'nothing is logged on success');
+	}
+
+	/**
+	 * Issue #1047: a middleware refusal whose message has no JSON form keeps its own status
+	 * (400 and 403 are the two middleware refusals that build their message from data) and
+	 * sends the fixed literal, as GenericErrorResponse() does, instead of an empty body.
+	 */
+	public function testJsonBodyWriteRefusalKeepsTheStatusAndSendsTheFixedLiteral()
+	{
+		foreach ([400, 403] as $status)
+		{
+			$logger = self::recordingLogger();
+			$base = (new \Slim\Psr7\Factory\ResponseFactory())->createResponse($status)->withHeader('Content-Type', 'application/json');
+
+			$response = \Victual\Helpers\JsonBody::WriteRefusal($base, ['error_message' => "bad \xFF byte"], $logger);
+
+			self::assertSame($status, $response->getStatusCode(), "$status: the status is kept");
+			self::assertSame('application/json', $response->getHeaderLine('Content-Type'), "$status: headers are kept");
+			self::assertSame('{"error_message":"The error message could not be encoded as JSON"}', (string)$response->getBody(), "$status: the fixed literal");
+			self::assertCount(1, $logger->Records, "$status: the cause is logged once");
+			self::assertStringContainsString('fixed literal', $logger->Records[0]['message']);
+		}
+
+		$logger = self::recordingLogger();
+		$response = \Victual\Helpers\JsonBody::WriteRefusal((new \Slim\Psr7\Factory\ResponseFactory())->createResponse(403), ['error_message' => 'This API key is read-only'], $logger);
+		self::assertSame('{"error_message":"This API key is read-only"}', (string)$response->getBody(), 'an encodable refusal is written as json_encode() wrote it');
+		self::assertSame([], $logger->Records);
+	}
+
+	/**
+	 * Issue #1047: PathParameterMiddleware's 400 goes through the checked write. Its
+	 * parameter name comes from the OpenAPI document, so no request can make it invalid
+	 * UTF-8; the private builder is called directly to show what an unencodable name would
+	 * give, and that a real name's bytes are unchanged.
+	 */
+	public function testThePathParameterRefusalIsWrittenThroughTheCheckedEncode()
+	{
+		$middleware = new \Victual\Middleware\PathParameterMiddleware(new \DI\Container(), new \Slim\Psr7\Factory\ResponseFactory());
+		$build = new \ReflectionMethod($middleware, 'InvalidPathParameterResponse');
+
+		$response = $build->invoke($middleware, 'objectId');
+		self::assertSame(400, $response->getStatusCode());
+		self::assertSame('application/json', $response->getHeaderLine('Content-Type'));
+		self::assertSame('{"error_message":"Invalid path parameter: {objectId} has to be an integer"}', (string)$response->getBody());
+
+		$response = $build->invoke($middleware, "bad\xFF");
+		self::assertSame(400, $response->getStatusCode(), 'the refusal stays a 400');
+		self::assertSame('application/json', $response->getHeaderLine('Content-Type'));
+		self::assertSame('{"error_message":"The error message could not be encoded as JSON"}', (string)$response->getBody(), 'not an empty body');
 	}
 }

@@ -1438,7 +1438,11 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 	public function testLabelPrintJobPagesAreAdministrationOnly(): void
 	{
 		self::render(fn () => self::$labelPrintJobs->Index(self::request(), self::response(), []), 'GET /labelprintjobs');
-		self::render(fn () => self::$labelPrintJobs->Printers(self::request(), self::response(), []), 'GET /labelprinters');
+		$printers = self::render(fn () => self::$labelPrintJobs->Printers(self::request(), self::response(), []), 'GET /labelprinters');
+		// Both credentials a label deployment needs are issued from this page (issue 1056).
+		self::assertStringContainsString('id="label-worker-credential"', $printers);
+		self::assertStringContainsString('id="label-renderer-credential"', $printers);
+		self::assertStringContainsString('id="label-worker-registered"', $printers);
 
 		self::grant(['USERS_READ']);
 		$before = self::stateSnapshot();
@@ -1620,6 +1624,20 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertSame('/choresoverview', $manifest['start_url'], 'and the start URL from the second');
 		self::assertSame('standalone', $manifest['display'], 'a PWA descriptor, not a browser tab');
 		self::assertNotEmpty($manifest['icons'][0]['src']);
+	}
+
+	/**
+	 * Issue #1047: the "data" pair is the caller's own bytes, so it can be invalid UTF-8.
+	 * That is the standard JSON 500 body, not an empty 200 - and JSON rather than the HTML
+	 * error page, which is what a throw from this non-API route would have rendered.
+	 */
+	public function testManifestWithAnUnencodableNameIsTheStandardJson500(): void
+	{
+		$response = self::$system->Manifest(self::request('GET', ['data' => base64_encode("bad \xFF name#/choresoverview")]), self::response(), []);
+
+		self::assertSame(500, $response->getStatusCode());
+		self::assertSame('application/json', $response->getHeaderLine('Content-Type'));
+		self::assertSame(['error_message' => 'The response could not be encoded as JSON'], json_decode((string)$response->getBody(), true, 512, JSON_THROW_ON_ERROR));
 	}
 
 	/**

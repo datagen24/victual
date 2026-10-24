@@ -2,6 +2,8 @@
 
 namespace Victual\Controllers;
 
+use Victual\Controllers\Api\EResponseNotEncodable;
+use Victual\Helpers\JsonBody;
 use Victual\Services\ApplicationService;
 use Victual\Controllers\Users\User;
 use Victual\Services\DatabaseMigrationService;
@@ -72,6 +74,11 @@ class SystemController extends BaseController
 	 *
 	 * Query parameter data is a base64 encoded '#'-separated pair of
 	 * app name suffix and start URL.
+	 *
+	 * The pair is the caller's own bytes, so it can be invalid UTF-8. That answers the
+	 * standard JSON 500 body with the cause logged (issue #1047, decision D2), written here
+	 * because /manifest is not under /api and ExceptionController would render the HTML
+	 * error page for it.
 	 */
 	public function Manifest(Request $request, Response $response, array $args)
 	{
@@ -91,7 +98,16 @@ class SystemController extends BaseController
 			'display' => 'standalone'
 		];
 
-		$response->getBody()->write(json_encode($manifest));
+		try
+		{
+			$response->getBody()->write(JsonBody::Encode($manifest));
+		}
+		catch (EResponseNotEncodable $ex)
+		{
+			$response = $response->withStatus(500);
+			$response->getBody()->write(JsonBody::Encode(['error_message' => $ex->getMessage()]));
+		}
+
 		return $response->withHeader('Content-Type', 'application/json');
 	}
 
