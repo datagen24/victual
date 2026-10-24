@@ -21,9 +21,10 @@ redeployed sidecar; it records what Victual now offers.
 
 - **Contract replay against plan 14's fixtures (§11.1).** The handler tests use the
   recorded *shapes*, but not the frozen fixtures themselves.
-- **The actual client (§11.4).** The two motivating questions have not yet been asked
-  through Claude in real use.
 - **Household use of the read tools.** Issue #86 is still open.
+
+The actual client (§11.4) has been used for real: see
+[Real-client runs](#real-client-runs-adr-0052-prerequisite-3) below.
 
 ## Write tools (issue #209, 2026-10-08)
 
@@ -78,8 +79,47 @@ reads they take ids from (`list_locations`, `list_quantity_units`, `list_product
 it, because Victual reports the `UNIQUE` violation only as "The database rejected this
 request". Its description asks for a shelf life (`default_best_before_days`): without one,
 Victual's default is 0, and every count is due the day it is recorded.
-- Not done: the real-client household check ("add milk to the list", "I used the last of the
-  coffee") and contract tests against plan 14's fixtures for the three POST routes.
+- Not done: contract tests against plan 14's fixtures for the POST routes.
+
+## Real-client runs (ADR-0052 prerequisite 3)
+
+**Production, 2026-10-23.** Victual 0.5.4, Helm revision 12 in `victual-prod`, with
+`mcp.enabledTools: all-read,stock-write,catalog-write`. The client was one headless Claude
+Code session (`claude -p`), connected only to the sidecar through
+`kubectl port-forward svc/victual-mcp` with an MCP key (`--strict-mcp-config`, tools
+limited to `mcp__victual-prod`). The prompt was the household's own catalogue of the
+pantry door rack, read from 65 photos, with three instructions: units Jar, Bottle and Pack;
+product groups Spices & Seasonings and Sauces; best-before never expires.
+
+- **What the conversation did.** 101 tool calls in 102 turns ($1.13). It read the locations,
+  units and groups. It created the two groups. It ran `lookup_barcode` on 27 codes and
+  `find_product` before creating anything. Then it made 29 `create_product` calls with barcodes
+  and `default_best_before_days: -1`, and 29 `inventory_product` calls. It found two existing
+  products (Zepbound) and left them alone. Where two items shared a name it made the names
+  unique ("Packet", "8 oz Jar"), and it said so in its answer.
+- **Checked against the REST API** afterwards, product by product
+  (`/api/objects/products`, `/product_barcodes`, `/locations`, `/product_groups`,
+  `/api/stock`). All 29 match the catalogue on count, shelf (`Door Rack / Shelf 1`–`5`),
+  never-expires, group and barcode, and the two pairs are counted as 2. Prod holds 31
+  products: these 29 and the two that were there before.
+- **One call failed.** A `lookup_barcode` read failed with `ECONNRESET`, because the
+  port-forward dropped one of several parallel connections. It was a read, and the product was
+  still searched by name before it was created, so nothing was duplicated.
+- **A defect it found.** Ten of the 27 lookups answered `found: none` for products that Open
+  Food Facts has. Replayed one at a time afterwards, the same codes return the product. The
+  plugin (`plugins/OpenFoodFactsBarcodeLookupPlugin.php`) turns every non-2xx answer into
+  `null`, so a throttled burst of parallel lookups looks like an unknown barcode, and the
+  assistant creates the product without the external suggestion. Plan 09 records the hit
+  rates.
+
+**Development, 2026-10-23.** Before the release, four conversations ran on the Talos dev app
+(`master` at `e8be564e`):
+- building a nested shelf and products from one sentence;
+- a correction with a consumption and an opened can;
+- a list round trip and a refused delete;
+- an undo from an earlier conversation, which led to `recent_transactions`.
+
+[`docs/releases/0.5.4.md`](../docs/releases/0.5.4.md) records them.
 
 ## Layout
 

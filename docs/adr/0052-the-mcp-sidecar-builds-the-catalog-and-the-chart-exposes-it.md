@@ -1,6 +1,6 @@
 # ADR-0052: The MCP sidecar can build the catalog and count stock, and the chart exposes it on the private network
 
-- **Status:** Proposed
+- **Status:** Accepted, 2026-10-23
 - **Decider:** datagen24
 - **Recorded:** 2026-10-23, against `master` at `7b0660bc` (release 0.5.3). Design only: it
   changes no code, reserves no migration number and amends no accepted record.

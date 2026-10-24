@@ -63,6 +63,9 @@ class LabelCaptureService extends LabelService
         foreach ($fieldNames as $field) {
             $definition = $catalogue[$field];
             $value = $row[$definition['column']] ?? null;
+            if (isset($definition['never']) && (string)$value === $definition['never']) {
+                $value = null;
+            }
             if ($value === null || $value === '') {
                 if ($definition['null'] === 'error') {
                     $this->Refuse($field, 'field_unavailable', 'Field "' . $field . '" has no value and the catalogue does not allow an empty one');
