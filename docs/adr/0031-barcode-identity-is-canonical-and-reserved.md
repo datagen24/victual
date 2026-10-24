@@ -141,12 +141,15 @@ of the five matchers.
    trigger refuses a write to `product_barcodes` made outside the protocol's write
    functions.
 
-   Some transactions already hold locks from outside the protocol before they write a
-   barcode. These are ADR-0021's import lock (`LabelIdentityService::LockImport`), with
-   the importer's `print_jobs` table lock, and the per-product stock-booking locks
-   (`DatabaseService::LockProductsStock`, taken by `MergeProducts()`). Such a transaction
-   takes them before the registry lock. The barcode locks are always innermost: no
-   protocol function acquires either of those locks after it holds a barcode lock.
+   Some transactions hold locks from outside the protocol and also write a barcode.
+   Such a transaction takes those locks before the registry lock. The locks in question
+   are ADR-0021's import lock (`LabelIdentityService::LockImport`) and the per-product
+   stock-booking locks (`DatabaseService::LockProductsStock`). The concrete case today
+   is `MergeProducts()`, which takes its row and product locks and then rewrites
+   barcodes. The importer's barcode step does not hold the import lock; see
+   *Relationship to the label records*. The barcode locks are always innermost: no
+   protocol function acquires an import or stock-booking lock after it holds a barcode
+   lock.
 
 9. **Conflict resolution is versioned.**
    - Resolving a group locks its row, compares the client's version and membership with
@@ -263,10 +266,9 @@ and increments the import epoch. Read in `services/Database/DatabaseImporter.php
   foreign key to a table the importer truncates. Nothing in this record makes a label
   refer to a barcode row or a conflict group. A product label names a product, and a
   product barcode resolves to a product without passing through the label tables.
-- **Reprints.** A reprint replays retained bytes (ADR-0021 decision 2), so W1 does not
-  change a label already rendered. A new render that prints a product's barcode reads
-  the canonical value. A template that must print the code as the person entered it
-  reads `scanned_as`.
+- **Reprints.** A reprint replays retained bytes (ADR-0021 decision 2), so W1 changes
+  no label already rendered. On 2026-10-24 no label template field reads a product
+  barcode: `services/Labels/` has none. This record adds none.
 
 ADR-0011 makes Grocycode a read-only input symbology and resolves `vctl:` before it.
 Decision 10 keeps that order, and decision 5 leaves the uid canonicalisation in the
