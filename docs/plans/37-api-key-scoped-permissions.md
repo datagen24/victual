@@ -8,13 +8,15 @@ Today the dialog offers a key type and, for MCP keys, a read-only checkbox, and 
 with all of its owner's rights.
 
 **Depends on:** [ADR-0044](../adr/0044-api-keys-carry-a-subset-of-their-owners-permissions.md)
-(Proposed). Builds on [ADR-0018](../adr/0018-role-grants-and-domain-reads.md) (the permission
+(accepted 2026-10-25). Builds on [ADR-0018](../adr/0018-role-grants-and-domain-reads.md) (the permission
 model) and [ADR-0007](../adr/0007-auth-state-outlives-the-process.md) (no state in process
 memory). Touches [plan 02](02-mcp-endpoint.md)'s per-key boundary (spec section 4.2).
 **Status:** draft, research only, 2026-10-10. No issue exists yet and no migration number is
-claimed; claim the next free one above 0307 in `migrations/RESERVATIONS.md` when it is written.
-The first pull request is the ADR and this plan; implementation waits on the ADR being accepted
-and on open questions 1 and 2.
+claimed; claim the next free one in `migrations/RESERVATIONS.md` when it is written.
+ADR-0044 was accepted on 2026-10-25, and its open questions 1 and 2 were answered on
+2026-10-11, so implementation is no longer gated on the record. No release is chosen. The
+Proposed [ADR-0057](../adr/0057-permissions-are-per-resource-leaves-assigned-through-roles-groups-and-service-packages.md)
+keeps the key intersection but would express key scopes over its per-resource catalog.
 
 ## BLUF
 
@@ -151,6 +153,7 @@ and amend `docs/mcp-interface-spec.md` §4.2 (the per-key boundary is no longer 
 
 ## Work breakdown
 1. ADR draft (Proposed) + this plan into `docs/plans/` with a README row. Separate PR.
+   Done; ADR-0044 accepted 2026-10-25.
 2. Migration + `ApiKeyService` (create/rotate carry scope, `ActingKeyPermissions()`),
    `User` intersection, capabilities field. PostgreSQL tests first.
 3. `CreateNewApiKey` validation + the `DELETE api_keys` rule.
