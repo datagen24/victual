@@ -56,6 +56,7 @@ These records are not published on the documentation site
 
 | Version | Date | Record |
 |---|---|---|
+| 0.5.5 | 2026-10-24 | [0.5.5.md](0.5.5.md) |
 | 0.5.4 | 2026-10-23 | [0.5.4.md](0.5.4.md) |
 | 0.5.3 | 2026-10-22 | [0.5.3.md](0.5.3.md) |
 | 0.5.2 | 2026-10-22 | [0.5.2.md](0.5.2.md) |
