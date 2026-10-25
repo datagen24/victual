@@ -5,7 +5,7 @@
   [issue 1111](https://github.com/datagen24/victual/issues/1111) on 2026-10-25. The
   maintainer answered all five open questions on 2026-10-25; the answers are folded into
   decisions 2, 4, 7 and 9 and recorded under Open questions. Prerequisite 5 is met;
-  prerequisites 1 to 4 are not, and answer 3 keeps the catalog and household roles open
+  prerequisites 1 to 3 are not, and answer 3 keeps the catalog and household roles open
   until their leaf lists are written.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
@@ -21,8 +21,10 @@
   decisions 1 and 2 (one flat create right over a stated set of entities) and extends
   accepted [ADR-0018](0018-role-grants-and-domain-reads.md)'s union with a group source
   (decision 4). Keeps [ADR-0014](0014-administering-a-user-is-a-subset-question.md) and
-  ADR-0018's no-deny rule unchanged. Reconciles the Proposed ADR-0044, ADR-0055 and ADR-0056
-  without treating any of them as accepted. Must be accepted before ADR-0055 fixes its scope
+  ADR-0018's no-deny rule unchanged. If accepted, narrows accepted
+  [ADR-0044](0044-api-keys-carry-a-subset-of-their-owners-permissions.md) decision 8
+  (decision 7 here) and keeps the rest of it. Reconciles the Proposed ADR-0055 and
+  ADR-0056 without treating either as accepted. Must be accepted before ADR-0055 fixes its scope
   list, because issue 1111 asks for the model to be agreed first.
 
 ## Context
@@ -53,7 +55,7 @@ The existing records each carry part of this:
 - ADR-0018 (accepted): effective permissions are the union of direct grants and assigned
   roles, expanded through the tree, with no deny grants. It has no groups.
 - ADR-0043 (accepted): one create right, `MASTER_DATA_ADD`, below `MASTER_DATA_EDIT`.
-- ADR-0044 (Proposed): a user key carries an optional subset of its owner's permissions;
+- ADR-0044 (accepted 2026-10-25): a user key carries an optional subset of its owner's permissions;
   the intersection rule is what issue 1111 wants. Its decision 4 forbids assigning a key
   to a role, so that a role edit cannot move a live credential. Its decision 8 leaves the
   label worker, verifier and renderer keys with their own scoping.
@@ -126,12 +128,23 @@ these", and expanded to leaves before any comparison. A grant of a single leaf i
 new capability. Code checks leaves only; a check against a parent node is a defect once
 the leaves exist, because it ignores a leaf granted alone.
 
-The acceptance rehearsal compares every account's resolved permission set and a probe of
-allowed and refused requests before and after on each install path. Equality is the
-gate. Where the inventory shows today's checks already disagree between page and API, or
-check nothing, the record lists the change as an intentional one, with the accounts it
-affects, in the accepting pull request. ADR-0043 decision 7 used the same rule for chores
-and tasks.
+The migration that adds the leaves checks its own result, as part of the upgrade:
+
+- **Before** it changes the tree, it records the resolved permission set of every
+  account, role and credential.
+- **After**, in the same transaction, it resolves them again and compares.
+- Any difference that is not on the intentional-change list aborts the migration. The
+  transaction rolls back, and a report names each account or credential and the leaves
+  that changed.
+- The legacy importer runs the same comparison after an import, and a fresh install runs
+  it on the bootstrap administrator.
+
+Where the inventory shows today's checks already disagree between page and API, or check
+nothing, the implementing plan lists the change as intentional, with the accounts it
+affects; that list is the one the check allows. ADR-0043 decision 7 used the same rule for
+chores and tasks. A probe of allowed and refused requests on each install path is the
+implementing pull request's test evidence. Neither the check nor the probe is a condition
+of accepting this record, because both need the migration to exist.
 
 This partly supersedes ADR-0043 decisions 1 and 2: `MASTER_DATA_ADD` stops being a leaf
 that gates create on a stated set and becomes the parent of per-resource create leaves.
@@ -248,7 +261,8 @@ requirement that packages must not bypass the owner's ceiling.
 
 The calendar-sharing, label worker, verifier and renderer keys keep their current scoping
 (ADR-0044 decision 8) until a plan moves each to a service account with a package that
-resolves to exactly its current rights. The same equality gate as decision 2 applies.
+resolves to exactly its current rights. The same before-and-after check as decision 2
+applies inside that migration.
 
 ### 8. User-owned keys keep ADR-0044's intersection, over the new catalog
 
@@ -313,8 +327,9 @@ Reconciliation follows open question 4's answer:
 - The catalog grows from 41 permissions to several times that; the inventory's section 6
   counts it. The UI must group leaves by feature and resource with plain-language labels,
   or the model is unusable. That is plan work.
-- No install loses or gains access on upgrade except where the accepting pull request
-  lists an intentional change. The rehearsal that proves it is a prerequisite.
+- No install loses or gains access on upgrade except where the implementing plan lists
+  an intentional change. The migration's own before-and-after check enforces it on every
+  upgrade (decision 2), so a defect aborts the upgrade instead of changing access.
 - Code paths that check a broad permission today move to leaf checks. A missed site keeps
   working for existing accounts (the parent still resolves the leaf) but ignores a leaf
   granted alone. The inventory is the checklist, and a test asserts no check names a
@@ -335,13 +350,14 @@ Reconciliation follows open question 4's answer:
 3. **Household roles are agreed.** Administrator, Household Manager, Adult, Child and
    Guest (or the maintainer's replacement list) each with representative workflows and an
    exact leaf list, approved by the maintainer.
-4. **The equality rehearsal passes.** On each install path (fresh install, upgrade from
-   the latest release, legacy import), every account's resolved set and a probe of
-   allowed and refused requests match before and after, except the listed intentional
-   changes.
-5. **Open questions 1 to 4 answered** by the maintainer. Met 2026-10-25: the maintainer
+4. **Open questions 1 to 4 answered** by the maintainer. Met 2026-10-25: the maintainer
    answered all five. Answer 3 approves the method only, so prerequisites 2 and 3 stay
    open until their leaf lists exist and are reviewed.
+
+Until 2026-10-25 a fourth prerequisite required an equality rehearsal on every install
+path before acceptance. It was removed because it could only run once the migration
+existed, which made implementation a condition of accepting the record. The same check now
+runs inside the migration (decision 2).
 
 ## Open questions and maintainer responses
 
