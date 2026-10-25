@@ -1,8 +1,8 @@
 # ADR-0044: An API key carries an optional subset of its owner's permissions
 
-- **Status:** **Proposed.** Nothing here constrains work until the maintainer accepts it in a
-  separate pull request. The maintainer has not yet decided that the feature is needed or in
-  which release it ships.
+- **Status:** Accepted, 2026-10-25. The record names no acceptance prerequisites, so this
+  is bookkeeping only per the lifecycle rule. Acceptance does not choose the release it
+  ships in.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-10, against `master` at `40b0358f`. Design work only: it changes no
