@@ -11,6 +11,9 @@
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
   reserves no migration number and amends no accepted record.
 - **Referenced by:** [issue 771](https://github.com/datagen24/victual/issues/771).
+- **Reconciled by:** the Proposed [ADR-0057](0057-permissions-are-per-resource-leaves-assigned-through-roles-groups-and-service-packages.md) (2026-10-25): its decision 9 maps
+  provider groups to local groups, which hold the roles, instead of decision 4's direct
+  group-to-role mapping.
 - **Relationship:** depends on the Proposed ADR-0055 and reuses its identity mapping
   (decision 4) and resource-server contract (decision 3) unchanged. Builds on accepted
   [ADR-0007](0007-auth-state-outlives-the-process.md),

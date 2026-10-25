@@ -1,0 +1,270 @@
+49	GET	/	SystemController::Root	STOCK_VIEW@137(via GetEntryPageRelative) SHOPPINGLIST_VIEW@143(via GetEntryPageRelative) RECIPES_VIEW@149(via GetEntryPageRelative) CHORES_VIEW@155(via GetEntryPageRelative) TASKS_VIEW@161(via GetEntryPageRelative) BATTERIES_VIEW@167(via GetEntryPageRelative) EQUIPMENT_VIEW@173(via GetEntryPageRelative) CALENDAR_VIEW@179(via GetEntryPageRelative) MEALPLAN_VIEW@185(via GetEntryPageRelative)
+50	GET	/about	SystemController::About	
+51	GET	/manifest	SystemController::Manifest	
+52	GET	/barcodescannertesting	SystemController::BarcodeScannerTesting	
+55	GET	/login	LoginController::LoginPage	
+56	POST	/login	LoginController::ProcessLogin	
+59	POST	/logout	LoginController::Logout	
+62	GET	/userfields	GenericEntityController::UserfieldsList	MASTER_DATA_EDIT@27(via CheckViewPermission) ADMIN@31(via CheckViewPermission)
+63	GET	/userfield/{userfieldId}	GenericEntityController::UserfieldEditForm	MASTER_DATA_EDIT@27(via CheckViewPermission) ADMIN@31(via CheckViewPermission)
+64	GET	/userentities	GenericEntityController::UserentitiesList	MASTER_DATA_EDIT@27(via CheckViewPermission) ADMIN@31(via CheckViewPermission)
+65	GET	/userentity/{userentityId}	GenericEntityController::UserentityEditForm	MASTER_DATA_EDIT@27(via CheckViewPermission) ADMIN@31(via CheckViewPermission)
+66	GET	/userobjects/{userentityName}	GenericEntityController::UserobjectsList	MASTER_DATA_EDIT@27(via CheckViewPermission) ADMIN@31(via CheckViewPermission)
+67	GET	/userobject/{userentityName}/{userobjectId}	GenericEntityController::UserobjectEditForm	MASTER_DATA_EDIT@27(via CheckViewPermission) ADMIN@31(via CheckViewPermission)
+70	GET	/users	UsersController::UsersList	USERS_READ@125
+71	GET	/user/{userId}	UsersController::UserEditForm	USERS_CREATE@63 USERS_EDIT@68 USERS_EDIT_SELF@83 USERS_EDIT@88
+72	GET	/user/{userId}/permissions	UsersController::PermissionList	USERS_READ@25 USERS_EDIT@42 MayAdminister@42
+73	GET	/usersettings	UsersController::UserSettings	
+75	GET	/roles	UsersController::RolesList	USERS_READ@139 USERS_EDIT@142
+76	GET	/role/{roleId}	UsersController::RoleEditForm	USERS_READ@152 USERS_EDIT@165
+79	GET	/products	StockController::ProductsList	STOCK_VIEW@519
+80	GET	/product/{productId}	StockController::ProductEditForm	STOCK_VIEW@389
+81	GET	/quantityunits	StockController::QuantityUnitsList	STOCK_VIEW@666
+82	GET	/quantityunit/{quantityunitId}	StockController::QuantityUnitEditForm	STOCK_VIEW@622
+83	GET	/quantityunitconversion/{quConversionId}	StockController::QuantityUnitConversionEditForm	STOCK_VIEW@578
+84	GET	/productgroups	StockController::ProductGroupsList	STOCK_VIEW@500
+85	GET	/productgroup/{productGroupId}	StockController::ProductGroupEditForm	STOCK_VIEW@458
+88	GET	/stockoverview	StockController::Overview	STOCK_VIEW@248
+89	GET	/stockentries	StockController::Stockentries	STOCK_VIEW@892
+90	GET	/purchase	StockController::Purchase	STOCK_VIEW@556
+91	GET	/consume	StockController::Consume	STOCK_VIEW@52
+92	GET	/transfer	StockController::Transfer	STOCK_VIEW@922
+93	GET	/inventory	StockController::Inventory	STOCK_VIEW@68
+94	GET	/stockentry/{entryId}	StockController::StockEntryEditForm	STOCK_VIEW@861
+95	GET	/stocksettings	StockController::StockSettings	STOCK_VIEW@879
+96	GET	/labelprinters	LabelPrintJobsController::Printers	ADMIN@19
+97	GET	/labelprintjobs	LabelPrintJobsController::Index	ADMIN@13
+98	GET	/locationlabels	StockController::LocationLabels	STOCK_VIEW@198
+99	GET	/labeltemplates	LabelTemplatesController::TemplatesList	ADMIN@29
+100	GET	/labeltemplate/{templateId}	LabelTemplatesController::TemplateEditor	ADMIN@45
+101	GET	/locations	StockController::LocationsList	STOCK_VIEW@209
+102	GET	/location/{locationId}	StockController::LocationEditForm	STOCK_VIEW@145
+103	GET	/stockjournal	StockController::Journal	STOCK_VIEW@88
+104	GET	/locationcontentsheet	StockController::LocationContentSheet	STOCK_VIEW@129
+105	GET	/quantityunitpluraltesting	StockController::QuantityUnitPluralFormTesting	STOCK_VIEW@653
+106	GET	/stockjournal/summary	StockController::JournalSummary	STOCK_VIEW@939
+107	GET	/productbarcodes/{productBarcodeId}	StockController::ProductBarcodesEditForm	STOCK_VIEW@315
+108	GET	/productsubstitutions/new	StockController::ProductSubstitutionEditForm	STOCK_VIEW@361
+109	GET	/quantityunitconversionsresolved	StockController::QuantityUnitConversionsResolved	STOCK_VIEW@971
+110	GET	/stockreports/spendings	StockReportsController::Spendings	STOCK_VIEW@28 STOCK_PRICES_VIEW@35
+113	GET	/shoppinglocations	StockController::ShoppingLocationsList	STOCK_VIEW@839
+114	GET	/shoppinglocation/{shoppingLocationId}	StockController::ShoppingLocationEditForm	STOCK_VIEW@814
+117	GET	/shoppinglist	StockController::ShoppingList	SHOPPINGLIST_VIEW@690 EntityReadPolicy::PERMISSIONS@707 STOCK_VIEW@715
+118	GET	/shoppinglistitem/{itemId}	StockController::ShoppingListItemEditForm	SHOPPINGLIST_VIEW@768
+119	GET	/shoppinglist/{listId}	StockController::ShoppingListEditForm	SHOPPINGLIST_VIEW@743
+120	GET	/shoppinglistsettings	StockController::ShoppingListSettings	SHOPPINGLIST_VIEW@801
+123	GET	/recipes	RecipesController::Overview	RECIPES_VIEW@224
+124	GET	/recipe/{recipeId}	RecipesController::RecipeEditForm	RECIPES_VIEW@322
+125	GET	/recipe/{recipeId}/pos/{recipePosId}	RecipesController::RecipePosEditForm	RECIPES_VIEW@365
+126	GET	/recipessettings	RecipesController::RecipesSettings	RECIPES_VIEW@397
+129	GET	/consumptionrecipes	ConsumptionRecipesController::Overview	STOCK_VIEW@18
+131	GET	/consumptioninbox	ConsumptionInboxController::Overview	STOCK_VIEW@19
+133	GET	/consumptionrefills	ConsumptionRefillsController::Overview	STOCK_VIEW@20
+136	GET	/mealplan	RecipesController::MealPlan	MEALPLAN_VIEW@30 STOCK_VIEW@93 FieldPolicy@102 FieldPolicy@103 FieldPolicy@175
+137	GET	/mealplansections	RecipesController::MealPlanSectionsList	MEALPLAN_VIEW@429
+138	GET	/mealplansection/{sectionId}	RecipesController::MealPlanSectionEditForm	MEALPLAN_VIEW@408
+141	GET	/choresoverview	ChoresController::Overview	CHORES_VIEW@137
+142	GET	/choretracking	ChoresController::TrackChoreExecution	CHORES_VIEW@182
+143	GET	/choresjournal	ChoresController::Journal	CHORES_VIEW@103
+144	GET	/chores	ChoresController::ChoresList	CHORES_VIEW@69
+145	GET	/chore/{choreId}	ChoresController::ChoreEditForm	CHORES_VIEW@28
+146	GET	/choressettings	ChoresController::ChoresSettings	CHORES_VIEW@91
+149	GET	/batteriesoverview	BatteriesController::Overview	BATTERIES_VIEW@129
+150	GET	/batterytracking	BatteriesController::TrackChargeCycle	BATTERIES_VIEW@174
+151	GET	/batteriesjournal	BatteriesController::Journal	BATTERIES_VIEW@95
+152	GET	/batteries	BatteriesController::BatteriesList	BATTERIES_VIEW@28
+153	GET	/battery/{batteryId}	BatteriesController::BatteryEditForm	BATTERIES_VIEW@63
+154	GET	/batteriessettings	BatteriesController::BatteriesSettings	BATTERIES_VIEW@51
+157	GET	/tasks	TasksController::Overview	TASKS_VIEW@28
+158	GET	/task/{taskId}	TasksController::TaskEditForm	TASKS_VIEW@127
+159	GET	/taskcategories	TasksController::TaskCategoriesList	TASKS_VIEW@78
+160	GET	/taskcategory/{categoryId}	TasksController::TaskCategoryEditForm	TASKS_VIEW@102
+161	GET	/taskssettings	TasksController::TasksSettings	TASKS_VIEW@154
+164	GET	/equipment	EquipmentController::Overview	EQUIPMENT_VIEW@47
+165	GET	/equipment/{equipmentId}	EquipmentController::EditForm	EQUIPMENT_VIEW@23
+168	GET	/calendar	CalendarController::Overview	CALENDAR_VIEW@21
+171	GET	/api	OpenApiController::DocumentationUi	
+172	GET	/manageapikeys	OpenApiController::ApiKeysList	ADMIN@50(via RenderApiKeysPage)
+176	POST	/manageapikeys/new	OpenApiController::CreateNewApiKey	ADMIN@50(via RenderApiKeysPage)
+180	POST	/manageapikeys/{id}/rotate	OpenApiController::RotateApiKey	ADMIN@145 ADMIN@50(via RenderApiKeysPage)
+186	GET	/api/openapi/specification	OpenApiController::DocumentationSpec	
+189	GET	/api/system/info	SystemApiController::GetSystemInfo	
+190	GET	/api/system/time	SystemApiController::GetSystemTime	
+191	GET	/api/system/db-changed-time	SystemApiController::GetDbChangedTime	
+192	GET	/api/system/config	SystemApiController::GetConfig	
+193	POST	/api/system/log-missing-localization	SystemApiController::LogMissingLocalization	
+194	GET	/api/system/localization-strings	SystemApiController::GetLocalizationStrings	
+197	GET	/api/objects/{entity}	GenericEntityApiController::GetObjects	EntityReadPolicy::Covers@576 EntityReadPolicy::Check@580 FieldPolicy@624
+198	GET	/api/objects/{entity}/{objectId}	GenericEntityApiController::GetObject	EntityReadPolicy::Covers@530 EntityReadPolicy::Check@534 FieldPolicy@558
+199	POST	/api/objects/{entity}	GenericEntityApiController::AddObject	SHOPPINGLIST_ITEMS_ADD@53 RECIPES@57 RECIPES_MEALPLAN@61 EQUIPMENT@65 CHORES@69 TASKS@73 MASTER_DATA_ADD@77 MASTER_DATA_EDIT@81 ADMIN@88 SHOPPINGLIST_ITEMS_ADD@194
+200	PUT	/api/objects/{entity}/{objectId}	GenericEntityApiController::EditObject	SHOPPINGLIST_ITEMS_ADD@416 RECIPES@420 RECIPES_MEALPLAN@424 EQUIPMENT@428 CHORES@432 TASKS@436 MASTER_DATA_EDIT@440 ADMIN@447 UserfileOwnerPolicy::GuardOwnershipChange@494
+201	DELETE	/api/objects/{entity}/{objectId}	GenericEntityApiController::DeleteObject	SHOPPINGLIST_ITEMS_DELETE@234 RECIPES@238 RECIPES_MEALPLAN@242 EQUIPMENT@246 MASTER_DATA_EDIT@254 ADMIN@261 ADMIN@276 USERS_READ@325 UserfileOwnerPolicy::CASCADING_OWNER_ENTITIES@343 UserfileOwnerPolicy::GuardOwnershipChange@347
+202	GET	/api/userfields/{entity}/{objectId}	GenericEntityApiController::GetUserfields	EntityReadPolicy::Covers@656 EntityReadPolicy::Check@662
+203	PUT	/api/userfields/{entity}/{objectId}	GenericEntityApiController::SetUserfields	MASTER_DATA_EDIT@678 UserfileOwnerPolicy::GuardOwnershipChange@692
+206	PUT	/api/files/{group}/{fileName}	FilesApiController::UploadFile	UserfileOwnerPolicy::LockOwnership@411 UserfileOwnerPolicy::CheckByteMutation@412
+207	GET	/api/files/{group}/{fileName}	FilesApiController::ServeFile	UserfileOwnerPolicy::Check@234(via CheckGroupReadPermission)
+208	DELETE	/api/files/{group}/{fileName}	FilesApiController::DeleteFile	UserfileOwnerPolicy::LockOwnership@287 UserfileOwnerPolicy::CheckByteMutation@288 USERS_EDIT@493(via CheckUserPictureDeletion) CheckMayAdminister@497(via CheckUserPictureDeletion)
+211	GET	/api/users	UsersApiController::GetUsers	USERS_READ@598
+212	POST	/api/users	UsersApiController::CreateUser	USERS_CREATE@72 CheckMayGrant@78 USERS_CREATE@85 CheckMayGrant@87
+213	PUT	/api/users/{userId}	UsersApiController::EditUser	USERS_EDIT_SELF@163 USERS_EDIT_SELF@169 USERS_EDIT@174 CheckMayAdminister@178 CheckMayAdminister@318 USERS_EDIT_SELF@363 USERS_EDIT@363
+214	DELETE	/api/users/{userId}	UsersApiController::DeleteUser	USERS_EDIT@116 CheckMayAdminister@117 USERS_EDIT@121 CheckMayAdminister@123
+215	GET	/api/users/{userId}/permissions	UsersApiController::ListPermissions	USERS_READ@651
+216	POST	/api/users/{userId}/permissions	UsersApiController::AddPermission	USERS_EDIT@35 USERS_EDIT@39 CheckMayAdminister@52 CheckMayGrant@53
+217	PUT	/api/users/{userId}/permissions	UsersApiController::SetPermissions	USERS_EDIT@670 USERS_EDIT@674 CheckMayAdminister@683 CheckMayGrant@684
+220	GET	/api/roles	RolesApiController::ListRoles	USERS_READ@14
+221	POST	/api/labels/pair	LabelWorkerApiController::Dispatch	
+222	POST	/api/labels/credentials/rotate	LabelWorkerApiController::Dispatch	
+223	POST	/api/labels/register	LabelWorkerApiController::Dispatch	
+224	POST	/api/labels/jobs/claim	LabelWorkerApiController::Dispatch	
+225	POST	/api/labels/attempts/{attemptId}/heartbeat	LabelWorkerApiController::Dispatch	
+226	POST	/api/labels/attempts/{attemptId}/sent	LabelWorkerApiController::Dispatch	
+227	POST	/api/labels/attempts/{attemptId}/result	LabelWorkerApiController::Dispatch	
+228	POST	/api/labels/attempts/{attemptId}/evidence	LabelWorkerApiController::Dispatch	
+229	POST	/api/labels/printers/{printerId}/status	LabelWorkerApiController::Dispatch	
+230	POST	/api/labels/printers	LabelPrintersApiController::Dispatch	ADMIN@16
+231	PUT	/api/labels/printers/{printerId}	LabelPrintersApiController::Dispatch	ADMIN@16
+232	POST	/api/labels/printers/{printerId}/schema-version	LabelPrintersApiController::Dispatch	ADMIN@16
+233	DELETE	/api/labels/printers/{printerId}	LabelPrintersApiController::Dispatch	ADMIN@16
+234	POST	/api/labels/workers	LabelPrintersApiController::Dispatch	ADMIN@16
+235	PUT	/api/labels/workers/{workerId}	LabelPrintersApiController::Dispatch	ADMIN@16
+236	POST	/api/labels/workers/{workerId}/pairing-material	LabelPrintersApiController::Dispatch	ADMIN@16
+237	POST	/api/labels/workers/{workerId}/credentials	LabelPrintersApiController::Dispatch	ADMIN@16
+238	DELETE	/api/labels/workers/{workerId}/credentials	LabelPrintersApiController::Dispatch	ADMIN@16
+239	GET	/api/labels/jobs	LabelPrintersApiController::Dispatch	ADMIN@16
+240	POST	/api/labels/jobs/{jobId}/authorize-attempt	LabelPrintersApiController::Dispatch	ADMIN@16
+241	GET	/api/labels/drivers/{driverId}/schemas/{schemaVersion}	LabelPrintersApiController::Dispatch	ADMIN@16
+243	POST	/api/labels/locations/{locationId}/print	LabelsApiController::Operate	MASTER_DATA_EDIT@75 DomainPermission@86
+244	POST	/api/labels/locations/{locationId}/print-subtree	LabelsApiController::Operate	MASTER_DATA_EDIT@75 DomainPermission@86
+245	POST	/api/labels/locations/{locationId}/revised-print	LabelsApiController::Operate	MASTER_DATA_EDIT@75 DomainPermission@86
+248	POST	/api/labels/{kind:location|product|stock_entry|recipe|chore|battery}/{id:[0-9]+}/print	LabelsApiController::Operate	MASTER_DATA_EDIT@75 DomainPermission@86
+249	POST	/api/labels/{kind:location|product|stock_entry|recipe|chore|battery}/{id:[0-9]+}/revised-print	LabelsApiController::Operate	MASTER_DATA_EDIT@75 DomainPermission@86
+250	POST	/api/labels/jobs/{jobId}/reprint	LabelsApiController::Operate	MASTER_DATA_EDIT@75 DomainPermission@86
+251	POST	/api/labels/jobs/{jobId}/cancel	LabelsApiController::Operate	MASTER_DATA_EDIT@75 DomainPermission@86
+252	POST	/api/labels/artifacts/{artifactId}/promote	LabelsApiController::Operate	MASTER_DATA_EDIT@75 DomainPermission@86
+255	GET	/api/labels/templates	LabelTemplatesApiController::Dispatch	ADMIN@30
+256	POST	/api/labels/templates	LabelTemplatesApiController::Dispatch	ADMIN@30
+257	GET	/api/labels/templates/{templateId}/draft	LabelTemplatesApiController::Dispatch	ADMIN@30
+258	PUT	/api/labels/templates/{templateId}/draft	LabelTemplatesApiController::Dispatch	ADMIN@30
+259	POST	/api/labels/templates/{templateId}/publish	LabelTemplatesApiController::Dispatch	ADMIN@30
+260	GET	/api/labels/templates/{templateId}/versions	LabelTemplatesApiController::Dispatch	ADMIN@30
+261	PUT	/api/labels/templates/{templateId}/default-version	LabelTemplatesApiController::Dispatch	ADMIN@30
+262	POST	/api/labels/templates/{templateId}/archive	LabelTemplatesApiController::Dispatch	ADMIN@30
+263	POST	/api/labels/templates/{templateId}/preview	LabelTemplatesApiController::Dispatch	ADMIN@30
+264	GET	/api/labels/assets	LabelTemplatesApiController::Dispatch	ADMIN@30
+265	POST	/api/labels/assets	LabelTemplatesApiController::Dispatch	ADMIN@30
+266	POST	/api/labels/assets/starter-fonts	LabelTemplatesApiController::Dispatch	ADMIN@30
+267	GET	/api/labels/renders/{requestId}	LabelTemplatesApiController::Dispatch	ADMIN@30
+268	GET	/api/labels/artifacts/{artifactId}/image	LabelTemplatesApiController::PreviewImage	ADMIN@78
+269	POST	/api/labels/workers/{workerId}/renderer-credentials	LabelTemplatesApiController::Dispatch	ADMIN@30
+273	POST	/api/labels/render/claim	LabelRenderApiController::Dispatch	
+274	POST	/api/labels/render/{requestId}/result	LabelRenderApiController::Dispatch	
+275	POST	/api/labels/render/{requestId}/invalid	LabelRenderApiController::Dispatch	
+276	POST	/api/labels/render/{requestId}/failed	LabelRenderApiController::Dispatch	
+277	GET	/api/labels/assets/{assetId}/bytes	LabelRenderApiController::Bytes	
+278	GET	/api/labels/artifacts/{artifactId}/bytes	LabelRenderApiController::Bytes	
+279	GET	/api/labels/resolve/{code}	LabelsApiController::Resolve	DomainPermission@22
+280	GET	/api/labels/locations/{locationId}/context	LabelsApiController::LocationContext	STOCK_VIEW@29
+281	GET	/api/labels/{kind:product|stock_entry|recipe|chore|battery}/{id:[0-9]+}/context	LabelsApiController::Context	DomainPermission@42
+282	POST	/api/roles	RolesApiController::CreateRole	USERS_EDIT@20 USERS_EDIT@23
+283	PUT	/api/roles/{roleId}	RolesApiController::EditRole	USERS_EDIT@40 USERS_EDIT@43
+284	DELETE	/api/roles/{roleId}	RolesApiController::DeleteRole	USERS_EDIT@60 USERS_EDIT@63
+285	GET	/api/roles/{roleId}/permissions	RolesApiController::ListPermissions	USERS_READ@80
+286	PUT	/api/roles/{roleId}/permissions	RolesApiController::SetPermissions	USERS_EDIT@90
+287	GET	/api/users/{userId}/roles	RolesApiController::ListUserRoles	USERS_READ@100
+288	PUT	/api/users/{userId}/roles	RolesApiController::SetUserRoles	USERS_EDIT@106
+291	GET	/api/user	UsersApiController::CurrentUser	
+292	GET	/api/user/capabilities	UsersApiController::CurrentUserCapabilities	
+293	GET	/api/user/settings	UsersApiController::GetUserSettings	
+294	GET	/api/user/settings/{settingKey}	UsersApiController::GetUserSetting	
+295	PUT	/api/user/settings/{settingKey}	UsersApiController::SetUserSetting	
+296	DELETE	/api/user/settings/{settingKey}	UsersApiController::DeleteUserSetting	
+299	GET	/api/stock	StockApiController::CurrentStock	STOCK_VIEW@743 FieldPolicy@748
+300	GET	/api/stock/entry/{entryId}	StockApiController::StockEntry	STOCK_VIEW@1429 FieldPolicy@1443
+301	PUT	/api/stock/entry/{entryId}	StockApiController::EditStockEntry	STOCK_EDIT@810 STOCK_VIEW@813 STOCK_VIEW@1457(via StockTransactions) FieldPolicy@1472(via StockTransactions)
+302	POST	/api/stock/entry/{entryId}/measure	StockApiController::MeasureStockEntry	STOCK_EDIT@932 STOCK_VIEW@935 STOCK_VIEW@1457(via StockTransactions) FieldPolicy@1472(via StockTransactions)
+303	GET	/api/stock/volatile	StockApiController::CurrentVolatileStock	STOCK_VIEW@760 FieldPolicy@772
+304	GET	/api/stock/products/{productId}	StockApiController::ProductDetails	STOCK_VIEW@1241 FieldPolicy@1244 FieldPolicy@1246
+305	GET	/api/stock/products/{productId}/entries	StockApiController::ProductStockEntries	STOCK_VIEW@1296
+306	GET	/api/stock/products/{productId}/locations	StockApiController::ProductStockLocations	STOCK_VIEW@1329
+307	GET	/api/stock/products/{productId}/price-history	StockApiController::ProductPriceHistory	STOCK_VIEW@1276 STOCK_PRICES_VIEW@1281
+308	POST	/api/stock/products/{productId}/add	StockApiController::AddProduct	STOCK_PURCHASE@343 STOCK_VIEW@346 STOCK_VIEW@1457(via StockTransactions)(via HandleBookingCall) FieldPolicy@1472(via StockTransactions)(via HandleBookingCall)
+309	POST	/api/stock/products/{productId}/consume	StockApiController::ConsumeProduct	STOCK_CONSUME@602 STOCK_VIEW@605 STOCK_VIEW@1457(via StockTransactions)(via HandleBookingCall) FieldPolicy@1472(via StockTransactions)(via HandleBookingCall)
+310	POST	/api/stock/products/{productId}/transfer	StockApiController::TransferProduct	STOCK_TRANSFER@1488 STOCK_VIEW@1491 STOCK_VIEW@1457(via StockTransactions)(via HandleBookingCall) FieldPolicy@1472(via StockTransactions)(via HandleBookingCall)
+311	POST	/api/stock/products/{productId}/inventory	StockApiController::InventoryProduct	STOCK_INVENTORY@1015 STOCK_VIEW@1018 STOCK_VIEW@1457(via StockTransactions)(via HandleBookingCall) FieldPolicy@1472(via StockTransactions)(via HandleBookingCall)
+312	POST	/api/stock/products/{productId}/open	StockApiController::OpenProduct	STOCK_OPEN@1138 STOCK_VIEW@1141 STOCK_VIEW@1457(via StockTransactions)(via HandleBookingCall) FieldPolicy@1472(via StockTransactions)(via HandleBookingCall)
+313	POST	/api/stock/products/{productIdToKeep}/merge/{productIdToRemove}	StockApiController::MergeProducts	STOCK_EDIT@1723 MASTER_DATA_EDIT@1724 UserfileOwnerPolicy::GuardOwnershipChange@1734
+314	GET	/api/stock/products/by-barcode/{barcode}	StockApiController::ProductDetailsByBarcode	STOCK_VIEW@1258 FieldPolicy@1262 FieldPolicy@1264
+315	POST	/api/stock/products/by-barcode/{barcode}/add	StockApiController::AddProductByBarcode	STOCK_PURCHASE@470 STOCK_VIEW@471 STOCK_PURCHASE@343(via AddProduct) STOCK_VIEW@346(via AddProduct)
+316	POST	/api/stock/products/by-barcode/{barcode}/consume	StockApiController::ConsumeProductByBarcode	STOCK_CONSUME@716 STOCK_VIEW@717 STOCK_CONSUME@602(via ConsumeProduct) STOCK_VIEW@605(via ConsumeProduct)
+317	POST	/api/stock/products/by-barcode/{barcode}/transfer	StockApiController::TransferProductByBarcode	STOCK_TRANSFER@1547 STOCK_VIEW@1548 STOCK_TRANSFER@1488(via TransferProduct) STOCK_VIEW@1491(via TransferProduct)
+318	POST	/api/stock/products/by-barcode/{barcode}/inventory	StockApiController::InventoryProductByBarcode	STOCK_INVENTORY@1115 STOCK_VIEW@1116 STOCK_INVENTORY@1015(via InventoryProduct) STOCK_VIEW@1018(via InventoryProduct)
+319	POST	/api/stock/products/by-barcode/{barcode}/open	StockApiController::OpenProductByBarcode	STOCK_OPEN@1212 STOCK_VIEW@1213 STOCK_OPEN@1138(via OpenProduct) STOCK_VIEW@1141(via OpenProduct)
+320	GET	/api/stock/locations/{locationId}/entries	StockApiController::LocationStockEntries	STOCK_VIEW@1313
+321	POST	/api/stock/locations/{locationId}/weigh	StockApiController::WeighLocation	STOCK_EDIT@1584 STOCK_VIEW@1587 STOCK_VIEW@1457(via StockTransactions) FieldPolicy@1472(via StockTransactions)
+322	POST	/api/stock/locations/by-label/{code}/weigh	StockApiController::WeighLocationByLabel	STOCK_EDIT@1650 STOCK_VIEW@1652 STOCK_EDIT@1584(via WeighLocation) STOCK_VIEW@1587(via WeighLocation) STOCK_VIEW@1457(via StockTransactions)(via WeighLocation) FieldPolicy@1472(via StockTransactions)(via WeighLocation)
+323	GET	/api/stock/bookings/{bookingId}	StockApiController::StockBooking	STOCK_VIEW@1400 FieldPolicy@1414
+324	POST	/api/stock/bookings/{bookingId}/undo	StockApiController::UndoBooking	STOCK_EDIT@1682
+325	GET	/api/stock/transactions/{transactionId}	StockApiController::StockTransactions	STOCK_VIEW@1457 FieldPolicy@1472
+326	POST	/api/stock/transactions/{transactionId}/undo	StockApiController::UndoTransaction	STOCK_EDIT@1701
+327	GET	/api/stock/barcodes/external-lookup/{barcode}	StockApiController::ExternalBarcodeLookup	STOCK_VIEW@985 MASTER_DATA_ADD@997
+330	POST	/api/stock/shoppinglist/add-missing-products	StockApiController::AddMissingProductsToShoppingList	SHOPPINGLIST_ITEMS_ADD@238 STOCK_VIEW@239
+331	POST	/api/stock/shoppinglist/add-overdue-products	StockApiController::AddOverdueProductsToShoppingList	SHOPPINGLIST_ITEMS_ADD@275
+332	POST	/api/stock/shoppinglist/add-expired-products	StockApiController::AddExpiredProductsToShoppingList	SHOPPINGLIST_ITEMS_ADD@308
+333	POST	/api/stock/shoppinglist/clear	StockApiController::ClearShoppingList	SHOPPINGLIST_ITEMS_DELETE@556
+334	POST	/api/stock/shoppinglist/add-product	StockApiController::AddProductToShoppingList	SHOPPINGLIST_ITEMS_ADD@489
+335	POST	/api/stock/shoppinglist/remove-product	StockApiController::RemoveProductFromShoppingList	SHOPPINGLIST_ITEMS_DELETE@1348
+338	POST	/api/recipes/{recipeId}/add-not-fulfilled-products-to-shoppinglist	RecipesApiController::AddNotFulfilledProductsToShoppingList	RECIPES_VIEW@29 SHOPPINGLIST_ITEMS_ADD@30
+339	GET	/api/recipes/{recipeId}/fulfillment	RecipesApiController::GetRecipeFulfillment	RECIPES_VIEW@77 RECIPES_VIEW@78 FieldPolicy@94
+340	POST	/api/recipes/{recipeId}/consume	RecipesApiController::ConsumeRecipe	RECIPES_VIEW@59 STOCK_CONSUME@60
+341	GET	/api/recipes/fulfillment	RecipesApiController::GetRecipeFulfillment	RECIPES_VIEW@77 RECIPES_VIEW@78 FieldPolicy@94
+345	GET	/api/consumption/recipes	ConsumptionRecipesApiController::ListRecipes	STOCK_VIEW@70
+346	POST	/api/consumption/recipes	ConsumptionRecipesApiController::CreateRecipe	STOCK_VIEW@78 STOCK_CONSUME@79
+347	GET	/api/consumption/recipes/{recipeId}	ConsumptionRecipesApiController::GetRecipe	STOCK_VIEW@93
+348	PUT	/api/consumption/recipes/{recipeId}	ConsumptionRecipesApiController::UpdateRecipe	STOCK_VIEW@101
+349	DELETE	/api/consumption/recipes/{recipeId}	ConsumptionRecipesApiController::DeleteRecipe	STOCK_VIEW@115
+350	POST	/api/consumption/recipes/{recipeId}/consume	ConsumptionRecipesApiController::ConsumeRecipe	STOCK_VIEW@128 STOCK_CONSUME@129
+351	GET	/api/consumption/recipes/{recipeId}/events	ConsumptionRecipesApiController::ListEvents	STOCK_VIEW@144
+352	POST	/api/consumption/recipes/{recipeId}/events/{eventId}/undo	ConsumptionRecipesApiController::UndoEvent	STOCK_VIEW@152 STOCK_EDIT@153
+353	GET	/api/consumption/recipes/{recipeId}/shares	ConsumptionRecipesApiController::ListShares	STOCK_VIEW@161
+354	POST	/api/consumption/recipes/{recipeId}/shares	ConsumptionRecipesApiController::AddShare	STOCK_VIEW@181
+355	PUT	/api/consumption/recipes/{recipeId}/shares/{userId}	ConsumptionRecipesApiController::SetShareRights	STOCK_VIEW@208
+356	DELETE	/api/consumption/recipes/{recipeId}/shares/{userId}	ConsumptionRecipesApiController::RemoveShare	STOCK_VIEW@222
+357	POST	/api/consumption/recipes/{recipeId}/transfer	ConsumptionRecipesApiController::TransferOwnership	STOCK_VIEW@235
+360	GET	/api/consumption/recipes/{recipeId}/refill	ConsumptionRefillsApiController::GetRefill	STOCK_VIEW@52(via Read)
+361	PUT	/api/consumption/recipes/{recipeId}/refill	ConsumptionRefillsApiController::SetSettings	STOCK_VIEW@52(via Read)
+362	POST	/api/consumption/recipes/{recipeId}/refill/fills	ConsumptionRefillsApiController::RecordFill	STOCK_VIEW@52(via Read)
+363	POST	/api/consumption/recipes/{recipeId}/refill/fills/{fillId}/void	ConsumptionRefillsApiController::VoidFill	STOCK_VIEW@52(via Read)
+364	POST	/api/consumption/recipes/{recipeId}/refill/orders	ConsumptionRefillsApiController::RecordOrder	STOCK_VIEW@52(via Read)
+365	POST	/api/consumption/recipes/{recipeId}/refill/orders/{orderId}/receive	ConsumptionRefillsApiController::ReceiveOrder	STOCK_VIEW@52(via Read)
+366	POST	/api/consumption/recipes/{recipeId}/refill/orders/{orderId}/cancel	ConsumptionRefillsApiController::CancelOrder	STOCK_VIEW@52(via Read)
+367	GET	/api/refills	ConsumptionRefillsApiController::ListRefills	STOCK_VIEW@52(via Read)
+368	GET	/api/refills/notices	ConsumptionRefillsApiController::ListNotices	STOCK_VIEW@52(via Read)
+369	POST	/api/refills/notices/ack	ConsumptionRefillsApiController::AcknowledgeNotice	STOCK_VIEW@52(via Read)
+373	GET	/api/consumption/capabilities	ConsumptionEventsApiController::Capabilities	STOCK_VIEW@102(via Read)
+374	POST	/api/consumption/events/batch	ConsumptionEventsApiController::BatchEvents	STOCK_VIEW@107(via Write) STOCK_CONSUME@108(via Write)
+375	POST	/api/consumption/events/resolve	ConsumptionEventsApiController::BulkResolve	STOCK_VIEW@107(via Write) STOCK_CONSUME@108(via Write)
+376	GET	/api/consumption/events	ConsumptionEventsApiController::ListEvents	STOCK_VIEW@102(via Read)
+377	PUT	/api/consumption/events/{source_system}/{source_event_id}	ConsumptionEventsApiController::PutEvent	STOCK_VIEW@107(via Write) STOCK_CONSUME@108(via Write)
+378	GET	/api/consumption/events/{source_system}/{source_event_id}	ConsumptionEventsApiController::GetEvent	STOCK_VIEW@102(via Read)
+379	DELETE	/api/consumption/events/{source_system}/{source_event_id}	ConsumptionEventsApiController::DeleteEvent	STOCK_VIEW@107(via Write) STOCK_CONSUME@108(via Write)
+380	POST	/api/consumption/events/{source_system}/{source_event_id}/resolve	ConsumptionEventsApiController::ResolveEvent	STOCK_VIEW@107(via Write) STOCK_CONSUME@108(via Write)
+381	GET	/api/consumption/mappings	ConsumptionEventsApiController::ListMappings	STOCK_VIEW@102(via Read)
+382	PUT	/api/consumption/mappings/{source_system}/{medication_ref}	ConsumptionEventsApiController::PutMapping	STOCK_VIEW@107(via Write) STOCK_CONSUME@108(via Write)
+383	GET	/api/consumption/mappings/{source_system}/{medication_ref}	ConsumptionEventsApiController::GetMapping	STOCK_VIEW@102(via Read)
+384	DELETE	/api/consumption/mappings/{source_system}/{medication_ref}	ConsumptionEventsApiController::DeleteMapping	STOCK_VIEW@107(via Write) STOCK_CONSUME@108(via Write)
+388	GET	/api/chores	ChoresApiController::Current	CHORES_VIEW@93
+389	GET	/api/chores/{choreId}	ChoresApiController::ChoreDetails	CHORES_VIEW@74
+390	POST	/api/chores/{choreId}/execute	ChoresApiController::TrackChoreExecution	CHORE_TRACK_EXECUTION@114 CHORE_TRACK_EXECUTION@145
+391	POST	/api/chores/executions/{executionId}/undo	ChoresApiController::UndoChoreExecution	CHORE_UNDO_EXECUTION@165
+392	POST	/api/chores/executions/calculate-next-assignments	ChoresApiController::CalculateNextExecutionAssignments	CHORES@35
+393	POST	/api/chores/{choreIdToKeep}/merge/{choreIdToRemove}	ChoresApiController::MergeChores	MASTER_DATA_EDIT@185 UserfileOwnerPolicy::GuardOwnershipChange@195
+396	GET	/api/print/shoppinglist/thermal	PrintApiController::PrintShoppingListThermal	SHOPPINGLIST_VIEW@25 SHOPPINGLIST@26
+399	GET	/api/batteries	BatteriesApiController::Current	BATTERIES_VIEW@36
+400	GET	/api/batteries/{batteryId}	BatteriesApiController::BatteryDetails	BATTERIES_VIEW@22
+401	POST	/api/batteries/{batteryId}/charge	BatteriesApiController::TrackChargeCycle	BATTERIES_TRACK_CHARGE_CYCLE@56 BATTERIES_VIEW@71
+402	POST	/api/batteries/charge-cycles/{chargeCycleId}/undo	BatteriesApiController::UndoChargeCycle	BATTERIES_UNDO_CHARGE_CYCLE@87
+405	GET	/api/tasks	TasksApiController::Current	TASKS_VIEW@21
+406	POST	/api/tasks/{taskId}/complete	TasksApiController::MarkTaskAsCompleted	TASKS_MARK_COMPLETED@35
+407	POST	/api/tasks/{taskId}/undo	TasksApiController::UndoTask	TASKS_UNDO_EXECUTION@61
+410	GET	/api/calendar/ical	CalendarApiController::Ical	CALENDAR_VIEW@67
+411	GET	/api/calendar/ical/sharing-link	CalendarApiController::IcalSharingLink	CALENDAR_VIEW@245
