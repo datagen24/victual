@@ -3,7 +3,9 @@
 - **Status:** **Proposed.** Nothing here constrains work until the maintainer accepts it in a
   separate pull request. The maintainer answered all six open questions on 2026-10-24; the
   answers are folded into the decisions and recorded under Open questions. Acceptance
-  prerequisites 1 to 5 are unmet as of 2026-10-24.
+  prerequisites 1 to 5 are unmet as of 2026-10-24, and on 2026-10-25 the Hydra half of
+  prerequisite 4 failed (Hydra has no RFC 8693 token exchange), which reopens the
+  candidate table.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -360,6 +362,20 @@ keychain, and keep sending their per-device Access service token as before.
 4. **Token exchange.** RFC 8693 exchange as decision 7 describes works against Hydra and
    against Authentik 2026.8 or later. If Hydra cannot do it, the candidate table is
    reopened before acceptance.
+
+   **Hydra half, 2026-10-25: not met.** Hydra v26.2.0, its newest release that day, has
+   no RFC 8693 handler. It answers the exchange grant with the same `invalid_request` it
+   gives a made-up grant type, and its binary carries no configuration key for it. Reproduce
+   with `.devtools/spikes/oauth-hydra/exchange-probe.sh`; the spike README's "RFC 8693
+   token exchange" section holds the table. Under this prerequisite the candidate table is
+   therefore reopened. The Authentik half is untested.
+
+   > **Response:** datagen24, 2026-10-25: the finding rules out Hydra v26.2.0 for
+   > decision 7 as written. It does not invalidate the separate `/api` and MCP audiences,
+   > scoped permissions or the swappable-server design. An RFC 7523 trust that lets the
+   > sidecar assert arbitrary users is rejected, because it would give the sidecar
+   > authority beyond the user tokens it receives. The next deliverable is an Authentik
+   > compatibility report with reproducible positive and negative tests.
 5. **A real MCP client per registration path.** Claude Code completes connection,
    step-up to a write scope and a tool call against both authorization servers. Remote
    custom connectors (claude.ai) are tested once ADR-0052 stage 3's route exists.
