@@ -369,6 +369,13 @@ keychain, and keep sending their per-device Access service token as before.
    with `.devtools/spikes/oauth-hydra/exchange-probe.sh`; the spike README's "RFC 8693
    token exchange" section holds the table. Under this prerequisite the candidate table is
    therefore reopened. The Authentik half is untested.
+
+   > **Response:** datagen24, 2026-10-25: the finding rules out Hydra v26.2.0 for
+   > decision 7 as written. It does not invalidate the separate `/api` and MCP audiences,
+   > scoped permissions or the swappable-server design. An RFC 7523 trust that lets the
+   > sidecar assert arbitrary users is rejected, because it would give the sidecar
+   > authority beyond the user tokens it receives. The next deliverable is an Authentik
+   > compatibility report with reproducible positive and negative tests.
 5. **A real MCP client per registration path.** Claude Code completes connection,
    step-up to a write scope and a tool call against both authorization servers. Remote
    custom connectors (claude.ai) are tested once ADR-0052 stage 3's route exists.

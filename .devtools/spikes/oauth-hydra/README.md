@@ -79,8 +79,9 @@ probe answers the Hydra half; the Authentik half (2026.8 or later) is untested h
 Hydra does implement RFC 7523 with a trust relationship per issuer, scoped to one
 subject or to any subject. That is not a substitute for decision 7 as written: the
 sidecar would sign assertions itself, so with "any subject" a compromised sidecar could
-mint an `/api` token for any user without holding that user's token. The ADR, not this
-spike, decides whether a narrower variant is acceptable.
+mint an `/api` token for any user without holding that user's token. The maintainer
+rejected that workaround on 2026-10-25 for this reason: it gives the sidecar authority
+beyond the user tokens it receives.
 
 ## Not answered
 
