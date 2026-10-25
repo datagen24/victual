@@ -8,6 +8,7 @@ use Slim\Http\Factory\DecoratedResponseFactory;
 use Slim\Psr7\Factory\ResponseFactory;
 use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Psr7\Factory\StreamFactory;
+use Victual\Services\ApplicationService;
 use Victual\Services\Time\Instant;
 use Victual\Controllers\BatteriesController;
 use Victual\Controllers\Api\RolesApiController;
@@ -287,7 +288,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::$ids['userfield chorenote'] = (int)self::$db->query("SELECT id FROM userfields WHERE name = 'chorenote'")->fetchColumn();
 	}
 
-	/** Seeds two product label templates. */
+	/** Seeds two product label templates, the first with one published version that is its default. */
 	private static function seedLabelTemplates(): void
 	{
 		$insert = self::$db->prepare("INSERT INTO label_templates (name, description, entity_kind) VALUES (?, ?, 'product') RETURNING id");
@@ -295,6 +296,16 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::$ids['Template listed'] = (int)$insert->fetchColumn();
 		$insert->execute(['Template second', 'Another fixture template']);
 		self::$ids['Template second'] = (int)$insert->fetchColumn();
+
+		// A published version, so the editor renders its version list. Without one the
+		// list's loop never runs, which is how a loop variable named `$version` overwrote
+		// the layout's application version and answered 500 in production on 2026-10-25.
+		$version = self::$db->prepare("INSERT INTO label_template_versions (template_id, version, document, document_digest, asset_ids, required_capabilities)
+			VALUES (?, 1, '{}', ?, '[]', '[]') RETURNING id");
+		$version->execute([self::$ids['Template listed'], str_repeat('0', 64)]);
+		self::$ids['Template listed v1'] = (int)$version->fetchColumn();
+		self::$db->prepare('UPDATE label_templates SET default_version_id = ? WHERE id = ?')
+			->execute([self::$ids['Template listed v1'], self::$ids['Template listed']]);
 	}
 
 	// ---------------------------------------------------------------- harness helpers
@@ -1410,6 +1421,12 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		$editor = self::render(fn () => self::$labelTemplates->TemplateEditor(self::request(), self::response(), ['templateId' => (string)self::$ids['Template listed']]), 'GET /labeltemplate/{id}');
 		self::assertStringContainsString('Template listed', $editor, 'the editor carries the template it opens');
 		self::assertStringNotContainsString('Template second', $editor, 'and no other');
+		// The version list renders, and the layout's asset URLs still carry the application
+		// version rather than the list's last row.
+		self::assertMatchesRegularExpression('/<option value="' . self::$ids['Template listed v1'] . '"\s+selected\s*>/', $editor,
+			'the published version is offered and selected as the one that prints');
+		self::assertStringContainsString('bootstrap.min.css?v=' . ApplicationService::GetInstance()->GetAssetVersion() . '"', $editor,
+			'the layout still versions its assets with the application version');
 		// Issue #1034: each printer carries the printable width centring uses. The fixture
 		// printer's driver has no settings schema, so it does not resolve and carries null,
 		// and the page still renders.

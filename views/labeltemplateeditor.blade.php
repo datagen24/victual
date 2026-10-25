@@ -102,8 +102,10 @@
 			<label for="default-version">{{ $__t('Version that prints') }}</label>
 			<div class="input-group">
 				<select class="form-control" id="default-version">
-					@foreach($versions as $version)
-					<option value="{{ $version['id'] }}" @if($version['id'] === (int)$template['default_version_id']) selected @endif>{{ $__t('Version %s', $version['version']) }}</option>
+					{{-- Not `$version`: Blade's @foreach leaves its variable set after the loop, and the
+						layout echoes $version (the application version) into every asset URL. --}}
+					@foreach($versions as $templateVersion)
+					<option value="{{ $templateVersion['id'] }}" @if($templateVersion['id'] === (int)$template['default_version_id']) selected @endif>{{ $__t('Version %s', $templateVersion['version']) }}</option>
 					@endforeach
 				</select>
 				<div class="input-group-append">
