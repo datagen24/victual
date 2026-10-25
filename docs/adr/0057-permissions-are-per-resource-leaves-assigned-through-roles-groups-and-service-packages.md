@@ -78,8 +78,10 @@ the change:
   but deleted under `MASTER_DATA_EDIT`, because `DeleteObject` has no branch for them
   (`controllers/Api/GenericEntityApiController.php`). The seeded Adult role can create a
   chore and cannot delete it.
-- 36 routes check no permission. 15 of them are label worker, renderer and pairing routes
-  that authenticate by credential; the rest are system, documentation and own-user routes.
+- 36 routes check no permission. Outside `/api` they are seven pages: login (two routes),
+  logout, about, the manifest, the barcode scanner test page and the caller's own user
+  settings. Under `/api`, 15 are label worker, renderer and pairing routes that authenticate
+  by credential, and 14 are system, OpenAPI, documentation and own-user routes.
 
 ## Decision (proposed)
 
