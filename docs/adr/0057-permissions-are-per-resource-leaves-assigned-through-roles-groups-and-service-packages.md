@@ -2,9 +2,11 @@
 
 - **Status:** **Proposed.** Nothing here constrains work until the maintainer accepts it in a
   separate pull request. It records the assignment model the maintainer set out in
-  [issue 1111](https://github.com/datagen24/victual/issues/1111) on 2026-10-25 and proposes
-  answers to that issue's four design questions; none of those answers is the
-  maintainer's yet.
+  [issue 1111](https://github.com/datagen24/victual/issues/1111) on 2026-10-25. The
+  maintainer answered all five open questions on 2026-10-25; the answers are folded into
+  decisions 2, 4, 7 and 9 and recorded under Open questions. Prerequisite 5 is met;
+  prerequisites 1 to 4 are not, and answer 3 keeps the catalog and household roles open
+  until their leaf lists are written.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-25, against `master` at `42883e0e`. Design only: it changes no
@@ -169,9 +171,17 @@ sentence with source 2 and changes nothing else in it. A group is a named set of
 with assigned roles. It holds no permission of its own, so there is one place a
 permission set is defined: the role.
 
-Agents, meaning automated actors that act as a household member would (an assistant with
-its own sign-in), are users of kind `agent`. They take roles and groups like any user and
-never hold a password login (open question 5).
+Each local group is either **manual** or **provider-managed** by one named provider
+mapping, never both (open question 4). Decision 9 states how a provider-managed group's
+membership is reconciled.
+
+Agents, meaning automated actors with an identity of their own, are users of kind
+`agent` (open question 5). They take roles and groups like any user, never hold a password
+or a browser login, and each names an accountable human administrator. An agent
+authorized in its own right acts as itself, with its own effective set. An assistant
+using a human's delegated token acts as that human, under the token's scope and the
+human's effective set. It gains nothing from any agent account it may also have, and the
+two are never combined on one request.
 
 Assigning a role to a group, or a user to a group, is a grant to every member. It applies
 ADR-0014's subset rule to the union it would create, as `CheckMayGrant` does for a role
@@ -206,15 +216,28 @@ service account.
 
 An **API role package** is a named, versioned set of leaves, kept apart from roles:
 
+- A package version is immutable, and it stores its **expanded leaf set**. A bundle named
+  in it is expanded once, when the version is written. A leaf later added under a broad
+  permission (decision 2) does not join an existing version, so no package grows
+  silently. This differs on purpose from roles, which expand at request time.
 - Editing a package creates a new version. A credential is pinned to one version and
-  keeps it until an administrator moves it, after a preview of what the move changes.
-  That keeps ADR-0044 decision 4's rule that a mutable bundle never silently moves a
+  keeps it until an administrator reassigns it explicitly, after a preview of what the
+  move changes. That keeps ADR-0044 decision 4's rule that a mutable bundle never moves a
   live credential, and answers issue 1111's second design question (open question 2).
-- Revoking a credential takes effect on its next request, as a key revocation does today.
-  Retiring a package version requires moving or revoking its credentials first.
-- A package may contain only leaves its author holds (ADR-0014), and never `ADMIN`, a
-  `USERS_*` leaf, role or group management, key or client management, or package
-  management. A service credential cannot administer anything.
+- For an urgent reduction, one atomic action reassigns every credential on a version to
+  a narrower one. Revoking a credential takes effect on its next request, as a key
+  revocation does today. Retiring a package version requires reassigning or revoking its
+  credentials first.
+- Provisioning service accounts and credentials requires `SERVICE_ACCOUNTS_MANAGE`, a
+  leaf under `ADMIN` (open question 1). That leaf alone does not let anyone grant an
+  arbitrary package: issuing a credential on a version, or reassigning one to a version,
+  also requires the actor to hold every leaf of that version (ADR-0014). Writing a
+  package version requires the same.
+- The service account owns its credentials. They survive the removal of the
+  administrator who provisioned them.
+- A package never contains `ADMIN`, a `USERS_*` leaf, role or group management, key or
+  client management, `SERVICE_ACCOUNTS_MANAGE` or package management. A service
+  credential cannot administer anything.
 
 A service account acts as itself. A service may call Victual **on behalf of a user**,
 as the MCP sidecar does for a household member's tool call. That request is the user's.
@@ -255,8 +278,18 @@ pinned to a package version. Nothing else can hold a client-credentials grant.
 For ADR-0056 decision 4: a provider group maps to a **local group**, not directly to a
 role. The provider sets membership of mapped groups; the group's roles come from
 Victual. A mapping can confer only what its author holds (ADR-0014), and membership from
-the provider is recorded with that source so it is never mistaken for a manual one
-(open question 4).
+the provider is recorded with that source so it is never mistaken for a manual one.
+
+Reconciliation follows open question 4's answer:
+
+- It changes only the memberships its mapping owns. It never touches a manual group.
+- A group claim that is present and empty removes the user from every group that mapping
+  manages.
+- A token or login with no group claim follows ADR-0056 decision 4's missing-claim rule:
+  the stored memberships stay as they are.
+- An administrator who needs to override the provider adds the user to a separate manual
+  group. That group's access is shown as its own source (decision 6), so it is visible
+  beside the provider-managed access rather than hidden in it.
 
 ## Options considered
 
@@ -306,29 +339,62 @@ the provider is recorded with that source so it is never mistaken for a manual o
    the latest release, legacy import), every account's resolved set and a probe of
    allowed and refused requests match before and after, except the listed intentional
    changes.
-5. **Open questions 1 to 4 answered** by the maintainer.
+5. **Open questions 1 to 4 answered** by the maintainer. Met 2026-10-25: the maintainer
+   answered all five. Answer 3 approves the method only, so prerequisites 2 and 3 stay
+   open until their leaf lists exist and are reviewed.
 
-## Open questions
+## Open questions and maintainer responses
 
-Each has a proposed answer for the maintainer to accept, change or reject.
+All five were answered on 2026-10-25. Each keeps the proposal it was answering, followed
+by the response. The answers do not accept this record.
 
 1. **Who may provision service credentials, who owns them, and what ceiling applies?**
    Proposed: provisioning requires a new `SERVICE_ACCOUNTS_MANAGE` leaf under `ADMIN`. The
    service account, not the provisioning administrator, owns the credential, so it
    survives that administrator's removal. The ceiling is the package version (decision 7),
    which its author must hold in full when writing it.
+
+   > **Response:** datagen24, 2026-10-25: require `SERVICE_ACCOUNTS_MANAGE`. The service
+   > account owns its credentials and survives the provisioning administrator's removal.
+   > Require the provisioner to hold every permission in the selected package when
+   > issuing a credential or moving it to another version. The management permission
+   > alone must not permit granting arbitrary packages. (Decision 7.)
 2. **Do package edits change existing credentials immediately?** Proposed: no. An edit is
    a new version; credentials move only when an administrator moves them after a preview;
    revocation is immediate. A security fix that must narrow every credential at once is a
    move of all credentials in one action, still previewed.
+
+   > **Response:** datagen24, 2026-10-25: use immutable versions and explicit credential
+   > reassignment. Freeze the expanded leaf set so adding a child under a broad
+   > permission cannot silently enlarge an existing package. Provide an atomic bulk
+   > reassignment for urgent reductions, plus immediate credential revocation.
+   > (Decision 7.)
 3. **What exact CRUD and action matrix, read prerequisites and household-role defaults?**
    Proposed: the plan in prerequisite 2 derives them from the inventory. This record
    fixes the shape (decisions 1 to 3), not the matrix.
+
+   > **Response:** datagen24, 2026-10-25: derive the exact matrix from the inventory and
+   > preserve existing access during migration. Treat proposed household-role defaults
+   > as a separately reviewed policy choice. Approving the method does not approve the
+   > still-unwritten leaf lists; the catalog and role prerequisites remain open until
+   > those lists exist. (Prerequisites 2 and 3.)
 4. **How are local and provider groups reconciled?** Proposed: provider groups map to
    local groups (decision 9). A local group is either manual or provider-managed, never
    both, so the provider cannot erase a manual membership and an administrator cannot
    be overwritten silently at the next login. ADR-0056 decision 4's recompute rule
    applies to provider-managed memberships only.
+
+   > **Response:** datagen24, 2026-10-25: each local group is either manual or managed by
+   > a specified provider mapping. Provider reconciliation changes only memberships it
+   > owns. An explicit empty group list removes those memberships; a missing claim
+   > follows the documented missing-claim policy. An administrative override uses a
+   > separate manual group, with its independent access visible. (Decisions 4 and 9.)
 5. **What is an agent?** Proposed: a user row of kind `agent` with no password and no
    browser login. It authenticates by key or OAuth grant only and is visible in the user
    list with its kind, so it cannot be mistaken for a household member.
+
+   > **Response:** datagen24, 2026-10-25: use a distinct agent user kind with roles and
+   > groups, no password or browser login, and an accountable human administrator. An
+   > independently authorized agent acts as itself. An assistant using a human's
+   > delegated token acts as that human; it gains no permissions from a separate agent
+   > account. (Decision 4.)
