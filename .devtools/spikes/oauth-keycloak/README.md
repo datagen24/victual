@@ -28,8 +28,9 @@ node setup.mjs && node probe.mjs --preview
 ./run.sh stats           # memory of both containers
 ```
 
-No npm install is needed: the probe uses `node:crypto` and `fetch` only. Every secret in
-these files is a spike-only value for an instance on `127.0.0.1` with no real data. The core
+No npm install is needed: the probe uses `node:crypto` and `fetch` only. `run.sh` generates the
+PostgreSQL and admin passwords into a gitignored `.secrets.env` on first start; the other
+values in these files are spike-only, for an instance on `127.0.0.1` with no real data. The core
 run takes about 70 s; each scripted login takes about 1 s. `results.json` and `state.json`
 are gitignored.
 

@@ -2,3 +2,4 @@
 state.json
 results.json
 results-*.json
+.secrets.env

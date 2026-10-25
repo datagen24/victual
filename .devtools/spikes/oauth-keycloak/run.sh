@@ -13,10 +13,14 @@ NAME=victual-spike-keycloak
 TAG=${KEYCLOAK_TAG:-26.8.1}
 IMAGE=quay.io/keycloak/keycloak:$TAG
 PORT=8180
-# Spike-only secrets: this instance holds no real data and listens on 127.0.0.1 only.
+# Spike-only secrets, generated on first use into .secrets.env (gitignored; lib.mjs reads it).
+# This instance holds no real data and listens on 127.0.0.1 only.
+[ -f .secrets.env ] || printf 'PG_PASS=%s\nADMIN_PASS=%s\n' "$(openssl rand -hex 16)" "$(openssl rand -hex 16)" > .secrets.env
+# shellcheck source=/dev/null
+. ./.secrets.env
 KC_ENV=(-e KC_DB=postgres -e KC_DB_URL=jdbc:postgresql://$NAME-pg:5432/keycloak
-        -e KC_DB_USERNAME=keycloak -e KC_DB_PASSWORD=spike-only-pg
-        -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=spike-only-admin
+        -e KC_DB_USERNAME=keycloak -e "KC_DB_PASSWORD=$PG_PASS"
+        -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e "KC_BOOTSTRAP_ADMIN_PASSWORD=$ADMIN_PASS"
         -e KC_HTTP_ENABLED=true -e KC_HEALTH_ENABLED=true)
 
 wait_ready() { # $1 = port, $2 = container
@@ -37,7 +41,7 @@ case "${1:-up}" in
     fi
     podman network create "$NAME" >/dev/null
     podman run -d --network "$NAME" --name "$NAME-pg" --memory 384m \
-      -e POSTGRES_DB=keycloak -e POSTGRES_USER=keycloak -e POSTGRES_PASSWORD=spike-only-pg \
+      -e POSTGRES_DB=keycloak -e POSTGRES_USER=keycloak -e "POSTGRES_PASSWORD=$PG_PASS" \
       docker.io/library/postgres:16-alpine >/dev/null
     for _ in $(seq 1 30); do
       podman exec "$NAME-pg" pg_isready -U keycloak >/dev/null 2>&1 && break; sleep 1
@@ -56,8 +60,8 @@ case "${1:-up}" in
     podman run -d --network "$NAME" --name "$NAME-ro" --memory 1200m --read-only \
       --tmpfs /tmp --tmpfs /opt/keycloak/data:rw,mode=1777 -p 127.0.0.1:8181:8080 \
       -e KC_DB=postgres -e KC_DB_URL=jdbc:postgresql://$NAME-pg:5432/keycloak_ro \
-      -e KC_DB_USERNAME=keycloak -e KC_DB_PASSWORD=spike-only-pg \
-      -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=spike-only-admin \
+      -e KC_DB_USERNAME=keycloak -e "KC_DB_PASSWORD=$PG_PASS" \
+      -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e "KC_BOOTSTRAP_ADMIN_PASSWORD=$ADMIN_PASS" \
       -e KC_HTTP_ENABLED=true -e KC_HEALTH_ENABLED=true -e KC_HOSTNAME=http://localhost:8181 \
       localhost/$NAME-ro:$TAG start --optimized >/dev/null
     wait_ready 8181 "$NAME-ro" ;;

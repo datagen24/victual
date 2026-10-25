@@ -11,6 +11,7 @@
 // login form (lib.mjs). No direct (password) grant is used for tokens; case N19 checks the
 // password grant is refused.
 import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import {
   AT, admin, authorize, claims, err, errd, exchange, finishCode, ISSUER, KC, login, OIDC, REALM, rsCheck, sleep, submitLogin, token, TOKEN, TX,
@@ -562,7 +563,7 @@ async function loginGate() {
     await admin("POST", "/clients", { clientId: direct, publicClient: true, directAccessGrantsEnabled: true, standardFlowEnabled: false });
     const [dc] = await admin("GET", `/clients?clientId=${direct}`);
     const guesses = [];
-    for (const p of ["password", "stub-new", "spike-only-alice-password"]) guesses.push((await token({ grant_type: "password", client_id: direct, username: "stub-new", password: p })).error);
+    for (const p of [randomBytes(12).toString("hex"), "stub-new", S.users.alice.password]) guesses.push((await token({ grant_type: "password", client_id: direct, username: "stub-new", password: p })).error);
     await del(`/clients/${dc.id}`);
     const flow = await admin("POST", "/authentication/flows", { alias: BROWSER, description: "spike", providerId: "basic-flow", topLevel: true, builtIn: false }, { raw: true });
     await admin("POST", `/authentication/flows/${BROWSER}/executions/execution`, { provider: "identity-provider-redirector" });
