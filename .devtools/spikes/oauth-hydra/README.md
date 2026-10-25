@@ -57,9 +57,35 @@ Interactive `/mcp` -> authenticate against `rs.mjs` + Hydra, end to end: **succe
 Claude Desktop, claude.ai custom connectors and the iOS/macOS apps were not tested and may differ. The
 claude.ai connectors in particular cannot reach `localhost`.
 
+## RFC 8693 token exchange (ADR-0055 prerequisite 4), 2026-10-25
+
+`./run.sh up && ./exchange-probe.sh` against the same `docker.io/oryd/hydra:latest` image
+(`hydra version`: v26.2.0, git `0b84568f`, built 2026-03-20). v26.2.0 was Hydra's newest
+release on 2026-10-25 (`gh api repos/ory/hydra/releases`).
+
+| Check | Result |
+|---|---|
+| `grant_types_supported` in discovery | `authorization_code`, `implicit`, `client_credentials`, `refresh_token`, `device_code`. No `token-exchange`, and no `jwt-bearer` either, although that one has a handler (next rows). |
+| Client registered with the `token-exchange` grant type | Admin API stores it without complaint. Storing a grant type is not evidence of support. |
+| `grant_type=urn:ietf:params:oauth:grant-type:token-exchange` with a valid MCP-audience subject token, audience `/api` | `400 invalid_request`, generic text. |
+| Made-up grant type `urn:example:no-such-grant` | The identical `400 invalid_request`. Hydra answers the exchange grant the way it answers a grant it has never heard of. |
+| RFC 7523 `jwt-bearer` | `400 unauthorized_client`, naming the grant: a handler exists and refuses this client. The probe uses this to tell "no handler" from "handler refuses". |
+| Config key or handler in the binary | `strings` over `/usr/bin/hydra` finds no `token_exchange` configuration key and no 8693 handler. The only "TokenExchange" names are `hydra-client-go`'s model for the ordinary code-for-token response. The v25.4.0 release note's "token exchange" means that step too. |
+
+**Conclusion: Hydra v26.2.0 does not implement RFC 8693.** ADR-0055 decision 7 needs it,
+and prerequisite 4 says the candidate table is reopened if Hydra cannot do it. This
+probe answers the Hydra half; the Authentik half (2026.8 or later) is untested here.
+
+Hydra does implement RFC 7523 with a trust relationship per issuer, scoped to one
+subject or to any subject. That is not a substitute for decision 7 as written: the
+sidecar would sign assertions itself, so with "any subject" a compromised sidecar could
+mint an `/api` token for any user without holding that user's token. The ADR, not this
+spike, decides whether a narrower variant is acceptable.
+
 ## Not answered
 
 - Postgres-backed Hydra, two-replica behaviour, Nix image build, licence review.
+- RFC 8693 against Authentik 2026.8 or later (the Hydra half is answered above).
 - Authentik as the swap target (the actual acceptance criterion).
 - Whether the tool call itself carries a token the sidecar can map onward to a Victual user (the spike only
   proves the token is accepted and carries `ext.victual_user_id`).
