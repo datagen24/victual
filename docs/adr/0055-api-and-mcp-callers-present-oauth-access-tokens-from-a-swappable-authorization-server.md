@@ -157,9 +157,16 @@ and decision 8's registration adapter.
 
 ### 3. The resource-server contract uses standard surface only
 
-Victual and the sidecar read one configuration: the issuer URL, and the audience each one
-accepts. From the issuer they fetch RFC 8414 or OIDC discovery metadata and its JWKS.
-Nothing else about the authorization server is configured or assumed. A request is
+Victual and the sidecar read one configuration: the issuer URL, the audience each one
+accepts, and optionally an explicitly configured discovery URL. Without that URL they
+fetch RFC 8414 or OIDC discovery metadata from the issuer; with it, from the configured
+URL. Either way the returned metadata must name the pinned issuer, or the configuration
+is refused. Its JWKS comes from that metadata. Nothing else about the authorization
+server is configured or assumed.
+
+The discovery URL exists because the Authentik spike needed it: with one issuer for the
+install, Authentik serves no discovery document at the issuer URL (prerequisite 1). The
+maintainer approved it on 2026-10-25. A request is
 accepted when the access token:
 
 - is a JWT signed by a key in the issuer's JWKS, with `iss` equal to the pinned issuer;
@@ -411,7 +418,8 @@ keychain, and keep sending their per-device Access service token as before.
 
    - No discovery document is served at the install's issuer URL when one issuer is used
      (case P1), so the resource-server configuration needs a discovery URL beside the
-     issuer. Decision 3 names the issuer alone.
+     issuer. Decision 3 allows one since 2026-10-25, provided the metadata it returns
+     names the pinned issuer.
    - `aud` is the `client_id` of the provider that issued the token, and `resource` is
      ignored at authorization, so a token an MCP client obtains is audienced to that
      client, not to the sidecar (report finding 5).
