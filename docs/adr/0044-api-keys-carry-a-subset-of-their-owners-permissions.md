@@ -8,6 +8,10 @@
 - **Recorded:** 2026-10-10, against `master` at `40b0358f`. Design work only: it changes no
   code, reserves no migration number and amends no accepted record.
 - **Referenced by:** [plan 37](../plans/37-api-key-scoped-permissions.md).
+- **Reconciled by:** the Proposed [ADR-0057](0057-permissions-are-per-resource-leaves-assigned-through-roles-groups-and-service-packages.md) (2026-10-25): its decision 8 keeps
+  this record's intersection over a per-resource catalog. It limits this record's
+  decision 8 to the time before each special-purpose key moves to a service account, and
+  its decision 7 gives service credentials versioned packages, never roles.
 - **Relationship:** builds on accepted [ADR-0018](0018-role-grants-and-domain-reads.md) and
   [ADR-0007](0007-auth-state-outlives-the-process.md); amends neither. Refines the per-key
   boundary in [`docs/mcp-interface-spec.md`](../mcp-interface-spec.md) section 4.2, which today

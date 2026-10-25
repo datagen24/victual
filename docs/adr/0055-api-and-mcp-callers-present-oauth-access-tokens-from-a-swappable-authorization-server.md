@@ -11,6 +11,9 @@
 - **Referenced by:** [issue 770](https://github.com/datagen24/victual/issues/770);
   [ADR-0056](0056-an-external-identity-provider-replaces-the-built-in-authorization-server.md),
   which depends on this record and must not be accepted before it.
+- **Reconciled by:** the Proposed [ADR-0057](0057-permissions-are-per-resource-leaves-assigned-through-roles-groups-and-service-packages.md) (2026-10-25): its decision 9 derives
+  the leaf and bundle scopes of decision 5 from its catalog, and makes an
+  administrator-registered client-credentials client a service credential.
 - **Relationship:** builds on accepted [ADR-0007](0007-auth-state-outlives-the-process.md),
   [ADR-0010](0010-workload-standard.md), [ADR-0014](0014-administering-a-user-is-a-subset-question.md),
   [ADR-0018](0018-role-grants-and-domain-reads.md), [ADR-0024](0024-the-fork-writes-its-own-clients.md),
