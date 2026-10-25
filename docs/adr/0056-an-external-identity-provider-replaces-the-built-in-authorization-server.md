@@ -7,6 +7,7 @@
   into the decisions and recorded under Open questions. Acceptance prerequisites 1 to 5
   are unmet as of 2026-10-24. On 2026-10-25 the Authentik compatibility report met the
   Authentik side of prerequisite 4 and recorded evidence against prerequisites 2 and 3.
+  The maintainer answered open question 7 on 2026-10-25 (decision 11).
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -261,7 +262,7 @@ Events recorded:
 | `provider_login_refused` | A provider login is refused: no mapping and provisioning off, an email match with no link, or a disabled user |
 | `link` | An `(issuer, subject)` mapping is created, by the user or by an administrator |
 | `unlink` | A mapping is removed |
-| `token_exchange_used` | Victual first sees an exchanged token carrying `act` (ADR-0055 decision 7) |
+| `token_exchange_used` | Victual first sees an exchanged token whose exchange authenticated evidence establishes: a verified `act`, or a signed alternative exchanger claim (ADR-0055 decision 7). An unverified header from the sidecar never establishes it |
 
 Columns:
 
@@ -274,7 +275,10 @@ Columns:
 | `issuer`, `subject` | The provider identity the event concerns |
 | `actor_user_id` | Who performed a `link` or `unlink`; null otherwise |
 | `client_id` | The OAuth client, for a provider login through a client or a token exchange |
-| `act_subject` | The `act` subject of an exchanged token |
+| `exchanger` | The verified identity of the client that performed the exchange |
+| `grant_id` | The originating grant, when the token identifies it |
+| `attribution_source` | Where `exchanger` came from: `act` or a named signed claim, held by a `CHECK` |
+| `act_subject` | The `act` subject of an exchanged token. Null when the token has no `act`; never filled from another claim |
 | `token_id` | The exchanged token's `jti`, unique where present |
 | `reason` | A short refusal code for `provider_login_refused` |
 | `remote_address` | The request's client address as Victual saw it |
@@ -283,6 +287,11 @@ Columns:
 `token_id` and does nothing the second time, so one exchanged token is one row however
 many requests it serves. The sidecar's cache (ADR-0055 decision 7) bounds this to about one
 row per user per token lifetime while the user is active.
+
+A `token_exchange_used` row records the user, the issuer, the token identifier, the
+verified exchanger, the originating grant when available, and the source of the
+attribution (open question 7). With no authenticated evidence of an exchange, no row is
+written; a request does not become an exchange because a header says so.
 
 Rows are append-only. A trigger refuses `UPDATE` and refuses `DELETE` of a row younger
 than the retention period. Retention defaults to 365 days, set by an install setting, and
@@ -405,7 +414,14 @@ response. The answers do not accept this record.
    > leaf. Its implementation reserves a migration in its own pull request. (Decision 11;
    > ADR-0055 decision 7.)
 
-### Raised by the Authentik compatibility report, 2026-10-25 (unanswered)
+### Raised by the Authentik compatibility report, 2026-10-25
 
 7. **What does decision 11 record for `token_exchange_used`** if the exchanged token
    carries no `act`? See ADR-0055 open question 8.
+
+   > **Response:** datagen24, 2026-10-25: record the user, issuer, token identifier,
+   > verified exchanger identity, originating grant when available, and the source of
+   > attribution. Leave `act_subject` null when `act` is absent; never manufacture it.
+   > Record `token_exchange_used` only when authenticated evidence establishes an
+   > exchange. A signed alternative claim can supply that evidence; an unverified sidecar
+   > header cannot. (Decision 11.)

@@ -7,7 +7,10 @@
   prerequisite 4 failed (Hydra has no RFC 8693 token exchange), which reopens the
   candidate table. The Authentik half of prerequisite 4 was met for the core exchange on
   2026-10-25, with two gaps recorded under it; prerequisite 1 has Authentik-side evidence
-  and is not met.
+  and is not met. The maintainer answered the candidate-table question and open questions
+  7 to 9 on 2026-10-25: Hydra is no longer the provisional target, Keycloak is the next
+  candidate to evaluate, and Authentik stays the required external compatibility target
+  (decisions 2, 3 and 7).
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -128,24 +131,42 @@ other side. Victual has three roles and no fourth:
 
 The MCP sidecar is a second resource server.
 
-### 2. The built-in authorization server is Ory Hydra, provisionally
+### 2. The built-in authorization server is not chosen; Keycloak is the next candidate
 
-Hydra is the candidate to build against, pending prerequisites 2 to 5. It is the only
-candidate in the issue 770 table that delegates login and consent while holding no user
-store of its own. That property keeps Victual's passwords inside Victual.
+No built-in authorization server is selected. Ory Hydra was the provisional target and is
+removed: v26.2.0 has no RFC 8693 token exchange (prerequisite 4), which decision 7
+requires. Keycloak is the next candidate to evaluate, not a selected replacement. The
+maintainer's reading of its documentation (2026-10-25) is that standard token exchange is
+supported and its delegation feature is a Preview. Two gates decide it:
 
-Hydra runs as its own workload under ADR-0010: its own container, its own PostgreSQL
-database and role (ADR-0008 permits no other engine), an optional component of the Helm
-chart (ADR-0038) that is off by default, two replicas. An upgrade therefore adds no
-workload until an operator turns the component on (open question 5). If a prerequisite fails, the candidate table is reopened.
-The rest of this record still holds, because it depends on Hydra only for token exchange
-(decision 7) and through decision 8's registration adapter.
+- Token exchange that meets decision 7, including the scope ceiling and the exchanger
+  identity, without relying on a Preview feature for anything decision 7 requires.
+- Fit with Victual-owned login. Keycloak carries its own user model, so it must be shown
+  that Victual's local users and passwords can stay in Victual, as they would have with
+  Hydra's delegated login and consent.
+
+Authentik stays the required external compatibility target, whatever is chosen as the
+built-in server (ADR-0056).
+
+Whatever is chosen runs as its own workload under ADR-0010: its own container, its own
+PostgreSQL database and role (ADR-0008 permits no other engine), an optional component of
+the Helm chart (ADR-0038) that is off by default, two replicas. An upgrade therefore adds
+no workload until an operator turns the component on (open question 5). The rest of this
+record does not depend on which server is chosen, except through decision 7's exchange
+and decision 8's registration adapter.
 
 ### 3. The resource-server contract uses standard surface only
 
-Victual and the sidecar read one configuration: the issuer URL, and the audience each one
-accepts. From the issuer they fetch RFC 8414 or OIDC discovery metadata and its JWKS.
-Nothing else about the authorization server is configured or assumed. A request is
+Victual and the sidecar read one configuration: the issuer URL, the audience each one
+accepts, and optionally an explicitly configured discovery URL. Without that URL they
+fetch RFC 8414 or OIDC discovery metadata from the issuer; with it, from the configured
+URL. Either way the returned metadata must name the pinned issuer, or the configuration
+is refused. Its JWKS comes from that metadata. Nothing else about the authorization
+server is configured or assumed.
+
+The discovery URL exists because the Authentik spike needed it: with one issuer for the
+install, Authentik serves no discovery document at the issuer URL (prerequisite 1). The
+maintainer approved it on 2026-10-25. A request is
 accepted when the access token:
 
 - is a JWT signed by a key in the issuer's JWKS, with `iss` equal to the pinned issuer;
@@ -156,7 +177,14 @@ accepted when the access token:
   handling is unverified (ADR-0056 prerequisite 3).
 
 `/api` and the sidecar have different audiences, so a token for one is refused by the
-other. Both answer a missing or invalid token with `401` and
+other. The sidecar accepts its own dedicated MCP resource audience and nothing else. It
+does not accept the client id of every client registered through Victual: registration
+identifies an application, and does not show that each token issued to it was meant for
+this server (open question 9). Where an authorization server sets `aud` to the client id,
+as Authentik does, a tested audience-binding configuration or adapter must give MCP tokens
+the sidecar's audience before that server can be used.
+
+Both answer a missing or invalid token with `401` and
 `WWW-Authenticate: Bearer resource_metadata="…"`, and both serve
 `/.well-known/oauth-protected-resource`. A token whose scope does not cover the operation
 gets `403` with `error="insufficient_scope"` and the scopes it needs.
@@ -242,19 +270,38 @@ Victual it needs a token whose audience is `/api`. It gets one by OAuth 2.0 Toke
 
 - the subject token is the user's MCP-audience token;
 - the requested audience is Victual's `/api`;
-- the issued token keeps the user as subject, records the sidecar in `act`, and carries
-  no scope the subject token lacked.
+- the issued token keeps the user as subject, identifies the sidecar as the exchanger,
+  and carries no scope the subject token lacked.
+
+The scope ceiling is enforced twice (open question 7). The authorization server must
+refuse an exchange that widens scope, so that a compromised sidecar still cannot escalate.
+The sidecar requests only the subset the call needs and checks the returned token before
+using it. Both comparisons expand bundle scopes into leaves first. Victual then intersects
+the result with the user's current permissions and the registered grant's ceiling
+(decisions 5 and 6).
+
+On Authentik, the scope-ceiling policy the compatibility report's case N11b demonstrates
+is required, tested deployment configuration: without it, a read-only token was exchanged
+for a write token.
+
+The exchanger is identified by a claim the authorization server signs, derived from the
+exchanging client's authentication, which no caller can set or override (open question
+8). `act` is preferred. A documented alternative claim is permitted if the server derives
+it the same way. `azp` is not used: on Authentik it names the target API, not the
+exchanger. The token also keeps enough of the authenticated grant's identity for
+decision 6's per-client revocation to work on exchanged tokens.
 
 Victual records the first use of each exchanged token in the authentication audit table
-that ADR-0056 decision 11 defines: the user, the `act` subject and the client. The sidecar
+that ADR-0056 decision 11 defines: the user, the exchanger identity and the client. The sidecar
 may cache an
 exchanged token in memory, keyed by a hash of the inbound token, until it expires; that is
 a pure cache. The resolver seam ADR-0052 decision 8 names (`mcp/src/auth/resolver.ts`)
 is where this change lands, and no tool changes.
 
-Authentik documents RFC 8693 delegation from 2026.8.0 (read 2026-10-24). Hydra's support
-is unverified: an Ory forum post says Hydra 2.0's release notes claim it, and another
-says fosite, the library Hydra uses, does not implement it. Prerequisite 4 settles it.
+Authentik 2026.8.5 performs the exchange (prerequisite 4), but sets `act` only for an
+Authentik Actor that the open-source edition cannot create through its API. Whether it
+can provide an alternative exchanger claim through supported configuration is a gate.
+Hydra v26.2.0 does not implement RFC 8693 (prerequisite 4).
 
 Rejected: forwarding the user's token with the sidecar's own credential beside it, and
 Victual accepting the MCP audience only when that credential is present. It is less work,
@@ -327,10 +374,13 @@ keychain, and keep sending their per-device Access service token as before.
   makes a network round trip per request. Decision 6 keeps a Victual-side cut-off instead.
 - **Hydra's own registration endpoint.** Unauthenticated, and its response failed the MCP
   SDK's schema in the spike.
-- **Dex, Zitadel, Keycloak.** Dex is a federation proxy and does not fit local users with
-  device and client-credential grants. Zitadel and Keycloak carry their own user model,
-  which competes with Victual's. All three are from the issue 770 table and general
-  knowledge; none was tested.
+- **Ory Hydra as the built-in server.** Delegates login and consent with no user store of
+  its own, which suited Victual-owned login. Removed as the provisional target on
+  2026-10-25 because v26.2.0 has no RFC 8693 token exchange (prerequisite 4).
+- **Dex, Zitadel.** Dex is a federation proxy and does not fit local users with device and
+  client-credential grants. Zitadel carries its own user model, which competes with
+  Victual's. Both are from the issue 770 table and general knowledge; neither was tested.
+  Keycloak, from the same table, is now the next candidate (decision 2).
 
 ## Consequences
 
@@ -368,21 +418,25 @@ keychain, and keep sending their per-device Access service token as before.
 
    - No discovery document is served at the install's issuer URL when one issuer is used
      (case P1), so the resource-server configuration needs a discovery URL beside the
-     issuer. Decision 3 names the issuer alone.
+     issuer. Decision 3 allows one since 2026-10-25, provided the metadata it returns
+     names the pinned issuer.
    - `aud` is the `client_id` of the provider that issued the token, and `resource` is
      ignored at authorization, so a token an MCP client obtains is audienced to that
      client, not to the sidecar (report finding 5).
 
    Not run: the real images, the unmapped-subject refusal (Victual-side), and the Hydra
    half, which waits on the candidate table.
-2. **Hydra on PostgreSQL at two replicas.** Login, consent, refresh rotation and
-   revocation work with two Hydra pods sharing one database, and killing a pod mid-flow
-   loses no grant.
-3. **Hydra image and licence.** A Nix-built Hydra image (ADR-0013) that runs non-root on a
-   read-only filesystem, and a licence review recorded in the plan.
+2. **The chosen built-in server on PostgreSQL at two replicas.** Login, consent, refresh
+   rotation and revocation work with two pods sharing one database, and killing a pod
+   mid-flow loses no grant. Written for Hydra; since 2026-10-25 it applies to whichever
+   candidate decision 2 selects.
+3. **Its image and licence.** A Nix-built image (ADR-0013) that runs non-root on a
+   read-only filesystem, and a licence review recorded in the plan. The same applies.
 4. **Token exchange.** RFC 8693 exchange as decision 7 describes works against Hydra and
    against Authentik 2026.8 or later. If Hydra cannot do it, the candidate table is
-   reopened before acceptance.
+   reopened before acceptance. Since 2026-10-25 it reads: against the built-in candidate
+   and against Authentik, including a refused widening (the scope ceiling) and a signed
+   exchanger identity, each by supported configuration.
 
    **Hydra half, 2026-10-25: not met.** Hydra v26.2.0, its newest release that day, has
    no RFC 8693 handler. It answers the exchange grant with the same `invalid_request` it
@@ -463,14 +517,43 @@ response. The answers do not accept this record.
    > **Response:** datagen24, 2026-10-24: yes. The ceiling is fixed at registration, and a
    > new ceiling means a new client. (Decision 4.)
 
-### Raised by the Authentik compatibility report, 2026-10-25 (unanswered)
+### Raised by the Authentik compatibility report, 2026-10-25
 
 7. **Who enforces the exchange scope ceiling?** The report's case N11b policy at the
    authorization server, the sidecar requesting no more than the inbound token's scopes,
    or both.
+
+   > **Response:** datagen24, 2026-10-25: both. The authorization server must refuse
+   > widening even if the sidecar is compromised. The sidecar requests only the needed
+   > subset and validates the returned token before using it. Compare permissions after
+   > expanding bundles into leaves. Victual still intersects the result with current user
+   > permissions and the registered grant ceiling. The Authentik policy becomes required,
+   > tested deployment configuration: the spike showed that omitting it permits
+   > read-to-write escalation. (Decision 7.)
 8. **How is the sidecar identified without a supported `act`?** Decision 7 and ADR-0056
    decision 11 expect `act`. On open-source Authentik it needs an Actor that only the
    Enterprise Agents API creates. The options include an Enterprise licence, another
    attribution of exchanges, or dropping the requirement.
+
+   > **Response:** datagen24, 2026-10-25: require an authorization-server-signed identity
+   > of the authenticated exchanger. Prefer `act`; permit a documented alternative claim
+   > that the server derives from client authentication and that callers cannot override.
+   > Do not infer the sidecar from Authentik's `azp`: the spike found that it names the
+   > target API. Whether Authentik can provide the alternative through supported
+   > configuration remains a gate. Preserve enough authenticated grant identity to support
+   > the promised per-client revocation. (Decision 7.)
 9. **What audience does the sidecar accept** when each registered MCP client's tokens
    carry that client's own `client_id`?
+
+   > **Response:** datagen24, 2026-10-25: accept a dedicated MCP resource audience. Do not
+   > accept every registered client id merely because registration occurred through
+   > Victual. Registration identifies an application; it does not prove that every token
+   > issued to it was intended for this MCP server. Require a tested audience-binding
+   > configuration or adapter. MCP requires tokens intended for the receiving resource.
+   > (Decision 3.)
+
+**Candidate table.** Answered by datagen24 on 2026-10-25: remove Hydra as the provisional
+implementation target. Evaluate Keycloak next while retaining Authentik as the required
+external compatibility target. Keycloak documents supported standard token exchange, but
+its delegation feature is Preview, so it is a candidate rather than a selected
+replacement. Its fit with Victual-owned login also remains a gate. (Decision 2.)
