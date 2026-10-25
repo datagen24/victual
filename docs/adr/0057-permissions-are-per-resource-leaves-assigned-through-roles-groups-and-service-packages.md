@@ -61,7 +61,25 @@ The existing records each carry part of this:
 
 The inventory of every resource, action and current check is
 [`.devtools/issue1111/INVENTORY.md`](../../.devtools/issue1111/INVENTORY.md). It is a static
-read of the source at `42883e0e`; nothing in it was exercised.
+read of the source at `42883e0e`; nothing in it was exercised. Its counts frame the size of
+the change:
+
+- 63 resource types across 270 routes. A pure CRUD matrix has 252 cells: 187 are supported
+  operations that need a leaf (Create 42, Read 63, Update 42, Delete 40), and 65 are
+  operations the resource does not have.
+- In the generic object API, `MASTER_DATA_EDIT` gates Create on 11 entities, Update on 17
+  and Delete on 19. It also gates user-field definitions, label operations, product and
+  chore merge, two file groups and custom-entity pages. `MASTER_DATA_ADD` gates Create on
+  six entities and the external lookup's `add=true`.
+- Domain parents double as write permissions. `CHORES`, `TASKS`, `RECIPES`, `EQUIPMENT` and
+  `SHOPPINGLIST` gate writes, and because the tree resolves downward, editing chore
+  definitions cannot be granted without executing, undoing and viewing them.
+- Chores and tasks are created and updated under `CHORES` and `TASKS` (ADR-0043 decision 7)
+  but deleted under `MASTER_DATA_EDIT`, because `DeleteObject` has no branch for them
+  (`controllers/Api/GenericEntityApiController.php`). The seeded Adult role can create a
+  chore and cannot delete it.
+- 36 routes check no permission. 15 of them are label worker, renderer and pairing routes
+  that authenticate by credential; the rest are system, documentation and own-user routes.
 
 ## Decision (proposed)
 
@@ -179,7 +197,8 @@ with that reason, not hidden.
 ### 7. Service credentials hold versioned API role packages
 
 A **service account** is a system-owned principal for one Victual workload (initial
-candidates: MCP sidecar, Victualer, label renderer, label printer worker). It is not a
+candidates: MCP sidecar, the Victualer automation actor that
+[plan 16](../plans/16-project-rename.md) names, label renderer, label printer worker). It is not a
 user, cannot log in, and owns no data. A **service credential** authenticates as a
 service account.
 
