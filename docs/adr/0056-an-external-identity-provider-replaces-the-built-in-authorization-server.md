@@ -5,7 +5,8 @@
   [ADR-0055](0055-api-and-mcp-callers-present-oauth-access-tokens-from-a-swappable-authorization-server.md).
   The maintainer answered all six open questions on 2026-10-24; the answers are folded
   into the decisions and recorded under Open questions. Acceptance prerequisites 1 to 5
-  are unmet as of 2026-10-24.
+  are unmet as of 2026-10-24. On 2026-10-25 the Authentik compatibility report met the
+  Authentik side of prerequisite 4 and recorded evidence against prerequisites 2 and 3.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -334,14 +335,30 @@ above. No scope grants it (ADR-0055 decision 5 keeps user administration session
    document or pre-registration, and completes a tool call. If Authentik's registration
    needs a bearer token Claude Code does not have, the record states which registration
    path the install uses instead.
+
+   **2026-10-25: not met.** Authentik 2026.8.5's registration endpoint refused a request
+   with no token and one with a user token lacking its registration scope (report case
+   N15, `.devtools/spikes/oauth-authentik/`). Claude Code registers anonymously, so on Authentik it must use
+   ADR-0055 decision 8's endpoint, which creates one Authentik provider per client. No
+   client was run against Authentik.
 3. **Audience from Authentik.** A token Authentik issues for the sidecar carries the
    sidecar's audience, and one for `/api` carries `/api`'s, whether through `resource`,
    Authentik's own audience setting or token exchange. Both refusals of ADR-0055
    decision 3 hold against Authentik tokens.
+
+   **2026-10-25: partly met.** Exchange gives an `/api` token `/api`'s audience, and both
+   refusals held against Authentik tokens (cases P5, P6, N1 to N3). A sidecar audience
+   does not arise: `aud` is the issuing provider's `client_id`, `resource` is ignored at
+   authorization, and `audience` exists only on exchange. A token an MCP client obtains
+   is audienced to that client (ADR-0055 open question 9).
 4. **Group claims reach Victual.** A group added and then removed at Authentik is reflected
    at the next login and within one token lifetime, as decision 4 states.
+
+   **Authentik side, 2026-10-25: met.** A group was present in the token's `groups`
+   claim, absent from the next token after removal, and present again after re-adding
+   (case P9). Victual's recompute is not built, so the Victual side is untested.
 5. **Break-glass.** With Authentik stopped, an administrator logs in by password and the
-   other users' provider logins fail with a message.
+   other users' provider logins fail with a message. Not tested as of 2026-10-25.
 6. **Open questions 1 and 3 answered.** Met 2026-10-24: the maintainer answered all six.
 
 ## Open questions and maintainer responses
@@ -387,3 +404,8 @@ response. The answers do not accept this record.
    > record level: events, columns, retention, and who may read it through a permission
    > leaf. Its implementation reserves a migration in its own pull request. (Decision 11;
    > ADR-0055 decision 7.)
+
+### Raised by the Authentik compatibility report, 2026-10-25 (unanswered)
+
+7. **What does decision 11 record for `token_exchange_used`** if the exchanged token
+   carries no `act`? See ADR-0055 open question 8.

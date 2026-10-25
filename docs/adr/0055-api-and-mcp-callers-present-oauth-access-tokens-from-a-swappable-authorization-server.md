@@ -5,7 +5,9 @@
   answers are folded into the decisions and recorded under Open questions. Acceptance
   prerequisites 1 to 5 are unmet as of 2026-10-24, and on 2026-10-25 the Hydra half of
   prerequisite 4 failed (Hydra has no RFC 8693 token exchange), which reopens the
-  candidate table.
+  candidate table. The Authentik half of prerequisite 4 was met for the core exchange on
+  2026-10-25, with two gaps recorded under it; prerequisite 1 has Authentik-side evidence
+  and is not met.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -357,6 +359,22 @@ keychain, and keep sending their per-device Access service token as before.
    changes only. The checks: a valid token for each audience is accepted; empty, wrong and
    foreign audiences are refused; an expired token is refused; a token for an unmapped
    subject is refused. Evidence names the date, both versions and how to reproduce it.
+
+   **Authentik side, 2026-10-25: evidence, not met.** Authentik 2026.8.5, with the
+   compatibility probe's resource-server check standing in for the Victual and sidecar
+   images (spike report in `.devtools/spikes/oauth-authentik/`, cases P4, P6, N1 to N4 and N14). A valid token for
+   each audience was accepted. Wrong and foreign audiences, a tampered token and an expired
+   one were refused. Two things change what "configuration only" means on Authentik:
+
+   - No discovery document is served at the install's issuer URL when one issuer is used
+     (case P1), so the resource-server configuration needs a discovery URL beside the
+     issuer. Decision 3 names the issuer alone.
+   - `aud` is the `client_id` of the provider that issued the token, and `resource` is
+     ignored at authorization, so a token an MCP client obtains is audienced to that
+     client, not to the sidecar (report finding 5).
+
+   Not run: the real images, the unmapped-subject refusal (Victual-side), and the Hydra
+   half, which waits on the candidate table.
 2. **Hydra on PostgreSQL at two replicas.** Login, consent, refresh rotation and
    revocation work with two Hydra pods sharing one database, and killing a pod mid-flow
    loses no grant.
@@ -371,7 +389,7 @@ keychain, and keep sending their per-device Access service token as before.
    gives a made-up grant type, and its binary carries no configuration key for it. Reproduce
    with `.devtools/spikes/oauth-hydra/exchange-probe.sh`; the spike README's "RFC 8693
    token exchange" section holds the table. Under this prerequisite the candidate table is
-   therefore reopened. The Authentik half is untested.
+   therefore reopened.
 
    > **Response:** datagen24, 2026-10-25: the finding rules out Hydra v26.2.0 for
    > decision 7 as written. It does not invalidate the separate `/api` and MCP audiences,
@@ -379,9 +397,28 @@ keychain, and keep sending their per-device Access service token as before.
    > sidecar assert arbitrary users is rejected, because it would give the sidecar
    > authority beyond the user tokens it receives. The next deliverable is an Authentik
    > compatibility report with reproducible positive and negative tests.
+
+   **Authentik half, 2026-10-25: met for the core exchange, with two gaps.** Authentik
+   2026.8.5 exchanged an MCP-audience user token for an `/api` token that kept the user's
+   `sub` and the install's `iss` (cases P5, P6). It refused untrusted exchangers, untrusted,
+   tampered and expired subject tokens, a disabled user, two audiences and `resource`
+   (cases N5 to N10, N12, N13). The gaps:
+
+   - The issued token is not limited to the subject token's scopes: a read-only token was
+     exchanged for a write token (case N11). An expression policy bound to the `/api`
+     application closes it (case N11b), which makes that policy part of the Authentik
+     configuration.
+   - A plain exchange records nothing in `act`. Delegation sets `act.sub`, but only for an
+     Authentik Actor, and ownerless Actors are created through the Agents API, which needs
+     an Enterprise licence (cases P7, P8).
+
+   Reproduce with `./run.sh up && node setup.mjs && node probe.mjs` in `.devtools/spikes/oauth-authentik/`.
 5. **A real MCP client per registration path.** Claude Code completes connection,
    step-up to a write scope and a tool call against both authorization servers. Remote
    custom connectors (claude.ai) are tested once ADR-0052 stage 3's route exists.
+   Not tested against Authentik as of 2026-10-25. Authentik refuses anonymous dynamic
+   registration (report case N15), so Claude Code can register only through decision 8's
+   endpoint.
 6. **Open questions 1 and 4 answered.** Met 2026-10-24: the maintainer answered all six.
 
 ## Open questions and maintainer responses
@@ -425,3 +462,15 @@ response. The answers do not accept this record.
 
    > **Response:** datagen24, 2026-10-24: yes. The ceiling is fixed at registration, and a
    > new ceiling means a new client. (Decision 4.)
+
+### Raised by the Authentik compatibility report, 2026-10-25 (unanswered)
+
+7. **Who enforces the exchange scope ceiling?** The report's case N11b policy at the
+   authorization server, the sidecar requesting no more than the inbound token's scopes,
+   or both.
+8. **How is the sidecar identified without a supported `act`?** Decision 7 and ADR-0056
+   decision 11 expect `act`. On open-source Authentik it needs an Actor that only the
+   Enterprise Agents API creates. The options include an Enterprise licence, another
+   attribution of exchanges, or dropping the requirement.
+9. **What audience does the sidecar accept** when each registered MCP client's tokens
+   carry that client's own `client_id`?
