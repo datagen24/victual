@@ -175,6 +175,7 @@ nav:
           - 0053 Label print jobs stay queued while a printer is inactive; reprint stays the recovery: development/adr/0053-label-print-jobs-stay-queued-while-a-printer-is-inactive-and-reprint-stays-the-recovery.md
           - 0055 API and MCP callers present OAuth tokens from a swappable authorization server: development/adr/0055-api-and-mcp-callers-present-oauth-access-tokens-from-a-swappable-authorization-server.md
           - 0056 An external identity provider replaces the built-in authorization server: development/adr/0056-an-external-identity-provider-replaces-the-built-in-authorization-server.md
+          - 0057 Permissions are per-resource leaves, assigned through roles, groups and service packages: development/adr/0057-permissions-are-per-resource-leaves-assigned-through-roles-groups-and-service-packages.md
       - Build and deployment:
           - Container images: development/images.md
           - Deployment: development/deployment.md
