@@ -13,6 +13,7 @@
 import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
+import { registerMcpClient, deregisterMcpClient } from "./adapter.mjs";
 
 const S = JSON.parse(readFileSync(new URL("./state.json", import.meta.url)));
 const AK = S.ak, T = `${AK}/application/o/token/`;
@@ -34,7 +35,7 @@ const appPasswordToken = (p, u, scope = "openid profile victual:read") =>
 const REDIRECT = "http://localhost:8765/callback";
 // Authorization code + PKCE (S256) with a scripted login through Authentik's flow executor API:
 // no browser. Keeps a cookie jar by hand; a POST to the executor answers 302 to the executor.
-async function codeFlow(p, u, scope, { password = u.password, pkce = "S256" } = {}) {
+async function codeFlow(p, u, scope, { password = u.password, pkce = "S256", extra = {} } = {}) {
   const jar = new Map();
   const cookie = () => [...jar].map(([k, v]) => `${k}=${v}`).join("; ");
   async function req(method, url, body) {
@@ -66,7 +67,7 @@ async function codeFlow(p, u, scope, { password = u.password, pkce = "S256" } = 
   }
   const verifier = randomBytes(32).toString("base64url");
   const state = randomBytes(8).toString("hex");
-  const q = new URLSearchParams({ client_id: p.client_id, response_type: "code", redirect_uri: REDIRECT, scope, state });
+  const q = new URLSearchParams({ client_id: p.client_id, response_type: "code", redirect_uri: REDIRECT, scope, state, ...extra });
   if (pkce === "S256") { q.set("code_challenge", createHash("sha256").update(verifier).digest("base64url")); q.set("code_challenge_method", "S256"); }
   if (pkce === "plain") { q.set("code_challenge", verifier); q.set("code_challenge_method", "plain"); }
   let next = `/application/o/authorize/?${q}`;
@@ -131,6 +132,14 @@ function record(id, kind, clause, expected, observed, ok) {
   results.push({ id, kind, clause, expected, observed, verdict: ok ? "pass" : "FAIL" });
 }
 const err = (r) => r.error ? `${r.status} ${r.error}` : `${r.status} token`;
+// The G5 revoke rule (setup.mjs) is bound by default. `withoutRevoke(fn)` unbinds the policy for the
+// length of fn and always rebinds it, like `ceiling` does for the scope-ceiling policy.
+async function withoutRevoke(fn) {
+  await admin("DELETE", `/policies/bindings/${S.reuse.revokeBinding}/`);
+  try { return await fn(); } finally {
+    S.reuse.revokeBinding = (await admin("POST", "/policies/bindings/", { policy: S.reuse.revokePolicy, target: S.reuse.revokeRule, order: 0 })).pk;
+  }
+}
 
 // ============ positive cases
 {
@@ -580,15 +589,425 @@ const xcOf = (r) => (r.access_token ? claims(r.access_token) : {});
   const sc = "openid profile victual:read offline_access";
   const t1 = await codeToken(mcp, alice, sc);
   const rf = (rt) => token({ grant_type: "refresh_token", client_id: mcp.client_id, client_secret: mcp.client_secret, refresh_token: rt, scope: sc });
-  const r1 = await rf(t1.refresh_token);
-  const reuse = await rf(t1.refresh_token);
-  const newest = await rf(r1.refresh_token);
-  record("G4d", "neg", "0055 d6: refresh token rotation with reuse detection revoking the family",
+  // Authentik's native behaviour: the revoke rule that setup.mjs installs for G5 is unbound for this case.
+  const { r1, reuse, newest } = await withoutRevoke(async () => {
+    const r1 = await rf(t1.refresh_token);
+    const reuse = await rf(t1.refresh_token);
+    await sleep(3000); // the worker would have acted by now
+    return { r1, reuse, newest: await rf(r1.refresh_token) };
+  });
+  record("G4d", "neg", "0055 d6: refresh token rotation with reuse detection revoking the family, Authentik's native behaviour (G5 revoke rule unbound)",
     "rotated: a new refresh token; reuse of the old one refused; the newest refresh token then also refused (family revoked)",
     `rotation -> ${err(r1)}, new refresh token ${r1.refresh_token && r1.refresh_token !== t1.refresh_token}; reuse of old -> ${err(reuse)}; newest after the reuse -> ${err(newest)}`,
     r1.status === 200 && reuse.status >= 400 && newest.status >= 400);
 }
 
+// ============ G5: refresh-token family revocation (ADR-0055 prerequisite 9, question 12)
+// Authentik rotates refresh tokens, marks the old one revoked and refuses it, and raises a
+// suspicious_request event naming it. It never revokes the newest token. setup.mjs installs two
+// notification rules (see its G5 comment); the cases below test them and the candidates that do not work.
+// Family key: sid + auth_time, which every token minted by rotation copies from its parent. Both are
+// readable through the documented admin API (the `id_token` field of /oauth2/refresh_tokens/), so Victual
+// can compute the same key without Authentik internals (G5i).
+const REF_SC = "openid profile victual:read offline_access";
+const rfTok = (rt, p = mcp, extra = {}) => token({ grant_type: "refresh_token", client_id: p.client_id, client_secret: p.client_secret, refresh_token: rt, scope: REF_SC, ...extra });
+const rtRows = async (userPk, providerPk) => (await admin("GET", `/oauth2/refresh_tokens/?${userPk ? `user=${userPk}&` : ""}provider=${providerPk}&page_size=200`)).results;
+const atRows = async (userPk, providerPk) => (await admin("GET", `/oauth2/access_tokens/?user=${userPk}&provider=${providerPk}&page_size=200`)).results;
+const famOfRow = (row) => { const i = JSON.parse(row.id_token); return `${i.sid ?? "-"}|${i.auth_time}`; };
+const famOfJwt = (jwt) => { const c = claims(jwt); return `${c.sid ?? "-"}|${c.auth_time}`; };
+const famRows = async (u, p, fam) => (await rtRows(u.pk, p.pk)).filter((x) => famOfRow(x) === fam);
+const introspect = async (tok, p = mcp) => {
+  const r = await fetch(`${AK}/application/o/introspect/`, { method: "POST", headers: { Authorization: "Basic " + Buffer.from(`${p.client_id}:${p.client_secret}`).toString("base64") }, body: new URLSearchParams({ token: tok }) });
+  return (await r.json()).active === true;
+};
+// Wait until a family has no refresh-token rows left; resolves to the elapsed ms, or null on timeout.
+async function settle(u, p, fam, ms = 30000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    if (!(await famRows(u, p, fam)).length) return Date.now() - t0;
+    await sleep(250);
+  }
+  return null;
+}
+const hookEvents = () => execFileSync("podman", ["logs", "victual-spike-authentik-hook"], { encoding: "utf8" })
+  .split("\n").filter((l) => l.startsWith("HOOK ")).map((l) => { const h = JSON.parse(l.slice(5)); return { path: h.path, ...JSON.parse(h.body) }; });
+async function waitHook(pred, ms = 20000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    const h = hookEvents().find(pred);
+    if (h) return { hook: h, ms: Date.now() - t0 };
+    await sleep(100);
+  }
+  return null;
+}
+const accessOf = (r) => (r.access_token ? claims(r.access_token) : {});
+
+// ---- G5a to G5c: candidates that are not mitigations. A registered client from the adapter (no trust at the sidecar) is the subject.
+{
+  const cand = await registerMcpClient(admin, S.adapter, "g5-candidate", { trust: false });
+  const made = { policy: null, binding: null, mappings: [] };
+  try {
+    // G5a: provider settings. refresh_token_threshold above zero stops rotation until the token is close to expiry.
+    await admin("PATCH", `/providers/oauth2/${cand.pk}/`, { refresh_token_threshold: "days=1" });
+    const t = await codeToken(cand, alice, REF_SC);
+    const u1 = await rfTok(t.refresh_token, cand), u2 = await rfTok(t.refresh_token, cand);
+    await admin("PATCH", `/providers/oauth2/${cand.pk}/`, { refresh_token_threshold: "seconds=0" });
+    const t2 = await codeToken(cand, alice, REF_SC);
+    const d1 = await rfTok(t2.refresh_token, cand), d2 = await rfTok(t2.refresh_token, cand);
+    record("G5a", "neg", "0055 prerequisite 9, candidate: provider settings (refresh_token_threshold, refresh_token_validity)",
+      "a setting under which reuse of an old refresh token is refused and the newest refused too",
+      `threshold days=1: use 1 -> ${err(u1)} (new refresh token returned: ${!!u1.refresh_token}); the same token again -> ${err(u2)}. Default threshold: first use -> ${err(d1)}, reuse -> ${err(d2)}. The threshold only decides whether a refresh issues a new refresh token; no setting revokes a family`,
+      u2.status >= 400 && d2.status >= 400);
+
+    // G5b: an expression policy bound to the application. Refresh grants never evaluate application policies.
+    const tb = await codeToken(cand, alice, REF_SC);
+    made.policy = (await admin("POST", "/policies/expression/", { name: "victual-spike-g5-deny", expression: "return False" })).pk;
+    const app = await admin("GET", `/core/applications/${cand.slug}/`);
+    made.binding = (await admin("POST", "/policies/bindings/", { policy: made.policy, target: app.pk, order: 5 })).pk;
+    // Under the default policy engine mode "any" a passing policy (the S256 policy) outvotes the deny policy.
+    await admin("PATCH", `/core/applications/${cand.slug}/`, { policy_engine_mode: "any" });
+    const outvoted = await codeToken(cand, alice, REF_SC);
+    await admin("PATCH", `/core/applications/${cand.slug}/`, { policy_engine_mode: "all" });
+    const newLogin = await codeToken(cand, alice, REF_SC);
+    const refreshed = await rfTok(tb.refresh_token, cand);
+    record("G5b", "neg", "0055 prerequisite 9, candidate: an expression policy bound to the application that denies",
+      "the deny policy refuses the refresh grant (it would be able to refuse a presented token)",
+      `deny-all policy bound, engine mode "any": a new login -> ${err(outvoted)} (outvoted by the passing S256 policy; the adapter and setup.mjs set mode "all"); mode "all": a new login -> ${err(newLogin)} (the policy is live at /authorize); refresh with a valid token -> ${err(refreshed)}. Static read: check_policy_access is called from token_exchange.py and client_credentials.py only; RefreshTokenTokenRequest.parse and create_refresh_response never evaluate application policies`,
+      newLogin.status !== 200 && refreshed.status >= 400);
+    await admin("DELETE", `/policies/bindings/${made.binding}/`); made.binding = null;
+
+    // G5c: a scope mapping. It runs during a refresh, after the revoked check, and cannot deny.
+    const before = (await admin("GET", `/providers/oauth2/${cand.pk}/`)).property_mappings;
+    const sees = await admin("POST", "/propertymappings/provider/scope/", { name: "victual-spike-g5-sees", scope_name: "profile", expression: 'return {"g5_refresh_param_seen": bool(http_request and http_request.POST.get("refresh_token"))}' });
+    const raises = await admin("POST", "/propertymappings/provider/scope/", { name: "victual-spike-g5-raises", scope_name: "profile", expression: 'raise Exception("deny this refresh")' });
+    made.mappings.push(sees.pk, raises.pk);
+    const tc = await codeToken(cand, alice, REF_SC);
+    await admin("PATCH", `/providers/oauth2/${cand.pk}/`, { property_mappings: [...before, sees.pk] });
+    const withSees = await rfTok(tc.refresh_token, cand);
+    await admin("PATCH", `/providers/oauth2/${cand.pk}/`, { property_mappings: [...before, sees.pk, raises.pk] });
+    const withRaise = await rfTok(withSees.refresh_token, cand);
+    const reusedAfter = await rfTok(tc.refresh_token, cand);
+    record("G5c", "neg", "0055 prerequisite 9, candidate: a property (scope) mapping on the provider",
+      "a mapping can refuse the refresh grant, or see a reused token",
+      `mapping sees the presented refresh_token parameter: ${accessOf(withSees).g5_refresh_param_seen}; a mapping that raises -> refresh ${err(withRaise)} (the mapping is skipped, the token is issued); a reused (revoked) token -> ${err(reusedAfter)} before any mapping runs. Mappings add claims; they do not deny`,
+      withRaise.status >= 400);
+  } finally {
+    if (made.binding) await admin("DELETE", `/policies/bindings/${made.binding}/`).catch(() => {});
+    if (made.policy) await admin("DELETE", `/policies/expression/${made.policy}/`).catch(() => {});
+    for (const m of made.mappings) await admin("DELETE", `/propertymappings/provider/scope/${m}/`).catch(() => {});
+    await deregisterMcpClient(admin, cand);
+  }
+}
+
+// ---- G5d, G5e, G5j, G5k: sequential reuse with the revoke rule bound (the default configuration)
+{
+  const A = await codeToken(mcp, alice, REF_SC);
+  const famA = famOfJwt(A.access_token);
+  const B = await codeToken(mcp, alice, REF_SC);   // control: same user and client, another login
+  const C = await codeToken(mcp, bob, REF_SC);     // control: another user
+  const D = await codeToken(mcpB, alice, REF_SC);  // control: another client
+  const hooks0 = hookEvents().length;
+  const A2 = await rfTok(A.refresh_token);         // normal rotation
+  await sleep(4000);
+  const hooksAfterRotation = hookEvents().length;
+  const familyAfterRotation = await famRows(alice, mcp, famA);
+  const oldRow = familyAfterRotation.find((x) => x.revoked);
+  const activeBefore = [await introspect(A.access_token), await introspect(A2.access_token)];
+  const foreign = [await introspect(A2.access_token, other), await introspect(A2.access_token, sidecar)];
+  const reuse = await rfTok(A.refresh_token);
+  const hookWait = oldRow ? waitHook((h) => h.context?.token?.pk === oldRow.pk) : Promise.resolve(null); // timed from the reuse response
+  const latency = await settle(alice, mcp, famA);
+  const newest = await rfTok(A2.refresh_token);
+  const left = await famRows(alice, mcp, famA);
+  record("G5d", "pos", "0055 prerequisite 9: reuse of an old refresh token invalidates the whole family, including the newest (revoke rule bound by setup.mjs)",
+    "old refused; newest refused afterwards; no refresh-token row of the family left",
+    `rotation -> ${err(A2)}, family had ${familyAfterRotation.length} rows (${familyAfterRotation.filter((x) => x.revoked).length} revoked); reuse of the old token -> ${err(reuse)}; family rows gone after ${latency} ms (worker, asynchronous); newest -> ${err(newest)}; rows left ${left.length}`,
+    A2.status === 200 && reuse.status >= 400 && latency !== null && newest.status >= 400 && !left.length);
+  const delivered = await hookWait;
+  record("G5e", "pos", "0055 prerequisite 9: Victual can observe reuse through a supported interface (webhook transport on a notification rule)",
+    "reuse posts one event naming the refresh token (pk), provider and user; a normal rotation posts nothing",
+    `normal rotation: ${hooksAfterRotation - hooks0} posts; after reuse: ${delivered ? `post after ${delivered.ms} ms, action=${delivered.hook.action}, token.pk=${delivered.hook.context.token.pk} (the reused row ${oldRow.pk}), model=${delivered.hook.context.token.model_name}, provider.pk=${delivered.hook.context.provider.pk} (${mcp.pk}), user=${JSON.stringify(delivered.hook.user?.username)}` : "none"}`,
+    hooksAfterRotation === hooks0 && !!delivered && delivered.hook.context.provider.pk === mcp.pk && delivered.hook.user?.username === alice.username);
+  const stateless = [await rsCheck(A.access_token, RS_SIDECAR), await rsCheck(A2.access_token, RS_SIDECAR)];
+  const activeAfter = [await introspect(A.access_token), await introspect(A2.access_token)];
+  const exAfter = await exchange(sidecar, A2.access_token, { audience: api.client_id, scope: "openid victual:read" });
+  record("G5j", "pos", "0055 d6: the access tokens of a revoked family",
+    "stateless check accepts them until exp (expected, 5 minutes); the MCP client's own introspection says inactive after revocation; the sidecar's exchange of them is refused",
+    `exchange of the newest access token after revocation -> ${err(exAfter)}; before: introspection active ${JSON.stringify(activeBefore)}; after revocation: stateless check -> ${stateless.join(", ")}; introspection by the issuing client active ${JSON.stringify(activeAfter)}. Introspection is per provider: before revocation, with the token valid, another client's introspection answered active=${foreign[0]} and the sidecar's active=${foreign[1]}, so a revocation check must go to the issuing client`,
+    activeBefore.every(Boolean) && stateless.every((x) => x === "accepted") && activeAfter.every((x) => !x) && exAfter.status >= 400);
+  const ctrl = {
+    "same user, other login": await introspect(B.access_token) && (await rfTok(B.refresh_token)).status === 200,
+    "other user": await introspect(C.access_token) && (await rfTok(C.refresh_token)).status === 200,
+    "other client": await introspect(D.access_token, mcpB) && (await rfTok(D.refresh_token, mcpB)).status === 200,
+  };
+  record("G5k", "neg", "0055 prerequisite 9: negative control, other families are unaffected",
+    "another login of the same user and client, another user, and another client keep working",
+    Object.entries(ctrl).map(([k, v]) => `${k}: access token active and refresh 200 = ${v}`).join("; "),
+    Object.values(ctrl).every(Boolean));
+}
+
+// ---- G5f, G5g: concurrent refresh with the same token (revoke rule bound)
+// Whether the parallel requests overlap completely is timing. A full overlap raises no event and leaves a
+// durable fork. A partial overlap makes the late requests present a revoked token; that raises the event
+// and the revoke rule deletes the family. Up to five attempts, each reported; G5g needs a durable fork.
+{
+  const N = 5;
+  const tries = [];
+  let fork = null;
+  for (let a = 1; a <= 5 && !fork; a++) {
+    const F = await codeToken(mcp, alice, REF_SC);
+    const famF = famOfJwt(F.access_token);
+    const hooks0 = hookEvents().length;
+    const rs = await Promise.all(Array.from({ length: N }, () => rfTok(F.refresh_token)));
+    const ok = rs.filter((r) => r.status === 200);
+    await sleep(4000);
+    const live = (await famRows(alice, mcp, famF)).filter((x) => !x.revoked);
+    const t = { a, statuses: rs.map((r) => r.status).join(","), ok: ok.length, events: hookEvents().length - hooks0, live: live.length, F, famF, oks: ok };
+    t.active = await Promise.all(ok.map((r) => introspect(r.access_token)));
+    tries.push(t);
+    if (live.length >= 2) fork = t;
+  }
+  record("G5f", "neg", "0055 prerequisite 9: concurrent refresh with the same token must not mint a second durable chain",
+    `of ${N} parallel refreshes with one token exactly one succeeds, and the family keeps at most one live refresh token`,
+    `${tries.map((t) => `attempt ${t.a}: ${t.ok} of ${N} returned 200 (${t.statuses}), reuse events ${t.events}, live refresh-token rows after 4 s ${t.live}, access tokens of the successful requests active ${t.active.filter(Boolean).length}`).join("; ")}. A full overlap leaves every request's tokens valid and fires no event, so the rule never runs; a partial overlap raises the event and the rule deletes the family within seconds`,
+    tries.every((t) => t.ok === 1 && t.live <= 1));
+  if (fork) {
+    // The fork is closed once any old token of the family is replayed: the revoke rule deletes by family key.
+    const replay = await rfTok(fork.F.refresh_token);
+    const lat = await settle(alice, mcp, fork.famF);
+    const branches = await Promise.all(fork.oks.map((r) => rfTok(r.refresh_token)));
+    const activeAfter = await Promise.all(fork.oks.map((r) => introspect(r.access_token)));
+    record("G5g", "pos", "0055 prerequisite 9: a later reuse revokes every branch of a forked family",
+      "after the original token is replayed, every refresh token the parallel refreshes returned is refused and their access tokens are inactive",
+      `fork of ${fork.live} live refresh tokens (attempt ${fork.a}); replay of the original -> ${err(replay)}; family rows gone after ${lat} ms; the ${fork.oks.length} branch refresh tokens now -> ${branches.map((r) => r.status).join(",")}; branch access tokens still active: ${activeAfter.filter(Boolean).length}. Without a replay the branches stay valid (G5f)`,
+      replay.status >= 400 && lat !== null && branches.every((r) => r.status >= 400) && activeAfter.every((x) => !x));
+  } else {
+    record("G5g", "pos", "0055 prerequisite 9: a later reuse revokes every branch of a forked family",
+      "a durable fork exists, and after the original token is replayed every branch is refused",
+      `no attempt left a durable fork (${tries.map((t) => t.live).join(",")} live rows), so the case could not run`, false);
+  }
+}
+
+
+// ---- G5h: the race named in the task: the old token and the newest token presented at about the same time
+{
+  const RUNS = 3;
+  const out = [];
+  for (let i = 0; i < RUNS; i++) {
+    const R = await codeToken(mcp, alice, REF_SC);
+    const fam = famOfJwt(R.access_token);
+    const R2 = await rfTok(R.refresh_token);
+    const [o, n] = await Promise.all([rfTok(R.refresh_token), rfTok(R2.refresh_token)]);
+    const lat = await settle(alice, mcp, fam, 15000);
+    const survivors = await famRows(alice, mcp, fam);
+    const successor = n.refresh_token ? await rfTok(n.refresh_token) : { status: "none" };
+    out.push({ old: o.status, newest: n.status, lat, survivors: survivors.length, successor: successor.status });
+  }
+  record("G5h", "neg", "0055 prerequisite 9: race, the old and the newest token refreshed at about the same time",
+    "old refused; whatever the newest produced is revoked with the family (no live row, successor refused)",
+    `${RUNS} runs (old status, newest status, ms until no rows, rows left, successor status): ${out.map((x) => `(${x.old}, ${x.newest}, ${x.lat}, ${x.survivors}, ${x.successor})`).join(" ")}. The newest's own successor is written before the worker deletes the family and shares its key; a refresh whose save lands after the delete would survive, and was ${out.every((x) => x.survivors === 0) ? "not seen in these runs" : "seen"}`,
+    out.every((x) => x.old >= 400 && x.lat !== null && x.survivors === 0 && x.successor >= 400));
+}
+
+// ---- G5i: the Victual-side mitigation, through documented interfaces only (webhook + admin API), revoke rule unbound
+// This is what Victual would run: on a reuse post, read the named refresh token, compute the family from its
+// id_token (sid, auth_time) and delete the family's refresh and access tokens. A sweeper does the same for
+// families that hold more than one live refresh token, which concurrent refreshes produce and no event reports.
+async function victualRevokeFamily(userPk, providerPk, fam) {
+  let n = 0;
+  for (const r of (await rtRows(userPk, providerPk)).filter((x) => famOfRow(x) === fam)) { await admin("DELETE", `/oauth2/refresh_tokens/${r.pk}/`); n++; }
+  for (const a of (await atRows(userPk, providerPk)).filter((x) => famOfRow(x) === fam)) { await admin("DELETE", `/oauth2/access_tokens/${a.pk}/`); n++; }
+  return n;
+}
+async function victualOnReuse(hook) {
+  const row = await admin("GET", `/oauth2/refresh_tokens/${hook.context.token.pk}/`);
+  return victualRevokeFamily(row.user.pk, row.provider.pk, famOfRow(row));
+}
+async function victualSweep(providerPk) {
+  const groups = new Map();
+  for (const r of (await rtRows(null, providerPk)).filter((x) => !x.revoked)) {
+    const k = `${r.user.pk}|${famOfRow(r)}`;
+    groups.set(k, [...(groups.get(k) ?? []), r]);
+  }
+  let families = 0;
+  for (const [k, rows] of groups) if (rows.length > 1) { await victualRevokeFamily(rows[0].user.pk, providerPk, k.split("|").slice(1).join("|")); families++; }
+  return families;
+}
+await withoutRevoke(async () => {
+  const V = await codeToken(mcp, alice, REF_SC);
+  const famV = famOfJwt(V.access_token);
+  const W = await codeToken(mcp, alice, REF_SC); // control, another login
+  const V2 = await rfTok(V.refresh_token);
+  const oldRow = (await famRows(alice, mcp, famV)).find((x) => x.revoked);
+  const reuse = await rfTok(V.refresh_token);
+  const got = await waitHook((h) => h.context?.token?.pk === oldRow.pk);
+  const removed = got ? await victualOnReuse(got.hook) : 0;
+  const newest = await rfTok(V2.refresh_token);
+  const activeV2 = await introspect(V2.access_token);
+  const ctrl = await rfTok(W.refresh_token);
+  record("G5i", "pos", "0055 prerequisite 9, Victual-side: webhook on reuse, then family revocation through the admin API",
+    "after the reuse event Victual revokes the family: newest refused, access tokens inactive, another login unaffected",
+    `reuse -> ${err(reuse)}; webhook after ${got?.ms} ms; Victual deleted ${removed} rows (rows of the family: refresh and access); newest -> ${err(newest)}; its access token active: ${activeV2}; control login refresh -> ${err(ctrl)}. The revoke rule was unbound, so Authentik did none of this`,
+    reuse.status >= 400 && !!got && removed > 0 && newest.status >= 400 && !activeV2 && ctrl.status === 200);
+  // The fork: five parallel refreshes, no event, then the sweep.
+  // Whether parallel requests overlap is timing; retry until one produced a fork (more than one live token).
+  let rs = [], liveBefore = 0, attempts = 0;
+  while (liveBefore < 2 && attempts++ < 4) {
+    const F = await codeToken(mcp, alice, REF_SC);
+    rs = (await Promise.all(Array.from({ length: 5 }, () => rfTok(F.refresh_token)))).filter((r) => r.status === 200);
+    liveBefore = (await famRows(alice, mcp, famOfJwt(F.access_token))).filter((x) => !x.revoked).length;
+  }
+  const E = await codeToken(mcp, bob, REF_SC); // control, another user
+  const swept = await victualSweep(mcp.pk);
+  const branches = await Promise.all(rs.map((r) => rfTok(r.refresh_token)));
+  const ctrlE = await rfTok(E.refresh_token);
+  record("G5l", "pos", "0055 prerequisite 9, Victual-side: sweep for forked families (concurrent refresh, which raises no event)",
+    "a family with more than one live refresh token is revoked by the sweep; families with one are untouched",
+    `${rs.length} parallel refreshes succeeded; live rows ${liveBefore}; the sweep revoked ${swept} family; the branch refresh tokens now -> ${branches.map((r) => r.status).join(",")}; control (other user) -> ${err(ctrlE)}. A sweep needs a schedule or a check on each exchange; a user who authorizes one client twice in one login session shares a family key and would be swept too (fails closed)`,
+    rs.length > 1 && liveBefore > 1 && swept >= 1 && branches.every((r) => r.status >= 400) && ctrlE.status === 200);
+});
+
+// ============ G6: MCP audience binding through the registration adapter (ADR-0055 prerequisite 11)
+// adapter.mjs creates each client the way Victual's adapter would: provider, application, the mcp-aud scope
+// mappings, the PKCE policy, and trust at the sidecar. The probe only names what each variant leaves out.
+const ad = S.adapter;
+const reg = (name, o) => registerMcpClient(admin, ad, name, o);
+const g6 = {
+  x1: await reg("g6-a"), x2: await reg("g6-b"),
+  untrusted: await reg("g6-c-untrusted", { trust: false }),
+  unbound: await reg("g6-d-unbound", { bound: false }),
+  admin: await reg("g6-e-admin", { scopes: ["openid", "victual:read", "victual:admin", "offline_access"] }),
+  readonly: await reg("g6-f-readonly", { scopes: ["openid", "offline_access", "victual:read"] }),
+};
+const MCP_AUD = (c) => JSON.stringify([c.client_id, S.mcpResource]);
+try {
+  const SC = "openid profile victual:read";
+  const tk = {};
+  for (const [k, c] of Object.entries(g6)) tk[k] = await codeToken(c, alice, SC);
+  // G6a
+  {
+    const ex1 = await exchange(sidecar, tk.x1.access_token, { audience: api.client_id, scope: "openid victual:read" });
+    const ex2 = await exchange(sidecar, tk.x2.access_token, { audience: api.client_id, scope: "openid victual:read" });
+    const exU = await exchange(sidecar, tk.untrusted.access_token, { audience: api.client_id, scope: "openid victual:read" });
+    const v1 = await rsCheck(tk.x1.access_token, RS_SIDECAR), v2 = await rsCheck(tk.x2.access_token, RS_SIDECAR);
+    const vU = await rsCheck(tk.untrusted.access_token, RS_SIDECAR);
+    const e1 = ex1.access_token ? await rsCheck(ex1.access_token, RS_API) : err(ex1);
+    record("G6a", "pos", "0055 prerequisite 11: tokens of clients the adapter created are accepted at the sidecar, and exchange when the adapter also registered trust",
+      "two new adapter clients: aud = [client_id, MCP audience], accepted by the sidecar check, exchanged to /api; a client registered without the trust step: accepted by the check, exchange refused",
+      `x1 aud=${JSON.stringify(accessOf(tk.x1).aud)} sidecar ${v1}, exchange ${err(ex1)}, /api ${e1}; x2 aud=${JSON.stringify(accessOf(tk.x2).aud)} sidecar ${v2}, exchange ${err(ex2)}; client without the trust step: sidecar ${vU}, exchange ${err(exU)}`,
+      JSON.stringify(accessOf(tk.x1).aud) === MCP_AUD(g6.x1) && JSON.stringify(accessOf(tk.x2).aud) === MCP_AUD(g6.x2) && v1 === "accepted" && v2 === "accepted"
+        && ex1.status === 200 && ex2.status === 200 && e1 === "accepted" && vU === "accepted" && exU.status >= 400);
+  }
+  // G6b
+  {
+    const x = g6.x1;
+    const pick = { audience: api.client_id, resource: "http://localhost:8080/api" };
+    const pick2 = { audience: g6.x2.client_id, resource: S.mcpResource };
+    const viaAuthorize = await codeFlow(x, alice, REF_SC, { extra: pick }).then((a) => codeGrant(x, a, pick2), (e) => ({ status: 0, error: e.message.slice(0, 60) }));
+    const refreshed = viaAuthorize.refresh_token ? await rfTok(viaAuthorize.refresh_token, x, pick) : { status: "-" };
+    const audOf = (r) => JSON.stringify(accessOf(r).aud);
+    const adminAsk = await codeToken(x, alice, "openid victual:read victual:admin");
+    const adminOnly = await codeToken(x, alice, "victual:admin");
+    const bound = await codeToken(g6.admin, alice, "openid victual:read victual:admin");
+    const cc = await token({ grant_type: "client_credentials", client_id: x.client_id, client_secret: x.client_secret, scope: "openid victual:read", audience: S.mcpResource });
+    const selfExchange = await exchange(x, tk.x1.access_token, { audience: api.client_id, scope: "openid victual:read" });
+    record("G6b", "neg", "0055 prerequisite 11: an adapter client cannot select an audience it is not bound to",
+      "audience and resource at /authorize, at the token endpoint and on refresh, the /api provider's scope, and other grants all leave aud = [own client_id, MCP audience]",
+      `audience/resource (api, then x2, then the MCP resource) at /authorize and /token: aud ${audOf(viaAuthorize)} (${err(viaAuthorize)}); on refresh: aud ${audOf(refreshed)} (${err(refreshed)}); scope victual:admin requested, no mapping on the client: ${err(adminAsk)} scope=${JSON.stringify(accessOf(adminAsk).scope)}; victual:admin alone: ${err(adminOnly)} scope=${JSON.stringify(accessOf(adminOnly).scope)} aud=${audOf(adminOnly)}; the same scope on a client the adapter gave the admin mapping: scope has admin ${String(accessOf(bound).scope).includes("victual:admin")}, aud ${audOf(bound)}; client_credentials with audience -> ${err(cc)}; the client as an exchanger -> ${err(selfExchange)}`,
+      audOf(viaAuthorize) === MCP_AUD(x) && audOf(refreshed) === MCP_AUD(x)
+        && !String(accessOf(adminAsk).scope).includes("victual:admin") && String(accessOf(bound).scope).includes("victual:admin") && audOf(bound) === MCP_AUD(g6.admin)
+        && cc.status >= 400 && selfExchange.status >= 400);
+  }
+  // G6c
+  {
+    const u = g6.unbound;
+    const plain = tk.unbound;
+    const asked = await codeFlow(u, alice, SC, { extra: { audience: S.mcpResource, resource: S.mcpResource } }).then((a) => codeGrant(u, a, { audience: S.mcpResource, resource: S.mcpResource }), (e) => ({ status: 0, error: e.message.slice(0, 60) }));
+    const vPlain = await rsCheck(plain.access_token, RS_SIDECAR), vAsked = asked.access_token ? await rsCheck(asked.access_token, RS_SIDECAR) : err(asked);
+    const vOther = await rsCheck((await userToken(other, alice)).access_token, RS_SIDECAR);
+    const exUnbound = await exchange(sidecar, plain.access_token, { audience: api.client_id, scope: "openid victual:read" });
+    record("G6c", "neg", "0055 prerequisite 11: a client without the audience mapping gets no MCP audience, and the sidecar refuses its tokens",
+      "aud has no MCP audience however it is requested; sidecar check refuses; an unrelated provider also refused",
+      `client created without the mapping: aud ${JSON.stringify(accessOf(plain).aud)} -> sidecar ${vPlain}; asking audience/resource=MCP audience: aud ${JSON.stringify(accessOf(asked).aud)} -> sidecar ${vAsked}; unrelated provider "other" -> ${vOther}. Note: because the adapter's trust step was run for this client, the exchange of its token still succeeds (${err(exUnbound)}): Authentik's exchange does not look at the MCP audience, so the sidecar's own audience check before the exchange is the control, and the mapping step and the trust step must not be separable`,
+      vPlain.startsWith("aud") && vAsked.startsWith("aud") && vOther.startsWith("aud") && !String(accessOf(plain).aud).includes(S.mcpResource) && !String(accessOf(asked).aud).includes(S.mcpResource));
+  }
+  // G6d
+  {
+    const rows = [];
+    for (const k of ["x1", "x2", "admin"]) {
+      const sc = k === "admin" ? "openid victual:admin" : "openid victual:read";
+      const subject = k === "admin" ? (await codeToken(g6.admin, alice, "openid victual:admin")).access_token : tk[k].access_token;
+      const ex = await exchange(sidecar, subject, { audience: api.client_id, scope: sc });
+      const c = accessOf(ex);
+      rows.push({ k, ex, c, sidecar: ex.access_token ? await rsCheck(ex.access_token, RS_SIDECAR) : "-", api: ex.access_token ? await rsCheck(ex.access_token, RS_API) : "-" });
+    }
+    const noAud = await exchange(sidecar, tk.x1.access_token, { scope: "openid victual:read" });
+    record("G6d", "neg", "0055 prerequisite 11: exchanged tokens target only /api",
+      "aud is exactly the /api client_id; the sidecar's check refuses them; /api accepts them; an exchange without audience does not carry the MCP audience either",
+      `${rows.map((r) => `${r.k}: ${err(r.ex)} aud=${JSON.stringify(r.c.aud)} sidecar ${r.sidecar} /api ${r.api}`).join("; ")}; no audience parameter: ${err(noAud)} aud=${JSON.stringify(accessOf(noAud).aud)}`,
+      rows.every((r) => r.ex.status === 200 && r.c.aud === api.client_id && r.sidecar.startsWith("aud") && r.api === "accepted") && ![].concat(accessOf(noAud).aud ?? []).includes(S.mcpResource));
+  }
+  // G6e
+  {
+    const xt = (await exchange(sidecar, tk.x1.access_token, { audience: api.client_id, scope: "openid victual:read" })).access_token;
+    const tries = [
+      ["audience = the MCP client", { audience: mcp.client_id }], ["audience = the MCP resource string", { audience: S.mcpResource }],
+      ["audience = the adapter client", { audience: g6.x1.client_id }], ["resource = the MCP resource", { resource: S.mcpResource }],
+      ["no audience", {}],
+    ];
+    const out = [];
+    for (const [label, extra] of tries) {
+      const r = await exchange(sidecar, xt, { scope: "openid victual:read", ...extra });
+      out.push({ label, r, mcp: [].concat(accessOf(r).aud ?? []).includes(S.mcpResource) });
+    }
+    const byB = await exchange(sidecarB, xt, { audience: mcp.client_id, scope: "openid victual:read" });
+    record("G6e", "neg", "0055 prerequisite 11: an exchanged /api token cannot be exchanged again into the MCP audience",
+      "every attempt refused (the /api provider is not trusted as a subject, the MCP providers do not trust the sidecar); no token with the MCP audience",
+      `${out.map((o) => `${o.label}: ${err(o.r)}`).join("; ")}; second exchanger sidecar-b -> ${err(byB)}`,
+      out.every((o) => o.r.status >= 400 && !o.mcp) && byB.status >= 400);
+  }
+  // G6f: the S256 policy is part of what the adapter attaches, so it must hold on a client the adapter created
+  {
+    const x = g6.x1;
+    const viaMode = (mode) => codeFlow(x, alice, SC, { pkce: mode }).then((a) => mode === "none"
+      ? token({ grant_type: "authorization_code", client_id: x.client_id, client_secret: x.client_secret, code: a.code, redirect_uri: REDIRECT })
+      : codeGrant(x, a), (e) => ({ status: 0, error: e.message.slice(0, 50) }));
+    const none = await viaMode("none"), plain = await viaMode("plain"), s256 = await viaMode("S256");
+    record("G6f", "neg", "0055 d6 on a client the adapter created: PKCE S256 only",
+      "no challenge and method plain refused at /authorize; S256 works",
+      `no challenge -> ${err(none)}; plain -> ${err(plain)}; S256 -> ${err(s256)}`,
+      none.status !== 200 && plain.status !== 200 && s256.status === 200);
+  }
+  // G8: inventory completeness (prerequisite 8), cases for mappings the cases above do not exercise
+  {
+    const ro = await codeToken(g6.readonly, alice, `openid victual:read victual:write ${S.bundle}`);
+    const apiAdmin = await appPasswordToken(api, alice, "openid victual:admin");
+    const adminSubject = (await codeToken(g6.admin, alice, "openid victual:admin")).access_token;
+    const exA = await exchange(sidecar, adminSubject, { audience: api.client_id, scope: "openid victual:admin" });
+    record("G8a", "pos", "0055 prerequisite 8: the scope mappings on the /api provider (victual:admin) and the exchanger mapping on victual:admin",
+      "the /api provider issues victual:admin; an admin-scoped subject exchanges to a token with victual:admin and the exchanger claim",
+      `/api token scope=${JSON.stringify(accessOf(apiAdmin).scope)}; exchange of an admin-scoped subject -> ${err(exA)} scope=${JSON.stringify(accessOf(exA).scope)} ${XC}=${accessOf(exA)[XC]}`,
+      String(accessOf(apiAdmin).scope).includes("victual:admin") && exA.status === 200 && String(accessOf(exA).scope).includes("victual:admin") && accessOf(exA)[XC] === sidecar.client_id);
+    record("G8b", "neg", "0055 prerequisite 8: scope mappings belong to the provider (write and bundle mappings absent on a read-only client)",
+      "a client registered with read only gets victual:read and the MCP audience; victual:write and the bundle scope are not granted",
+      `${err(ro)} scope=${JSON.stringify(accessOf(ro).scope)} aud=${JSON.stringify(accessOf(ro).aud)}`,
+      ro.status === 200 && String(accessOf(ro).scope).includes("victual:read") && !String(accessOf(ro).scope).includes("victual:write") && !String(accessOf(ro).scope).includes(S.bundle)
+        && JSON.stringify(accessOf(ro).aud) === MCP_AUD(g6.readonly));
+    // Each mcp-aud mapping emits the audience only when its scope sorts first among the granted bound scopes,
+    // and every earlier case asked for openid, which sorts before the victual scopes. Ask without it.
+    const combos = ["victual:read", "victual:write", S.bundle, "victual:read victual:write", `victual:write ${S.bundle}`, "openid victual:write"];
+    const seen = [];
+    for (const sc of combos) {
+      const t = await codeToken(g6.x1, alice, sc);
+      seen.push({ sc, aud: JSON.stringify(accessOf(t).aud), ok: JSON.stringify(accessOf(t).aud) === MCP_AUD(g6.x1) });
+    }
+    record("G8c", "pos", "0055 prerequisite 8: each mcp-aud mapping emits the audience once when it is the first granted bound scope",
+      "scope sets without openid still give aud = [client_id, MCP audience] with the MCP audience listed once",
+      seen.map((x) => `${x.sc}: ${x.aud}`).join("; "), seen.every((x) => x.ok));
+  }
+} finally {
+  for (const c of Object.values(g6)) await deregisterMcpClient(admin, c).catch(() => {});
+}
 writeFileSync(new URL("./results.json", import.meta.url), JSON.stringify({ at: new Date().toISOString(), authentik: (await admin("GET", "/admin/version/")).version_current, results }, null, 2));
 console.log("| ID | Clause | Expected | Observed | Verdict |\n|---|---|---|---|---|");
 for (const r of results) console.log(`| ${r.id} | ${r.clause} | ${r.expected} | ${r.observed.replaceAll("|", "\\|")} | ${r.verdict} |`);
