@@ -7,7 +7,9 @@
   into the decisions and recorded under Open questions. Acceptance prerequisites 1 to 5
   are unmet as of 2026-10-24. On 2026-10-25 the Authentik compatibility report met the
   Authentik side of prerequisite 4 and recorded evidence against prerequisites 2 and 3.
-  The maintainer answered open question 7 on 2026-10-25 (decision 11).
+  The maintainer answered open question 7 on 2026-10-25 (decision 11), and on 2026-10-26
+  amended decision 7 to match ADR-0055 decision 1: in OAuth mode, password login is
+  limited to bootstrap and break-glass accounts.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -200,13 +202,26 @@ re-entering a local password, because a provisioned user has none it knows. The
 manage-API-keys form asks for no password today (`OpenApiController::CreateNewApiKey`,
 read 2026-10-24), and that stays true.
 
-### 7. Local login stays available
+### 7. Local login: ordinary in Classic mode, recovery-only in OAuth mode
 
-Password login stays on by default so that an install still works when the provider is
-down. An administrator may restrict it to accounts holding `ADMIN` (break-glass mode).
-Break-glass is the strongest mode: password login cannot be turned off entirely
-(open question 4), because a provider outage would then lock everyone out. ADR-0007's
-login throttle applies to password login in every mode.
+In **Classic mode** ([ADR-0055](0055-api-and-mcp-callers-present-oauth-access-tokens-from-a-swappable-authorization-server.md)
+decision 9), password login works as it does today, for every local account.
+
+In **OAuth mode**, password login is limited to local bootstrap and break-glass accounts,
+matching ADR-0055 decision 1 (question 8). Those are the bootstrap administrator
+(decision 5) and accounts holding `ADMIN`, which is the break-glass rule open question 4
+set. Every other user signs in through the provider. A password login by any other
+account is refused with a message that names provider sign-in.
+
+- These accounts work when the provider is down, so password login cannot be turned off
+  entirely (open question 4): a provider outage would otherwise lock everyone out.
+- They use local sessions for recovery. They do not make Victual a token issuer or an
+  upstream identity provider (ADR-0055 decision 1).
+- An install enters OAuth mode only through the operator's explicit transition, after
+  ADR-0055 decision 9's conditions hold (identity linking and preserved effective
+  access), so no ordinary user loses access when password login narrows.
+
+ADR-0007's login throttle applies to password login in both modes.
 
 Sessions have Victual's own lifetime (`SESSION_STAY_LOGGED_IN_DAYS`). Logging out of
 Victual ends the Victual session and sends the browser to the provider's end-session
@@ -238,7 +253,7 @@ and audience from Victual; the credential stays a Secret.
 
 | Event | Behaviour |
 |---|---|
-| Provider unreachable | Provider login fails with a message; password login works per decision 7; existing sessions continue; tokens keep validating until `exp` against the cached JWKS |
+| Provider unreachable | Provider login fails with a message; password login works for bootstrap and break-glass accounts per decision 7 (for every local account in Classic mode); existing sessions continue; tokens keep validating until `exp` against the cached JWKS |
 | Unknown `kid` (key rotation) | One JWKS refetch, at most once a minute (ADR-0055 decision 3); the request fails with `401` if the key is still unknown |
 | Clock skew beyond 60 seconds | `401` |
 | Wrong or empty audience | `401` |
@@ -322,14 +337,16 @@ above. No scope grants it (ADR-0055 decision 5 keeps user administration session
 
 - Household members sign in with their provider identity and keep one password, held by
   the provider.
-- A provider outage blocks provider login but not password login, existing sessions, or
-  tokens until they expire.
+- A provider outage blocks provider login but not recovery password login, existing
+  sessions, or tokens until they expire. In OAuth mode, users without `ADMIN` wait for the
+  provider; in Classic mode every local account can still log in.
 - Victual gains an OIDC relying-party flow, a linking page, a group mapping page, a
   back-channel logout endpoint, an authentication audit table with its permission leaf
   `AUTH_AUDIT_VIEW`, and a retention routine for it. `ReverseProxyAuthMiddleware` is
   unchanged.
 - An install cannot run without a local administrator password, and cannot turn password
-  login off entirely; break-glass mode is the strongest restriction.
+  login off entirely. In OAuth mode it is always limited to bootstrap and break-glass
+  accounts; in Classic mode it stays open to every local account.
 - A group change at the provider reaches active API callers within five minutes and
   browsers at their next login.
 - An Authentik walkthrough (provider, application, scope mappings, group claims, redirect
@@ -367,7 +384,8 @@ above. No scope grants it (ADR-0055 decision 5 keeps user administration session
    claim, absent from the next token after removal, and present again after re-adding
    (case P9). Victual's recompute is not built, so the Victual side is untested.
 5. **Break-glass.** With Authentik stopped, an administrator logs in by password and the
-   other users' provider logins fail with a message. Not tested as of 2026-10-25.
+   other users' provider logins fail with a message. In OAuth mode, a password login by an
+   account without `ADMIN` is refused while the provider is up and while it is down. Not tested as of 2026-10-25.
 6. **Open questions 1 and 3 answered.** Met 2026-10-24: the maintainer answered all six.
 
 ## Open questions and maintainer responses
@@ -425,3 +443,13 @@ response. The answers do not accept this record.
    > Record `token_exchange_used` only when authenticated evidence establishes an
    > exchange. A signed alternative claim can supply that evidence; an unverified sidecar
    > header cannot. (Decision 11.)
+
+### Local login in OAuth mode, 2026-10-26
+
+8. **Does decision 7's default (password login on for every account) still hold in OAuth
+   mode** now that ADR-0055 decision 1 limits local credentials to bootstrap and
+   break-glass recovery?
+
+   > **Response:** datagen24, 2026-10-26: amend decision 7 so that in OAuth mode local
+   > password login is limited to bootstrap and break-glass accounts, matching ADR-0055
+   > decision 1; Classic mode keeps ordinary local login. (Decision 7.)
