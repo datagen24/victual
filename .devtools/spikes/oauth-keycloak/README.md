@@ -4,8 +4,16 @@ Throwaway. This spike checks what Keycloak does against the clauses of the Propo
 [ADR-0055](../../../docs/adr/0055-api-and-mcp-callers-present-oauth-access-tokens-from-a-swappable-authorization-server.md)
 and [ADR-0056](../../../docs/adr/0056-an-external-identity-provider-replaces-the-built-in-authorization-server.md)
 that depend on the authorization server. Keycloak is the candidate named in ADR-0055
-decision 2, which sets two gates: token exchange that meets decision 7 without a Preview
-feature, and fit with Victual-owned login. Each case has a positive or negative expectation
+decision 2.
+
+When the spike ran, decision 2 set two gates: token exchange that meets
+decision 7 without a Preview feature, and fit with Victual-owned login. The maintainer's
+2026-10-25 clarification of ADR-0055 (question 10, PR 1124) removed the second gate: the
+identity provider owns ordinary identities, and Victual links `(issuer, subject)` to its
+application records. Cases L1 to L4 stay as evidence of what brokering can do; they no longer
+decide the candidate.
+
+Each case has a positive or negative expectation
 taken from a named clause, and the probe records what happened. It writes no Victual code and
 accepts no record. A FAIL is a result: no expectation was weakened to make a case pass.
 
@@ -58,8 +66,8 @@ feature, unless the row says "needs Preview".
 | Revocation | met-with-config: revoking the refresh token, deleting the session and deleting one client's consent each stop refresh and make the exchanged token inactive at introspection. A stateless check accepts the exchanged token until it expires (five minutes). Deleting one client's consent leaves another client's grant intact | R3 to R6, N12 |
 | Discovery | met: OIDC and RFC 8414 discovery both served from the issuer path, issuer equals `iss`. `resource_indicators_supported` absent | P1 |
 | Registration | met-with-config: anonymous registration refused by default (Trusted Hosts policy with no host). With a trusted host, anonymous callers can register confidential clients and wildcard redirects, so a client policy is needed to limit that | N15, D1, D2 |
-| Victual-owned login (decision 2, gate 2) | met-with-config: identity brokering to an upstream OIDC provider creates or links a Keycloak user with no password credential, and the browser flow can be reduced to the redirector. The User Storage SPI was read, not run (untested) | L1, L2, L4 |
-| Victual subject in the token | met-with-config: Keycloak's `sub` is its own UUID. Victual's subject can be copied into a claim, but only from a client scope requested at the exchange; a mapper on the client itself is not applied to the exchanged token | L3 |
+| Victual-owned login (no longer a gate since the 2026-10-25 clarification) | evidence only. met-with-config: identity brokering to an upstream OIDC provider creates or links a Keycloak user with no password credential, and the browser flow can be reduced to the redirector. The User Storage SPI was read, not run (untested) | L1, L2, L4 |
+| Victual subject in the token (not required since the 2026-10-25 clarification: Victual maps Keycloak's stable `sub`, P3) | evidence only. met-with-config: Keycloak's `sub` is its own UUID. Victual's subject can be copied into a claim, but only from a client scope requested at the exchange; a mapper on the client itself is not applied to the exchanged token | L3 |
 | Licence, image, runtime | Apache-2.0; image 478 MB (arm64); runs as uid 1000; read-only root filesystem works after a build step with a tmpfs for `/tmp` and the data directory; 520 to 620 MiB for the server after the probe, 50 to 77 MiB for PostgreSQL | I1, `./run.sh readonly`, `./run.sh stats` |
 
 Core run: **49 of 57 cases pass, 7 FAIL, 1 n/a** (P8 needs the Preview run). The seven FAIL
