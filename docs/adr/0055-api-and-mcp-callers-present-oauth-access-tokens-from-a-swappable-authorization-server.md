@@ -10,7 +10,8 @@
   and is not met. The maintainer answered the candidate-table question and open questions
   7 to 9 on 2026-10-25: Hydra is no longer the provisional target, Keycloak is the next
   candidate to evaluate, and Authentik stays the required external compatibility target
-  (decisions 2, 3 and 7).
+  (decisions 2, 3 and 7). The 2026-10-25 clarification assigns ordinary identity
+  ownership to the provider and preserves Classic mode during migration (question 10).
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -117,19 +118,25 @@ requirements that shape this record:
 
 ### 1. Victual never issues tokens
 
-One authorization server per install issues every access token. It is either the built-in
-authorization server or an external one; ADR-0056 states the same sentence from the
-other side. Victual has three roles and no fourth:
+In OAuth mode, one authorization server per install issues every access token. It is
+either the built-in server or an external one. The identity provider owns ordinary user
+identities, credentials, authentication and identity lifecycle in either deployment.
+Victual is an OIDC relying party for ordinary browser login and a resource server for
+`/api`. The MCP sidecar is a second resource server.
 
-1. A resource server for `/api`.
-2. The login and consent provider for the built-in authorization server, because Victual
-   owns the local users and their passwords. With an external authorization server, that
-   server runs its own login and consent.
-3. An OIDC relying party for browser login when an external authorization server is
-   configured (ADR-0056). With the built-in one, browser login stays the existing local
-   session and does not pass through it.
+Victual keeps application user records, the `(issuer, subject)` mapping, roles, groups,
+permissions and audit references. These records represent access within Victual; they do
+not require Victual to own the external identity or its password. Victual remains the
+authority for application authorization.
 
-The MCP sidecar is a second resource server.
+Local bootstrap and break-glass accounts remain available independently of the provider,
+including during a provider outage. They use local sessions for recovery; they do not
+make Victual a token issuer or an upstream identity provider. Their recovery behavior
+must be tested with the provider unavailable (ADR-0056).
+
+Classic mode retains the existing local-user, password, session and static-key behavior
+while this work is incomplete (decision 9). The narrower purpose of local credentials
+in OAuth mode does not remove ordinary local login from Classic mode.
 
 ### 2. The built-in authorization server is not chosen; Keycloak is the next candidate
 
@@ -137,13 +144,15 @@ No built-in authorization server is selected. Ory Hydra was the provisional targ
 removed: v26.2.0 has no RFC 8693 token exchange (prerequisite 4), which decision 7
 requires. Keycloak is the next candidate to evaluate, not a selected replacement. The
 maintainer's reading of its documentation (2026-10-25) is that standard token exchange is
-supported and its delegation feature is a Preview. Two gates decide it:
+supported and its delegation feature is a Preview. Its exchange must meet this gate:
 
 - Token exchange that meets decision 7, including the scope ceiling and the exchanger
   identity, without relying on a Preview feature for anything decision 7 requires.
-- Fit with Victual-owned login. Keycloak carries its own user model, so it must be shown
-  that Victual's local users and passwords can stay in Victual, as they would have with
-  Hydra's delegated login and consent.
+The provider owning ordinary identities is expected. Keycloak need not delegate login
+back to Victual. Neither a Victual upstream OIDC provider nor a user-storage integration
+that keeps ordinary passwords in Victual is an acceptance gate. Migration must instead
+link provider identities to the correct application records and preserve their access,
+while retaining local bootstrap and break-glass recovery.
 
 Authentik stays the required external compatibility target, whatever is chosen as the
 built-in server (ADR-0056).
@@ -198,10 +207,11 @@ pure cache under ADR-0007.
 A new table maps `(issuer, subject)` to a `users` row. It is the only way a token becomes
 a user, and ADR-0056 reuses it unchanged. Email is never part of the key.
 
-- **Built-in authorization server:** Victual's login-accept step sets the subject. The
-  subject is an opaque random value generated once per user and stored in the mapping, not
-  the user id, so a token reveals nothing about row ids and a restored database keeps the
-  same subjects.
+- **Ordinary users, with either server:** the configured provider supplies its stable
+  subject. Victual explicitly links `(issuer, subject)` to the application user record,
+  following ADR-0056's linking rules. Victual does not generate the provider's subject
+  or require its existing row id as that subject. Migration preserves the application
+  record's permissions and audit references without matching accounts by email alone.
 - **Client credentials:** the token's subject is the client. A client may use this grant
   only after a Victual user registers it and becomes its owner; the mapping row binds the
   client to that owner. The client then acts as its owner, narrowed by scope, in the same
@@ -324,7 +334,20 @@ the client chooses, which is an outbound request to a caller-supplied URL, and A
 security posture keeps that surface out of this project. The choice is revisited if the
 clients Victual supports stop offering dynamic registration.
 
-### 9. User-issued static keys retire, but only where an authorization server is configured
+### 9. Classic mode remains until the OAuth migration is complete
+
+**Classic mode** is the existing local authentication mode: local users and passwords,
+browser sessions, user-issued API keys and the sidecar's static-key authentication.
+It remains supported while the OAuth implementation and migration work are incomplete.
+An upgrade, ADR acceptance or configuring an authorization server does not remove these
+paths or automatically move an installation to OAuth-only operation.
+
+OAuth can be introduced alongside Classic authentication for migration. Before retiring
+ordinary Classic authentication on an installation, the work must provide and verify
+identity linking, preserved effective access, client migration and provider-independent
+bootstrap and break-glass recovery. The operator explicitly selects the transition after
+these conditions are met. This record sets no automatic removal date for Classic mode.
+Local recovery accounts remain after that transition.
 
 Existing keys are not converted to tokens. A bearer secret cannot become a consented grant
 without its owner going through consent, and an automatic conversion would grant
@@ -343,7 +366,8 @@ user-issued keys indefinitely, exactly as today. On an install with one configur
    callers must use a token: authorization code for interactive clients, the device flow
    for command-line use, client credentials for unattended automation.
 
-The operator moves an install from one phase to the next. Phase 3 never applies to an
+The operator moves an install from one phase to the next only after the migration
+conditions above are met. Configuring a provider alone does not authorize key retirement. Phase 3 never applies to an
 install with no authorization server. Calendar-sharing, label worker, verifier and renderer keys are
 out of scope and unchanged in every phase.
 
@@ -375,21 +399,21 @@ keychain, and keep sending their per-device Access service token as before.
 - **Hydra's own registration endpoint.** Unauthenticated, and its response failed the MCP
   SDK's schema in the spike.
 - **Ory Hydra as the built-in server.** Delegates login and consent with no user store of
-  its own, which suited Victual-owned login. Removed as the provisional target on
+  its own, which suited the earlier assumption that Victual owned ordinary login. Removed as the provisional target on
   2026-10-25 because v26.2.0 has no RFC 8693 token exchange (prerequisite 4).
 - **Dex, Zitadel.** Dex is a federation proxy and does not fit local users with device and
-  client-credential grants. Zitadel carries its own user model, which competes with
-  Victual's. Both are from the issue 770 table and general knowledge; neither was tested.
+  client-credential grants. Zitadel carries its own user model; that is not a conflict with Victual's
+  application authorization records. Both are from the issue 770 table and general knowledge; neither was tested.
   Keycloak, from the same table, is now the next candidate (decision 2).
 
 ## Consequences
 
-- A household install that wants OAuth runs one more workload (Hydra) and one more
+- A household install that wants OAuth runs one more workload (the chosen server) and one more
   database. One that does not keeps static keys indefinitely and runs nothing new, since
   the chart component is off by default.
 - On an OAuth install, automation that can only send a fixed header (a shell script with
   `curl`) stops working at phase 3 and must move to client credentials.
-- Victual gains a login-and-consent surface, a registration endpoint, two tables (the
+- Victual gains an OIDC login integration, a registration endpoint, two tables (the
   identity mapping and client grants), rows in ADR-0056's audit table, and a JWT
   validator. The sidecar gains the same
   validator, RFC 9728 metadata and a token-exchange client. No tool changes.
@@ -475,6 +499,13 @@ keychain, and keep sending their per-device Access service token as before.
    endpoint.
 6. **Open questions 1 and 4 answered.** Met 2026-10-24: the maintainer answered all six.
 
+7. **Classic transition and local recovery.** Demonstrate that existing local logins,
+   sessions, API keys and static-key MCP access still work during migration. Enabling
+   OAuth must not automatically disable them. Demonstrate explicit identity linking with
+   unchanged effective access, migrated clients, and local bootstrap and break-glass
+   access with the provider unavailable. These checks remain unmet; selecting a provider
+   does not satisfy them.
+
 ## Open questions and maintainer responses
 
 All six were answered on 2026-10-24 and are folded into the decisions named in each
@@ -556,4 +587,16 @@ response. The answers do not accept this record.
 implementation target. Evaluate Keycloak next while retaining Authentik as the required
 external compatibility target. Keycloak documents supported standard token exchange, but
 its delegation feature is Preview, so it is a candidate rather than a selected
-replacement. Its fit with Victual-owned login also remains a gate. (Decision 2.)
+replacement. The original response also treated Victual-owned login as a gate; the
+clarification below replaces that interpretation. (Decision 2.)
+
+### Identity ownership and Classic mode clarification, 2026-10-25
+
+10. **Does keeping local users require Victual to own ordinary identities?**
+
+    > **Response:** datagen24, 2026-10-25: local users in the OAuth design are for
+    > bootstrap and break-glass access. The identity provider owns ordinary identities;
+    > Victual keeps application authorization records. Remove the Victual-owned-login
+    > interpretation from the candidate gate. Classic mode remains until this work is
+    > complete. Decisions 1, 2, 4 and 9 record this clarification; prerequisite 7 requires
+    > evidence before the transition retires ordinary Classic authentication.
