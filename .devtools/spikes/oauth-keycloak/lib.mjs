@@ -82,8 +82,10 @@ function jarFetch() {
 }
 const unescapeHtml = (s) => s.replaceAll("&amp;", "&").replaceAll("&#61;", "=").replaceAll("&quot;", '"');
 
-export async function authorize(client, { scope = "openid", params = {}, hint, verifier = b64(randomBytes(32)) } = {}) {
-  const f = jarFetch();
+// `f` reuses a cookie jar from an earlier login (login() returns it as `_f`): the second client then
+// signs in through the first one's SSO session instead of getting a session of its own.
+export async function authorize(client, { scope = "openid", params = {}, hint, verifier = b64(randomBytes(32)), f: shared } = {}) {
+  const f = shared ?? jarFetch();
   const state = b64(randomBytes(8)), nonce = b64(randomBytes(8));
   const q = new URLSearchParams({
     client_id: client.clientId, response_type: "code", redirect_uri: client.redirect ?? REDIRECT, scope, state, nonce,
@@ -150,7 +152,7 @@ export async function login(client, user, opts = {}) {
   const body = { grant_type: "authorization_code", client_id: client.clientId, code: fin.code, redirect_uri: a.redirect, code_verifier: a.verifier };
   if (client.secret) body.client_secret = client.secret;
   const t = await token(body);
-  return { ...t, _code: fin.code, _iss: fin.iss, _verifier: a.verifier, _redirect: a.redirect };
+  return { ...t, _code: fin.code, _iss: fin.iss, _verifier: a.verifier, _redirect: a.redirect, _f: a.f };
 }
 
 // --- resource-server check (ADR-0055 decision 3): RS256 against the JWKS from the discovery

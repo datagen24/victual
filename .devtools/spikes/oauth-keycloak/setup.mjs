@@ -3,6 +3,7 @@
 // Every secret is a spike-only value for an instance on 127.0.0.1 with no real data.
 // Nothing here enables a Preview feature: the preview-only cases are in probe.mjs --preview.
 import { writeFileSync } from "node:fs";
+import { registerMcpClient } from "./adapter.mjs";
 import { admin, ISSUER, REALM, REDIRECT } from "./lib.mjs";
 
 const MCP_AUD = "http://localhost:3000/mcp"; // the sidecar's canonical resource URI
@@ -95,6 +96,35 @@ clients.short = await client("short", { publicClient: true, extra: flow, attribu
 clients.consent = await client("consent", { publicClient: true, extra: { ...flow, consentRequired: true }, attributes: pkce,
   defaults: ["victual-mcp-audience", "victual-groups"], optional: bundles }); // the user approves scopes on a consent screen
 clients.plain = await client("plain", { publicClient: true, extra: flow, attributes: pkce, raw: true }); // realm default scopes, as Keycloak ships them
+
+// Two MCP clients registered the way Victual's adapter would (adapter.mjs): audience scope as a default
+// scope, a per-grant scope, Consent required. The K1 cases use them.
+clients.k1a = await registerMcpClient("victual-spike-mcp-k1a", { sidecarId: clients.sidecar.id });
+clients.k1b = await registerMcpClient("victual-spike-mcp-k1b", { sidecarId: clients.sidecar.id });
+
+// --- client policies (supported configuration, versioned here; ADR-0055 prerequisite 8)
+//  victual-downscope-all: an exchange may not add a scope the subject token lacked (decision 7). It also
+//    stops the sidecar from asking for another grant's per-grant scope (K1).
+//  victual-dcr-anonymous: anonymous (dynamic) registration yields only public PKCE clients with https
+//    or loopback redirects and Consent required; no wildcard, no confidential client (decision 8).
+const POLICY_PROFILES = [
+  { name: "victual-downscope", description: "exchange never widens scope", executors: [{ executor: "downscope-assertion-grant-enforcer", configuration: {} }] },
+  { name: "victual-dcr", description: "anonymous registration limits", executors: [
+    // https, or http only on a loopback address; no wildcard.
+    { executor: "secure-client-uris-pattern", configuration: { "client-uri-fields": ["redirectUris"],
+      "allowed-patterns": ["^https://[a-zA-Z0-9.-]+(:[0-9]+)?/[^*]*$", "^http://(127\\.0\\.0\\.1|\\[::1\\])(:[0-9]+)?/[^*]*$"] } },
+    { executor: "pkce-enforcer", configuration: { "auto-configure": true } },
+    { executor: "secure-client-authenticator", configuration: { "allowed-client-authenticators": ["client-jwt"], "default-client-authenticator": "client-jwt" } },
+    { executor: "consent-required", configuration: { "auto-configure": true } },
+  ] },
+];
+const POLICIES = [
+  { name: "victual-downscope-all", description: "exchange never widens scope", enabled: true, conditions: [{ condition: "any-client", configuration: {} }], profiles: ["victual-downscope"] },
+  { name: "victual-dcr-anonymous", description: "anonymous registration limits", enabled: true,
+    conditions: [{ condition: "client-updater-context", configuration: { "update-client-source": ["ByAnonymous"] } }], profiles: ["victual-dcr"] },
+];
+await admin("PUT", "/client-policies/profiles", { profiles: POLICY_PROFILES });
+await admin("PUT", "/client-policies/policies", { policies: POLICIES });
 
 // --- users and a group
 const group = await admin("POST", "/groups", { name: "victual-spike-household" }, { raw: true }).then(async () =>

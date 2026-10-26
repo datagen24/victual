@@ -11,6 +11,7 @@
 // login form (lib.mjs). No direct (password) grant is used for tokens; case N19 checks the
 // password grant is refused.
 import { execFileSync } from "node:child_process";
+import { deregisterMcpClient, GRANT_CLAIM, registerMcpClient } from "./adapter.mjs";
 import { randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import {
@@ -43,6 +44,9 @@ const forge = (tok, patch) => {
   const [h, , s] = tok.split(".");
   return `${h}.${Buffer.from(JSON.stringify({ ...claims(tok), ...patch })).toString("base64url")}.${s}`;
 };
+// The client policies come from setup.mjs. setPolicies(names) leaves only those enabled; null restores all.
+const ALL_POLICIES = (await admin("GET", "/client-policies/policies")).policies ?? [];
+const setPolicies = (names) => admin("PUT", "/client-policies/policies", { policies: names === null ? ALL_POLICIES : ALL_POLICIES.filter((p) => names.includes(p.name)) });
 const serverinfo = await admin("GET", "/admin/serverinfo");
 const profile = serverinfo.profileInfo;
 const enabledNonSupported = [...profile.previewFeatures, ...profile.experimentalFeatures].filter((f) => !profile.disabledFeatures.includes(f));
@@ -196,6 +200,8 @@ async function core() {
     await exchange(sidecar, at.access_token, { audience: [api.clientId, S.mcpAud], scope: "openid victual:read" }), "",
     "; Keycloak allows several audiences when the requester's scopes produce them, so this refusal comes from availability, not from a one-audience rule");
   // N11: scope ceiling, default configuration
+  // setup.mjs installs the client policies; N11 shows Keycloak's default by switching the downscope policy off.
+  await setPolicies(["victual-dcr-anonymous"]);
   const ro = (await userToken("openid profile victual:read")).access_token;
   const widenDefault = await exchange(sidecar, ro, { audience: api.clientId, scope: "openid victual:read victual:write" });
   const gotDefault = widenDefault.access_token ? claims(widenDefault.access_token).scope : "";
@@ -203,9 +209,9 @@ async function core() {
     "victual:write refused or dropped (subject token: victual:read only)", `default configuration: ${err(widenDefault)}; scope=${gotDefault}`,
     !String(gotDefault).includes("victual:write"), "G-scope-ceiling");
   {
-    // Supported configuration: a client policy with the downscope-assertion-grant-enforcer executor.
-    await admin("PUT", "/client-policies/profiles", { profiles: [{ name: "victual-downscope", description: "spike", executors: [{ executor: "downscope-assertion-grant-enforcer", configuration: {} }] }] });
-    await admin("PUT", "/client-policies/policies", { policies: [{ name: "victual-downscope-all", description: "spike", enabled: true, conditions: [{ condition: "any-client", configuration: {} }], profiles: ["victual-downscope"] }] });
+    // Supported configuration: the victual-downscope-all client policy that setup.mjs installs
+    // (downscope-assertion-grant-enforcer executor, any client), switched back on.
+    await setPolicies(null);
     const widen = await exchange(sidecar, ro, { audience: api.clientId, scope: "openid victual:read victual:write" });
     const same = await exchange(sidecar, ro, { audience: api.clientId, scope: "openid victual:read" });
     const narrower = await exchange(sidecar, ro, { audience: api.clientId, scope: "openid" });
@@ -273,8 +279,11 @@ async function gatesAfterCore({ at, ex, xc, ac }) {
   await exchangerGate({ at });
   await audienceGate();
   await revocationGate({ at, ex, xc, ac });
+  await k1Gate();
+  await k2Gate();
   await registrationGate();
   await loginGate();
+  await inventoryGate();
   await imageFacts();
 }
 
@@ -364,12 +373,13 @@ async function revocationGate({ ex, xc, ac, at }) {
   const fixture = async (client) => {
     const t = await userToken(READ, alice, client);
     const x = await exchange(sidecar, t.access_token, { audience: api.clientId, scope: "openid victual:read" });
+    if (!(await introspect(api, x.access_token))) throw new Error("exchanged token not active at /api introspection before revocation");
     return { t, x, sid: claims(t.access_token).sid, client };
   };
   const observe = async (f) => ({
     refresh: errd(await refresh(f.client, f.t.refresh_token)),
     introUser: await introspect(sidecar, f.t.access_token),
-    introExchanged: await introspect(sidecar, f.x.access_token),
+    introExchanged: await introspect(api, f.x.access_token), // by the audience client: the exchanger cannot introspect its own exchanged token (K1i)
     rsExchanged: await rsCheck(f.x.access_token, RS_API),
     reexchange: err(await exchange(sidecar, f.t.access_token, { audience: api.clientId, scope: "openid victual:read" })),
   });
@@ -407,6 +417,342 @@ async function revocationGate({ ex, xc, ac, at }) {
   }
 }
 
+// ---- K1: the exchanged token identifies the originating grant (ADR-0055 prerequisite 10, question 13)
+// The MCP clients k1a and k1b come from adapter.mjs: each has a per-grant client scope whose Hardcoded
+// claim mapper writes `victual_client`, a default scope of that client and an optional scope of the sidecar.
+async function k1Gate() {
+  const { k1a, k1b } = S.clients;
+  const SC = "openid victual:read";
+  const grantEx = (subject, by) => exchange(sidecar, subject, { audience: api.clientId, scope: `${SC} ${by.grantScope}` });
+  const pickNotes = (tok) => Object.fromEntries(Object.entries(claims(tok)).filter(([k]) => k.startsWith("note_")).map(([k, v]) => [k, String(v).slice(0, 24)]));
+  const delScope = async (name) => { for (const x of (await admin("GET", "/client-scopes")).filter((y) => y.name === name)) await admin("DELETE", `/client-scopes/${x.id}`, undefined, { raw: true }); };
+
+  // K1a: candidate 1, User Session Note mapper. Which notes does a browser login store, and does one name the client?
+  {
+    const names = ["clientId", "client_id", "client", "AUTH_METHOD", "AUTH_TIME", "KC_DEVICE_NOTE", "identity_provider", "iss", "scope", "clientHost", "clientAddress"];
+    await delScope("victual-k1-notes");
+    await admin("POST", "/client-scopes", { name: "victual-k1-notes", protocol: "openid-connect", attributes: { "include.in.token.scope": "true", "display.on.consent.screen": "false" },
+      protocolMappers: names.map((n) => ({ name: `note-${n}`, protocol: "openid-connect", protocolMapper: "oidc-usersessionmodel-note-mapper",
+        config: { "user.session.note": n, "claim.name": `note_${n}`, "jsonType.label": "String", "access.token.claim": "true", "id.token.claim": "false", "introspection.token.claim": "true" } })) });
+    const id = (await admin("GET", "/client-scopes")).find((x) => x.name === "victual-k1-notes").id;
+    await admin("PUT", `/clients/${k1a.id}/default-client-scopes/${id}`);
+    await admin("PUT", `/clients/${sidecar.id}/optional-client-scopes/${id}`);
+    const t = await userToken(SC, alice, k1a);
+    const x = await exchange(sidecar, t.access_token, { audience: api.clientId, scope: `${SC} victual-k1-notes` });
+    const onUser = pickNotes(t.access_token), onX = x.access_token ? pickNotes(x.access_token) : {};
+    await delScope("victual-k1-notes");
+    record("K1a", "info", "0055 d6, q13, prerequisite 10: a User Session Note mapper carries the originating MCP client into the exchanged token",
+      "a session note claim in the exchanged token names the MCP client",
+      `notes tried: ${names.join(", ")}. Notes that exist on a browser login: ${Object.keys(onUser).map((k) => k.slice(5)).join(", ")} (values: ${JSON.stringify(onUser)}); same claims on the exchanged token: ${Object.keys(onX).length === Object.keys(onUser).length}; the documented notes are identity_provider, identity_provider_identity (brokered logins), IMPERSONATOR_* and the service-account details; none holds the requesting client`,
+      JSON.stringify(onX).includes(k1a.clientId), "G-grant-identity");
+  }
+
+  // K1b: candidate 2, a mapper on the MCP client itself (dedicated scope), and one on the sidecar
+  {
+    const add = (c, name, claim, value) => admin("POST", `/clients/${c.id}/protocol-mappers/models`, { name, protocol: "openid-connect", protocolMapper: "oidc-hardcoded-claim-mapper",
+      config: { "claim.name": claim, "claim.value": value, "jsonType.label": "String", "access.token.claim": "true", "introspection.token.claim": "true" } });
+    await add(k1a, "k1-client-mapper", "k1_on_mcp_client", "mcp"); await add(sidecar, "k1-client-mapper", "k1_on_sidecar", "sidecar");
+    const t = await userToken(SC, alice, k1a);
+    const x = await exchange(sidecar, t.access_token, { audience: api.clientId, scope: SC });
+    const u = claims(t.access_token), c = claims(x.access_token);
+    for (const cl of [k1a, sidecar]) for (const m of await admin("GET", `/clients/${cl.id}/protocol-mappers/models`)) if (m.name === "k1-client-mapper") await admin("DELETE", `/clients/${cl.id}/protocol-mappers/models/${m.id}`);
+    record("K1b", "info", "0055 d6, q13: a mapper on the MCP client (or on the sidecar) reaches the exchanged token",
+      "the exchanged token carries the claim of the MCP client's mapper",
+      `user token: k1_on_mcp_client=${u.k1_on_mcp_client}; exchanged token: k1_on_mcp_client=${c.k1_on_mcp_client}, k1_on_sidecar=${c.k1_on_sidecar}. Mappers in a client's own (dedicated) scope are not applied at the exchange; only client scopes requested at the exchange are (as in L3)`,
+      c.k1_on_mcp_client === "mcp", "G-grant-identity");
+  }
+
+  // K1c: candidate 3, a per-grant client scope with a Hardcoded claim mapper, requested by the sidecar at the exchange
+  const ta = await userToken(SC, alice, k1a), tb = await userToken(SC, alice, k1b);
+  const xa = await grantEx(ta.access_token, k1a), xb = await grantEx(tb.access_token, k1b);
+  const ca = claims(xa.access_token), cb = claims(xb.access_token);
+  const bare = await exchange(sidecar, ta.access_token, { audience: api.clientId, scope: SC });
+  record("K1c", "pos", "0055 d6, q13, prerequisite 10: the exchanged token carries a server-signed claim naming the originating MCP client",
+    "for each of two clients: victual_client equals the client the user authorized; the per-grant scope is in `scope`; sid and sub carried over; azp is still the sidecar",
+    `A: ${err(xa)} ${GRANT_CLAIM}=${ca.victual_client} sid=${ca.sid === claims(ta.access_token).sid} azp=${ca.azp} scope has ${k1a.grantScope}=${String(ca.scope).includes(k1a.grantScope)}; B: ${GRANT_CLAIM}=${cb.victual_client} azp=${cb.azp}; sidecar asking without the grant scope: ${GRANT_CLAIM}=${bare.access_token ? claims(bare.access_token).victual_client : err(bare)} (Victual's rule: no claim, no access)`,
+    ca.victual_client === k1a.clientId && cb.victual_client === k1b.clientId && ca.azp === sidecar.clientId && ca.sid === claims(ta.access_token).sid && ca.sub === claims(ta.access_token).sub
+    && String(ca.scope).includes(k1a.grantScope) && !String(ca.scope).includes(k1b.grantScope) && bare.access_token && !claims(bare.access_token).victual_client, "G-grant-identity: client scope + Hardcoded claim (supported)");
+  record("K1d", "neg", "0055 d6, prerequisite 10: the claim is server-signed; editing it breaks the signature",
+    "a token with victual_client changed to the other client is refused", await rsCheck(forge(xa.access_token, { victual_client: k1b.clientId }), RS_API),
+    (await rsCheck(forge(xa.access_token, { victual_client: k1b.clientId }), RS_API)) === "bad signature", "G-grant-identity");
+  {
+    // K1e: a caller cannot choose the identity
+    const other = await exchange(sidecar, ta.access_token, { audience: api.clientId, scope: `${SC} ${k1b.grantScope}` });
+    const both = await exchange(sidecar, ta.access_token, { audience: api.clientId, scope: `${SC} ${k1a.grantScope}`, [GRANT_CLAIM]: k1b.clientId, azp: k1b.clientId, client_id_hint: k1b.clientId });
+    const viaUser = await login(k1a, cred(alice), { scope: `${SC} ${k1b.grantScope}` });
+    const viaParam = await login(k1a, cred(alice), { scope: SC, params: { [GRANT_CLAIM]: k1b.clientId, claims: JSON.stringify({ access_token: { [GRANT_CLAIM]: { value: k1b.clientId } } }) } });
+    const vk = viaParam.access_token ? claims(viaParam.access_token) : {};
+    record("K1e", "neg", "0055 d6, q13, prerequisite 10: a caller-supplied identity is never authoritative",
+      "A's subject token with B's grant scope is refused; extra form fields change nothing; A cannot ask for B's scope at /authorize; a `claims` request parameter does not set the claim",
+      `B's scope with A's token -> ${err(other)}; extra ${GRANT_CLAIM} and azp fields -> ${err(both)}, ${GRANT_CLAIM}=${both.access_token ? claims(both.access_token).victual_client : "-"}; A asks B's scope at authorize -> ${err(viaUser)}; ${GRANT_CLAIM} and claims parameters at authorize -> ${err(viaParam)}, ${GRANT_CLAIM}=${vk.victual_client}`,
+      other.status >= 400 && both.access_token && claims(both.access_token).victual_client === k1a.clientId && viaUser.status >= 400 && vk.victual_client === k1a.clientId, "G-grant-identity");
+  }
+  {
+    // K1f: the same request without the downscope client policy
+    await setPolicies(["victual-dcr-anonymous"]);
+    const forged = await exchange(sidecar, ta.access_token, { audience: api.clientId, scope: `${SC} ${k1b.grantScope}` });
+    await setPolicies(null);
+    record("K1f", "neg", "0055 d6, q13, prerequisite 10: without the victual-downscope-all client policy the sidecar cannot relabel a grant",
+      "A's subject token with B's grant scope refused",
+      `policy switched off: ${err(forged)} ${GRANT_CLAIM}=${forged.access_token ? claims(forged.access_token).victual_client : "-"} (azp=${forged.access_token ? claims(forged.access_token).azp : "-"}); the policy is therefore required deployment configuration for this claim`,
+      forged.status >= 400, "G-grant-identity: needs the client policy");
+  }
+
+  // K1g: candidate 4, sid plus a server-side mapping (admin API: the clients of a session)
+  {
+    const sessionClients = async (sid) => Object.values((await admin("GET", `/users/${alice.id}/sessions`)).find((s) => s.id === sid)?.clients ?? {});
+    const sep = [claims(ta.access_token).sid, claims(tb.access_token).sid];
+    const sepClients = [await sessionClients(sep[0]), await sessionClients(sep[1])];
+    const sa = await userToken(SC, alice, k1a);
+    const sb = await userToken(SC, alice, k1b, { f: sa._f });
+    const shared = claims(sa.access_token).sid, sharedB = claims(sb.access_token).sid;
+    const sharedClients = await sessionClients(shared);
+    await grantEx(sa.access_token, k1a);
+    const afterEx = await sessionClients(shared);
+    record("K1g1", "pos", "0055 d6, q13: sid plus the admin API's session client list identifies the originating client (separate sessions)",
+      "one MCP client in each session; the exchange adds none (the exchange creates no session)",
+      `session A clients=${JSON.stringify(sepClients[0])}; session B clients=${JSON.stringify(sepClients[1])}; sids differ=${sep[0] !== sep[1]}; the sidecar is not added to the session by an exchange`,
+      sep[0] !== sep[1] && sepClients[0].length === 1 && sepClients[0][0] === k1a.clientId && sepClients[1].length === 1 && sepClients[1][0] === k1b.clientId, "G-grant-identity: sid + admin API (supported)");
+    record("K1g2", "neg", "0055 d6, q13: sid identifies the originating client when two clients share one SSO session",
+      "the session names one MCP client",
+      `same browser, two clients: sid A == sid B: ${shared === sharedB}; session clients=${JSON.stringify(sharedClients)}; after an exchange=${JSON.stringify(afterEx)}. sid alone cannot say which grant an exchanged token came from`,
+      shared !== sharedB || sharedClients.length === 1, "G-grant-identity");
+  }
+
+  // K1h: lightweight access tokens (use-lightweight-access-token executor)
+  {
+    const audScope = (await admin("GET", "/client-scopes")).find((x) => x.name === "victual-api-audience");
+    const m = (await admin("GET", `/client-scopes/${audScope.id}/protocol-mappers/models`))[0];
+    const profs = (await admin("GET", "/client-policies/profiles")).profiles;
+    await admin("PUT", "/client-policies/profiles", { profiles: [...profs, { name: "victual-k1-lightweight", description: "probe only", executors: [{ executor: "use-lightweight-access-token", configuration: { "auto-configure": true } }] }] });
+    await admin("PUT", "/client-policies/policies", { policies: [...ALL_POLICIES, { name: "victual-k1-lightweight", description: "probe only", enabled: true, conditions: [{ condition: "client-access-type", configuration: { type: ["confidential"] } }], profiles: ["victual-k1-lightweight"] }] });
+    let off, on, introLight;
+    try {
+      off = await grantEx(ta.access_token, k1a);
+      await admin("PUT", `/client-scopes/${audScope.id}/protocol-mappers/models/${m.id}`, { ...m, config: { ...m.config, "lightweight.claim": "true" } });
+      on = await grantEx(ta.access_token, k1a);
+      introLight = on.access_token ? await token({ token: on.access_token, client_id: api.clientId, client_secret: api.secret }, {}, `${OIDC}/token/introspect`) : {};
+    } finally {
+      await admin("PUT", `/client-scopes/${audScope.id}/protocol-mappers/models/${m.id}`, m);
+      await admin("PUT", "/client-policies/policies", { policies: ALL_POLICIES });
+      await admin("PUT", "/client-policies/profiles", { profiles: profs });
+    }
+    const cl = on?.access_token ? claims(on.access_token) : {};
+    record("K1h", "pos", "0055 d6, q13: the grant claim survives a lightweight access token",
+      "with lightweight tokens on, the exchanged token still names the client (claim flagged lightweight, and the per-grant scope in `scope`)",
+      `audience mapper not flagged lightweight: ${errd(off)}; flagged: ${err(on)}, claims=${Object.keys(cl).join(",")}, ${GRANT_CLAIM}=${cl.victual_client}, grant scope in scope=${String(cl.scope).includes(k1a.grantScope)}; /api check=${on?.access_token ? await rsCheck(on.access_token, RS_API) : "-"}; introspection returns the full claims: ${introLight?.email !== undefined}`,
+      on?.status === 200 && cl.victual_client === k1a.clientId && String(cl.scope).includes(k1a.grantScope), "G-grant-identity: client policy (supported)");
+  }
+
+  // K1i: where the exchanged token can be introspected
+  {
+    const bySidecar = await introspect(sidecar, xa.access_token), byApi = await introspect(api, xa.access_token);
+    record("K1i", "info", "0055 d6: introspection of an exchanged token",
+      "active at the resource server (the /api client), the point Victual would check",
+      `introspected by the sidecar (the exchanger, azp): active=${bySidecar}; by the /api client (the audience): active=${byApi}. The sidecar's own introspection is inactive even before any revocation, so a revocation check must be made by the audience client`,
+      byApi === true, "G-revocation");
+  }
+
+  // K1j: consent screen for each client
+  {
+    await admin("DELETE", `/users/${alice.id}/consents/${k1b.clientId}`, undefined, { raw: true });
+    const a = await authorize(k1b, { scope: SC });
+    const s = await submitLogin(a, cred(alice));
+    const fin = await finishCode(a, s.response); // sets a.consentScreen when the consent page was shown and accepted
+    const a2 = await authorize(k1b, { scope: SC });
+    const s2 = await submitLogin(a2, cred(alice));
+    const fin2 = await finishCode(a2, s2.response);
+    record("K1j", "pos", "0055 d6, q13: an adapter-created client has Consent required, so the user's grant is a stored consent per client",
+      "a consent screen is shown on first use; the consent is stored; the next login skips the screen",
+      `screen shown after the stored consent was deleted=${!!a.consentScreen}; code after accepting=${!!fin.code}; stored consents=${(await admin("GET", `/users/${alice.id}/consents`)).map((c) => c.clientId).join(",")}; second login: screen shown=${!!a2.consentScreen}, code=${!!fin2.code}`,
+      !!a.consentScreen && !!fin.code && !a2.consentScreen && !!fin2.code, "G-revocation");
+  }
+
+  // ---- K1r: revoke one grant by each mechanism; where does the exchanged token stop?
+  const jar = (shared) => (shared ? "same browser session" : "separate sessions");
+  const fixture = async (shared, offline = false) => {
+    let a = await userToken(SC + (offline ? " offline_access" : ""), alice, k1a);
+    if (offline) { const r = await refresh(k1a, a.refresh_token); a = { ...a, access_token: r.access_token, refresh_token: r.refresh_token }; }
+    const b = await userToken(SC, alice, k1b, { f: shared ? a._f : undefined });
+    return { a, b, xa: await grantEx(a.access_token, k1a), xb: await grantEx(b.access_token, k1b), sidA: claims(a.access_token).sid };
+  };
+  const sessions = async () => ({ online: await admin("GET", `/users/${alice.id}/sessions`), consents: (await admin("GET", `/users/${alice.id}/consents`)).map((c) => c.clientId) });
+  // What Victual would check for an exchanged token: introspection by the /api client, and a lookup keyed on
+  // victual_client, sid and sub (session still holds the client, consent stored, client not-before earlier than iat).
+  const verdictOf = async (x, snapshot) => {
+    const c = claims(x.access_token);
+    const [cl] = await admin("GET", `/clients?clientId=${encodeURIComponent(c.victual_client)}`);
+    const offline = await admin("GET", `/users/${alice.id}/offline-sessions/${cl.id}`);
+    const inSession = snapshot.online.some((s) => s.id === c.sid && Object.values(s.clients).includes(c.victual_client)) || offline.some((s) => s.id === c.sid);
+    const v = { introspect: await introspect(api, x.access_token), sessionHoldsClient: inSession, consent: snapshot.consents.includes(c.victual_client), notBeforeStale: c.iat < (cl.notBefore ?? 0) };
+    return { ...v, blocked: !v.introspect || !v.sessionHoldsClient || !v.consent || v.notBeforeStale };
+  };
+  const fmt = (v) => `introspect=${v.introspect} session+client=${v.sessionHoldsClient} consent=${v.consent} notBeforeStale=${v.notBeforeStale} => ${v.blocked ? "BLOCKED" : "valid"}`;
+  const resetNotBefore = async () => { const [c] = await admin("GET", `/clients?clientId=${k1a.clientId}`); if (c.notBefore) await admin("PUT", `/clients/${c.id}`, { ...c, notBefore: 0 }); };
+  const mechanisms = [
+    ["1", "deleting the user's consent for client A (admin API)", (f) => admin("DELETE", `/users/${alice.id}/consents/${k1a.clientId}`, undefined, { raw: true }), "per-grant"],
+    ["2", "revoking client A's refresh token (RFC 7009)", (f) => fetch(`${OIDC}/revoke`, { method: "POST", body: new URLSearchParams({ token: f.a.refresh_token, token_type_hint: "refresh_token", client_id: k1a.clientId }) }), "per-grant"],
+    ["3", "deleting the user session of grant A (admin API, by sid)", (f) => admin("DELETE", `/sessions/${f.sidA}`, undefined, { raw: true }), "per-grant"],
+    ["4", "client A's not-before (admin API PUT notBefore=now)", async (f) => { await sleep(1100); const [c] = await admin("GET", `/clients?clientId=${k1a.clientId}`); return admin("PUT", `/clients/${c.id}`, { ...c, notBefore: Math.floor(Date.now() / 1000) }, { raw: true }); }, "per-grant"],
+    ["5", "logging the user out of every session (admin API)", (f) => admin("POST", `/users/${alice.id}/logout`, undefined, { raw: true }), "user-wide"],
+  ];
+  for (const shared of [false, true]) {
+    for (const [n, label, run, scopeOf] of mechanisms) {
+      const f = await fixture(shared);
+      const before = await sessions();
+      const [pa, pb] = [await verdictOf(f.xa, before), await verdictOf(f.xb, before)];
+      const resp = await run(f);
+      const snap = await sessions();
+      const [va, vb] = [await verdictOf(f.xa, snap), await verdictOf(f.xb, snap)];
+      const ra = await refresh(k1a, f.a.refresh_token), rb = await refresh(k1b, f.b.refresh_token);
+      const stateless = [await rsCheck(f.xa.access_token, RS_API), await rsCheck(f.xb.access_token, RS_API)];
+      await resetNotBefore();
+      const want = scopeOf === "user-wide" ? va.blocked && vb.blocked : va.blocked && !vb.blocked;
+      record(`K1r${n}${shared ? "h" : "s"}`, "info", `0055 d6, q13, prerequisite 10: ${label}, ${jar(shared)}`,
+        scopeOf === "user-wide" ? "both grants' exchanged tokens blocked (a user-wide mechanism)" : "A's exchanged token blocked at introspection or the grant lookup; B's still valid",
+        `before: A ${pa.blocked ? "BLOCKED" : "valid"}, B ${pb.blocked ? "BLOCKED" : "valid"}; call -> ${resp.status}; after: A ${fmt(va)}; B ${fmt(vb)}; refresh A -> ${errd(ra)}; refresh B -> ${errd(rb)}; stateless check A/B: ${stateless.join("/")}`,
+        want && !pa.blocked && !pb.blocked, "G-revocation");
+    }
+  }
+  {
+    // K1r6: an offline grant
+    const f = await fixture(false, true);
+    const before = await sessions();
+    const [pa, pb] = [await verdictOf(f.xa, before), await verdictOf(f.xb, before)];
+    const resp = await admin("DELETE", `/sessions/${f.sidA}?isOffline=true`, undefined, { raw: true });
+    const snap = await sessions();
+    const [va, vb] = [await verdictOf(f.xa, snap), await verdictOf(f.xb, snap)];
+    const ra = await refresh(k1a, f.a.refresh_token), rb = await refresh(k1b, f.b.refresh_token);
+    record("K1r6s", "info", "0055 d6, q13, prerequisite 10: deleting the offline session of grant A (admin API, isOffline=true), separate sessions",
+      "A's exchanged token blocked; B's still valid",
+      `exchanged token's sid is the offline session (${claims(f.xa.access_token).sid === f.sidA}); call -> ${resp.status}; A ${fmt(va)}; B ${fmt(vb)}; refresh A -> ${errd(ra)}; refresh B -> ${errd(rb)}`,
+      va.blocked && !vb.blocked && !pa.blocked && !pb.blocked, "G-revocation");
+  }
+  {
+    // K1r7: revoking the access token (RFC 7009) is not a grant revocation
+    const f = await fixture(false);
+    const resp = await fetch(`${OIDC}/revoke`, { method: "POST", body: new URLSearchParams({ token: f.a.access_token, token_type_hint: "access_token", client_id: k1a.clientId }) });
+    const snap = await sessions();
+    const va = await verdictOf(f.xa, snap);
+    record("K1r7s", "info", "0055 d6: revoking client A's access token (RFC 7009) does not revoke the grant or its exchanged tokens",
+      "the exchanged token stays valid (the guide: revoking the subject access token does not revoke the exchanged one)",
+      `revoke -> ${resp.status}; A ${fmt(va)}; refresh A -> ${errd(await refresh(k1a, f.a.refresh_token))}`, !va.blocked, "G-revocation");
+  }
+  {
+    // K1s: a stateless check keeps accepting until exp
+    const f = await fixture(false);
+    await admin("DELETE", `/users/${alice.id}/consents/${k1a.clientId}`, undefined, { raw: true });
+    const v = await rsCheck(f.xa.access_token, RS_API);
+    record("K1s", "info", "0055 d6: a stateless check of an exchanged token after its grant was revoked",
+      "accepted until exp (five minutes at most)", `consent deleted; stateless check -> ${v}; exp in ${claims(f.xa.access_token).exp - Math.floor(Date.now() / 1000)} s`, v === "accepted", "G-revocation");
+  }
+}
+
+// ---- K2: the registration adapter binds each MCP client to the MCP audience (ADR-0055 prerequisite 11, question 14)
+async function k2Gate() {
+  const SC = "openid victual:read";
+  const created = [];
+  const mk = async (name, opts = {}) => { const c = await registerMcpClient(name, { sidecarId: sidecar.id, ...opts }); created.push(c); return c; };
+  const audOf = (r) => (r.access_token ? [].concat(claims(r.access_token).aud ?? []) : null);
+  try {
+    const c1 = await mk("victual-spike-mcp-k2-1"), c2 = await mk("victual-spike-mcp-k2-2");
+    const cNo = await mk("victual-spike-mcp-k2-noaud", { bindAudience: false });
+    const [rep1] = await admin("GET", `/clients?clientId=${c1.clientId}`);
+    const t1 = await userToken(SC, alice, c1), t2 = await userToken(SC, alice, c2), tNo = await userToken(SC, alice, cNo);
+    // K2a: adapter-created clients verify at the sidecar
+    const v1 = await rsCheck(t1.access_token, RS_SIDECAR), v2 = await rsCheck(t2.access_token, RS_SIDECAR);
+    record("K2a", "pos", "0055 d3, d8, prerequisite 11: tokens of two clients the adapter created are accepted at the sidecar",
+      "both accepted; aud holds the MCP audience; the client's default scopes include victual-mcp-audience and not victual-api-audience",
+      `client 1: ${v1} aud=${JSON.stringify(audOf(t1))}; client 2: ${v2} aud=${JSON.stringify(audOf(t2))}; client 1 default scopes=${rep1.defaultClientScopes.join(",")}; optional=${rep1.optionalClientScopes.join(",")}`,
+      v1 === "accepted" && v2 === "accepted" && rep1.defaultClientScopes.includes("victual-mcp-audience") && !rep1.defaultClientScopes.concat(rep1.optionalClientScopes).includes("victual-api-audience"), "G-audience: adapter binds the client scope");
+    // K2b: a client cannot select an audience it is not bound to
+    const tries = {
+      "audience=/api parameter": await userToken(SC, alice, c1, { params: { audience: api.clientId } }),
+      "resource=/api": await userToken(SC, alice, c1, { params: { resource: S.apiAud } }),
+      "resource=unknown": await userToken(SC, alice, c1, { params: { resource: "http://evil.example/x" } }),
+      "scope victual-api-audience": await userToken(`${SC} victual-api-audience`, alice, c1),
+      "scope victual-rogue-audience": await userToken(`${SC} victual-rogue-audience`, alice, c1),
+      "scope victual-other-audience": await userToken(`${SC} victual-other-audience`, alice, c1),
+    };
+    const allowedAud = new Set([S.mcpAud, sidecar.clientId]);
+    const ok = Object.values(tries).every((r) => r.status >= 400 || audOf(r).every((a) => allowedAud.has(a)));
+    record("K2b", "neg", "0055 d3, d8, prerequisite 11: a client cannot select an audience it is not bound to",
+      "each attempt is refused, or the token's aud stays within the MCP audience and the sidecar's client id",
+      Object.entries(tries).map(([k, r]) => `${k} -> ${r.access_token ? `200 aud=${JSON.stringify(audOf(r))}` : errd(r)}`).join("; "), ok, "G-audience");
+    // K2c: a client without the scope gets no MCP audience, and the sidecar refuses it
+    const vNo = await rsCheck(tNo.access_token, RS_SIDECAR);
+    const selfBind = await userToken(`${SC} victual-mcp-audience`, alice, cNo);
+    const exNo = await exchange(sidecar, tNo.access_token, { audience: api.clientId, scope: SC });
+    record("K2c", "neg", "0055 d3, d8, prerequisite 11: a client without the audience scope has no MCP audience, is refused at the sidecar and cannot bind itself",
+      "sidecar refuses; asking for the scope at authorize is refused; the sidecar cannot exchange its token",
+      `aud=${JSON.stringify(audOf(tNo))}; sidecar check -> ${vNo}; asking for victual-mcp-audience -> ${errd(selfBind)}; exchange -> ${errd(exNo)}`,
+      vNo !== "accepted" && selfBind.status >= 400 && exNo.status >= 400, "G-audience");
+    // K2d: exchanged tokens target only /api
+    const x1 = await exchange(sidecar, t1.access_token, { audience: api.clientId, scope: SC });
+    const x2 = await exchange(sidecar, t2.access_token, { audience: api.clientId, scope: SC });
+    const a1 = claims(x1.access_token).aud, a2 = claims(x2.access_token).aud;
+    const rs = [await rsCheck(x1.access_token, RS_API), await rsCheck(x2.access_token, RS_API), await rsCheck(x1.access_token, RS_SIDECAR)];
+    record("K2d", "pos", "0055 d7, d8, prerequisite 11: exchanged tokens target only /api",
+      "aud is exactly the /api URI; accepted at /api; refused at the sidecar",
+      `client 1 exchanged aud=${JSON.stringify(a1)}; client 2 exchanged aud=${JSON.stringify(a2)}; /api check: ${rs[0]}, ${rs[1]}; sidecar check of an exchanged token: ${rs[2]}`,
+      a1 === S.apiAud && a2 === S.apiAud && rs[0] === "accepted" && rs[1] === "accepted" && rs[2].startsWith("aud"), "G-audience");
+    // K2e: an exchanged token cannot be exchanged back into the MCP audience
+    const back = {
+      "sidecar: x1, audience=MCP URI": await exchange(sidecar, x1.access_token, { audience: S.mcpAud, scope: SC }),
+      "sidecar: x1, audience=sidecar": await exchange(sidecar, x1.access_token, { audience: sidecar.clientId, scope: SC }),
+      "sidecar: x1, scope victual-mcp-audience": await exchange(sidecar, x1.access_token, { audience: api.clientId, scope: `${SC} victual-mcp-audience` }),
+      "sidecar: user token, audience=MCP URI": await exchange(sidecar, t1.access_token, { audience: S.mcpAud, scope: SC }),
+      "sidecar: user token, scope victual-mcp-audience": await exchange(sidecar, t1.access_token, { audience: api.clientId, scope: `${SC} victual-mcp-audience` }),
+      "client named by the MCP URI: x1": await exchange(uriSidecar, x1.access_token, { audience: api.clientId, scope: SC }),
+    };
+    record("K2e", "neg", "0055 d7, d8, prerequisite 11: an exchanged token cannot be exchanged back into the MCP audience",
+      "every attempt is refused, or issues no MCP audience",
+      Object.entries(back).map(([k, r]) => `${k} -> ${r.access_token ? `200 aud=${JSON.stringify(audOf(r))}` : err(r)}`).join("; "),
+      Object.values(back).every((r) => r.status >= 400 || !audOf(r).includes(S.mcpAud)), "G-audience");
+  } finally {
+    for (const c of created) await deregisterMcpClient(c).catch(() => {});
+  }
+}
+
+// ---- Configuration inventory (prerequisite 8): read the realm back and compare it with what setup.mjs promises
+async function inventoryGate() {
+  const miss = [];
+  const need = (ok, what) => { if (!ok) miss.push(what); };
+  const realm = await admin("GET", "");
+  for (const [k, v] of Object.entries({ accessTokenLifespan: 300, ssoSessionIdleTimeout: 1800, ssoSessionMaxLifespan: 36000, revokeRefreshToken: true, refreshTokenMaxReuse: 0, registrationAllowed: false, verifyEmail: false, loginWithEmailAllowed: true })) need(realm[k] === v, `realm ${k}=${realm[k]}`);
+  const scopes = await admin("GET", "/client-scopes");
+  const mappersOf = async (name) => { const sc = scopes.find((x) => x.name === name); return sc ? (await admin("GET", `/client-scopes/${sc.id}/protocol-mappers/models`)).map((m) => `${m.name}:${m.protocolMapper}`) : null; };
+  const wantScopes = { "victual:read": [], "victual:write": [], "victual:stock": [], "victual:stock:book": [],
+    "victual-mcp-audience": ["mcp-resource-audience:oidc-audience-mapper", "sidecar-client-audience:oidc-audience-mapper"],
+    "victual-rogue-audience": ["rogue-client-audience:oidc-audience-mapper"], "victual-api-audience": ["api-resource-audience:oidc-audience-mapper"],
+    "victual-other-audience": ["other-resource-audience:oidc-audience-mapper"], "victual-groups": ["groups:oidc-group-membership-mapper"],
+    [S.clients.k1a.grantScope]: ["victual-grant-client:oidc-hardcoded-claim-mapper"] };
+  for (const [name, want] of Object.entries(wantScopes)) { const have = await mappersOf(name); need(have && want.length === have.length && want.every((w) => have.includes(w)), `scope ${name} mappers ${JSON.stringify(have)}`); }
+  const pols = (await admin("GET", "/client-policies/policies")).policies, profs = (await admin("GET", "/client-policies/profiles")).profiles;
+  const exec = (n) => profs.find((p) => p.name === n)?.executors.map((e) => e.executor).sort().join("+");
+  need(exec("victual-downscope") === "downscope-assertion-grant-enforcer", "profile victual-downscope");
+  need(exec("victual-dcr") === ["consent-required", "pkce-enforcer", "secure-client-authenticator", "secure-client-uris-pattern"].join("+"), `profile victual-dcr ${exec("victual-dcr")}`);
+  for (const n of ["victual-downscope-all", "victual-dcr-anonymous"]) need(pols.find((p) => p.name === n)?.enabled === true, `policy ${n} enabled`);
+  const cl = async (c) => (await admin("GET", `/clients/${c.id}`));
+  const m = await cl(mcp), sc = await cl(sidecar), ap = await cl(api), k = await cl(S.clients.k1a);
+  need(m.attributes["pkce.code.challenge.method"] === "S256" && m.publicClient && !m.directAccessGrantsEnabled && !m.implicitFlowEnabled && !m.fullScopeAllowed, "mcp client flags");
+  need(sc.attributes["standard.token.exchange.enabled"] === "true" && !sc.publicClient, "sidecar flags");
+  need(!ap.standardFlowEnabled && !ap.directAccessGrantsEnabled && !ap.serviceAccountsEnabled && !ap.implicitFlowEnabled, "api client flows");
+  need(k.consentRequired && k.defaultClientScopes.includes("victual-mcp-audience") && k.defaultClientScopes.includes(S.clients.k1a.grantScope), "adapter client flags");
+  // K3b: the /api client is a resource: no flow may issue it a token
+  const apiCc = await token({ grant_type: "client_credentials", client_id: api.clientId, client_secret: api.secret });
+  const apiPw = await token({ grant_type: "password", client_id: api.clientId, client_secret: api.secret, username: alice.username, password: alice.password, scope: "openid" });
+  const apiCode = await login(api, cred(alice), { scope: "openid" });
+  record("K3b", "neg", "0055 d3, prerequisite 8: the /api resource client cannot obtain tokens through any flow",
+    "client credentials, password and authorization code requests as the /api client are refused",
+    `client_credentials -> ${errd(apiCc)}; password -> ${errd(apiPw)}; authorization code -> ${errd(apiCode)}`,
+    apiCc.status >= 400 && apiPw.status >= 400 && apiCode.status >= 400, "G-config");
+  record("K3", "info", "0055 prerequisite 8: the installed configuration equals what setup.mjs and adapter.mjs promise (README inventory)",
+    "every realm setting, client scope with its mappers, client policy, profile and client flag listed in the inventory is present with the stated value",
+    miss.length ? `differences: ${miss.join("; ")}` : `realm settings 8, client scopes ${Object.keys(wantScopes).length} with mappers, profiles 2 (${profs.map((p) => p.name).join(", ")}), policies 2, client flags (mcp, sidecar, api, adapter client) all as stated`,
+    miss.length === 0, "G-config");
+}
+
 async function registrationGate() {
   const URL_REG = `${ISSUER}/clients-registrations/openid-connect`;
   const reg = async (body, headers = {}) => {
@@ -415,6 +761,7 @@ async function registrationGate() {
     let j; try { j = JSON.parse(text); } catch { j = { raw: text.slice(0, 120) }; }
     return { status: r.status, ...j };
   };
+  const r2s = (r) => `${r.status}${r.error_description ? ` ${String(r.error_description).slice(0, 70)}` : ""}`;
   const loop = { client_name: "probe-public", redirect_uris: [REDIRECT_URI], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] };
   const d1 = await reg(loop);
   record("N15", "neg", "0056 prereq 2: registration is not open to anonymous callers",
@@ -428,6 +775,7 @@ async function registrationGate() {
   const comps = await admin("GET", "/components?type=org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy");
   const trusted = comps.find((c) => c.providerId === "trusted-hosts" && c.subType === "anonymous");
   const setTrusted = (hosts, uriMatch) => admin("PUT", `/components/${trusted.id}`, { ...trusted, config: { ...trusted.config, "trusted-hosts": hosts, "host-sending-registration-request-must-match": ["true"], "client-uris-must-match": [String(uriMatch)] } });
+  await setPolicies(["victual-downscope-all"]); // D1: Trusted Hosts alone, without victual-dcr-anonymous
   await setTrusted([gw, "localhost", "127.0.0.1"], true);
   const d2 = await reg(loop);
   const d2b = await reg({ ...loop, client_name: "probe-https", redirect_uris: ["https://app.example/cb"] });
@@ -440,18 +788,8 @@ async function registrationGate() {
     "trusted host registers a loopback public client; untrusted redirect hosts refused; confidential clients and wildcards are what the policies allow",
     `peer ${gw}; loopback public -> ${d2.status} ${d2.error_description ?? ""}; https://app.example -> ${d2b.status} ${d2b.error_description ?? ""}; http://evil.example -> ${d2c.status} ${d2c.error_description ?? ""}; confidential -> ${d2d.status} ${d2d.error_description ?? ""}; scope request -> ${d2e.status} scope="${sc}"; wildcard redirect -> ${d2f.status} ${d2f.error_description ?? ""}`,
     d2.status === 201 && d2c.status >= 400, "G-registration: Client Registration Policies (supported)");
-  // Client Policies: refuse what the registration policies allow.
-  const POLICY_BASE = (await admin("GET", "/client-policies/policies")).policies ?? [];
-  const PROFILES = (await admin("GET", "/client-policies/profiles")).profiles ?? [];
-  await admin("PUT", "/client-policies/profiles", { profiles: [...PROFILES, { name: "victual-dcr", description: "spike", executors: [
-    // https, or http only on a loopback address; no wildcard. (secure-redirect-uris-enforcer gates loopback http and any http with one switch.)
-    { executor: "secure-client-uris-pattern", configuration: { "client-uri-fields": ["redirectUris"],
-      "allowed-patterns": ["^https://[a-zA-Z0-9.-]+(:[0-9]+)?/[^*]*$", "^http://(127\\.0\\.0\\.1|\\[::1\\])(:[0-9]+)?/[^*]*$"] } },
-    { executor: "pkce-enforcer", configuration: { "auto-configure": true } },
-    { executor: "secure-client-authenticator", configuration: { "allowed-client-authenticators": ["client-jwt"], "default-client-authenticator": "client-jwt" } },
-  ] }] });
-  await admin("PUT", "/client-policies/policies", { policies: [...POLICY_BASE, { name: "victual-dcr-anonymous", description: "spike", enabled: true,
-    conditions: [{ condition: "client-updater-context", configuration: { "update-client-source": ["ByAnonymous"] } }], profiles: ["victual-dcr"] }] });
+  // Client Policies: victual-dcr-anonymous (installed by setup.mjs) refuses what the registration policies allow.
+  await setPolicies(null);
   await setTrusted([gw, "localhost", "127.0.0.1", "app.example"], true);
   const e1 = await reg({ ...loop, client_name: "probe-public-2" });
   const e2 = await reg({ ...loop, client_name: "probe-https-2", redirect_uris: ["https://app.example/cb"] });
@@ -459,18 +797,47 @@ async function registrationGate() {
   const e4 = await reg({ ...loop, client_name: "probe-wild-2", redirect_uris: ["https://app.example/*"] });
   const e5 = await reg({ client_name: "probe-confidential-2", redirect_uris: [REDIRECT_URI], token_endpoint_auth_method: "client_secret_basic", grant_types: ["authorization_code"], response_types: ["code"] });
   const made = e1.client_id ? await admin("GET", `/clients?clientId=${e1.client_id}`) : [];
-  const attrs = made[0] ? `public=${made[0].publicClient} pkce=${made[0].attributes?.["pkce.code.challenge.method"]}` : "";
+  const attrs = made[0] ? `public=${made[0].publicClient} pkce=${made[0].attributes?.["pkce.code.challenge.method"]} consentRequired=${made[0].consentRequired}` : "";
   const sum = (r) => `${r.status}${r.error_description ? ` ${String(r.error_description).slice(0, 70)}` : ""}`;
   record("D2", "info", "0056 prereq 2: a client policy limits anonymous registration to public clients with loopback or https redirects",
-    "loopback and https public clients register; http (non-loopback), wildcard and confidential clients are refused",
-    `loopback public -> ${sum(e1)} (${attrs}); https -> ${sum(e2)}; http non-loopback -> ${sum(e3)}; https wildcard -> ${sum(e4)}; confidential (secret auth) -> ${sum(e5)}; policy executors: secure-client-uris-pattern (redirectUris), pkce-enforcer, secure-client-authenticator (client-jwt only)`,
-    e1.status === 201 && e2.status === 201 && e3.status >= 400 && e4.status >= 400 && e5.status >= 400, "G-registration: Client Policies (supported)");
+    "loopback and https public clients register with PKCE S256 and Consent required; http (non-loopback), wildcard and confidential clients are refused",
+    `loopback public -> ${sum(e1)} (${attrs}); https -> ${sum(e2)}; http non-loopback -> ${sum(e3)}; https wildcard -> ${sum(e4)}; confidential (secret auth) -> ${sum(e5)}; policy executors: secure-client-uris-pattern (redirectUris), pkce-enforcer, secure-client-authenticator (client-jwt only), consent-required`,
+    e1.status === 201 && e2.status === 201 && e3.status >= 400 && e4.status >= 400 && e5.status >= 400 && made[0]?.consentRequired === true && made[0]?.attributes?.["pkce.code.challenge.method"] === "S256", "G-registration: Client Policies (supported)");
+
+  // K2: what a dynamic registrant can get of the MCP audience (prerequisite 11). The audience scope is bound by the adapter
+  // through the admin API; anonymous registration must not be able to bind it itself.
+  {
+    const allowed = comps.find((c) => c.providerId === "allowed-client-templates" && c.subType === "anonymous");
+    const MCP_SCOPE = "victual-mcp-audience";
+    const tryRegister = async (name, scope) => {
+      const r = await reg({ ...loop, client_name: name, ...(scope ? { scope } : {}) });
+      const [c] = r.client_id ? await admin("GET", `/clients?clientId=${r.client_id}`) : [];
+      const wanted = r.client_id ? await login({ clientId: r.client_id, redirect: REDIRECT_URI }, cred(alice), { scope: `openid ${MCP_SCOPE}` }) : { status: 0, error: "no client" };
+      const plainTok = r.client_id ? await login({ clientId: r.client_id, redirect: REDIRECT_URI }, cred(alice), { scope: "openid" }) : {};
+      return { r, c, wanted, plainTok,
+        has: c ? [...(c.defaultClientScopes ?? []), ...(c.optionalClientScopes ?? [])].includes(MCP_SCOPE) : false,
+        audWanted: wanted.access_token ? [].concat(claims(wanted.access_token).aud ?? []) : null,
+        audPlain: plainTok.access_token ? [].concat(claims(plainTok.access_token).aud ?? []) : null };
+    };
+    const k = await tryRegister("probe-k2-dcr", `${MCP_SCOPE} victual-api-audience`);
+    const k0 = await tryRegister("probe-k2-dcr-plain", undefined);
+    record("K2g", "neg", "0055 d8, prerequisite 11: an anonymous registrant cannot bind itself to the MCP audience (Allowed Client Scopes list empty)",
+      "a registration asking for the scope is refused or the client does not hold it; a client registered without it is refused the scope at authorize and its tokens lack the MCP audience",
+      `register with scope -> ${r2s(k.r)}; client holds the scope: ${k.has}; register without scope -> ${r2s(k0.r)}, client holds the scope: ${k0.has}; authorize with the scope -> ${errd(k0.wanted)}; token aud=${JSON.stringify(k0.audPlain)}`,
+      (k.r.status >= 400 || !k.has) && !k0.has && k0.wanted.status >= 400 && !(k0.audPlain ?? []).includes(S.mcpAud), "G-audience: client registration policy (supported)");
+    await admin("PUT", `/components/${allowed.id}`, { ...allowed, config: { ...allowed.config, "allowed-client-scopes": [MCP_SCOPE] } });
+    const k2 = await tryRegister("probe-k2-dcr-open", MCP_SCOPE);
+    await admin("PUT", `/components/${allowed.id}`, allowed);
+    record("K2h", "info", "0055 d8, prerequisite 11: demonstration of what the policy must forbid: the audience scope on the Allowed Client Scopes list of anonymous registration",
+      "with the scope on the list, a dynamic registrant binds itself to the MCP audience (so the list must not contain it)",
+      `list = [${MCP_SCOPE}]: register -> ${r2s(k2.r)} granted scope="${k2.r.scope ?? ""}"; client holds the scope: ${k2.has}; authorize with it -> ${errd(k2.wanted)}; token aud=${JSON.stringify(k2.audWanted)}; the list was restored afterwards`,
+      k2.has && (k2.audWanted ?? []).includes(S.mcpAud), "G-audience: client registration policy (supported)");
+  }
   // Clean up: remove the registered probe clients, restore policies, reset trusted hosts.
-  for (const name of ["probe-public", "probe-https", "probe-http", "probe-confidential", "probe-scope", "probe-wild", "probe-public-2", "probe-https-2", "probe-http-2", "probe-wild-2", "probe-confidential-2"]) {
+  for (const name of ["probe-public", "probe-https", "probe-http", "probe-confidential", "probe-scope", "probe-wild", "probe-public-2", "probe-https-2", "probe-http-2", "probe-wild-2", "probe-confidential-2", "probe-k2-dcr", "probe-k2-dcr-plain", "probe-k2-dcr-open"]) {
     for (const c of (await admin("GET", `/clients?search=true&clientId=`)).filter((x) => x.name === name)) await admin("DELETE", `/clients/${c.id}`);
   }
-  await admin("PUT", "/client-policies/policies", { policies: POLICY_BASE });
-  await admin("PUT", "/client-policies/profiles", { profiles: PROFILES });
+  await setPolicies(null);
   await setTrusted([], true);
 }
 
