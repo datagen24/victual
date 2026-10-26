@@ -458,7 +458,7 @@ async function k1Gate() {
     for (const cl of [k1a, sidecar]) for (const m of await admin("GET", `/clients/${cl.id}/protocol-mappers/models`)) if (m.name === "k1-client-mapper") await admin("DELETE", `/clients/${cl.id}/protocol-mappers/models/${m.id}`);
     record("K1b", "info", "0055 d6, q13: a mapper on the MCP client (or on the sidecar) reaches the exchanged token",
       "the exchanged token carries the claim of the MCP client's mapper",
-      `user token: k1_on_mcp_client=${u.k1_on_mcp_client}; exchanged token: k1_on_mcp_client=${c.k1_on_mcp_client}, k1_on_sidecar=${c.k1_on_sidecar}. Mappers in a client's own (dedicated) scope are not applied at the exchange; only client scopes requested at the exchange are (as in L3)`,
+      `user token claims ${JSON.stringify({ mcpClientMapper: u.k1_on_mcp_client ?? null })}; exchanged token claims ${JSON.stringify({ mcpClientMapper: c.k1_on_mcp_client ?? null, sidecarMapper: c.k1_on_sidecar ?? null })}. Mappers in a client's own (dedicated) scope are not applied at the exchange; only client scopes requested at the exchange are (as in L3)`,
       c.k1_on_mcp_client === "mcp", "G-grant-identity");
   }
 
