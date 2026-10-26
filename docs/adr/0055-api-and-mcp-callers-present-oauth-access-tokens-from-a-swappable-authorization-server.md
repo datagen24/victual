@@ -13,7 +13,9 @@
   (decisions 2, 3 and 7). The 2026-10-25 clarification assigns ordinary identity
   ownership to the provider and preserves Classic mode during migration (question 10).
   On 2026-10-26 the maintainer answered questions 11 to 14 from the server comparison
-  (decisions 3, 6, 7 and 8); their evidence requirements are prerequisites 8 to 11.
+  (decisions 3, 6, 7 and 8); their evidence requirements are prerequisites 8 to 11. After
+  the follow-up spikes, the maintainer answered questions 15 to 20 the same day, which
+  narrow what counts as supported configuration and as revocation evidence.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -186,6 +188,17 @@ negative tests. The Victual and sidecar images stay unchanged between authorizat
 servers. The swap test runs with the exact policies and mappings installed
 (prerequisite 1).
 
+A supported expression editor does not make everything written in it supported
+(question 15). An expression that imports the provider's internal models, or mutates the
+provider's database directly, does not count without an explicit upstream stability
+contract. Deleting rows must also preserve the provider's invariants and audit behaviour.
+
+Objects the registration adapter generates at run time (per-client scopes, mappings,
+providers) are versioned through their recipe (question 18). The adapter and its
+templates are pinned; each generated object records its owner and recipe version; and
+reconciliation and upgrades are repeatable. The runtime registrations themselves are not
+committed.
+
 A request is accepted when the access token:
 
 - is a JWT signed by a key in the issuer's JWKS, with `iss` equal to the pinned issuer;
@@ -275,7 +288,12 @@ carries the same rule on its own.
   an old refresh token revokes its whole family (shown in the Hydra spike). A reused token
   that leaves its successor valid violates this requirement (question 12). An authorization
   server without that behaviour needs a supported mitigation before this record is
-  accepted, or an explicit exception in an ADR (prerequisite 9).
+  accepted, or an explicit exception in an ADR (prerequisite 9). A documented, bounded
+  revocation delay may be acceptable (question 16). Concurrent refreshes with one token
+  must not leave a second live family: that needs a mitigation, and no exception is
+  granted (question 17). Provider-supported atomic handling is preferred. A Victual-side
+  sweep qualifies only if it reliably identifies every descendant and revokes them through
+  supported operations; a periodic best-effort cleanup does not.
 - Revocation at the authorization server takes effect within the access-token lifetime,
   because resource servers validate statelessly and do not introspect on each request.
   Five minutes is the stated worst case.
@@ -286,6 +304,13 @@ carries the same rule on its own.
   (question 13), through a server-signed claim or a trusted server-side mapping. Revoking
   one originating grant blocks the tokens exchanged from it and no other grant's. A
   caller-supplied identity is never authoritative (prerequisite 10).
+- Where two grants of the same user share one provider session, revoking that session
+  ends both (question 19). That is accepted as a documented broader revocation effect: it
+  reduces availability and grants nothing. It is never described as isolated per-grant
+  revocation, and an administrative action shows the affected grants before it runs.
+- Revoking refresh access and rejecting an already-issued API token are separate effects
+  (question 20). The second is Victual's immediate grant-revocation check above, or else
+  the access-token lifetime, measured, is its delay.
 - Write scopes do not introspect either (open question 3). The five-minute worst case
   above, together with Victual's own grant-row revocation, is the revocation design.
 
@@ -532,18 +557,36 @@ keychain, and keep sending their per-device Access service token as before.
    policy and mapping the swap test relies on uses a supported provider interface, lives
    with the deployment configuration under version control, and has positive and
    negative tests. The swap test (prerequisite 1) runs with exactly those installed and
-   the Victual and sidecar images unchanged.
+   the Victual and sidecar images unchanged. Configuration that imports provider
+   internals or mutates the provider database does not qualify without an upstream
+   stability contract (question 15). For generated objects the evidence is the pinned
+   adapter and templates, owner and recipe-version records on each object, and a
+   repeatable reconciliation and upgrade (question 18).
 9. **Refresh-family revocation** (question 12). On each authorization server, reuse of an
    old refresh token invalidates the whole family, including its newest token, by
    supported configuration or a supported mitigation. Concurrent-refresh tests are
    included. Otherwise an ADR records an explicit exception. Authentik 2026.8.5 does not
-   meet this natively (the Authentik report's case G4d).
+   meet this natively (the Authentik report's case G4d). Its notification-rule mitigation
+   (case G5d) imports internal models and deletes rows, so it does not qualify under
+   question 15, and concurrent refresh is unmet (case G5f). Evidence for a bounded delay
+   (question 16): repeated timing measurements; whether a refresh succeeds inside the
+   window; whether descendants issued inside it are revoked; and what happens when the
+   revocation worker fails or lags. A Victual-side sweep (question 17) must show that it
+   finds every descendant and revokes through supported operations.
 10. **Originating-grant identity survives exchange** (question 13). A supported,
     server-signed claim or a trusted server-side mapping identifies the originating
     grant on exchanged tokens. Tests show that revoking one originating grant blocks the
     tokens exchanged from it without blocking another grant's, and that a caller-supplied
     identity is not accepted as authoritative. Keycloak 26.8.1 drops the originating
-    client on exchange (the Keycloak report's cases R1 and R2).
+    client by default (cases R1 and R2) and carries it in a per-client signed claim under
+    the downscope policy (cases K1c and K1f). Two separate tests are required (question
+    20): revoking refresh access, and rejecting an already-issued `/api` token through
+    Victual's immediate grant-revocation check, or a measured token-expiry delay.
+    Keycloak's consent deletion has not shown that an exchanged token is revoked: the
+    `/api` introspection still reported it active (case R5), so it is not revocation
+    evidence. Where grants share a provider session, the evidence also shows the broader
+    effect is documented and the affected grants are listed before an administrative
+    revocation (question 19).
 11. **MCP audience binding through the registration adapter** (question 14). Tests show
     that a registered client cannot select an unauthorized audience, that tokens of
     unrelated clients are refused at the sidecar, and that exchanged tokens target only
@@ -683,3 +726,57 @@ requirement is an acceptance prerequisite.
     > through supported provider configuration. Evidence: tests proving clients cannot
     > select an unauthorized audience, unrelated clients' tokens are rejected, and
     > exchanged tokens target only the API. (Decision 8; prerequisite 11.)
+
+### Follow-up spike evidence, 2026-10-26
+
+The Authentik and Keycloak follow-up spikes tested prerequisites 8 to 11 and raised these
+questions.
+
+15. **Do Authentik expressions that import internal models, or delete rows, count as
+    supported configuration?**
+
+    > **Response:** datagen24, 2026-10-26: do not count these as supported configuration
+    > without an explicit upstream stability contract. A supported expression editor does
+    > not make internal models or direct database mutations supported interfaces. Row
+    > deletion must also preserve provider invariants and audit behavior. (Decision 3;
+    > prerequisite 8.)
+
+16. **Is a revocation delay of about 0.5 s after a refresh reuse acceptable?**
+
+    > **Response:** datagen24, 2026-10-26: potentially acceptable as a documented bounded
+    > delay. One observed timing is insufficient. Test whether refresh succeeds during
+    > that window, whether descendants are also revoked, and what happens when the
+    > revocation worker fails. (Decision 6; prerequisite 9.)
+
+17. **Concurrent refreshes with one Authentik token leave several live tokens. Exception,
+    or Victual-side sweep?**
+
+    > **Response:** datagen24, 2026-10-26: require mitigation; do not grant an exception
+    > yet. Prefer provider-supported atomic handling. A Victual-side sweep is acceptable
+    > only if it reliably identifies every descendant and uses supported revocation
+    > operations. A periodic best-effort cleanup would weaken the requirement.
+    > (Decision 6; prerequisite 9.)
+
+18. **Keycloak's adapter creates per-client scopes at run time. Does versioning the recipe
+    count as "versioned with the deployment configuration"?**
+
+    > **Response:** datagen24, 2026-10-26: yes, the recipe can be versioned. Pin the
+    > adapter and templates, persist ownership and recipe-version information for
+    > generated objects, and provide repeatable reconciliation and upgrades. Runtime
+    > registrations do not need to be committed to Git. (Decision 3; prerequisite 8.)
+
+19. **Two grants in one provider session revoke together on both servers. Acceptable?**
+
+    > **Response:** datagen24, 2026-10-26: acceptable as a documented broader revocation
+    > effect, provided both grants belong to that user and session. It reduces
+    > availability rather than granting access. Do not describe it as isolated per-grant
+    > revocation, and show the affected grants before an administrative action.
+    > (Decision 6; prerequisite 10.)
+
+20. **Does Keycloak's consent deletion count as revoking an exchanged token?**
+
+    > **Response:** datagen24, 2026-10-26: for Keycloak, the corrected `/api` check is
+    > decisive: consent deletion has not demonstrated revocation of an already-exchanged
+    > token. Revoking refresh access and rejecting an issued API token are separate tests.
+    > The latter must verify Victual's immediate grant-revocation check, or explicitly
+    > measure the token-expiry delay. (Decision 6; prerequisite 10.)
