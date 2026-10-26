@@ -12,6 +12,8 @@
   candidate to evaluate, and Authentik stays the required external compatibility target
   (decisions 2, 3 and 7). The 2026-10-25 clarification assigns ordinary identity
   ownership to the provider and preserves Classic mode during migration (question 10).
+  On 2026-10-26 the maintainer answered questions 11 to 14 from the server comparison
+  (decisions 3, 6, 7 and 8); their evidence requirements are prerequisites 8 to 11.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -175,8 +177,16 @@ server is configured or assumed.
 
 The discovery URL exists because the Authentik spike needed it: with one issuer for the
 install, Authentik serves no discovery document at the issuer URL (prerequisite 1). The
-maintainer approved it on 2026-10-25. A request is
-accepted when the access token:
+maintainer approved it on 2026-10-25.
+
+"Configuration only" includes provider policies, scope mappings and similar provider
+configuration (question 11), on three conditions: each uses a supported provider
+interface, is versioned with the deployment configuration, and passes positive and
+negative tests. The Victual and sidecar images stay unchanged between authorization
+servers. The swap test runs with the exact policies and mappings installed
+(prerequisite 1).
+
+A request is accepted when the access token:
 
 - is a JWT signed by a key in the issuer's JWKS, with `iss` equal to the pinned issuer;
 - has `exp` and `nbf` within 60 seconds of clock skew;
@@ -262,13 +272,20 @@ carries the same rule on its own.
 - Grants: authorization code with PKCE (`S256` only), refresh token, client credentials,
   and the device flow for command-line clients. No implicit grant and no password grant.
 - Access tokens are JWTs with a five-minute lifetime. Refresh tokens rotate, and reuse of
-  an old refresh token revokes its whole family (shown in the spike).
+  an old refresh token revokes its whole family (shown in the Hydra spike). A reused token
+  that leaves its successor valid violates this requirement (question 12). An authorization
+  server without that behaviour needs a supported mitigation before this record is
+  accepted, or an explicit exception in an ADR (prerequisite 9).
 - Revocation at the authorization server takes effect within the access-token lifetime,
   because resource servers validate statelessly and do not introspect on each request.
   Five minutes is the stated worst case.
 - Victual can also cut access at once, without introspection. It keeps a row per client
   grant (owner, client id, scope ceiling, last used, revoked). A request whose token names
   a revoked client, an unmapped subject or a disabled user is refused on that request.
+- An exchanged token keeps the authenticated identity of its originating grant
+  (question 13), through a server-signed claim or a trusted server-side mapping. Revoking
+  one originating grant blocks the tokens exchanged from it and no other grant's. A
+  caller-supplied identity is never authoritative (prerequisite 10).
 - Write scopes do not introspect either (open question 3). The five-minute worst case
   above, together with Victual's own grant-row revocation, is the revocation design.
 
@@ -322,10 +339,16 @@ request trust a header the sidecar adds.
 
 The spike showed the registration endpoint is where policy lives: public clients only for
 loopback or HTTPS redirect URIs, known scopes only, and a response body MCP clients accept.
-Victual serves that policy. For the built-in authorization server, Hydra's own
-registration endpoint is off, its metadata advertises Victual's endpoint, and Victual
-creates the client through Hydra's admin API. That adapter is the one Hydra-specific piece
-of Victual.
+Victual serves that policy. The authorization server's own anonymous registration is off
+or refused, its metadata advertises Victual's endpoint, and Victual creates the client
+through the server's admin interface. That registration adapter is the one
+server-specific piece of Victual.
+
+The adapter also binds every registered MCP client to the dedicated MCP resource audience
+(decision 3) through supported provider configuration (question 14): an audience mapper,
+a client scope or a scope mapping, depending on the server. A client cannot select an
+audience it is not bound to, tokens of unrelated clients are refused at the sidecar, and
+the sidecar's exchanged tokens target only `/api` (prerequisite 11).
 
 Clients obtain a client id by dynamic registration through that policy endpoint
 (open question 4). Client ID Metadata Documents are not supported, although the
@@ -505,6 +528,26 @@ keychain, and keep sending their per-device Access service token as before.
    unchanged effective access, migrated clients, and local bootstrap and break-glass
    access with the provider unavailable. These checks remain unmet; selecting a provider
    does not satisfy them.
+8. **Provider configuration is versioned and tested** (question 11). Every provider
+   policy and mapping the swap test relies on uses a supported provider interface, lives
+   with the deployment configuration under version control, and has positive and
+   negative tests. The swap test (prerequisite 1) runs with exactly those installed and
+   the Victual and sidecar images unchanged.
+9. **Refresh-family revocation** (question 12). On each authorization server, reuse of an
+   old refresh token invalidates the whole family, including its newest token, by
+   supported configuration or a supported mitigation. Concurrent-refresh tests are
+   included. Otherwise an ADR records an explicit exception. Authentik 2026.8.5 does not
+   meet this natively (the Authentik report's case G4d).
+10. **Originating-grant identity survives exchange** (question 13). A supported,
+    server-signed claim or a trusted server-side mapping identifies the originating
+    grant on exchanged tokens. Tests show that revoking one originating grant blocks the
+    tokens exchanged from it without blocking another grant's, and that a caller-supplied
+    identity is not accepted as authoritative. Keycloak 26.8.1 drops the originating
+    client on exchange (the Keycloak report's cases R1 and R2).
+11. **MCP audience binding through the registration adapter** (question 14). Tests show
+    that a registered client cannot select an unauthorized audience, that tokens of
+    unrelated clients are refused at the sidecar, and that exchanged tokens target only
+    `/api`.
 
 ## Open questions and maintainer responses
 
@@ -600,3 +643,43 @@ clarification below replaces that interpretation. (Decision 2.)
     > interpretation from the candidate gate. Classic mode remains until this work is
     > complete. Decisions 1, 2, 4 and 9 record this clarification; prerequisite 7 requires
     > evidence before the transition retires ordinary Classic authentication.
+
+### Server comparison, 2026-10-26
+
+The spike reports on Authentik and Keycloak raised four questions. Each answer's evidence
+requirement is an acceptance prerequisite.
+
+11. **Do provider expression policies and scope mappings count as "configuration only" for
+    the swap test?**
+
+    > **Response:** datagen24, 2026-10-26: yes, when they use supported provider
+    > interfaces, are versioned with deployment configuration, and pass positive and
+    > negative tests. Victual and sidecar images must remain unchanged. Evidence: the swap
+    > test with the exact policies and mappings installed. (Decision 3; prerequisite 8.)
+
+12. **Authentik's refresh-token reuse leaves the newest token valid. Accept it or require
+    a mitigation?**
+
+    > **Response:** datagen24, 2026-10-26: require mitigation before acceptance. A reused
+    > token leaving its successor valid violates the current family-revocation
+    > requirement. Evidence: a supported mitigation that invalidates the family,
+    > including concurrent-refresh tests. Otherwise, an explicit ADR exception is needed.
+    > (Decision 6; prerequisite 9.)
+
+13. **Keycloak drops the originating client on exchange. Carry it another way, or relax
+    per-client revocation for exchanged tokens?**
+
+    > **Response:** datagen24, 2026-10-26: preserve authenticated originating-grant
+    > identity. Do not weaken per-client revocation or accept a caller-supplied identity
+    > as authoritative. Evidence: a supported, server-signed claim or trusted server-side
+    > mapping; tests showing revoking one originating grant blocks its exchanged tokens
+    > without blocking another. (Decision 6; prerequisite 10.)
+
+14. **Both servers need Victual's registration adapter to attach the MCP audience per
+    client. Accept that?**
+
+    > **Response:** datagen24, 2026-10-26: accept it as part of Victual's registration
+    > adapter. It must bind registered MCP clients to the dedicated MCP resource audience
+    > through supported provider configuration. Evidence: tests proving clients cannot
+    > select an unauthorized audience, unrelated clients' tokens are rejected, and
+    > exchanged tokens target only the API. (Decision 8; prerequisite 11.)
