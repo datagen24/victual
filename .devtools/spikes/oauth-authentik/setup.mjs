@@ -14,6 +14,10 @@
 //   * a scope mapping on every /api scope that signs the exchanger's client_id into the token (G1);
 //   * a scope mapping on every MCP client's provider that adds the dedicated MCP audience (G2);
 //   * an expression policy on every MCP client application that refuses a code request without S256 (G4).
+//   * a notification rule whose expression policy revokes a refresh-token family when an old refresh
+//     token is reused (G5), and a second rule that posts the reuse event to an endpoint (G5, the way
+//     Victual would observe it). Both are listed in the README's configuration inventory.
+// adapter.mjs holds the steps Victual's registration adapter would run for each new MCP client (G6).
 import { writeFileSync } from "node:fs";
 
 const AK = process.env.AK ?? "http://localhost:9000";
@@ -35,14 +39,29 @@ for (const m of await list("/propertymappings/provider/scope/")) if (m.name.star
 for (const u of await list("/core/users/?search=spike")) if (u.username.startsWith("spike-")) await api("DELETE", `/core/users/${u.pk}/`);
 for (const p of await list("/policies/expression/?search=victual-spike")) await api("DELETE", `/policies/expression/${p.pk}/`);
 for (const g of await list("/core/groups/")) if (g.name.startsWith(P)) await api("DELETE", `/core/groups/${g.pk}/`);
+for (const r of await list("/events/rules/")) if (r.name.startsWith(P)) await api("DELETE", `/events/rules/${r.pk}/`);
+for (const t of await list("/events/transports/")) if (t.name.startsWith(P)) await api("DELETE", `/events/transports/${t.pk}/`);
+for (const m of await list("/propertymappings/notification/")) if (m.name.startsWith(P)) await api("DELETE", `/propertymappings/notification/${m.pk}/`);
+for (const p of await list("/policies/event_matcher/")) if (p.name.startsWith(P)) await api("DELETE", `/policies/event_matcher/${p.pk}/`);
 
 // --- shared pieces
 const flows = await list("/flows/instances/");
 const flow = (slug) => flows.find((f) => f.slug === slug).pk;
 const authzFlow = flow("default-provider-authorization-implicit-consent");
 const invalFlow = flow("default-provider-invalidation-flow");
-const signingKey = (await list("/crypto/certificatekeypairs/")).find((c) => c.name === "authentik Self-signed Certificate").pk;
-const builtin = await list("/propertymappings/provider/scope/");
+let signingKey;
+for (let i = 0; i < 90 && !signingKey; i++) {
+  signingKey = (await list("/crypto/certificatekeypairs/")).find((c) => c.name === "authentik Self-signed Certificate")?.pk;
+  if (!signingKey) await new Promise((r) => setTimeout(r, 2000));
+}
+// The worker applies the default blueprints in the background; `run.sh up` only waits for the first
+// flow. Wait here for the built-in scope mappings this file uses (a cold start once failed without it).
+let builtin = [];
+for (let i = 0; i < 90; i++) {
+  builtin = await list("/propertymappings/provider/scope/");
+  if (["openid", "profile", "offline_access"].every((n) => builtin.some((m) => m.scope_name === n && m.managed))) break;
+  await new Promise((r) => setTimeout(r, 2000));
+}
 const scope = (name) => builtin.find((m) => m.scope_name === name && m.managed).pk;
 
 const mapping = async (scope_name, expression = "return {}", suffix = "") =>
@@ -184,6 +203,8 @@ return bool(request.context.get("oauth_code_challenge")) and request.context.get
 const pkceBindings = {};
 for (const [k, p] of Object.entries({ mcp, mcpB })) {
   const app = await api("GET", `/core/applications/${p.name}/`);
+  // Mode "all": with the default "any", any other policy that passes outvotes the S256 policy (G5b).
+  await api("PATCH", `/core/applications/${p.name}/`, { policy_engine_mode: "all" });
   pkceBindings[k] = (await api("POST", "/policies/bindings/", { policy: pkcePolicy.pk, target: app.pk, order: 0 })).pk;
 }
 
@@ -201,6 +222,51 @@ async function user(username, groups) {
 const alice = await user("spike-alice", [group.pk]);
 const bob = await user("spike-bob", []);
 
+// --- G5: refresh-token family revocation (ADR-0055 prerequisite 9, question 12).
+// Authentik rotates refresh tokens and marks the old one `revoked`. A presented revoked token is
+// refused and raises a suspicious_request event whose context names the token (token/refresh_token.py).
+// Nothing else happens. Two notification rules close the gap. Both run on the worker after the event
+// is saved, so they are asynchronous (seconds):
+//   1. revoke: an expression policy bound to a notification rule. Authentik evaluates it for every
+//      event (request.context["event"]); it deletes every refresh and access token of the same family
+//      and returns False, so no notification is created. A policy with side effects is a convention
+//      this spike relies on, not a documented feature, and it imports internal models.
+//   2. alert: the built-in event matcher policy bound to a rule with a webhook transport. That is how
+//      Victual would observe reuse; it could then revoke through the admin API (G5i).
+// Family key: Authentik stores no parent link or family id. Every refresh token minted by rotation
+// copies provider, user, session and auth_time from its parent (views/token.py create_refresh_response),
+// so those four fields identify the chain, and also the branches a concurrent refresh creates (G5f).
+// Two grants of one client in one login session share the key: revoking one revokes both (fail closed).
+const REVOKE_EXPRESSION = `
+from authentik.providers.oauth2.models import AccessToken, RefreshToken
+ev = request.context.get("event")
+ref = (ev.context.get("token") or {}) if ev is not None else {}
+if ev is None or ev.action != "suspicious_request" or ref.get("model_name") != "refreshtoken":
+    return False
+tok = RefreshToken.objects.filter(pk=ref.get("pk")).first()
+if tok is None:
+    return False
+family = {"provider": tok.provider, "user": tok.user, "session": tok.session, "auth_time": tok.auth_time}
+gone_r = RefreshToken.objects.filter(**family).delete()[0]
+gone_a = AccessToken.objects.filter(**family).delete()[0]
+ak_logger.warning("refresh token reuse: family revoked", provider=tok.provider_id, user=tok.user_id, refresh=gone_r, access=gone_a)
+return False
+`.trim();
+const revokePolicy = await api("POST", "/policies/expression/", { name: `${P}-refresh-reuse-revoke`, expression: REVOKE_EXPRESSION });
+const revokeRule = await api("POST", "/events/rules/", { name: `${P}-refresh-reuse-revoke`, severity: "alert" });
+const revokeBinding = await api("POST", "/policies/bindings/", { policy: revokePolicy.pk, target: revokeRule.pk, order: 0 });
+const HOOK_URL = "http://victual-spike-authentik-hook:8766/refresh-reuse";
+const notifyGroup = await api("POST", "/core/groups/", { name: `${P}-notify` });
+await api("POST", "/core/users/", { username: "spike-notify", name: "spike-notify", is_active: true, groups: [notifyGroup.pk], path: "victual-spike" });
+const hookBody = await api("POST", "/propertymappings/notification/", { name: `${P}-reuse-body`, expression: `
+ev = notification.event
+return {"action": ev.action, "event_uuid": str(ev.event_uuid), "user": ev.user, "context": ev.context}
+`.trim() });
+const hookTransport = await api("POST", "/events/transports/", { name: `${P}-reuse-webhook`, mode: "webhook", webhook_url: HOOK_URL, webhook_mapping_body: hookBody.pk, send_once: true });
+const alertMatcher = await api("POST", "/policies/event_matcher/", { name: `${P}-suspicious-request`, action: "suspicious_request" });
+const alertRule = await api("POST", "/events/rules/", { name: `${P}-refresh-reuse-alert`, severity: "alert", transports: [hookTransport.pk], destination_group: notifyGroup.pk });
+const alertBinding = await api("POST", "/policies/bindings/", { policy: alertMatcher.pk, target: alertRule.pk, order: 0 });
+
 const state = {
   ak: AK, group: { pk: group.pk, name: group.name },
   providers: Object.fromEntries(
@@ -209,6 +275,13 @@ const state = {
   users: { alice, bob },
   policies: { ceiling: policy.pk, ceilingPlain: policyPlain.pk, apiApp: apiApp.pk, binding: binding.pk, pkce: pkcePolicy.pk, pkceBindings },
   mcpResource: MCP_RESOURCE, bundle: BUNDLE,
+  reuse: { revokePolicy: revokePolicy.pk, revokeRule: revokeRule.pk, revokeBinding: revokeBinding.pk, alertRule: alertRule.pk, alertBinding: alertBinding.pk, matcher: alertMatcher.pk, hookUrl: HOOK_URL },
+  // Everything adapter.mjs needs to register a client the way Victual's adapter would (G6).
+  adapter: {
+    prefix: P, authzFlow, invalFlow, signingKey, redirectUri: "http://localhost:8765/callback", pkcePolicy: pkcePolicy.pk,
+    sidecarPk: sidecar.pk, bundle: BUNDLE, audByScope: Object.fromEntries(MCP_BOUND.map((s_, i) => [s_, mcpAud[i]])),
+    byScope: { openid: scope("openid"), profile: scope("profile"), offline_access: scope("offline_access"), "victual:read": read, "victual:write": write, "victual:admin": admin, [BUNDLE]: bundle },
+  },
 };
 writeFileSync(new URL("./state.json", import.meta.url), JSON.stringify(state, null, 2));
 console.log("configured:", Object.values(state.providers).map((p) => p.client_id).join(", "));

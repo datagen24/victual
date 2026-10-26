@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Start/stop Authentik for the compatibility spike (ADR-0055 prerequisites 1/3/4, ADR-0056
-# prerequisites 2-4). PostgreSQL, Authentik server and Authentik worker on one podman network,
-# each memory-capped because the podman VM is shared (4 CPU / 8 GiB). Not one pod: the worker
+# prerequisites 2-4, ADR-0055 prerequisites 8-11). PostgreSQL, Authentik server, Authentik worker
+# and a 64 MiB reuse-endpoint stand-in on one podman network, each memory-capped because the podman VM is shared (4 CPU / 8 GiB). Not one pod: the worker
 # also binds :9000, collides with the server in a shared network namespace and shuts down.
 # Throwaway credentials only.
 set -euo pipefail
@@ -16,6 +16,16 @@ ENV=(-e AUTHENTIK_POSTGRESQL__HOST=$POD-pg -e AUTHENTIK_POSTGRESQL__NAME=authent
      -e AUTHENTIK_BOOTSTRAP_PASSWORD=spike-only-akadmin
      -e AUTHENTIK_ERROR_REPORTING__ENABLED=false -e AUTHENTIK_DISABLE_UPDATE_CHECK=true
      -e AUTHENTIK_DISABLE_STARTUP_ANALYTICS=true)
+HOOK='
+import http.server, json
+class H(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers.get("Content-Length", 0))).decode()
+        print("HOOK " + json.dumps({"path": self.path, "body": body}), flush=True)
+        self.send_response(204); self.end_headers()
+    def log_message(self, *a): pass
+http.server.HTTPServer(("0.0.0.0", 8766), H).serve_forever()
+'
 case "${1:-up}" in
   up)
     "$0" down >/dev/null 2>&1 || true
@@ -28,6 +38,10 @@ case "${1:-up}" in
       "${ENV[@]}" "ghcr.io/goauthentik/server:$TAG" server >/dev/null
     podman run -d --network "$POD" --name "$POD-worker" --memory 1g "${ENV[@]}" \
       "ghcr.io/goauthentik/server:$TAG" worker >/dev/null
+    # Stand-in for the endpoint Victual would expose for reuse alerts (G5): logs each POSTed body as
+    # one line. Same image as Authentik (it has python); the probe reads `./run.sh logs hook`.
+    podman run -d --network "$POD" --name "$POD-hook" --memory 64m --entrypoint python3 \
+      "ghcr.io/goauthentik/server:$TAG" -u -c "$HOOK" >/dev/null
     for _ in $(seq 1 180); do
       # Ready means the worker has applied the default blueprints setup.mjs relies on.
       curl -fsS -H "Authorization: Bearer spike-only-bootstrap-token-0123456789" \
@@ -37,7 +51,7 @@ case "${1:-up}" in
     done
     podman logs --tail 30 "$POD-server"; exit 1 ;;
   down)
-    podman rm -f "$POD-worker" "$POD-server" "$POD-pg" >/dev/null 2>&1 || true
+    podman rm -f "$POD-hook" "$POD-worker" "$POD-server" "$POD-pg" >/dev/null 2>&1 || true
     podman network rm "$POD" >/dev/null 2>&1 || true ;;
   logs) podman logs "${@:3}" "$POD-${2:-server}" ;;
 esac
