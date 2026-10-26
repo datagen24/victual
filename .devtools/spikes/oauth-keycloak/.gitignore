@@ -1,0 +1,5 @@
+# Spike state: written by setup.mjs and probe.mjs, rebuilt on every run.
+state.json
+results.json
+results-*.json
+.secrets.env
