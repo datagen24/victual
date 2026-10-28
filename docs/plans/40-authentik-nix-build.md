@@ -120,9 +120,10 @@ build compiles the web UI and the Rust binary.
 ### Pinning and upgrades
 
 A routine upgrade is: change the tag in `flake.nix`, run
-`nix flake lock --update-input authentik-nix`, rebuild, run the spike probes against the
-new image. No hash lives in Victual's tree for Authentik. The flake's tags have followed
-each 2026.8.x release within two days.
+`nix flake update authentik-nix`, rebuild, run the spike probes against the new image. No
+hash lives in Victual's tree for Authentik. From 2026.8.2 to 2026.8.5 the community flake
+tagged each release on the day upstream published it, except 2026.8.4, two days later;
+earlier releases were not checked.
 
 To take a release before the community flake tags it, or to carry a patch, use the scope's
 `overrideScope`: replace `authentik-src` and `authentik-version`, and update the three
@@ -156,6 +157,16 @@ One image, `victual-authentik` (name open), built in `nix/images/authentik.nix` 
   `AUTHENTIK_BLUEPRINTS_DIR` pointing at a real `/blueprints` directory (upstream's
   `authentik/lib/default.yml` sets `blueprints_dir: /blueprints`; the community flake
   points it into the store).
+- The Rust binary's closure (24 paths, 264 MB) does not reference `pythonEnv` or
+  `staticWorkdirDeps`; it finds them through the environment. The community module sets
+  `PATH` to include `pythonEnv`'s `bin`, `PYTHONPATH` to `staticWorkdirDeps`, and a working
+  directory (`%S/authentik` for the server, `%t/authentik` for the worker) into which its
+  start script symlinks `staticWorkdirDeps/*`. The image does the same at build time:
+  `Env` carries `PATH` and `PYTHONPATH`, and `WorkingDir` is a directory in the image
+  holding those symlinks, which `nix/images/lib.nix` requires every image to state.
+- The community module runs `migrate.py` as its own unit before server and worker start.
+  Whether `authentik server` migrates on start, as upstream's image relies on, or the chart
+  needs a migration step, was not checked.
 - `/blueprints` is a real directory in the image holding the stock blueprints and an empty
   `mounted/`, not a symlink into the store, because the upstream chart mounts ConfigMaps at
   `/blueprints/mounted/cm-<name>`.
@@ -203,7 +214,8 @@ The recommendation is the upstream chart, `goauthentik/helm` (its 2026.8.5 relea
 - The upstream chart already exposes everything an image swap needs:
   `global.image.repository`, `tag` and `digest`; per-component `securityContext`,
   `volumes`, `volumeMounts` and probes; `blueprints.configMaps` and `blueprints.secrets`;
-  and `additionalObjects` for ConfigMaps rendered from values.
+  and an `additionalObjects` list (rendered by its `additional-objects.yaml` template) for
+  ConfigMaps defined in values.
 - Writing Authentik templates in Victual's chart would duplicate the upstream chart and
   fall behind it in the same way the nixpkgs package does.
 
@@ -294,8 +306,10 @@ in 2026.5.7 and 2026.8.2. nixpkgs still ships 2026.5.6 on 2026-10-28, 49 days la
 community flake tagged 2026.8.2 the day it was released.
 
 A Nix-built Authentik is therefore only as current as its source, plus Victual's own
-reaction time. Nothing in the flake notices an advisory. Dependabot does not track a
-`github:` flake input's tags. Dependency advisories are currently assigned to the next
+reaction time. Nothing in the flake notices an advisory. Dependabot does bump flake
+inputs by revision (the community flake's own history shows it bumping `nixpkgs`,
+`uv2nix` and `pyproject-nix`), but it does not move an input pinned to a tag such as
+`version/2026.8.5` to a newer tag. Dependency advisories are currently assigned to the next
 Victual release, which for an identity provider exposed through Cloudflare may be too slow.
 
 Two smaller differences from upstream's image: the community flake uses PyPI wheels for
@@ -352,6 +366,8 @@ the three hashes ourselves, which is the "own derivation" option at a known star
   2026.8.5 upstream run.
 - From inside the running server and worker containers, writes to `/nix`, `/etc` and
   `/blueprints` are refused while `/dev/shm`, `/tmp` and `/data` succeed.
+- A fresh database reaches a working admin login with only the Nix image's server and
+  worker running, which settles whether migrations need their own step.
 - `authentik healthcheck` succeeds as the liveness and readiness command in the upstream
   chart with the Nix image on kind.
 - A blueprint shipped as a ConfigMap through the values file is applied by the worker, and
