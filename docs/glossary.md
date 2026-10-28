@@ -322,6 +322,13 @@ specification and recorded exceptions. See
 
 ## Deployment
 
+### Attestation
+
+A signed statement about an artifact, bound to its digest, such as an SBOM or build
+provenance, created in GitHub Actions and checked with `gh attestation verify`. Not
+produced by any Victual workflow today; proposed in
+[plan 40](plans/40-release-sboms.md).
+
 ### Chart
 
 A Helm package: templates, a default values file and a schema, versioned and installed as a
@@ -347,6 +354,12 @@ A controller that runs in the cluster and reconciles a custom resource, such as 
 database operator managing failover. Not the person running a deployment, whom `deploy/`
 and the manual also call the operator. Considered and rejected for Victual in
 [ADR-0038](adr/0038-kubernetes-deployments-ship-as-a-helm-chart.md).
+
+### SBOM
+
+Software bill of materials: a machine-readable list of the packages and versions inside an
+artifact, in SPDX or CycloneDX format. Victual's releases publish none yet;
+[plan 40](plans/40-release-sboms.md) proposes one per image and architecture.
 
 ### Supervisor
 

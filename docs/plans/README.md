@@ -62,6 +62,7 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 37 | [API keys that carry chosen rights](37-api-key-scoped-permissions.md) | Draft, research only, 2026-10-10; no issue yet | Wave-independent. [ADR-0044](../adr/0044-api-keys-carry-a-subset-of-their-owners-permissions.md) accepted 2026-10-25; its open questions were answered 2026-10-11. No release chosen. |
 | 38 | [Household inventory and the equipment rebuild](38-household-inventory.md) | Draft, research only, 2026-10-19 | Wave-independent and unscheduled. Covers belongings, properties, battery links, maintenance, projects, insurance, heirs, moving and exchange. Implementation waits on the foundation questions and separate architectural decisions. |
 | 39 | [Native backup file export and import](39-native-backup-file.md) | Draft design, 2026-10-19 | Unscheduled and independent of plan 38. Designs a UI-based native backup file; database dumps remain the operational approach. Format, scope and restore architecture are open. |
+| 40 | [Software bills of materials for each release](40-release-sboms.md) | Draft, research only, 2026-10-28; no issue yet | Wave-independent. Recommends Syft per image and architecture, attested with `actions/attest`. Needs a new ADR for signing and provenance, which [ADR-0030](../adr/0030-released-images-are-published-to-ghcr.md) deferred; format and Nix-closure advisory watching are open. |
 
 ## Order of operations
 
