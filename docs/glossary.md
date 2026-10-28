@@ -359,7 +359,7 @@ and the manual also call the operator. Considered and rejected for Victual in
 
 Software bill of materials: a machine-readable list of the packages and versions inside an
 artifact, in SPDX or CycloneDX format. Victual's releases publish none yet;
-[plan 40](plans/40-release-sboms.md) proposes one per image and architecture.
+[plan 40](plans/40-release-sboms.md) proposes two per image and architecture, in CycloneDX.
 
 ### Supervisor
 
