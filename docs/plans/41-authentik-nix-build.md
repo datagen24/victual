@@ -4,7 +4,10 @@ Research how Authentik, the reference identity provider for the 0.6.0 OAuth work
 built by Nix the way Victual's own images are ([ADR-0013](../adr/0013-nix-built-container-images.md)),
 so its version is pinned in `flake.lock` and delivered with the rest of the stack.
 
-Status: draft, research only, 2026-10-28. No implementation, image, chart change or
+Status: draft, research only, 2026-10-28. The maintainer answered six of the seven open
+questions on 2026-10-28; the answers are recorded under [Open questions](#open-questions)
+and reconciled into the sections below. Question 3's stripping step is a proposal awaiting
+confirmation, and question 6 is unanswered. No implementation, image, chart change or
 accepted decision follows from this document. It does not amend
 [ADR-0055](../adr/0055-api-and-mcp-callers-present-oauth-access-tokens-from-a-swappable-authorization-server.md)
 or [ADR-0056](../adr/0056-an-external-identity-provider-replaces-the-built-in-authorization-server.md),
@@ -15,10 +18,17 @@ both Proposed.
 Take Authentik from the community flake
 [`nix-community/authentik-nix`](https://github.com/nix-community/authentik-nix) as a flake
 input pinned to a release tag (`version/2026.8.5` today), **without** making its `nixpkgs`
-follow Victual's. Victual's flake builds the image itself, from that flake's components,
+follow Victual's. Our own flake builds the image itself, from that flake's components,
 with the same `streamLayeredImage` conventions as the other images. Deploy it with the
 upstream `goauthentik/helm` chart as a separate release whose values override the image,
 entrypoint-dependent probes and security context, and carry the blueprints.
+
+Following the maintainer's answers, that work lives in its own repository, suggested name
+`datagen24/victual-authentik`, with its own release lifecycle and the SBOM and attestation
+work of [plan 40](40-release-sboms.md). The image is built by us, published with the
+unified release, and (proposed) built with `authentik/enterprise/` removed so it can be
+public. It carries a named exception to the no-shell check for Python and is rebuilt only
+when its pin changes. It includes no outposts, pending the maintainer's answer to question 6. See [Repository split](#repository-split).
 
 The nixpkgs package is not usable for this purpose: it is two minor versions behind the
 version the ADR-0055 evidence was gathered on, and it has been exposed to three published
@@ -37,7 +47,8 @@ runs `ghcr.io/goauthentik/server:2026.8.5` as two containers, server and worker.
 is a Debian build pinned by tag, outside the flake, with a shell, running as uid 1000.
 
 Success has four parts. The Authentik version Victual is tested against is a reviewed
-`flake.lock` entry. The image is built by the same flake and CI that build Victual's. It
+`flake.lock` entry. The image is built by us, with the same Nix conventions and CI
+pattern as Victual's images, not pulled from upstream. It
 meets ADR-0013's image properties or names each exception. And an Authentik upgrade is a pull
 request of a known, bounded size.
 
@@ -90,6 +101,37 @@ one component not in the Cachix for either architecture.
 
 ## Design
 
+### Repository split
+
+Answer to question 1. The Authentik build and deployment move to a dedicated repository
+with its own release lifecycle. **It does not exist yet; creating it is a maintainer
+action, not part of this plan's pull request.** Suggested name: `datagen24/victual-authentik`,
+which follows the `victual-label-renderer` and `victual-label-worker` naming. If the
+repository may later hold Keycloak as well (ADR-0055 keeps the authorization server
+swappable), `datagen24/victual-identity` is the alternative.
+
+| Moves to the new repository | Stays in `datagen24/victual` |
+|---|---|
+| The `authentik-nix` flake input and its `flake.lock` pin | Victual's side of the OAuth configuration: issuer URL, client settings and the login mode, in Victual's chart values (ADR-0056) |
+| The image derivation, its checks and the image publication | A reference to the pinned Authentik release: a released tag of the new repository, pinned like the label repositories' |
+| The values file for the upstream `goauthentik/helm` chart | The spike under `.devtools/spikes/oauth-authentik/` and the swap test, pointed at the released image |
+| The blueprints the swap test relies on (ADR-0055 prerequisite 8) | |
+| Release SBOMs, attestation and provenance for the image, per [plan 40](40-release-sboms.md) | |
+
+Plan 40 already describes this shape for the label repositories
+([its section on them](40-release-sboms.md#label-repositories-publish-their-own-attested-sboms)):
+a release workflow on a signed tag, immutable releases, an attested SBOM and SLSA
+provenance, and a pin in Victual to the released tag rather than a branch. The Authentik
+repository adopts the same list.
+
+Its image SBOMs come from the image bytes and the Nix
+closure as plan 40's do. Plan 40 measured Composer, npm and Cargo packages but no Python
+application; whether its generators list the roughly 200 Python packages in this closure
+by name and version, rather than only as store paths, was not checked.
+
+Sections below that say "the flake" mean the new repository's flake. Victual's own
+`flake.lock` carries no Authentik input under this split.
+
 ### Flake input
 
 ```nix
@@ -99,9 +141,9 @@ inputs.authentik-nix = {
 };
 ```
 
-`flake.lock` then records two nixpkgs revisions: Victual's and the community flake's
-(`55bfb4d7`, 2026-10-14, at this tag). That is a cost in lock size, not in closure, since
-the Authentik image shares no store paths with the PHP images anyway.
+If that repository also pins its own nixpkgs (for the image tooling), `flake.lock` records
+two nixpkgs revisions: its own and the community flake's (`55bfb4d7`, 2026-10-14, at this
+tag). That is a cost in lock size, not in closure.
 
 Following Victual's nixpkgs was measured and rejected. A dry run of the four image
 components plus `gopkgs`, `manage` and `migrate` on aarch64:
@@ -119,11 +161,17 @@ build compiles the web UI and the Rust binary.
 
 ### Pinning and upgrades
 
-A routine upgrade is: change the tag in `flake.nix`, run
-`nix flake update authentik-nix`, rebuild, run the spike probes against the new image. No
-hash lives in Victual's tree for Authentik. From 2026.8.2 to 2026.8.5 the community flake
+A routine upgrade is: change the tag in the new repository's `flake.nix`, run
+`nix flake update authentik-nix`, rebuild, run the spike probes against the new image, and
+release. Victual then moves its reference to that release. No Authentik hash lives in
+either tree. From 2026.8.2 to 2026.8.5 the community flake
 tagged each release on the day upstream published it, except 2026.8.4, two days later;
 earlier releases were not checked.
+
+CI builds the Authentik image only when the `authentik-nix` entry in `flake.lock` changes
+(question 7), not on every push to the default branch. Its closure is roughly five times
+the size of a PHP image's, and nothing else in the new repository changes the image bytes
+except the derivation itself, so a change to the image derivation also triggers it.
 
 To take a release before the community flake tags it, or to carry a patch, use the scope's
 `overrideScope`: replace `authentik-src` and `authentik-version`, and update the three
@@ -188,16 +236,40 @@ source tree twice (106 MB as the raw input and 106 MB patched), `google-api-pyth
 (103 MB), `kubernetes` (79 MB) and the web UI (74 MB). The duplicated source tree is the
 obvious reduction.
 
-The Nix image also lacks what upstream adds: the GeoLite2 databases (the upstream chart's
-optional `geoip` sidecar supplies them) and FIPS builds of Python, OpenSSL and `aws-lc`.
+The Nix image also lacks what upstream adds: FIPS builds of Python, OpenSSL and `aws-lc`,
+and the GeoLite2 databases. The maintainer accepts the FIPS loss for a home inventory
+deployment (question 5). GeoIP is optional; see [GeoIP](#geoip).
+
+Without outposts (question 6, coordinator's recommendation pending the maintainer), the
+image and the build exclude `gopkgs`, which also removes the one component missing from
+the `nix-community` Cachix.
+
+Stripping `authentik/enterprise/` (question 3, proposed) removes 1.7 MB of source from each
+copy of the tree in the closure. It changes the patched source and the `authentik` package
+inside `pythonEnv`, so those two rebuild locally; the dependency wheels, the web UI and the
+Rust binary still come from Cachix. See [Licence](#licence) for the feasibility reading.
 
 ADR-0013 decision 5's "empty `/bin`" holds; its `image-has-no-shell` check does not pass as
 written. `nix/checks.nix` forbids `python3` and `bash` in a runtime closure. Authentik is a
 Python application, and nixpkgs' `python3-3.14.7` references `bash-5.3p15` directly (read
-from its narinfo references). The MCP image already carries a named exception for Node;
-Authentik would need one for Python, and either an exception for `bash` or a Python build
-whose closure drops it. That is an amendment ADR-0013's own prerequisite 3 says to make in
-the open rather than by relaxing the check.
+from its narinfo references).
+
+The maintainer's answer to question 2 is a named, documented exception for this image, not
+a separate check set. The existing check machinery makes that the simpler choice.
+`nix/checks.nix` already runs one closure check per image against a shared
+`forbiddenInRuntimeClosure` list, and the MCP image's Node exception consists of Node not
+being on that list.
+
+The Authentik check is one more derivation of the same shape, with
+`lib.subtractLists [ "python3" "bash" ] forbiddenInRuntimeClosure` and a comment naming
+why each is allowed. Every other entry (`dash`, `busybox`, `zsh`, `perl`, …) stays
+forbidden. A separate check set would duplicate the non-root, label and closure checks
+for one image.
+
+Removing `bash` from Python's closure stays a later improvement, not a
+gate. Under the repository split, the check lives with the image in the new repository,
+copied from Victual's `nix/checks.nix` and recorded as an exception to ADR-0013 decision 5
+in that repository's documentation.
 
 The read-only root filesystem is unproven in both directions: the spike ran the upstream
 image read-write, and the upstream chart leaves `readOnlyRootFilesystem` commented out.
@@ -220,9 +292,30 @@ The recommendation is the upstream chart, `goauthentik/helm` (its 2026.8.5 relea
   fall behind it in the same way the nixpkgs package does.
 
 Victual's chart continues to take only the issuer URL and client settings, which ADR-0056
-already places in environment variables and Helm values. The image is published beside the others
+already places in environment variables and Helm values. Under the repository split, the
+values file lives in the new repository. The image is published beside the others
 by the release workflow ([ADR-0030](../adr/0030-released-images-are-published-to-ghcr.md),
 Proposed) and referenced by digest in the Authentik values file.
+
+### GeoIP
+
+Optional (question 5). Authentik uses the GeoLite2 City and ASN databases for location and
+ASN context in events and policies; without them those fields are empty. Two ways to supply
+them:
+
+- **Setup-time fetch.** The deployment's setup script downloads the databases once with a
+  MaxMind account ID and licence key (a free GeoLite2 account; the GeoLite2 licence
+  restricts redistribution, so the databases cannot be baked into a public image). The
+  files go on a persistent volume mounted at `/geoip`, where Authentik's defaults look
+  (`events.context_processors.geoip` and `.asn` in `authentik/lib/default.yml`), and the
+  key is a Secret. Refreshing them is a re-run of the script.
+- **The chart's `geoipupdate` sidecar.** The upstream chart already runs
+  `ghcr.io/maxmind/geoipupdate` beside the server and worker when `geoip.enabled` is set,
+  with the same account ID and key, and refreshes on a schedule. It is a third-party image,
+  which the maintainer's answer to question 3 prefers to avoid for the core release; as an
+  optional add-on it is the lower-effort route.
+
+Neither is required for the swap test.
 
 ### Blueprints and ADR-0055 prerequisite 8
 
@@ -258,9 +351,46 @@ For a Nix build this means:
   only the Enterprise Agents API creates. Answering it with a subscription is a licence
   decision, not a packaging one.
 - Publishing the image to a public registry redistributes the enterprise directory. Upstream
-  does the same with its own image, but Victual is not the licensor. Whether to publish,
-  keep the package private, or strip `authentik/enterprise/` at build time is open; whether
-  stripping is possible without breaking imports was not checked.
+  does the same with its own image, but Victual is not the licensor.
+
+The maintainer's answer to question 3 combines with that constraint: our own Nix-built
+image, published with the unified release, built with `authentik/enterprise/` removed so
+the public package carries only MIT-licensed Python code. **The stripping step is proposed
+and needs the maintainer's confirmation.** If stripping turns out not to work, the
+fallback is a private GHCR package for the Authentik image, with everything else unchanged.
+
+Stripping looks feasible from the 2026.8.5 source (read 2026-10-28; not run):
+
+- `authentik/root/settings.py` loads the enterprise app only if
+  `importlib.import_module("authentik.enterprise.apps")` succeeds, and skips it on
+  `ImportError`. Upstream designs for its absence.
+- Six non-test modules outside `authentik/enterprise/` import from it (the blueprint
+  importer, the devices, object-types and system APIs, the agent connector API, the SCIM
+  provider model). Every import is inside `try`/`except ImportError`.
+- Seven API classes add enterprise mixins through `ConditionalInheritance`
+  (`authentik/lib/utils/reflection.py`), which inherits only when the class can be
+  imported.
+- No migration outside `authentik/enterprise/` names one of its twenty app labels as a
+  dependency (`grep` of every non-enterprise `migrations/` directory). On a fresh database
+  the 16 enterprise migration directories are absent and never run.
+- RFC 8693 token exchange, which ADR-0055 prerequisite 4 relies on, is core
+  (`authentik/providers/oauth2/token/token_exchange.py`). So is the Entra ID OAuth source
+  ADR-0056 configures upstream (`authentik/sources/oauth/types/entra_id.py`).
+
+Three places need a run to confirm:
+
+- `SPECTACULAR_SETTINGS` in `settings.py` names three enum classes inside
+  `authentik.enterprise` by import string. If drf-spectacular resolves them when serving
+  `/api/v3/schema/`, that endpoint fails in a stripped image. The web UI uses a generated
+  client and does not need the endpoint at run time.
+- The web UI still contains the enterprise pages; they would call endpoints that no longer
+  exist.
+- A database that previously ran the enterprise migrations keeps those tables. A stripped
+  image must start against a fresh database, or the orphaned tables must be shown harmless.
+
+Stripping also forecloses the subscription route for ADR-0055 question 8: the Enterprise
+Agents API that creates an `act` Actor lives in `authentik/enterprise/agents/`. Choosing a
+subscription later means a private, unstripped image.
 - nixpkgs' `meta.license = mit` understates this; the community flake states no licence in
   its package metadata either.
 
@@ -312,9 +442,29 @@ inputs by revision (the community flake's own history shows it bumping `nixpkgs`
 `version/2026.8.5` to a newer tag. Dependency advisories are currently assigned to the next
 Victual release, which for an identity provider exposed through Cloudflare may be too slow.
 
+The maintainer's answer to question 4: an Authentik advisory can take a faster path, and the
+release machinery must allow rapid patch releases for Dependabot and other vulnerability
+findings. A patch release carries no breaking API change; it contains only dependency
+changes or regression fixes. That machinery is cross-cutting, not specific to Authentik.
+
+[ADR-0047](../adr/0047-one-trunk-release-branches-and-promoted-images.md) (Proposed) already
+provides the branch shape: a fix lands on `master`, is cherry-picked to
+`release/<major>.<minor>`, and a patch version is a tag on that branch, promoted through UAT
+without a rebuild. It does not define how fast that path runs, what may enter a patch
+release, or how a dependency-only bump is fast-tracked. Those need their own decision.
+This plan depends on it and does not design it.
+
+Under the repository split, an Authentik patch is a release of the new repository (a new
+`authentik-nix` tag adopted, rebuilt, attested), followed by a Victual patch release that
+moves the pinned reference. Plan 40's proposed advisory monitoring
+([Advisory monitoring for the Nix closure](40-release-sboms.md#advisory-monitoring-for-the-nix-closure))
+would apply to the new repository's closure too; upstream's GitHub security advisories
+are the more direct signal for Authentik itself.
+
 Two smaller differences from upstream's image: the community flake uses PyPI wheels for
 Python dependencies (pinned by hash in `uv.lock`, but prebuilt, not built from source), and
-it drops FIPS. Neither weakens the pin; both are departures from what upstream tests.
+it drops FIPS, which the maintainer accepts (question 5). Neither weakens the pin; both are
+departures from what upstream tests.
 
 ### Dependency on a community project
 
@@ -333,27 +483,75 @@ the three hashes ourselves, which is the "own derivation" option at a known star
 
 ## Open questions
 
+Answers recorded 2026-10-28. Question 6 has no answer from the maintainer yet.
+
 1. **Where does the Authentik release live?** Victual's deploy tree (`deploy/authentik/`,
    values file plus blueprints), or the infrastructure repository that holds Traefik,
    Cloudflare and the cluster's other services? Prerequisite 8 asks for the provider
    configuration to live "with the deployment configuration", which either answer can
    satisfy; the blueprints Victual's tests depend on are the part that most wants to be in
    this repository.
+
+   > **Response:** datagen24, 2026-10-28: ideally in its own `victual-*` repository with the
+   > full lifecycle management it needs, together with the SBOM work from plan 40. The
+   > repository does not exist yet; creating it is a maintainer action. (Reconciled in
+   > [Repository split](#repository-split), which suggests `datagen24/victual-authentik`
+   > and lists what moves and what stays.)
+
 2. **Does the no-shell check get a Python exception?** The image cannot pass
    `image-has-no-shell` as written. Options: a named Python exception like the MCP image's
    Node one, plus removing `bash` from the Python closure; or a separate, weaker check set
    for third-party images.
+
+   > **Response:** datagen24, 2026-10-28: no shell is a nice-to-have where fully possible,
+   > and it is not possible here. Record a named, documented exception for the Authentik
+   > image. (Reconciled in [Image](#image): one more per-image closure check with `python3`
+   > and `bash` subtracted from the shared list, which the existing machinery makes simpler
+   > than a separate check set.)
+
 3. **Is a public `ghcr.io` package acceptable** given the enterprise directory inside it, or
    is the Authentik image private, or built with `authentik/enterprise/` removed?
+
+   > **Response:** datagen24, 2026-10-28: the target is a fully unified release of the core
+   > application and everything it needs, built by us; not an external image whose contents
+   > are unknown. Combined with the licence constraint, the reading recorded here is our
+   > own Nix-built image, published with the unified release, with `authentik/enterprise/`
+   > stripped at build time so it can be public. **The stripping part is proposed and needs
+   > confirmation.** (Reconciled in [Licence](#licence), which records the feasibility
+   > reading and the private-package fallback.)
+
 4. **How fast must an Authentik advisory reach production?** If faster than "next release",
    the Authentik pin needs its own path, for example a patch-release exception or a
    scheduled check of upstream's advisories against `flake.lock`.
+
+   > **Response:** datagen24, 2026-10-28: it can be faster. The release machinery needs to
+   > allow rapid patch releases for Dependabot and other vulnerability findings. A patch
+   > release carries no breaking API changes, only dependency changes or regression fixes.
+   > (Reconciled in [Security-update lag](#security-update-lag): the patch-release
+   > machinery is cross-cutting, builds on ADR-0047, and needs its own decision; this plan
+   > depends on it.)
+
 5. **Is losing FIPS and the bundled GeoIP databases acceptable?** GeoIP can come from the
    chart's `geoipupdate` sidecar with a MaxMind account; FIPS has no Nix equivalent here.
+
+   > **Response:** datagen24, 2026-10-28: FIPS does not matter for a home inventory
+   > package. GeoIP is nice to have; the build or setup scripts could fetch the database
+   > during setup and load it. (Reconciled in [GeoIP](#geoip): optional, setup-time fetch
+   > or the chart's sidecar.)
+
 6. **Which outposts, if any?** The image needs none. If the proxy or LDAP outpost is wanted
    later, `gopkgs` is not in Cachix and must be built locally or in CI.
+
+   > **Not answered yet.** The coordinating session recommends none: Victual is an OIDC
+   > relying party (ADR-0056 decision 2 rejects the forward-auth proxy path), so the proxy,
+   > LDAP, RADIUS and RAC outposts serve nothing in this stack. The design keeps `gopkgs`
+   > out of the build pending the maintainer's confirmation.
+
 7. **Does CI build the Authentik image on every `master` push**, or only when `flake.lock`'s
    `authentik-nix` entry changes? Its closure is roughly five times the PHP images'.
+
+   > **Response:** datagen24, 2026-10-28: only when the lock changes. (Reconciled in
+   > [Pinning and upgrades](#pinning-and-upgrades).)
 
 ## Verification
 
@@ -374,8 +572,19 @@ the three hashes ourselves, which is the "own derivation" option at a known star
   removing it from the values file is reflected after the next reconcile.
 - An upgrade rehearsal: move the pin from one 2026.8.x tag to the next and record the diff
   size, build time and probe results.
-- `nix flake check` includes the Authentik image's non-root, no-shell (with its documented
-  exception) and labels assertions.
+- `nix flake check` includes the Authentik image's non-root, no-shell (with `python3` and
+  `bash` as its documented exception, and every other forbidden name still refused) and
+  labels assertions.
+- With `authentik/enterprise/` stripped: the server and worker start, all migrations apply
+  to a fresh database, `GET /api/v3/schema/` answers, the swap-test probes give the same
+  results as the unstripped image, and `grep -r authentik/enterprise` over the image's
+  closure finds nothing. If any of these fails, the image is published as a private package
+  instead.
+- A CI run that changes nothing in the `authentik-nix` lock entry or the image derivation
+  does not build the Authentik image; one that changes the entry does.
+- The released image's SBOM and attestations verify with plan 40's documented command, and
+  Victual's reference names that released tag.
+- If GeoIP is enabled: an event recorded from a public address carries a country and ASN.
 
 ## Research
 
