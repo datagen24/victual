@@ -4,6 +4,7 @@
 # shared (4 CPU / 8 GiB). Binds 127.0.0.1:8180 only. Throwaway credentials only.
 #   ./run.sh up [preview]   start; "preview" adds the delegation preview features
 #   ./run.sh down           remove the containers and the network
+#   ./run.sh restart        restart the Keycloak server container (same PostgreSQL database)
 #   ./run.sh stats          memory use of both containers
 #   ./run.sh readonly       start a second instance on a read-only root filesystem (port 8181)
 #   ./run.sh logs [server|pg] [podman logs flags]
@@ -65,6 +66,9 @@ case "${1:-up}" in
       -e KC_HTTP_ENABLED=true -e KC_HEALTH_ENABLED=true -e KC_HOSTNAME=http://localhost:8181 \
       localhost/$NAME-ro:$TAG start --optimized >/dev/null
     wait_ready 8181 "$NAME-ro" ;;
+  restart)
+    podman restart "$NAME-server" >/dev/null
+    wait_ready $PORT "$NAME-server" ;;
   down)
     podman rm -f "$NAME-ro" "$NAME-ro-build" "$NAME-server" "$NAME-pg" >/dev/null 2>&1 || true
     podman rmi -f localhost/$NAME-ro:$TAG >/dev/null 2>&1 || true
