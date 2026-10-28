@@ -29,19 +29,40 @@ corrects earlier revocation evidence: see finding 10 and case K1i. The client po
 earlier run installed from `probe.mjs` now live in `setup.mjs`, so the deployment configuration
 is versioned in one place. `adapter.mjs` simulates Victual's registration adapter.
 
+The 2026-10-28 third pass tests the maintainer's 2026-10-26 answers to questions 18, 19 and 20:
+
+- Question 18 (prerequisite 8): the adapter stamps every object it creates with owner and recipe
+  version. A `reconcile()` step repairs drift, removes its own orphans and upgrades between recipe
+  versions (K4a to K4g).
+- Question 19: the K5 cases list the grants of a session through the admin API before an
+  administrative revocation, and check that exactly those grants stop.
+- Question 20 (prerequisite 10): each K1r case asserts one outcome: refresh access (`-r`), new
+  exchanges (`-x`), or the already-issued `/api` token at Keycloak's introspection (`-t`). The
+  `--expiry` mode measures how long an issued `/api` token keeps working after its grant is
+  revoked (E cases). K1r8 to K1r10 are three mechanisms not tried before.
+
+The 2026-10-26 report counted a probe-side lookup on `victual_client`, `sid` and `sub` as blocking
+the exchanged token. That lookup simulated a Victual check that does not exist. It no longer
+decides any verdict; finding 18 and the gate table are corrected.
+
+Keycloak 26.8.1 is still the newest release on 2026-10-28 (`gh api repos/keycloak/keycloak/releases`:
+26.8.1 published 2026-10-13). The spike stays pinned to it.
+
 ## Run
 
 ```bash
 cd .devtools/spikes/oauth-keycloak
 ./run.sh up              # PostgreSQL + Keycloak on one podman network, 127.0.0.1:8180
 node setup.mjs           # realm, clients, client scopes, users, via the admin API
-node probe.mjs           # core cases; prints the table and writes results.json
+node probe.mjs           # core cases; prints the table and writes results.json (restarts the server once, K4g)
+node probe.mjs --expiry  # E cases: expiry delay of an issued /api token after revocation (about 7 min)
 ./run.sh down
 ./run.sh up preview      # adds token-exchange-delegation, parameterized-scopes, admin-fine-grained-authz:v2
 node setup.mjs && node probe.mjs --preview
 ./run.sh down
 ./run.sh readonly        # second instance on a read-only root filesystem, :8181 (needs ./run.sh up)
 ./run.sh stats           # memory of both containers
+./run.sh restart         # restart the server container on the same database (the probe calls it for K4g)
 ```
 
 No npm install is needed: the probe uses `node:crypto` and `fetch` only. `run.sh` generates the
@@ -51,11 +72,11 @@ run takes about 75 s; each scripted login takes about 1 s. `results.json` and `s
 are gitignored.
 
 Files: `setup.mjs` (realm, clients, client scopes, client policies, users), `adapter.mjs` (the
-adapter simulation: `registerMcpClient` and `deregisterMcpClient`, used by `setup.mjs` and by the
-K2 cases), `probe.mjs` (the cases), `lib.mjs` (admin REST, scripted login, resource-server
+adapter simulation: the pinned recipe versions, `registerMcpClient`, `deregisterMcpClient`,
+`listOwned` and `reconcile`, used by `setup.mjs` and by the K2 and K4 cases), `probe.mjs` (the cases), `lib.mjs` (admin REST, scripted login, resource-server
 check), `idp-stub.mjs` (stub upstream provider for the L cases), `run.sh`.
 
-## Gates (2026-10-25, extended 2026-10-26)
+## Gates (2026-10-25, extended 2026-10-26 and 2026-10-28)
 
 Same four gates as the [Authentik report](../oauth-authentik/README.md) (G1 to G4), then the
 rest of what ADR-0055 decision 2 and the open questions ask of Keycloak. "Config" means a
@@ -73,21 +94,40 @@ feature, unless the row says "needs Preview".
 | G3 Scope ceiling: default | not met: the exchange widens `victual:read` to `victual:write` | N11 |
 | G3 Scope ceiling: client policy | met-with-config: the `downscope-assertion-grant-enforcer` executor on a client policy that applies to all clients refuses widening, passes equal and narrower | N11b |
 | G3 Scope ceiling: bundle against leaf | not met: Keycloak compares scope names; it holds no bundle-to-leaf expansion. A bundle subject token cannot be exchanged for a leaf, and a leaf cannot be exchanged for the bundle. The same bundle is accepted | N11c |
-| G3 Scope ceiling: delegated exchange | met-with-config (Preview): the `victual-downscope-all` policy refuses widening in a delegated exchange too. The 2026-10-25 run reported a FAIL because the policy was installed by the core probe only, not in the Preview realm. `setup.mjs` now installs it in both | DP2 | 0055 d7: the delegated exchange keeps the scope ceiling | `victual:write` refused or dropped | 400 invalid_scope (Scopes [victual:write] not present in the initial access token [victual:read, openid, dele); scope=undefined | pass |
+| G3 Scope ceiling: delegated exchange | met-with-config (Preview): the `victual-downscope-all` policy refuses widening in a delegated exchange too. The 2026-10-25 run reported a FAIL because the policy was installed by the core probe only, not in the Preview realm. `setup.mjs` now installs it in both (the 2026-10-26 Preview run: `400 invalid_scope`) | DP2 |
 | G4 Code flow with PKCE, scripted login | met: a headless login through the realm's login form replaces the password grant. S256-only is a per-client attribute, and the request without a challenge or with `plain` is refused | P2, N17, N19 |
 | G4 Refresh rotation with reuse revoking the family | met-with-config: `revokeRefreshToken` set on the realm. Reuse of an old token is refused and the newer token of the same family is refused too | P10, N16 |
-| Revocation | met-with-config for refresh and new exchanges; partly at introspection. Revoking the refresh token, deleting the session or deleting one client's consent stops refresh and new exchanges. A stateless check accepts the exchanged token until it expires (five minutes). The first version of this table said all three deactivate the exchanged token at introspection. That was wrong (finding 10, K1i) | R3 to R6, N12, K1i |
+| Revocation | met-with-config for refresh and new exchanges; partly at introspection; bounded at a stateless check. Revoking the refresh token, deleting the session or deleting one client's consent stops refresh and new exchanges. A stateless check accepts the issued token until `exp` + 60 s (finding 23). Corrected in finding 10 | R3 to R6, N12, K1i, E0 to E2 |
 | Discovery | met: OIDC and RFC 8414 discovery both served from the issuer path, issuer equals `iss`. `resource_indicators_supported` absent | P1 |
 | Registration | met-with-config: anonymous registration refused by default (Trusted Hosts policy with no host). With a trusted host, anonymous callers can register confidential clients and wildcard redirects, so a client policy is needed to limit that | N15, D1, D2 |
 | K1 Originating grant: identity claim (prerequisite 10, question 13) | met-with-config: a per-client scope `victual-grant:<client id>` with a Hardcoded claim mapper, a default scope of the client and an optional scope of the sidecar. The exchanged token carries `victual_client`, signed by Keycloak. Needs no Preview feature and no deployed code. Victual must refuse a token without the claim (finding 15) | K1c, K1d, K1h |
 | K1 Originating grant: no caller-supplied identity (prerequisite 10) | met-with-config, conditional on the `victual-downscope-all` client policy. With it, the sidecar cannot ask for another grant's scope and extra form fields change nothing. Without it, the sidecar relabelled grant A as grant B (K1f FAIL) | K1e, K1f |
-| K1 Originating grant: per-grant revocation (prerequisite 10) | partly met at Keycloak's introspection, met with a Victual lookup on `victual_client`, `sid` and `sub`. Consent deletion and not-before changes do not reach introspection. A session shared by two grants, and a user logout, end both grants (finding 18) | K1i, K1j, K1r1s to K1r7s, K1r1h to K1r5h, K1s, K1g1, K1g2 |
+| K1 Originating grant: revoke refresh access (prerequisite 10, question 20) | met: every per-grant mechanism (consent deletion, refresh-token revocation, session deletion in separate sessions, client not-before, offline-session deletion) refuses A's refresh and A's new exchanges and leaves B's. Deleting a session two grants share ends both (K5a lists them first) | K1r1s-r to K1r6s-r, K1r1s-x to K1r5s-x, K1r1h-r to K1r5h-r, K1r1h-x to K1r5h-x |
+| K1 Originating grant: reject the already-issued `/api` token (prerequisite 10, question 20) | not met at Keycloak after consent deletion, client not-before, or refresh-token revocation in a shared session: `/api` introspection stays active. Refused at once after session-ending mechanisms in a grant's own session and after the sidecar revokes the token. A stateless check accepts it until `exp` + 60 s. Victual's check is not built or tested (findings 18, 19, 23) | K1r1s-t to K1r10s-t, K1r1h-t to K1r5h-t, K1r6s-t, K1r7s, K1s, E1, E2 |
+| Shared provider session (question 19) | met-with-config: before deleting a session or logging a user out, the admin API's user-sessions endpoint lists the grants (user, session, client) the action ends, and exactly those grants stop; alice's grant in another session and bob's grant keep working. This is a broader effect, not per-grant revocation | K5a, K5b, K1r3h-r, K1r3h-x, K1r3h-t |
+| Expiry delay of an issued `/api` token (question 20) | measured: introspection refuses after consent deletion at `exp` + 1.2 to 1.9 s, after session deletion and refresh-token revocation within 0.1 s. The stateless check refuses at `exp` + 60.2 to 60.7 s in every mechanism, so the worst case after a revocation is the token lifespan plus the 60 s skew (300 + 60 s with this realm) | E0, E1-consent, E1-session, E1-refresh, E2-consent, E2-session, E2-refresh |
 | K1 Candidates that failed | a User Session Note mapper (a browser login stores only `AUTH_TIME` and `KC_DEVICE_NOTE`; no note names the client), a mapper on the MCP client or on the sidecar (not applied at the exchange), `sid` alone when two clients share one SSO session, script mappers (need a deployed JAR; not tried) | K1a, K1b, K1g2 |
 | K2 MCP audience bound by the adapter (prerequisite 11, question 14) | met-with-config: clients the adapter creates with `victual-mcp-audience` as a default scope verify at the sidecar and cannot select another audience. A client without the scope is refused at the sidecar. Exchanged tokens carry only the `/api` audience (finding 20) | K2a to K2e |
 | K2 Anonymous registration cannot self-bind (prerequisite 11) | met-with-config by Keycloak's Allowed Client Scopes policy with an empty allow list: a registrant asking for the audience scope is refused, and a registered client cannot request it. With `victual-mcp-audience` on that list, a registrant gets the MCP audience itself (K2h), so the list must never contain it | K2g, K2h |
+| K4 Generated objects: versioned recipe (prerequisite 8, question 18) | met-with-config: owner and recipe stamps in the `attributes` maps survive read-back and a restart. `reconcile()` is idempotent, repairs five kinds of drift, deletes an owned orphan, leaves unowned lookalikes untouched and upgrades recipe 1 to 2. Listing by owner reads every client: the `q=` attribute query is refused (finding 22) | K4a to K4g, K3 |
 | Victual-owned login (no longer a gate since the 2026-10-25 clarification) | evidence only. met-with-config: identity brokering to an upstream OIDC provider creates or links a Keycloak user with no password credential, and the browser flow can be reduced to the redirector. The User Storage SPI was read, not run (untested) | L1, L2, L4 |
 | Victual subject in the token (not required since the 2026-10-25 clarification: Victual maps Keycloak's stable `sub`, P3) | evidence only. met-with-config: Keycloak's `sub` is its own UUID. Victual's subject can be copied into a claim, but only from a client scope requested at the exchange; a mapper on the client itself is not applied to the exchanged token | L3 |
 | Licence, image, runtime | Apache-2.0; image 478 MB (arm64); runs as uid 1000; read-only root filesystem works after a build step with a tmpfs for `/tmp` and the data directory; 520 to 620 MiB for the server after the probe, 50 to 77 MiB for PostgreSQL | I1, `./run.sh readonly`, `./run.sh stats` |
+
+Core run (2026-10-28): **101 of 123 cases pass, 21 FAIL, 1 n/a** (P8 needs the Preview run).
+The 21 FAIL rows:
+
+- P7, N5, N11, N11c, A2, R2 and L3 from the first report; K1a, K1b, K1f and K1g2 from the follow-up.
+- Six `-t` rows where the already-issued `/api` token stays active at Keycloak's introspection:
+  consent deletion (K1r1s-t, K1r1h-t), client not-before (K1r4s-t, K1r4h-t), the `/api` client's
+  not-before (K1r8s-t), and refresh-token revocation in a shared session (K1r2h-t).
+- K1r9s-t: the sidecar's not-before ends B's token too.
+- K1r3h-r, K1r3h-x and K1r3h-t: deleting a shared session ends both grants. K5a shows the
+  affected grants are listed first.
+
+Five of those `-t` rows (K1r1s, K1r4s, K1r1h, K1r2h, K1r4h) are mechanisms the 2026-10-26 report
+passed because a probe-side lookup counted as blocking (finding 18). K1r8s-t and K1r9s-t are new
+mechanisms. The one K1r3h FAIL became three rows. Expiry run: **7 of 7 pass**.
 
 Core run (2026-10-26): **77 of 90 cases pass, 12 FAIL, 1 n/a** (P8 needs the Preview run). The
 twelve FAIL rows are P7, N5, N11, N11c, A2, R2 and L3 from the first report, and K1a, K1b, K1f,
@@ -96,7 +136,7 @@ policy switched off, and the other four are candidates or topologies that do not
 per-grant identity. Preview run: **12 of 12 pass** (DP2 now passes; see the note under the
 Preview table).
 
-Cold starts of the core run (`./run.sh down`, `up`, `setup.mjs`, `probe.mjs`):
+Cold starts of the core run (`./run.sh down`, `up`, `setup.mjs`, `probe.mjs`; run 9 also `probe.mjs --expiry`):
 
 | Run | Result | Note |
 |---|---|---|
@@ -105,6 +145,19 @@ Cold starts of the core run (`./run.sh down`, `up`, `setup.mjs`, `probe.mjs`):
 | 6 | 49 pass, 7 FAIL, 1 n/a of 57 | X4b added |
 | 7 | 77 pass, 12 FAIL, 1 n/a of 90 | 2026-10-26 follow-up: K1, K2 and K3 cases added; client policies moved into `setup.mjs`. K2g first expected a registered client without the scope; Keycloak refused the registration (403), so the case now accepts a refusal or a client without the scope. Edited before the cold starts, in warm-realm runs of 74 and 76 passes |
 | 8 | 77 pass, 12 FAIL, 1 n/a of 90 | Same verdicts as run 7 case by case. Two earlier cold starts, before the observed-text edits that shortened three table cells, gave the same counts and verdicts |
+| 9 | 101 pass, 21 FAIL, 1 n/a of 123 (85 s); expiry run 7 of 7 (362 s) | 2026-10-28 third pass: K1r split; K1r8 to K1r10, K4 and K5 added. A dev run before it gave 99 pass, 23 FAIL; the fixes after it are listed below the table |
+| 10 | 101 pass, 21 FAIL, 1 n/a of 123 (86 s) | Same verdicts as run 9 case by case |
+
+Fixes between the 2026-10-28 dev run and run 9; none changed an expectation:
+
+- `reconcile()` did not remove a mapper added to the client itself. K4c caught it.
+- Recipe 2's first mapper change (`userinfo.token.claim` = `false`) was already Keycloak's stored
+  default, so it changed nothing. It was replaced by `lightweight.claim`.
+- K5b listed alice's live sessions from earlier cases. It now logs alice out before building its
+  fixtures, and also asserts that none of her sessions remain.
+- K4a first expected the `q=` attribute query to work. Keycloak refused it (400) and the probe
+  stopped before recording any verdict. The case now lists by owner over all clients and reports
+  the refusal.
 
 ## Shape under test
 
@@ -118,6 +171,7 @@ Cold starts of the core run (`./run.sh down`, `up`, `setup.mjs`, `probe.mjs`):
 | `victual-spike-other`, `-rogue-exchanger`, `-no-exchange-grant`, `-mcp-short`, `-default-scopes` | Negative cases, 3 s tokens, and realm default scopes as Keycloak ships them | as named |
 | `victual-spike-mcp-k1a`, `-k1b` | Two MCP clients created by `adapter.mjs` (K1) | code, refresh, Consent required |
 | `victual-spike-mcp-k2-1`, `-k2-2`, `-k2-noaud` | Created and deleted by the K2 cases through `adapter.mjs`; the last one skips the audience scope | as above |
+| `victual-spike-mcp-k4-1` to `-k4-4`, `-k4-lookalike` | Created and deleted by the K4 cases: `-k4-3` and `-k4-4` at recipe 1, `-k4-2` deleted behind the adapter's back, the lookalike without stamps | as above |
 
 One realm (`victual`), so one issuer. Five-minute access tokens, `revokeRefreshToken` on,
 `refreshTokenMaxReuse` 0. `fullScopeAllowed` is off on every client. Audience comes from
@@ -135,6 +189,23 @@ default scopes, the four bundles and `offline_access` as optional scopes, `fullS
 off, S256 PKCE and Consent required. It adds the per-grant scope to the sidecar's optional
 scopes. The per-grant scope has one Hardcoded claim mapper that writes `victual_client`, the
 client id, into access tokens and introspection responses, and the lightweight token.
+
+Since the 2026-10-28 pass the adapter also stamps the client and its grant scope through their
+`attributes` maps: `victual.owner` = `victual-registration-adapter`, `victual.recipe` = the recipe
+version, and on the scope `victual.grant-client` = the client id. A client created with a
+deliberate deviation from the recipe (the K2 negative fixtures) carries no stamp.
+
+`RECIPES` in `adapter.mjs` holds every recipe version the adapter can build, and `RECIPE_VERSION`
+(2) is the one it builds and reconciles to. Version 2 is what `setup.mjs` builds and K1 and K2
+test. Version 1 is the same without the grant mapper's `lightweight.claim` flag and the client
+description. It is synthetic, so that the upgrade case has a mapper setting and a client field to
+change.
+
+`reconcile()` lists owned clients and client scopes by the owner attribute (finding 22). It repairs
+client fields, the client's own mappers, default and optional scopes, the grant scope and its
+mapper, the sidecar's optional-scope link and the stamps. It recreates a missing grant scope and
+deletes an owned grant scope whose client no longer exists. It returns the list of changes it made.
+It never repairs or deletes an object without the owner attribute.
 
 User tokens come from authorization code with PKCE S256 and a scripted login (`lib.mjs`
 drives the login form with a cookie jar, and accepts the consent screen when a client
@@ -212,7 +283,7 @@ Authentik report where the case is the same; the others are new to this spike.
 | L4 | 0055 d2, gate 2: local password login can be disabled | No password form; password grant fails for the brokered user | Password grant `invalid_grant` for three guesses; with the realm browser flow reduced to the identity-provider redirector, `/auth` redirects to the broker endpoint, no form, and the login ends as the upstream identity | pass |
 | I1 | 0055 prerequisite 3: runs non-root | uid other than 0 | uid 1000; image 478 MB | pass |
 
-Follow-up cases K1 to K3 (2026-10-26), same run as the table above. K1r cases are named by mechanism number, then `s` (separate sessions) or `h` (same browser session).
+Follow-up cases K1 to K5 (2026-10-26, extended 2026-10-28), same run as the table above; the rows below are from the 2026-10-28 cold start 2. K1r cases are named by mechanism number, then `s` (separate sessions) or `h` (same browser session), then `-r` (refresh access), `-x` (new exchanges) or `-t` (the already-issued `/api` token at Keycloak's introspection). The 2026-10-26 K1r rows asserted refresh and a probe-side lookup together; each row now asserts one outcome.
 
 | ID | Clause | Expected | Observed | Verdict |
 |---|---|---|---|---|
@@ -227,19 +298,45 @@ Follow-up cases K1 to K3 (2026-10-26), same run as the table above. K1r cases ar
 | K1h | 0055 d6, q13: the grant claim survives a lightweight access token | with lightweight tokens on, the exchanged token still names the client (claim flagged lightweight, and the per-grant scope in `scope`) | audience mapper not flagged lightweight: 400 invalid_request (Requested audience not available: http://localhost:8080/api); flagged: 200 token, claims=exp,iat,jti,iss,aud,sub,typ,azp,sid,scope,victual_client, victual_client=victual-spike-mcp-k1a, grant scope in scope=true; /api check=accepted; introspection returns the full claims: true | pass |
 | K1i | 0055 d6: introspection of an exchanged token | active at the resource server (the /api client), the point Victual would check | introspected by the sidecar (the exchanger, azp): active=false; by the /api client (the audience): active=true. The sidecar's own introspection is inactive even before any revocation, so a revocation check must be made by the audience client | pass |
 | K1j | 0055 d6, q13: an adapter-created client has Consent required, so the user's grant is a stored consent per client | a consent screen is shown on first use; the consent is stored; the next login skips the screen | screen shown after the stored consent was deleted=true; code after accepting=true; stored consents=victual-spike-mcp-k1a,victual-spike-mcp-k1b; second login: screen shown=false, code=true | pass |
-| K1r1s | 0055 d6, q13, prerequisite 10: deleting the user's consent for client A (admin API), separate sessions | A's exchanged token blocked at introspection or the grant lookup; B's still valid | before: A valid, B valid; call -> 204; after: A introspect=true session+client=false consent=false notBeforeStale=false => BLOCKED; B introspect=true session+client=true consent=true notBeforeStale=false => valid; refresh A -> 400 invalid_grant (Session doesn't have required client); refresh B -> 200 token; stateless check A/B: accepted/accepted | pass |
-| K1r2s | 0055 d6, q13, prerequisite 10: revoking client A's refresh token (RFC 7009), separate sessions | A's exchanged token blocked at introspection or the grant lookup; B's still valid | before: A valid, B valid; call -> 200; after: A introspect=false session+client=false consent=true notBeforeStale=false => BLOCKED; B introspect=true session+client=true consent=true notBeforeStale=false => valid; refresh A -> 400 invalid_grant (Session not active); refresh B -> 200 token; stateless check A/B: accepted/accepted | pass |
-| K1r3s | 0055 d6, q13, prerequisite 10: deleting the user session of grant A (admin API, by sid), separate sessions | A's exchanged token blocked at introspection or the grant lookup; B's still valid | before: A valid, B valid; call -> 204; after: A introspect=false session+client=false consent=true notBeforeStale=false => BLOCKED; B introspect=true session+client=true consent=true notBeforeStale=false => valid; refresh A -> 400 invalid_grant (Session not active); refresh B -> 200 token; stateless check A/B: accepted/accepted | pass |
-| K1r4s | 0055 d6, q13, prerequisite 10: client A's not-before (admin API PUT notBefore=now), separate sessions | A's exchanged token blocked at introspection or the grant lookup; B's still valid | before: A valid, B valid; call -> 204; after: A introspect=true session+client=true consent=true notBeforeStale=true => BLOCKED; B introspect=true session+client=true consent=true notBeforeStale=false => valid; refresh A -> 400 invalid_grant (Stale token); refresh B -> 200 token; stateless check A/B: accepted/accepted | pass |
-| K1r5s | 0055 d6, q13, prerequisite 10: logging the user out of every session (admin API), separate sessions | both grants' exchanged tokens blocked (a user-wide mechanism) | before: A valid, B valid; call -> 204; after: A introspect=false session+client=false consent=true notBeforeStale=false => BLOCKED; B introspect=false session+client=false consent=true notBeforeStale=false => BLOCKED; refresh A -> 400 invalid_grant (Session not active); refresh B -> 400 invalid_grant (Session not active); stateless check A/B: accepted/accepted | pass |
-| K1r1h | 0055 d6, q13, prerequisite 10: deleting the user's consent for client A (admin API), same browser session | A's exchanged token blocked at introspection or the grant lookup; B's still valid | before: A valid, B valid; call -> 204; after: A introspect=true session+client=false consent=false notBeforeStale=false => BLOCKED; B introspect=true session+client=true consent=true notBeforeStale=false => valid; refresh A -> 400 invalid_grant (Session doesn't have required client); refresh B -> 200 token; stateless check A/B: accepted/accepted | pass |
-| K1r2h | 0055 d6, q13, prerequisite 10: revoking client A's refresh token (RFC 7009), same browser session | A's exchanged token blocked at introspection or the grant lookup; B's still valid | before: A valid, B valid; call -> 200; after: A introspect=true session+client=false consent=true notBeforeStale=false => BLOCKED; B introspect=true session+client=true consent=true notBeforeStale=false => valid; refresh A -> 400 invalid_grant (Session doesn't have required client); refresh B -> 200 token; stateless check A/B: accepted/accepted | pass |
-| K1r3h | 0055 d6, q13, prerequisite 10: deleting the user session of grant A (admin API, by sid), same browser session | A's exchanged token blocked at introspection or the grant lookup; B's still valid | before: A valid, B valid; call -> 204; after: A introspect=false session+client=false consent=true notBeforeStale=false => BLOCKED; B introspect=false session+client=false consent=true notBeforeStale=false => BLOCKED; refresh A -> 400 invalid_grant (Session not active); refresh B -> 400 invalid_grant (Session not active); stateless check A/B: accepted/accepted | **FAIL** |
-| K1r4h | 0055 d6, q13, prerequisite 10: client A's not-before (admin API PUT notBefore=now), same browser session | A's exchanged token blocked at introspection or the grant lookup; B's still valid | before: A valid, B valid; call -> 204; after: A introspect=true session+client=true consent=true notBeforeStale=true => BLOCKED; B introspect=true session+client=true consent=true notBeforeStale=false => valid; refresh A -> 400 invalid_grant (Stale token); refresh B -> 200 token; stateless check A/B: accepted/accepted | pass |
-| K1r5h | 0055 d6, q13, prerequisite 10: logging the user out of every session (admin API), same browser session | both grants' exchanged tokens blocked (a user-wide mechanism) | before: A valid, B valid; call -> 204; after: A introspect=false session+client=false consent=true notBeforeStale=false => BLOCKED; B introspect=false session+client=false consent=true notBeforeStale=false => BLOCKED; refresh A -> 400 invalid_grant (Session not active); refresh B -> 400 invalid_grant (Session not active); stateless check A/B: accepted/accepted | pass |
-| K1r6s | 0055 d6, q13, prerequisite 10: deleting the offline session of grant A (admin API, isOffline=true), separate sessions | A's exchanged token blocked; B's still valid | exchanged token's sid is the offline session (true); call -> 204; A introspect=false session+client=false consent=true notBeforeStale=false => BLOCKED; B introspect=true session+client=true consent=true notBeforeStale=false => valid; refresh A -> 400 invalid_grant (Offline user session not found); refresh B -> 200 token | pass |
-| K1r7s | 0055 d6: revoking client A's access token (RFC 7009) does not revoke the grant or its exchanged tokens | the exchanged token stays valid (the guide: revoking the subject access token does not revoke the exchanged one) | revoke -> 200; A introspect=true session+client=true consent=true notBeforeStale=false => valid; refresh A -> 200 token | pass |
-| K1s | 0055 d6: a stateless check of an exchanged token after its grant was revoked | accepted until exp (five minutes at most) | consent deleted; stateless check -> accepted; exp in 300 s | pass |
+| K1r1s-r | 0055 d6, q13, q20, prerequisite 10: deleting the user's consent for client A (admin API), separate sessions: refresh access | A's refresh token refused; B's still refreshes | call -> 204; refresh A -> 400 invalid_grant (Session doesn't have required client); refresh B -> 200 token | pass |
+| K1r1s-x | 0055 d6, q13, q20, prerequisite 10: deleting the user's consent for client A (admin API), separate sessions: new exchanges | the sidecar cannot exchange A's unexpired user access token; B's still exchanges | call -> 204; exchange A's user token -> 400 invalid_request (Invalid token); exchange B's -> 200 token | pass |
+| K1r1s-t | 0055 d6, q13, q20, prerequisite 10: deleting the user's consent for client A (admin API), separate sessions: the already-issued /api token at Keycloak | A's exchanged token inactive at introspection by the /api client at once; B's still active | before: A active=true, B active=true; call -> 204; after: introspect A active=true, B active=true; stateless check A/B: accepted/accepted; lookup inputs (observation, not a Victual check): A session holds client=false consent=false iat<notBefore=false; B session holds client=true consent=true iat<notBefore=false | **FAIL** |
+| K1r2s-r | 0055 d6, q13, q20, prerequisite 10: revoking client A's refresh token (RFC 7009), separate sessions: refresh access | A's refresh token refused; B's still refreshes | call -> 200; refresh A -> 400 invalid_grant (Session not active); refresh B -> 200 token | pass |
+| K1r2s-x | 0055 d6, q13, q20, prerequisite 10: revoking client A's refresh token (RFC 7009), separate sessions: new exchanges | the sidecar cannot exchange A's unexpired user access token; B's still exchanges | call -> 200; exchange A's user token -> 400 invalid_request (Invalid token); exchange B's -> 200 token | pass |
+| K1r2s-t | 0055 d6, q13, q20, prerequisite 10: revoking client A's refresh token (RFC 7009), separate sessions: the already-issued /api token at Keycloak | A's exchanged token inactive at introspection by the /api client at once; B's still active | before: A active=true, B active=true; call -> 200; after: introspect A active=false, B active=true; stateless check A/B: accepted/accepted; lookup inputs (observation, not a Victual check): A session holds client=false consent=true iat<notBefore=false; B session holds client=true consent=true iat<notBefore=false | pass |
+| K1r3s-r | 0055 d6, q13, q20, prerequisite 10: deleting the user session of grant A (admin API, by sid), separate sessions: refresh access | A's refresh token refused; B's still refreshes | call -> 204; refresh A -> 400 invalid_grant (Session not active); refresh B -> 200 token | pass |
+| K1r3s-x | 0055 d6, q13, q20, prerequisite 10: deleting the user session of grant A (admin API, by sid), separate sessions: new exchanges | the sidecar cannot exchange A's unexpired user access token; B's still exchanges | call -> 204; exchange A's user token -> 400 invalid_request (Invalid token); exchange B's -> 200 token | pass |
+| K1r3s-t | 0055 d6, q13, q20, prerequisite 10: deleting the user session of grant A (admin API, by sid), separate sessions: the already-issued /api token at Keycloak | A's exchanged token inactive at introspection by the /api client at once; B's still active | before: A active=true, B active=true; call -> 204; after: introspect A active=false, B active=true; stateless check A/B: accepted/accepted; lookup inputs (observation, not a Victual check): A session holds client=false consent=true iat<notBefore=false; B session holds client=true consent=true iat<notBefore=false | pass |
+| K1r4s-r | 0055 d6, q13, q20, prerequisite 10: client A's not-before (admin API PUT notBefore=now), separate sessions: refresh access | A's refresh token refused; B's still refreshes | call -> 204; refresh A -> 400 invalid_grant (Stale token); refresh B -> 200 token | pass |
+| K1r4s-x | 0055 d6, q13, q20, prerequisite 10: client A's not-before (admin API PUT notBefore=now), separate sessions: new exchanges | the sidecar cannot exchange A's unexpired user access token; B's still exchanges | call -> 204; exchange A's user token -> 400 invalid_request (Invalid token); exchange B's -> 200 token | pass |
+| K1r4s-t | 0055 d6, q13, q20, prerequisite 10: client A's not-before (admin API PUT notBefore=now), separate sessions: the already-issued /api token at Keycloak | A's exchanged token inactive at introspection by the /api client at once; B's still active | before: A active=true, B active=true; call -> 204; after: introspect A active=true, B active=true; stateless check A/B: accepted/accepted; lookup inputs (observation, not a Victual check): A session holds client=true consent=true iat<notBefore=true; B session holds client=true consent=true iat<notBefore=false | **FAIL** |
+| K1r5s-r | 0055 d6, q13, q20, prerequisite 10: logging the user out of every session (admin API), separate sessions: refresh access | both grants' refresh tokens refused | call -> 204; refresh A -> 400 invalid_grant (Session not active); refresh B -> 400 invalid_grant (Session not active) | pass |
+| K1r5s-x | 0055 d6, q13, q20, prerequisite 10: logging the user out of every session (admin API), separate sessions: new exchanges | neither grant's unexpired user access token can be exchanged | call -> 204; exchange A's user token -> 400 invalid_request (Invalid token); exchange B's -> 400 invalid_request (Invalid token) | pass |
+| K1r5s-t | 0055 d6, q13, q20, prerequisite 10: logging the user out of every session (admin API), separate sessions: the already-issued /api token at Keycloak | both exchanged tokens inactive at introspection by the /api client | before: A active=true, B active=true; call -> 204; after: introspect A active=false, B active=false; stateless check A/B: accepted/accepted; lookup inputs (observation, not a Victual check): A session holds client=false consent=true iat<notBefore=false; B session holds client=false consent=true iat<notBefore=false | pass |
+| K1r8s-t | 0055 d6, q13, q20, prerequisite 10: the /api client's not-before (admin API PUT notBefore=now on the audience client), separate sessions: the already-issued /api token at Keycloak | A's exchanged token inactive at introspection by the /api client at once; B's still active | before: A active=true, B active=true; call -> 204; after: introspect A active=true, B active=true; stateless check A/B: accepted/accepted; lookup inputs (observation, not a Victual check): A session holds client=true consent=true iat<notBefore=false; B session holds client=true consent=true iat<notBefore=false | **FAIL** |
+| K1r9s-t | 0055 d6, q13, q20, prerequisite 10: the sidecar's not-before (admin API PUT notBefore=now on the exchanger, the tokens' azp), separate sessions: the already-issued /api token at Keycloak | A's exchanged token inactive at introspection by the /api client at once; B's still active | before: A active=true, B active=true; call -> 204; after: introspect A active=false, B active=false; stateless check A/B: accepted/accepted; lookup inputs (observation, not a Victual check): A session holds client=true consent=true iat<notBefore=false; B session holds client=true consent=true iat<notBefore=false | **FAIL** |
+| K1r10s-t | 0055 d6, q13, q20, prerequisite 10: the sidecar revokes A's exchanged token (RFC 7009, authenticated as the sidecar), separate sessions: the already-issued /api token at Keycloak | A's exchanged token inactive at introspection by the /api client at once; B's still active | before: A active=true, B active=true; call -> 200; after: introspect A active=false, B active=true; stateless check A/B: accepted/accepted; lookup inputs (observation, not a Victual check): A session holds client=true consent=true iat<notBefore=false; B session holds client=true consent=true iat<notBefore=false | pass |
+| K1r1h-r | 0055 d6, q13, q20, prerequisite 10: deleting the user's consent for client A (admin API), same browser session: refresh access | A's refresh token refused; B's still refreshes | call -> 204; refresh A -> 400 invalid_grant (Session doesn't have required client); refresh B -> 200 token | pass |
+| K1r1h-x | 0055 d6, q13, q20, prerequisite 10: deleting the user's consent for client A (admin API), same browser session: new exchanges | the sidecar cannot exchange A's unexpired user access token; B's still exchanges | call -> 204; exchange A's user token -> 400 invalid_request (Invalid token); exchange B's -> 200 token | pass |
+| K1r1h-t | 0055 d6, q13, q20, prerequisite 10: deleting the user's consent for client A (admin API), same browser session: the already-issued /api token at Keycloak | A's exchanged token inactive at introspection by the /api client at once; B's still active | before: A active=true, B active=true; call -> 204; after: introspect A active=true, B active=true; stateless check A/B: accepted/accepted; lookup inputs (observation, not a Victual check): A session holds client=false consent=false iat<notBefore=false; B session holds client=true consent=true iat<notBefore=false | **FAIL** |
+| K1r2h-r | 0055 d6, q13, q20, prerequisite 10: revoking client A's refresh token (RFC 7009), same browser session: refresh access | A's refresh token refused; B's still refreshes | call -> 200; refresh A -> 400 invalid_grant (Session doesn't have required client); refresh B -> 200 token | pass |
+| K1r2h-x | 0055 d6, q13, q20, prerequisite 10: revoking client A's refresh token (RFC 7009), same browser session: new exchanges | the sidecar cannot exchange A's unexpired user access token; B's still exchanges | call -> 200; exchange A's user token -> 400 invalid_request (Invalid token); exchange B's -> 200 token | pass |
+| K1r2h-t | 0055 d6, q13, q20, prerequisite 10: revoking client A's refresh token (RFC 7009), same browser session: the already-issued /api token at Keycloak | A's exchanged token inactive at introspection by the /api client at once; B's still active | before: A active=true, B active=true; call -> 200; after: introspect A active=true, B active=true; stateless check A/B: accepted/accepted; lookup inputs (observation, not a Victual check): A session holds client=false consent=true iat<notBefore=false; B session holds client=true consent=true iat<notBefore=false | **FAIL** |
+| K1r3h-r | 0055 d6, q13, q20, prerequisite 10: deleting the user session of grant A (admin API, by sid), same browser session: refresh access | A's refresh token refused; B's still refreshes | call -> 204; refresh A -> 400 invalid_grant (Session not active); refresh B -> 400 invalid_grant (Session not active) | **FAIL** |
+| K1r3h-x | 0055 d6, q13, q20, prerequisite 10: deleting the user session of grant A (admin API, by sid), same browser session: new exchanges | the sidecar cannot exchange A's unexpired user access token; B's still exchanges | call -> 204; exchange A's user token -> 400 invalid_request (Invalid token); exchange B's -> 400 invalid_request (Invalid token) | **FAIL** |
+| K1r3h-t | 0055 d6, q13, q20, prerequisite 10: deleting the user session of grant A (admin API, by sid), same browser session: the already-issued /api token at Keycloak | A's exchanged token inactive at introspection by the /api client at once; B's still active | before: A active=true, B active=true; call -> 204; after: introspect A active=false, B active=false; stateless check A/B: accepted/accepted; lookup inputs (observation, not a Victual check): A session holds client=false consent=true iat<notBefore=false; B session holds client=false consent=true iat<notBefore=false | **FAIL** |
+| K1r4h-r | 0055 d6, q13, q20, prerequisite 10: client A's not-before (admin API PUT notBefore=now), same browser session: refresh access | A's refresh token refused; B's still refreshes | call -> 204; refresh A -> 400 invalid_grant (Stale token); refresh B -> 200 token | pass |
+| K1r4h-x | 0055 d6, q13, q20, prerequisite 10: client A's not-before (admin API PUT notBefore=now), same browser session: new exchanges | the sidecar cannot exchange A's unexpired user access token; B's still exchanges | call -> 204; exchange A's user token -> 400 invalid_request (Invalid token); exchange B's -> 200 token | pass |
+| K1r4h-t | 0055 d6, q13, q20, prerequisite 10: client A's not-before (admin API PUT notBefore=now), same browser session: the already-issued /api token at Keycloak | A's exchanged token inactive at introspection by the /api client at once; B's still active | before: A active=true, B active=true; call -> 204; after: introspect A active=true, B active=true; stateless check A/B: accepted/accepted; lookup inputs (observation, not a Victual check): A session holds client=true consent=true iat<notBefore=true; B session holds client=true consent=true iat<notBefore=false | **FAIL** |
+| K1r5h-r | 0055 d6, q13, q20, prerequisite 10: logging the user out of every session (admin API), same browser session: refresh access | both grants' refresh tokens refused | call -> 204; refresh A -> 400 invalid_grant (Session not active); refresh B -> 400 invalid_grant (Session not active) | pass |
+| K1r5h-x | 0055 d6, q13, q20, prerequisite 10: logging the user out of every session (admin API), same browser session: new exchanges | neither grant's unexpired user access token can be exchanged | call -> 204; exchange A's user token -> 400 invalid_request (Invalid token); exchange B's -> 400 invalid_request (Invalid token) | pass |
+| K1r5h-t | 0055 d6, q13, q20, prerequisite 10: logging the user out of every session (admin API), same browser session: the already-issued /api token at Keycloak | both exchanged tokens inactive at introspection by the /api client | before: A active=true, B active=true; call -> 204; after: introspect A active=false, B active=false; stateless check A/B: accepted/accepted; lookup inputs (observation, not a Victual check): A session holds client=false consent=true iat<notBefore=false; B session holds client=false consent=true iat<notBefore=false | pass |
+| K1r6s-r | 0055 d6, q13, q20, prerequisite 10: deleting the offline session of grant A (admin API, isOffline=true), separate sessions: refresh access | A's offline refresh token refused; B's still refreshes | exchanged token's sid is the offline session (true); call -> 204; refresh A -> 400 invalid_grant (Offline user session not found); refresh B -> 200 token | pass |
+| K1r6s-t | 0055 d6, q13, q20, prerequisite 10: deleting the offline session of grant A (admin API, isOffline=true), separate sessions: the already-issued /api token at Keycloak | A's exchanged token inactive at introspection by the /api client at once; B's still active | before: A active=true, B active=true; call -> 204; after: introspect A active=false, B active=true | pass |
+| K1r7s | 0055 d6: revoking client A's user access token (RFC 7009) does not revoke the grant or its exchanged tokens | the exchanged token stays active (the guide: revoking the subject access token does not revoke the exchanged one); refresh still works | revoke -> 200; introspect A's exchanged token active=true; refresh A -> 200 token | pass |
+| K1s | 0055 d6: a stateless check of an exchanged token after its grant was revoked | accepted until exp (the E cases measure when it stops) | consent deleted; stateless check -> accepted; exp in 300 s | pass |
+| K5a | 0055 d6, q19, prerequisite 10: deleting the shared session (admin API, by sid): the affected grants are listed before the action and are exactly the grants that stop | the listed grants all belong to alice (and, for K5a, to the one session); after the action exactly the listed grants stop (introspection inactive and refresh refused); alice's grant in another session (K5a) and bob's grant keep working | shared sid a1==a2: true; before: all active=true; listed=[alice-spike/19-LtxfH/victual-spike-mcp-k1b, alice-spike/19-LtxfH/victual-spike-mcp-k1a]; call -> 204; after: alice-spike/19-LtxfH/victual-spike-mcp-k1a stopped; alice-spike/19-LtxfH/victual-spike-mcp-k1b stopped; alice-spike/CyyfA-ZI/victual-spike-mcp-k1a working; bob-spike/ACCrFSat/victual-spike-mcp-k1b working | pass |
+| K5b | 0055 d6, q19, prerequisite 10: logging alice out of every session (admin API): the affected grants are listed before the action and are exactly the grants that stop | the listed grants all belong to alice (and, for K5a, to the one session); after the action exactly the listed grants stop (introspection inactive and refresh refused); alice's grant in another session (K5a) and bob's grant keep working | shared sid a1==a2: true; before: all active=true; listed=[alice-spike/Bh3nO_yV/victual-spike-mcp-k1b, alice-spike/Bh3nO_yV/victual-spike-mcp-k1a, alice-spike/pzmtYMep/victual-spike-mcp-k1a]; call -> 204; after: alice-spike/Bh3nO_yV/victual-spike-mcp-k1a stopped; alice-spike/Bh3nO_yV/victual-spike-mcp-k1b stopped; alice-spike/pzmtYMep/victual-spike-mcp-k1a stopped; bob-spike/TKEwL7Tm/victual-spike-mcp-k1b working; alice's sessions left: 0 | pass |
 | K2a | 0055 d3, d8, prerequisite 11: tokens of two clients the adapter created are accepted at the sidecar | both accepted; aud holds the MCP audience; the client's default scopes include victual-mcp-audience and not victual-api-audience | client 1: accepted aud=["http://localhost:3000/mcp","victual-spike-sidecar"]; client 2: accepted aud=["http://localhost:3000/mcp","victual-spike-sidecar"]; client 1 default scopes=acr,victual-mcp-audience,victual-groups,victual-grant:victual-spike-mcp-k2-1,profile,basic,email; optional=victual:read,offline_access,victual:write,victual:stock:book,victual:stock | pass |
 | K2b | 0055 d3, d8, prerequisite 11: a client cannot select an audience it is not bound to | each attempt is refused, or the token's aud stays within the MCP audience and the sidecar's client id | audience=/api parameter -> 200 aud=["http://localhost:3000/mcp","victual-spike-sidecar"]; resource=/api -> 200 aud=["http://localhost:3000/mcp","victual-spike-sidecar"]; resource=unknown -> 200 aud=["http://localhost:3000/mcp","victual-spike-sidecar"]; scope victual-api-audience -> 400 invalid_scope (Invalid scopes: openid victual:read victual-api-audience); scope victual-rogue-audience -> 400 invalid_scope (Invalid scopes: openid victual:read victual-rogue-audience); scope victual-other-audience -> 400 invalid_scope (Invalid scopes: openid victual:read victual-other-audience) | pass |
 | K2c | 0055 d3, d8, prerequisite 11: a client without the audience scope has no MCP audience, is refused at the sidecar and cannot bind itself | sidecar refuses; asking for the scope at authorize is refused; the sidecar cannot exchange its token | aud=[]; sidecar check -> empty aud; asking for victual-mcp-audience -> 400 invalid_scope (Invalid scopes: openid victual:read victual-mcp-audience); exchange -> 403 access_denied (Client is not within the token audience) | pass |
@@ -249,6 +346,25 @@ Follow-up cases K1 to K3 (2026-10-26), same run as the table above. K1r cases ar
 | K2h | 0055 d8, prerequisite 11: demonstration of what the policy must forbid: the audience scope on the Allowed Client Scopes list of anonymous registration | with the scope on the list, a dynamic registrant binds itself to the MCP audience (so the list must not contain it) | list = [victual-mcp-audience]: register -> 201 granted scope="victual-mcp-audience"; client holds the scope: true; authorize with it -> 200 token; token aud=["http://localhost:3000/mcp","victual-spike-sidecar"]; the list was restored afterwards | pass |
 | K3b | 0055 d3, prerequisite 8: the /api resource client cannot obtain tokens through any flow | client credentials, password and authorization code requests as the /api client are refused | client_credentials -> 401 unauthorized_client (Client not enabled to retrieve service account); password -> 400 unauthorized_client (Client not allowed for direct access grants); authorization code -> 400 authorize_refused (Sign in to victual { "imports": { "rfc4648": "/resources/69i3o/common/keycloak/vendor/rfc4) | pass |
 | K3 | 0055 prerequisite 8: the installed configuration equals what setup.mjs and adapter.mjs promise (README inventory) | every realm setting, client scope with its mappers, client policy, profile and client flag listed in the inventory is present with the stated value | realm settings 8, client scopes 10 with mappers, profiles 2 (victual-downscope, victual-dcr), policies 2, client flags (mcp, sidecar, api, adapter client) all as stated | pass |
+| K4a | 0055 prerequisite 8, q18: every object the adapter creates records its owner and recipe version through a supported interface | the client's and the grant scope's attributes hold victual.owner=victual-registration-adapter and victual.recipe=2 after a read-back; the scope names its client; listing by owner returns exactly the adapter-built clients (k1a, k1b, k4-1) | client attributes: {"victual.owner":"victual-registration-adapter","victual.recipe":"2"}; scope attributes: {"victual.grant-client":"victual-spike-mcp-k4-1","victual.owner":"victual-registration-adapter","victual.recipe":"2"}; attribute query q=victual.owner:victual-registration-adapter -> 400 {"error":"invalid_request","error_description":"Attributes [victual.owner] not allowed for search"}; listed by owner: [victual-spike-mcp-k1a, victual-spike-mcp-k1b, victual-spike-mcp-k4-1]; owned scopes 3 | pass |
+| K4b | 0055 prerequisite 8, q18: reconciliation is repeatable | a second run with nothing changed in between makes no change | first run: 0 changes; second run: 0 changes | pass |
+| K4c | 0055 prerequisite 8, q18: reconciliation repairs drift in owned objects | after five manual changes (grant mapper relabelled to another client, audience scope removed, sidecar link removed, Consent required off, a client-level mapper added) one run restores the recipe; tokens name the right client again; the next run changes nothing | changes: client victual-spike-mcp-k4-1: set consentRequired; client victual-spike-mcp-k4-1: removed client mapper drift-client-mapper; scope victual-grant:victual-spike-mcp-k4-1: mapper config claim.value; client victual-spike-mcp-k4-1: added default scope victual-mcp-audience; sidecar: added optional scope victual-grant:victual-spike-mcp-k4-1; after: claim.value=victual-spike-mcp-k4-1, audience default=true, sidecar link=true, consentRequired=true, client mappers=0; token: aud=["victual-spike-sidecar","http://localhost:3000/mcp"] exchanged victual_client=victual-spike-mcp-k4-1; next run: 0 changes | pass |
+| K4d | 0055 prerequisite 8, q18: reconciliation removes an owned orphan | an owned grant scope whose client was deleted outside the adapter is deleted, and the sidecar no longer lists it | scope present before: true; changes: scope victual-grant:victual-spike-mcp-k4-2: deleted (orphan; client victual-spike-mcp-k4-2 absent); scope gone: true; sidecar lists it: false | pass |
+| K4f | 0055 prerequisite 8, q18: an upgrade from recipe 1 to recipe 2 updates every owned object and records the new version | clients created at recipe 1 get recipe 2's mapper setting (lightweight.claim true) and client description; every owned client and scope then records recipe 2; tokens still name the client; a second run changes nothing | stamps before: 1,1; changes, for each of k4-3 and k4-4: client description and `victual.recipe`; scope `victual.recipe`; mapper `lightweight.claim` (six changes). Owned objects after: all ten (five clients, five grant scopes) at recipe 2; k4-3 mapper lightweight.claim before=false after=true; token victual_client=victual-spike-mcp-k4-3; next run: 0 changes. Full text in results.json | pass |
+| K4e | 0055 prerequisite 8, q18: reconciliation never touches an object it does not own | an unstamped client and grant scope with adapter-like names, an unstamped scope naming a missing client, and a scope stamped with another owner are byte-identical after every reconcile run above, and no change names them | reconcile runs: 12 changes in total; changes naming a lookalike: none; snapshot identical: true | pass |
+| K4g | 0055 prerequisite 8, q18: ownership and recipe records survive a Keycloak restart | after a container restart on the same database, owned objects keep their attributes and mapper settings, reconciliation changes nothing, and a grant token still names its client | restart took 5 s; owned objects: 4; attributes and mappers identical: true; reconcile after restart: 0 changes; token victual_client=victual-spike-mcp-k1a | pass |
+
+Expiry run (`node probe.mjs --expiry`, 2026-10-28 cold start 1, after the core run). One user per measurement; the grant is revoked 5 s after the exchanged token's `iat`; introspection by the `/api` client and the stateless check are polled once a second. E1 runs once at the realm's 300 s lifespan; E2 runs five times per mechanism with the sidecar's `access.token.lifespan` set to 20 s, concurrently with E1. The dev run before it (same code) gave the same verdicts and figures within 0.8 s.
+
+| ID | Clause | Expected | Observed | Verdict |
+|---|---|---|---|---|
+| E0 | 0055 d6, q20: the lifespans the expiry measurement runs under | real: exchanged tokens carry the realm's 300 s; short: an override gives 20 s | real exchanged exp-iat=300,300,300 s (user tokens 300,300,300 s); sidecar attribute access.token.lifespan=20: exchanged exp-iat=20 s; short exchanged exp-iat=20 s; revocation at iat+5 s; poll interval 1 s | pass |
+| E1-consent | 0055 d6, q20, prerequisite 10: already-issued /api token after consent deletion, real 300 s lifespan (one run) | refused at introspection by exp at the latest; refused by the stateless check by exp + 60 s (its clock skew) at the latest | iat+5 s revoke (204); refresh after -> 400 invalid_grant (Session doesn't have required client); introspection refused at iat+301.9 s = exp+1.9 s, 296.9 s after revocation; stateless refused (expired) at iat+360.2 s = exp+60.2 s, 355.2 s after revocation | pass |
+| E1-session | 0055 d6, q20, prerequisite 10: already-issued /api token after session deletion, real 300 s lifespan (one run) | refused at introspection by exp at the latest; refused by the stateless check by exp + 60 s (its clock skew) at the latest | iat+5 s revoke (204); refresh after -> 400 invalid_grant (Session not active); introspection refused at iat+5.1 s = exp-294.9 s, 0.1 s after revocation; stateless refused (expired) at iat+360.3 s = exp+60.3 s, 355.3 s after revocation | pass |
+| E1-refresh | 0055 d6, q20, prerequisite 10: already-issued /api token after refresh-token revocation, real 300 s lifespan (one run) | refused at introspection by exp at the latest; refused by the stateless check by exp + 60 s (its clock skew) at the latest | iat+5 s revoke (200); refresh after -> 400 invalid_grant (Session not active); introspection refused at iat+5.1 s = exp-294.9 s, 0.1 s after revocation; stateless refused (expired) at iat+360.3 s = exp+60.3 s, 355.3 s after revocation | pass |
+| E2-consent | 0055 d6, q20, prerequisite 10: already-issued /api token after consent deletion, 20 s override, 5 runs | every run: refused at introspection by exp at the latest; refused by the stateless check by exp + 60 s at the latest | 5/5 runs measured; min/median/max s: introspection refused after revocation 16.2/16.3/16.3, relative to exp 1.2/1.3/1.3; stateless refused after revocation 75.7/75.7/75.7, relative to exp 60.7/60.7/60.7; stateless reason expired; refresh after revocation 400 invalid_grant | pass |
+| E2-session | 0055 d6, q20, prerequisite 10: already-issued /api token after session deletion, 20 s override, 5 runs | every run: refused at introspection by exp at the latest; refused by the stateless check by exp + 60 s at the latest | 5/5 runs measured; min/median/max s: introspection refused after revocation 0/0.1/0.1, relative to exp -15/-14.9/-14.9; stateless refused after revocation 75.7/75.7/75.7, relative to exp 60.7/60.7/60.7; stateless reason expired; refresh after revocation 400 invalid_grant | pass |
+| E2-refresh | 0055 d6, q20, prerequisite 10: already-issued /api token after refresh-token revocation, 20 s override, 5 runs | every run: refused at introspection by exp at the latest; refused by the stateless check by exp + 60 s at the latest | 5/5 runs measured; min/median/max s: introspection refused after revocation 0/0/0.1, relative to exp -15/-14.9/-14.9; stateless refused after revocation 75.7/75.7/75.7, relative to exp 60.7/60.7/60.7; stateless reason expired; refresh after revocation 400 invalid_grant | pass |
 
 Preview run (`./run.sh up preview`, `node probe.mjs --preview`):
 
@@ -347,7 +463,9 @@ The 2026-10-25 Preview run reported DP2 as a FAIL (200 with `victual:write`). Th
     refresh token makes the exchanged token inactive when the grant has its own session (R3,
     R4). Deleting the consent for one client does not: the exchanged token stays active (R5),
     although refresh and a new exchange are refused. A stateless resource-server check accepts
-    the exchanged token until it expires, which fits decision 6's five-minute worst case. R6
+    the exchanged token until it expires. The 2026-10-26 report said that fits decision 6's
+    five-minute worst case; the E cases measure it at `exp` + 60 s, because of the check's skew
+    (finding 23). R6
     still holds: deleting the consent for one client leaves another client's grant intact.
 11. **Victual-owned login works through identity brokering (L1 to L4).** Keycloak keeps a
     user record per Victual user: username, email, names, and an attribute holding the
@@ -422,43 +540,61 @@ The 2026-10-25 Preview run reported DP2 as a FAIL (200 with `victual:write`). Th
     not tried. A lightweight access token works (K1h). The grant claim stays when its mapper has
     `lightweight.claim` on, and `scope` and `sid` are always kept. The audience mapper needs the
     same flag: without it the exchange fails closed with "Requested audience not available".
-18. **K1: per-grant revocation depends on the mechanism and on whether grants share a session
-    (K1r1s to K1r7s, K1r1h to K1r5h).** The table shows which signal blocks grant A's exchanged
-    token when grant A is revoked, with grant B left valid. "Introspect" is Keycloak's
-    introspection by the `/api` client. "Lookup" is a Victual check keyed on `victual_client`,
-    `sid` and `sub`: the session still holds the client (online or offline), the consent is
-    stored, and the token's `iat` is not before the client's not-before.
+18. **K1: revoking one grant stops its refresh and new exchanges; only some mechanisms reach the
+    already-issued `/api` token (K1r cases, corrected 2026-10-28).** The 2026-10-26 version of this
+    table counted a probe-side lookup on `victual_client`, `sid` and `sub` as blocking the exchanged
+    token. That lookup simulated a Victual check that does not exist. It is now an observation in
+    the `-t` cases and decides nothing. The table shows, for grant A revoked and grant B of the same
+    user left alone, what Keycloak itself does. "Refresh / exchange" is A's refresh token and a new
+    exchange of A's unexpired user access token (`-r`, `-x`). "Issued token" is Keycloak's
+    introspection, by the `/api` client, of the `/api` token already exchanged from A (`-t`).
 
-    | Mechanism | Separate sessions: introspect / lookup | Same SSO session: introspect / lookup |
+    | Mechanism | Separate sessions: refresh / exchange; issued token | Same SSO session: refresh / exchange; issued token |
     |---|---|---|
-    | Delete consent for A | active / blocks A | active / blocks A |
-    | Revoke A's refresh token | blocks A / blocks A | active / blocks A |
-    | Delete A's session by `sid` | blocks A / blocks A | blocks A and B / blocks A and B |
-    | Client A not-before | active / blocks A | active / blocks A |
-    | Delete A's offline session | blocks A / blocks A | not run |
-    | Log the user out | blocks A and B | blocks A and B |
-    | Revoke A's access token (RFC 7009) | no effect | not run |
+    | Delete consent for A (K1r1) | A refused, B works; **active** (FAIL) | A refused, B works; **active** (FAIL) |
+    | Revoke A's refresh token (K1r2) | A refused, B works; inactive at once | A refused, B works; **active** (FAIL) |
+    | Delete A's session by `sid` (K1r3) | A refused, B works; inactive at once | A and B refused; A and B inactive (FAIL as per-grant; K5a) |
+    | Client A not-before (K1r4) | A refused, B works; **active** (FAIL) | A refused, B works; **active** (FAIL) |
+    | Log the user out (K1r5) | A and B refused; both inactive (user-wide, as expected) | same |
+    | Delete A's offline session (K1r6) | A refused, B works; inactive at once | not run |
+    | Revoke A's user access token, RFC 7009 (K1r7) | no effect, as the guide says | not run |
+    | `/api` client not-before (K1r8) | not asked; **active** for A and B (FAIL) | not run |
+    | Sidecar not-before (K1r9) | not asked; inactive for A and B (FAIL as per-grant) | not run |
+    | Sidecar revokes A's exchanged token, RFC 7009 (K1r10) | not asked; A inactive, B active | not run |
 
-    In every row except the session deletion in a shared session and the user logout, B stays
-    valid. Deleting a session that two grants share, and logging the user out, end both
-    grants. Keycloak has no per-grant mechanism there.
+    Refresh and new exchanges stop per grant for every per-grant mechanism, including the
+    not-before change (K1r4s-x and K1r4h-x close the item the 2026-10-26 report left untested).
 
-    Refresh for A fails in every per-grant row
-    (the K1r observations show the errors). A new exchange from A's unexpired access token was
-    refused after the consent deletion, the refresh-token revocation and the session deletion
-    (R3 to R5) and was not measured after the not-before change. Existing exchanged tokens
-    expire within five minutes (K1s). Revoking A's access token has no effect on A's grant or on its
-    exchanged tokens, as the guide says.
+    The already-issued token is refused at Keycloak only when the grant's session ends or when the
+    token itself is revoked. Consent deletion, which is what a user does in Keycloak's account
+    console, never reaches it. Introspection checks the session and the client of the token's
+    `azp`, which is the sidecar. A not-before on client A or on the `/api` client therefore does
+    not apply, and a not-before on the sidecar ends every exchanged token of every grant.
+
+    K1r10 is the one per-token path: the sidecar, which issued the exchange, revokes the exchanged
+    token, and introspection refuses it at once while B's token stays active. It needs the sidecar
+    to keep a list of the tokens it exchanged per grant, and it does nothing for a stateless
+    resource server. Where Keycloak does not refuse the token, the measured expiry delay applies
+    (finding 23).
+
 19. **K1: which side is authoritative.** Decision 6's grant row in Victual is the authoritative
-    refusal point for Victual requests. Keycloak-side revocation reaches Victual through the
-    lookup above, or after at most five minutes through failing refresh and exchange. Keycloak
-    has no supported push for it: the 26.8.1 event listener providers are
-    `workflow-event-listener`, `jboss-logging` and `email`, and none calls an HTTP endpoint.
-    A user who revokes the consent in Keycloak's account console therefore does not change
-    Victual's grant row. Polling the user events for a revoked grant needs events enabled on
-    the realm (off in this realm) and was not tried. A per-request lookup costs three or four
-    admin REST calls and needs an admin credential in Victual; caching and its revocation lag
-    were not measured.
+    refusal point for Victual requests. Victual's immediate grant-revocation check does not exist,
+    and nothing in this spike tests it. As K1 established, it would read the exchanged token's
+    `victual_client`, `sid` and `sub`. The `-t` cases print the admin-API facts such a check could
+    read as "lookup inputs" (session holds the client, consent stored, client not-before). They
+    show that those facts change after each mechanism. They do not show that a check built on them
+    works.
+
+    Keycloak-side revocation otherwise reaches Victual after at most the token lifespan plus the resource
+    server's 60 s skew (finding 23). Keycloak has no supported push for it: the 26.8.1 event
+    listener providers are `workflow-event-listener`, `jboss-logging` and `email`, and none calls
+    an HTTP endpoint. A user who revokes the consent in Keycloak's account console therefore does
+    not change Victual's grant row.
+
+    Polling the user events for a revoked grant needs events
+    enabled on the realm (off in this realm) and was not tried. A per-request lookup would cost
+    three or four admin REST calls and an admin credential in Victual; that and its caching were
+    not measured.
 20. **K2: the adapter binds the audience, and a client cannot choose another (K2a to K2e).**
     Clients created through the admin API with `victual-mcp-audience` as a default scope get
     `aud` of the MCP audience and the sidecar's client id, and verify at the sidecar. The
@@ -484,6 +620,45 @@ The 2026-10-25 Preview run reported DP2 as a FAIL (200 with `victual:write`). Th
     mapper types, read from the realm's registration policy components, has neither); that was
     read, not run.
 
+22. **K4: the adapter's runtime objects carry owner and recipe version, and reconciliation is
+    repeatable (K4a to K4g, question 18).** Clients and client scopes keep arbitrary entries in
+    their `attributes` maps through the admin REST API. `victual.owner`, `victual.recipe` and
+    `victual.grant-client` read back unchanged (K4a) and survive a restart of the server container on
+    the same database (K4g; the restart took 5 s). Keycloak refuses `GET /clients?q=victual.owner:...`
+    with `400 Attributes [victual.owner] not allowed for search`, so listing by owner reads every
+    client and filters on the attribute. Making the attribute searchable is a server option that was
+    not tried. Client scopes have no query parameter at all. Reconciliation found nothing to change
+    on a fresh realm and nothing on a second run (K4b). K4c made five manual changes to one client:
+    the grant mapper relabelled to another client, the audience scope removed, the sidecar link
+    removed, Consent required off, and a mapper added to the client itself. One run restored the
+    recipe, and the client's exchanged token named it again. An owned grant scope whose client was deleted
+    behind the adapter's back was deleted (K4d). An unstamped client and scope with adapter-like
+    names, an unstamped scope naming a missing client, and a scope stamped with another owner were
+    byte-identical after every run (K4e). Two clients built at recipe 1 were moved to recipe 2: the
+    mapper's `lightweight.claim`, the client description and both stamps changed, and every owned
+    object then recorded recipe 2 (K4f). Keycloak adds `userinfo.token.claim` = `false` to a stored
+    mapper on its own, so reconciliation compares only the keys the recipe sets.
+23. **E: an already-issued `/api` token works until its expiry plus the resource server's skew
+    when Keycloak does not refuse it (E0 to E2, question 20).** One run at the realm's 300 s
+    lifespan and five runs with a 20 s lifespan per mechanism (the sidecar's
+    `access.token.lifespan` attribute applies to the tokens it exchanges, E0). Each grant was
+    revoked 5 s after the exchanged token's `iat`, and the token was polled once a second. After
+    consent deletion, introspection by the `/api` client kept answering `active` until `exp` and
+    refused it 1.2 to 1.9 s after `exp` (the poll interval and whole-second `exp`). After session
+    deletion and refresh-token revocation it refused within 0.1 s. The stateless check of decision
+    3 accepted the token in every mechanism until `exp` + 60.2 to 60.7 s, because it allows 60 s
+    of clock skew. With the realm's lifespan that is 355.2 to 355.3 s after the revocation and
+    360 s after issue. The same-day dev run gave figures within 0.8 s of these. Decision 6 states five minutes as the worst case; with a 60 s skew the measured
+    worst case for a stateless resource server is six minutes.
+24. **K5: a shared session's grants can be listed before they are revoked (K5a, K5b, question
+    19).** `GET /users/{id}/sessions` returns each session with its client map. Alice's grants for k1a
+    and k1b share one session. Before that session was deleted, the listing named exactly those two
+    grants. After the deletion exactly those two stopped (introspection inactive, refresh refused).
+    Alice's k1a grant in another session and bob's k1b grant kept working (K5a). Before logging
+    alice out, the listing over all her sessions named the three grants that then stopped, with
+    bob's grant unaffected and no session of alice left (K5b). Offline sessions are listed by a
+    different endpoint (`/users/{id}/offline-sessions/{client}`) and were not part of K5.
+
 ## Configuration inventory (prerequisite 8)
 
 ADR-0055 prerequisite 8 accepts provider configuration when it uses a supported provider
@@ -498,7 +673,7 @@ Items installed by `setup.mjs`:
 
 | Name | Kind | What it enforces | Positive case | Negative case |
 |---|---|---|---|---|
-| `accessTokenLifespan` 300 | realm setting | Five-minute access tokens (decision 6) | P2 (ttl 300 s) | none for the realm value: N13 and N14 use the 3 s client override. Flag |
+| `accessTokenLifespan` 300 | realm setting | Five-minute access tokens (decision 6) | P2 (ttl 300 s), E0 and E1 (exchanged tokens 300 s) | none for the realm value: N13 and N14 use the 3 s client override. Flag |
 | `ssoSessionIdleTimeout` 1800 | realm setting | Refresh token lifetime of 30 minutes idle | P10 (refresh claim 1800 s) | none. Flag |
 | `ssoSessionMaxLifespan` 36000 | realm setting | Ten-hour session ceiling | none. Flag | none. Flag |
 | `revokeRefreshToken` on, `refreshTokenMaxReuse` 0 | realm setting | Rotation, and reuse revokes the family (decision 6) | P10 | N16 |
@@ -524,7 +699,9 @@ Items the adapter creates for each registered client (`adapter.mjs`):
 |---|---|---|---|---|
 | The MCP client with `victual-mcp-audience` as a default scope | client | Binds the client to the MCP audience (decision 8) | K2a | K2b, K2c |
 | `victual-grant:<client id>` with a Hardcoded claim mapper | client scope | Names the originating client in exchanged tokens | K1c, K1h | K1d, K1e, K1f |
-| Consent required on the client | client setting | A stored consent per client, revocable per client | K1j | K1j (the screen shows again after the consent is deleted), K1r1s, K1r1h |
+| Consent required on the client | client setting | A stored consent per client, revocable per client | K1j | K1j (the screen shows again after the consent is deleted), K1r1s-r, K1r1h-r |
+| `victual.owner`, `victual.recipe` on the client; the same plus `victual.grant-client` on the grant scope | client and client-scope attributes | Ownership and recipe version of each generated object (question 18), read by `reconcile()` | K4a, K4g, K3 | K4e (unstamped and foreign-owned lookalikes are left alone) |
+| No mapper on the client itself | client (dedicated scope) | Only the grant scope names the client | K4c (removed by reconcile) | K1b |
 
 Items present or changed outside `setup.mjs`:
 
@@ -534,6 +711,7 @@ Items present or changed outside `setup.mjs`:
 | Allowed Client Scopes (anonymous) | registration policy | Keycloak default, empty allow list: a registrant cannot name the audience scope | K2h (list changed for the demonstration, then restored) | K2g |
 | Authentication flows, identity provider, user profile setting | `probe.mjs` L cases | Evidence for brokering only; created and removed inside the L cases | L1 to L4 | L4 |
 | `victual-k1-notes`, a lightweight policy, and client mappers | `probe.mjs` K1a, K1b, K1h | Experiments, removed at the end of each case | K1h | K1a, K1b |
+| K4 clients, lookalike client and scopes; not-before values; the sidecar's 20 s `access.token.lifespan` and the expiry users | `probe.mjs` K4, K1r4, K1r8, K1r9, `--expiry` | Fixtures, removed or reset at the end of each case or run | K4a to K4g, E0 | K4e |
 
 Gaps that block a clean prerequisite 8 for Keycloak:
 
@@ -543,11 +721,17 @@ Gaps that block a clean prerequisite 8 for Keycloak:
    whether they count as "configuration that needs tests" or as settings.
 2. `serviceAccountsEnabled` on the sidecar has no core-run case; it exists for the Preview run.
 3. Two fixture scopes and five fixture clients carry no deployment meaning.
-4. The per-client objects are created at run time. Prerequisite 8's second condition names the
-   deployment configuration (`setup.mjs`), and a per-client object cannot live there. What is
-   versioned is the recipe in `adapter.mjs`, which in Victual becomes application code that
-   releases with Victual. Whether that satisfies "versioned with the deployment configuration"
-   needs the maintainer's ruling. The probe tests the recipe, not an installed copy.
+4. The per-client objects are created at run time. The maintainer's answer to question 18
+   (2026-10-26) accepts a versioned recipe in place of committed objects, given a pinned adapter
+   and templates, owner and recipe-version records on each generated object, and repeatable
+   reconciliation and upgrade. Since the 2026-10-28 pass the spike has all three. `RECIPES` and
+   `RECIPE_VERSION` in `adapter.mjs` are the pinned templates. Every adapter-built client and grant
+   scope carries `victual.owner` and `victual.recipe` (K4a, K3, kept across a restart in K4g).
+   `reconcile()` is idempotent, repairs drift, deletes its own orphans, never touches unowned
+   objects and upgrades recipe 1 to recipe 2 (K4b to K4f). Three things are left. Objects built
+   before the stamps existed carry none, so `reconcile()` treats them as unowned, and an adoption
+   step would be needed. Listing by owner reads every client, because the attribute is not
+   searchable by default (finding 22). The recipe here is spike code, not Victual's adapter.
 5. The client policies hold for this realm. A second realm (a second tenant, or a production
    realm) needs `setup.mjs` applied to it, and nothing here checks that it was.
 
@@ -559,8 +743,9 @@ Gaps that block a clean prerequisite 8 for Keycloak:
   it with the admin REST API, and no case registers through the anonymous endpoint and then
   runs the adapter's binding.
 - The full swap test (ADR-0055 prerequisite 1) with Victual and the sidecar images. Only the
-  probe's resource-server check was pointed at Keycloak, and the K1 lookup is a probe function,
-  not Victual code.
+  probe's resource-server check was pointed at Keycloak.
+- Victual's immediate grant-revocation check (question 20). It does not exist. The `-t` cases
+  print the admin-API facts it would read as an observation and decide nothing with them.
 - Two Keycloak replicas on PostgreSQL (clustering, session sharing, and whether the session and
   consent lookups of K1 see the same data on both): one `start-dev` server, and one
   `start --optimized` server for the read-only check. Production hostname and TLS.
@@ -568,8 +753,12 @@ Gaps that block a clean prerequisite 8 for Keycloak:
   tested with delegation.
 - K1 for a client without Consent required: there is no stored consent to revoke, so the other
   mechanisms apply; all K1 clients have Consent required.
-- K1r4 (client not-before): whether a new exchange from A's unexpired access token is refused.
-  K1r6 (offline session) in a shared SSO session.
+- K1r6 (offline session) in a shared SSO session; K1r8 to K1r10 in a shared SSO session.
+- Making `victual.owner` a searchable client attribute (a server option), and adopting objects
+  that were created before they carried stamps.
+- The expiry measurement with a resource server whose clock skew is not 60 s, and with a
+  sidecar-side list of exchanged tokens that it revokes per grant (K1r10 shows the revocation of
+  one token only).
 - Polling Keycloak's user events for a revoked grant, caching the K1 lookup, and its cost per
   request. Initial access tokens and the `authenticated` subtype of the registration policies.
 - Behaviour when a mapper or policy fails; amd64 image size and memory; a Nix-built image.
