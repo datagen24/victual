@@ -62,7 +62,7 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 37 | [API keys that carry chosen rights](37-api-key-scoped-permissions.md) | Draft, research only, 2026-10-10; no issue yet | Wave-independent. [ADR-0044](../adr/0044-api-keys-carry-a-subset-of-their-owners-permissions.md) accepted 2026-10-25; its open questions were answered 2026-10-11. No release chosen. |
 | 38 | [Household inventory and the equipment rebuild](38-household-inventory.md) | Draft, research only, 2026-10-19 | Wave-independent and unscheduled. Covers belongings, properties, battery links, maintenance, projects, insurance, heirs, moving and exchange. Implementation waits on the foundation questions and separate architectural decisions. |
 | 39 | [Native backup file export and import](39-native-backup-file.md) | Draft design, 2026-10-19 | Unscheduled and independent of plan 38. Designs a UI-based native backup file; database dumps remain the operational approach. Format, scope and restore architecture are open. |
-| 40 | [Building and shipping Authentik with Nix](40-authentik-nix-build.md) | Draft, research only, 2026-10-28 | Supports [ADR-0055](../adr/0055-api-and-mcp-callers-present-oauth-access-tokens-from-a-swappable-authorization-server.md) and [ADR-0056](../adr/0056-an-external-identity-provider-replaces-the-built-in-authorization-server.md) (both Proposed). Recommends the `nix-community/authentik-nix` flake input and the upstream Helm chart; open questions 1–3 (where the release lives, the no-shell check, publishing the enterprise directory) block implementation. |
+| 41 | [Building and shipping Authentik with Nix](41-authentik-nix-build.md) | Draft, research only, 2026-10-28 | Supports [ADR-0055](../adr/0055-api-and-mcp-callers-present-oauth-access-tokens-from-a-swappable-authorization-server.md) and [ADR-0056](../adr/0056-an-external-identity-provider-replaces-the-built-in-authorization-server.md) (both Proposed). Recommends the `nix-community/authentik-nix` flake input and the upstream Helm chart; open questions 1–3 (where the release lives, the no-shell check, publishing the enterprise directory) block implementation. |
 
 ## Order of operations
 
@@ -105,7 +105,7 @@ Unscheduled work:
   draft; its delivery stages do not assign dates or alter the existing wave order.
 - [Native backup file export and import](39-native-backup-file.md): separate design;
   no delivery slot and no dependency for the equipment rebuild.
-- [Building and shipping Authentik with Nix](40-authentik-nix-build.md): research for the
+- [Building and shipping Authentik with Nix](41-authentik-nix-build.md): research for the
   0.6.0 OAuth work; no implementation scheduled.
 - MCP writes, after read-only use is proven
   ([issue 209](https://github.com/datagen24/victual/issues/209)).

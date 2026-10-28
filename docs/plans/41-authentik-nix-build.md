@@ -1,4 +1,4 @@
-# 40. Building and shipping Authentik with Nix
+# 41. Building and shipping Authentik with Nix
 
 Research how Authentik, the reference identity provider for the 0.6.0 OAuth work, can be
 built by Nix the way Victual's own images are ([ADR-0013](../adr/0013-nix-built-container-images.md)),
