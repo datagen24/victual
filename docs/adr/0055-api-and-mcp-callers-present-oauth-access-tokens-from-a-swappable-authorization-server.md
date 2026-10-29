@@ -15,7 +15,9 @@
   On 2026-10-26 the maintainer answered questions 11 to 14 from the server comparison
   (decisions 3, 6, 7 and 8); their evidence requirements are prerequisites 8 to 11. After
   the follow-up spikes, the maintainer answered questions 15 to 20 the same day, which
-  narrow what counts as supported configuration and as revocation evidence.
+  narrow what counts as supported configuration and as revocation evidence. The
+  2026-10-28 spikes tested those answers. Keycloak's generated objects meet question 18;
+  prerequisites 8 to 10 remain unmet. The spikes raised questions 21 to 25.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -296,7 +298,7 @@ carries the same rule on its own.
   supported operations; a periodic best-effort cleanup does not.
 - Revocation at the authorization server takes effect within the access-token lifetime,
   because resource servers validate statelessly and do not introspect on each request.
-  Five minutes is the stated worst case.
+  Five minutes is the stated worst case (question 24).
 - Victual can also cut access at once, without introspection. It keeps a row per client
   grant (owner, client id, scope ceiling, last used, revoked). A request whose token names
   a revoked client, an unmapped subject or a disabled user is refused on that request.
@@ -562,17 +564,57 @@ keychain, and keep sending their per-device Access service token as before.
    stability contract (question 15). For generated objects the evidence is the pinned
    adapter and templates, owner and recipe-version records on each object, and a
    repeatable reconciliation and upgrade (question 18).
+
+   **Evidence, 2026-10-28: not met.** Keycloak's generated objects meet question 18 with
+   configuration; Authentik waits on question 21. The swap test with this configuration
+   installed has not run. Reproduce with each spike's `run.sh`, `setup.mjs` and `probe.mjs`.
+
+   - Keycloak 26.8.1: the adapter stamps each object it creates with owner and recipe
+     version in its `attributes` map. The stamps survive read-back and a restart.
+     `reconcile()` is idempotent, repairs five kinds of drift, deletes an owned orphan,
+     leaves unowned lookalikes alone and upgrades recipe 1 to recipe 2 (cases K4a to
+     K4g). Keycloak refuses the `q=` attribute query, so listing by owner reads every
+     client (case K4a).
+   - Authentik 2026.8.5, exchanger scope mapping: rewritten to read only the HTTP request
+     through documented helpers, with no `authentik.*` import (cases G1a to G1h, G8a).
+   - Authentik scope-ceiling policy: it never imported anything; the earlier report was
+     wrong to say it did (cases N11b, G3a, G3b).
+   - Authentik refresh-reuse policy: no internal imports or row deletion now, but it holds
+     a superuser API token (question 21).
 9. **Refresh-family revocation** (question 12). On each authorization server, reuse of an
    old refresh token invalidates the whole family, including its newest token, by
    supported configuration or a supported mitigation. Concurrent-refresh tests are
    included. Otherwise an ADR records an explicit exception. Authentik 2026.8.5 does not
-   meet this natively (the Authentik report's case G4d). Its notification-rule mitigation
-   (case G5d) imports internal models and deletes rows, so it does not qualify under
-   question 15, and concurrent refresh is unmet (case G5f). Evidence for a bounded delay
+   meet this natively (the Authentik report's case G4d). The 2026-10-26 notification-rule
+   mitigation (case G5d) imported internal models and deleted rows, so it did not qualify
+   under question 15. The 2026-10-28 rewrite revokes through the admin API instead
+   (question 21). Concurrent refresh is unmet (case G5f). Evidence for a bounded delay
    (question 16): repeated timing measurements; whether a refresh succeeds inside the
    window; whether descendants issued inside it are revoked; and what happens when the
    revocation worker fails or lags. A Victual-side sweep (question 17) must show that it
    finds every descendant and revokes through supported operations.
+
+   **Authentik, 2026-10-28: evidence, not met.** Keycloak met this on 2026-10-25 with
+   `revokeRefreshToken` (cases P10, N16). On Authentik 2026.8.5, ten reuse events per path
+   were revoked in 746 / 788 / 935 ms (min / median / max) through an external webhook
+   receiver, and in 676 / 906 / 1221 ms through the in-Authentik rule. The newest token was
+   refused afterwards in all 20 (cases G5m, G5m2). The answer-16 tests:
+
+   - A refresh 0 to 400 ms after the reuse succeeded (5 of 5); at 600 ms and later it was
+     refused. Every descendant was refused afterwards (case G5n).
+   - A holder refreshing in a tight loop made 117 to 138 refreshes in each of three runs
+     and was never refused (case G5n2).
+   - With the worker stopped for 20 s the newest token kept working and its holder could
+     refresh. The family was revoked 6.6 s after the worker restarted (case G5o). Queued
+     events ahead of the reuse delayed revocation to 50.5 s (300 events) and 166.6 s (1000
+     events) (case G5p).
+
+   For answer 17, five parallel refreshes with one token still left five live tokens and
+   raised no event (case G5f). A Victual-side sweep over the admin API found every
+   descendant of the fork in 6 of 6 runs and revoked it by single-row deletes. Against a
+   holder refreshing during the sweep it cleared the family only after the holder stopped
+   (cases G5r, G5r2). Both the receiver and the sweep are probe code. Questions 22 and 23
+   ask for rulings.
 10. **Originating-grant identity survives exchange** (question 13). A supported,
     server-signed claim or a trusted server-side mapping identifies the originating
     grant on exchanged tokens. Tests show that revoking one originating grant blocks the
@@ -587,6 +629,42 @@ keychain, and keep sending their per-device Access service token as before.
     evidence. Where grants share a provider session, the evidence also shows the broader
     effect is documented and the affected grants are listed before an administrative
     revocation (question 19).
+
+    **Keycloak, 2026-10-28: refresh access met; the already-issued token not met at
+    Keycloak.** Each case now asserts one outcome: refresh (`-r`), new exchanges (`-x`) or
+    the issued `/api` token at introspection (`-t`).
+
+    - Refresh access: every per-grant mechanism refused grant A's refresh and new
+      exchanges and left grant B's. The mechanisms were consent deletion, refresh-token
+      revocation, session deletion in separate sessions, client not-before and
+      offline-session deletion (cases K1r1 to K1r6, `-r` and `-x`).
+    - The issued token: it stayed active at introspection after consent deletion, client
+      not-before and refresh-token revocation in a shared session (cases K1r1s-t,
+      K1r1h-t, K1r4s-t, K1r4h-t, K1r2h-t). It was refused at once after session deletion
+      in the grant's own session and after the sidecar revoked it by RFC 7009.
+    - The sidecar's not-before ends every grant's exchanged tokens, so it is not a
+      per-grant mechanism (case K1r9s-t).
+    - Victual's immediate grant-revocation check is not built, so nothing tested it
+      (question 25).
+    - Expiry delay: a stateless check under decision 3 accepted the token until `exp` +
+      60.2 to 60.7 s after every mechanism. At the realm's 300 s lifespan that is six
+      minutes after issue (cases E0 to E2; question 24).
+    - Shared session: before a session was deleted, the admin API's user-sessions
+      endpoint listed exactly the grants that then stopped. Another session's grant and
+      another user's grant kept working (cases K5a, K5b). That meets question 19 with
+      configuration.
+
+    *Retraction:* the 2026-10-26 report passed five of these `-t` cases (K1r1s, K1r4s,
+    K1r1h, K1r2h, K1r4h). They passed only because a probe-side lookup simulated a Victual
+    check that does not exist. They now fail.
+
+    **Authentik, 2026-10-28: identity carried; revocation of the issued token not
+    tested.** The exchanger scope mapping copies `azp`, `sid` and `jti` from the verified
+    subject token into the exchanged token. `azp` names the MCP client (case G1g). After
+    the access-token row is deleted through the admin API, further exchanges are refused;
+    exchanged tokens already issued stay valid until they expire (case G1h). The
+    app-password grant carries no `sid`, and ending a login session does not revoke the
+    refresh token.
 11. **MCP audience binding through the registration adapter** (question 14). Tests show
     that a registered client cannot select an unauthorized audience, that tokens of
     unrelated clients are refused at the sidecar, and that exchanged tokens target only
@@ -780,3 +858,70 @@ questions.
     > token. Revoking refresh access and rejecting an issued API token are separate tests.
     > The latter must verify Victual's immediate grant-revocation check, or explicitly
     > measure the token-expiry delay. (Decision 6; prerequisite 10.)
+
+### Spike evidence on answers 15 to 20, 2026-10-28
+
+The Keycloak and Authentik spikes (PRs 1131 and 1132) tested answers 15 to 20. The
+evidence is under prerequisites 8 to 10. These questions need a ruling.
+
+21. **Does an Authentik policy that revokes through the admin API count as supported
+    configuration?** The rewritten refresh-reuse policy imports no internals and changes
+    no rows directly. It calls the admin API with the documented `requests` object, the
+    same `DELETE` the admin interface uses. It does depend on three things answer 15 did
+    not cover:
+
+    - a superuser API token stored in the policy expression, which every administrator
+      who can read policies can read; a non-superuser sees only their own tokens;
+    - event context fields that Authentik does not document;
+    - one of the worker's two threads, blocked for about a second per reuse, with
+      concurrent reuses queued behind it.
+
+    The external webhook receiver avoids the third point but needs the same token. The
+    deletes leave no Authentik audit event, so the revoker must record them. A policy that
+    reads only documented context cannot revoke anything. (Authentik report findings 19 and 20;
+    cases G5d, G5g, G5h, G5m2. Decision 3; prerequisites 8 and 9.)
+
+22. **Is a revocation delay bounded by worker health a "documented bounded delay"?** On
+    Authentik the delay is under about 1.2 s while the worker is healthy. A refresh in the
+    first 400 ms still succeeds, but its descendant is revoked with the family (case
+    G5n). The bound is not a constant:
+
+    - A stopped worker revokes only after it restarts (case G5o).
+    - A queue of 1000 events stretches the delay to 166.6 s (case G5p).
+    - Authentik's worker list still shows a stopped worker, so it is no liveness check.
+    - A holder who refreshes continuously is never refused (case G5n2).
+
+    One option is to state the bound as "worker healthy" and require a worker health
+    alarm. Another is to treat the looping holder as part of question 23. (Authentik report
+    findings 21 and 22. Decision 6; prerequisite 9.)
+
+23. **Concurrent and continuous refresh on Authentik: which way forward?** Answer 17
+    asked for a mitigation and granted no exception yet. Authentik has no atomic family
+    revocation and no bulk delete. The sweep finds every descendant (6 of 6 runs) through
+    API fields, but the schema does not document the `id_token` content it groups by. A
+    holder who keeps refreshing outruns it, and it needs a superuser token. Run on a
+    schedule, it is the periodic cleanup answer 17 rejected; run on each exchange, it
+    covers only tokens that reach Victual. The options the evidence leaves:
+
+    - an ADR exception covering forked and looping holders on Authentik;
+    - an upstream request for atomic rotation, with prerequisite 9 open until it ships;
+    - narrowing Authentik's compatibility target so that it excludes family revocation.
+
+    (Authentik report finding 22; cases G5f, G5r, G5r2. Decision 6; prerequisite 9.)
+
+24. **What worst case does decision 6 state?** Decision 6 says five minutes. Decision 3
+    lets a resource server accept 60 s of clock skew on `exp`. The Keycloak run measured a
+    stateless check accepting a revoked grant's token until `exp` + 60.2 to 60.7 s, six
+    minutes after issue (Keycloak report finding 23; cases E0 to E2). The options are to
+    state the worst case as the access-token lifetime plus the permitted skew, or to
+    shorten the lifetime or the skew so that five minutes holds. (Decisions 3 and 6.)
+
+25. **Must Victual's immediate grant-revocation check be built and tested before
+    acceptance?** Answer 20 allows either that check or a measured expiry delay as the
+    second test. The delay is now measured (question 24). The check does not exist. On
+    Keycloak, only session-ending mechanisms and the sidecar's RFC 7009 revocation stop an
+    issued `/api` token before it expires. A user who withdraws consent in Keycloak's
+    account console changes nothing in Victual, because Keycloak 26.8.1 has no event
+    listener that calls an HTTP endpoint. Is the measured delay enough for acceptance, with
+    the check built as part of the implementation? Or is the check itself acceptance
+    evidence? (Keycloak report findings 18, 19 and 23. Decision 6; prerequisite 10.)
