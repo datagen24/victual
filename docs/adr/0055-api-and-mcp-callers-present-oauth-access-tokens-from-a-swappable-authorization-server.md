@@ -17,7 +17,9 @@
   the follow-up spikes, the maintainer answered questions 15 to 20 the same day, which
   narrow what counts as supported configuration and as revocation evidence. The
   2026-10-28 spikes tested those answers. Keycloak's generated objects meet question 18;
-  prerequisites 8 to 10 remain unmet. The spikes raised questions 21 to 25.
+  prerequisites 8 to 10 remain unmet. The spikes raised questions 21 to 25. On 2026-10-29
+  the Keycloak spike added evidence for prerequisites 2 and 3, and the Keycloak halves of
+  prerequisites 4 and 11 were recorded; none of the four is met.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -504,8 +506,35 @@ keychain, and keep sending their per-device Access service token as before.
    rotation and revocation work with two pods sharing one database, and killing a pod
    mid-flow loses no grant. Written for Hydra; since 2026-10-25 it applies to whichever
    candidate decision 2 selects.
+
+   **Keycloak, 2026-10-29: evidence, not met.** Keycloak 26.8.1, two production-mode
+   containers on one PostgreSQL database, clustered by Infinispan over that database
+   (JDBC_PING), behind a probe proxy standing in for a Service (Keycloak report finding 25,
+   cases H0 to H9p):
+
+   - Login, consent, refresh rotation, RFC 7009 revocation, administrative session deletion
+     and token exchange work with consecutive requests on different replicas. Reuse of a
+     rotated refresh token on one replica revokes the newest on the other.
+   - Killing one replica mid-login, between issuing a code and redeeming it, or while it
+     holds the grant lost nothing. Killing both lost no grant: sessions and consent persist
+     in the database. Only logins in progress were lost.
+
+   Not met because Keycloak is not yet selected (decision 2) and the run used containers,
+   not pods behind the chart. Reproduce with `./run.sh ha-up && node ha.mjs` in
+   `.devtools/spikes/oauth-keycloak/`.
 3. **Its image and licence.** A Nix-built image (ADR-0013) that runs non-root on a
    read-only filesystem, and a licence review recorded in the plan. The same applies.
+
+   **Keycloak, 2026-10-29: image met on arm64; licence review not recorded.** The spike's
+   `nix/image.nix` builds Keycloak 26.8.1 from the nixpkgs revision `flake.lock` pins
+   (Keycloak report finding 26). It runs as uid 65532 on a read-only root with two tmpfs
+   mounts and has no shell. `kc.sh build` runs inside the derivation, and the entrypoint is
+   the java command `kc.sh` would run. The core probe gave the same verdicts against it as
+   against the upstream image.
+
+   - Size: 827 MB, against the upstream 478 MB, because nixpkgs' headless JDK is not trimmed.
+   - Not built for amd64.
+   - Licence: Apache-2.0, but no plan records a review.
 4. **Token exchange.** RFC 8693 exchange as decision 7 describes works against Hydra and
    against Authentik 2026.8 or later. If Hydra cannot do it, the candidate table is
    reopened before acceptance. Since 2026-10-25 it reads: against the built-in candidate
@@ -541,6 +570,27 @@ keychain, and keep sending their per-device Access service token as before.
      an Enterprise licence (cases P7, P8).
 
    Reproduce with `./run.sh up && node setup.mjs && node probe.mjs` in `.devtools/spikes/oauth-authentik/`.
+
+   **Keycloak half, 2026-10-25 and 2026-10-26: met for the core exchange, with gaps.**
+   Keycloak 26.8.1 standard token exchange, which needs no Preview feature, exchanged an
+   MCP-audience user token for an `/api` token with the same `sub` and `iss` (cases P5, P5b,
+   P6). It refused an exchanger without the switch, a public client, an untrusted or
+   tampered subject token and an unavailable audience (N6 to N10, N13, X6). The two required
+   properties:
+
+   - Scope ceiling: met by configuration. By default a read-only token was exchanged for a
+     write token (N11); the `downscope-assertion-grant-enforcer` client policy refuses
+     widening and passes equal and narrower scope (N11b).
+   - Exchanger identity: `azp` of the exchanged token is the authenticated exchanging client.
+     Keycloak's token-exchange guide documents it, and callers could not override it (P7b,
+     X1 to X4). This is the documented alternative that question 8's answer permits. `act`
+     appears only through the delegation Preview (P7, P8), which decision 2 rules out.
+
+   The gaps: `resource` is ignored on exchange rather than refused (N5). Keycloak compares
+   scope names and does not expand bundles into leaves, so a bundle cannot be exchanged for
+   its own leaf (N11c). Grant identity on exchanged tokens is prerequisite 10's (K1).
+   Reproduce with `./run.sh up && node setup.mjs && node probe.mjs` in
+   `.devtools/spikes/oauth-keycloak/`.
 5. **A real MCP client per registration path.** Claude Code completes connection,
    step-up to a write scope and a tool call against both authorization servers. Remote
    custom connectors (claude.ai) are tested once ADR-0052 stage 3's route exists.
@@ -669,6 +719,20 @@ keychain, and keep sending their per-device Access service token as before.
     that a registered client cannot select an unauthorized audience, that tokens of
     unrelated clients are refused at the sidecar, and that exchanged tokens target only
     `/api`.
+
+    **Keycloak, 2026-10-26: met by configuration for the simulated adapter; not met.** The
+    spike's `adapter.mjs` stands in for Victual's adapter, which does not exist. Clients it
+    created hold the MCP audience scope by default; their tokens were accepted at the
+    sidecar (case K2a). Asking for `/api` through `audience`, `resource` or another audience
+    scope did not change `aud` or was refused (K2b). A client without the scope was refused
+    at the sidecar and could not bind itself (K2c). Exchanged tokens carried only `/api`,
+    and could not be exchanged back into the MCP audience (K2d, K2e).
+
+    Anonymous registration could not bind itself to the MCP audience while the Allowed
+    Client Scopes policy's list was empty (K2g). With the audience scope on that list, a
+    registrant bound itself (K2h). The list must therefore never contain it, which makes the
+    empty list part of the versioned configuration of prerequisite 8. Not tested: a client
+    registered anonymously and then bound by the adapter, and Authentik.
 
 ## Open questions and maintainer responses
 
