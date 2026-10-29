@@ -19,7 +19,11 @@
   2026-10-28 spikes tested those answers. Keycloak's generated objects meet question 18;
   prerequisites 8 to 10 remain unmet. The spikes raised questions 21 to 25. On 2026-10-29
   the Keycloak spike added evidence for prerequisites 2 and 3, and the Keycloak halves of
-  prerequisites 4 and 11 were recorded; none of the four is met.
+  prerequisites 4 and 11 were recorded; none of the four is met. The maintainer's
+  2026-10-29 clarification (question 26) makes Keycloak the authorization server that
+  issues every token, with a lab identity provider or Entra ID federating into it as an
+  upstream identity source. Questions 21 to 23 are moot under it; questions 27 and 28 are
+  open.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -127,7 +131,9 @@ requirements that shape this record:
 ### 1. Victual never issues tokens
 
 In OAuth mode, one authorization server per install issues every access token. It is
-either the built-in server or an external one. The identity provider owns ordinary user
+either the built-in server or an external one. Since 2026-10-29 it is Keycloak (question
+26): an external identity provider federates into it as an upstream identity source and
+issues no token Victual or the sidecar accepts. The identity provider owns ordinary user
 identities, credentials, authentication and identity lifecycle in either deployment.
 Victual is an OIDC relying party for ordinary browser login and a resource server for
 `/api`. The MCP sidecar is a second resource server.
@@ -146,7 +152,15 @@ Classic mode retains the existing local-user, password, session and static-key b
 while this work is incomplete (decision 9). The narrower purpose of local credentials
 in OAuth mode does not remove ordinary local login from Classic mode.
 
-### 2. The built-in authorization server is not chosen; Keycloak is the next candidate
+### 2. Keycloak is the authorization server
+
+Since 2026-10-29 (question 26), Keycloak is the authorization server. It handles logins
+for the service containers and all token handling: issue, exchange, rotation, revocation
+and client registration. A lab identity provider (Authentik in the maintainer's lab) or
+Entra ID signs people in as an upstream identity source federated into Keycloak.
+Whether Keycloak becomes a required chart component in OAuth mode is question 27. The
+rest of this decision records how the choice was reached; its "next candidate" wording
+predates the clarification.
 
 No built-in authorization server is selected. Ory Hydra was the provisional target and is
 removed: v26.2.0 has no RFC 8693 token exchange (prerequisite 4), which decision 7
@@ -163,7 +177,8 @@ link provider identities to the correct application records and preserve their a
 while retaining local bootstrap and break-glass recovery.
 
 Authentik stays the required external compatibility target, whatever is chosen as the
-built-in server (ADR-0056).
+built-in server (ADR-0056). Since 2026-10-29 that compatibility is as an upstream identity
+source federated into Keycloak, not as an issuer (question 26).
 
 Whatever is chosen runs as its own workload under ADR-0010: its own container, its own
 PostgreSQL database and role (ADR-0008 permits no other engine), an optional component of
@@ -502,6 +517,13 @@ keychain, and keep sending their per-device Access service token as before.
 
    Not run: the real images, the unmapped-subject refusal (Victual-side), and the Hydra
    half, which waits on the candidate table.
+
+   **Superseded, 2026-10-29 (question 26).** Victual and the sidecar pin Keycloak's issuer
+   only, so no second issuer is swapped in. The checks above still apply to Keycloak's
+   tokens. What replaces the swap: the same images, pointed at Keycloak, accept a user who
+   signed in through an upstream identity source, with the linking, group and outage
+   behaviour of ADR-0056. The Authentik evidence above stays as the record of the earlier
+   design.
 2. **The chosen built-in server on PostgreSQL at two replicas.** Login, consent, refresh
    rotation and revocation work with two pods sharing one database, and killing a pod
    mid-flow loses no grant. Written for Hydra; since 2026-10-25 it applies to whichever
@@ -928,6 +950,10 @@ questions.
 The Keycloak and Authentik spikes (PRs 1131 and 1132) tested answers 15 to 20. The
 evidence is under prerequisites 8 to 10. These questions need a ruling.
 
+*Since 2026-10-29:* questions 21 to 23 concern Authentik as a token issuer. Under question
+26 Authentik issues no token Victual accepts, so they are moot unless Authentik becomes an
+issuer again. Questions 24 and 25 concern Keycloak and still stand.
+
 21. **Does an Authentik policy that revokes through the admin API count as supported
     configuration?** The rewritten refresh-reuse policy imports no internals and changes
     no rows directly. It calls the admin API with the documented `requests` object, the
@@ -989,3 +1015,35 @@ evidence is under prerequisites 8 to 10. These questions need a ruling.
     listener that calls an HTTP endpoint. Is the measured delay enough for acceptance, with
     the check built as part of the implementation? Or is the check itself acceptance
     evidence? (Keycloak report findings 18, 19 and 23. Decision 6; prerequisite 10.)
+
+### Authorization server and upstream identity, 2026-10-29
+
+26. **Keycloak or Authentik?** The spikes compared both as the server that issues
+    Victual's tokens.
+
+    > **Response:** datagen24, 2026-10-29: "the authserver job is to handle all the logins
+    > between service containers, and token handling. For me my internal Auth server for my
+    > lab would federate with the auth server container, or use entra to authenticate."
+    > Recorded as: Keycloak issues every token Victual and the sidecar accept; a lab
+    > identity provider or Entra ID federates into Keycloak as an upstream identity source.
+    > (Decisions 1 and 2; prerequisite 1; ADR-0056 question 9.)
+
+    What this changes in this record, as the recorder reads it:
+
+    - Prerequisites 1 to 5 and 8 to 11 apply to Keycloak alone. The Authentik evidence under
+      them stays as history.
+    - Questions 21 to 23 are moot unless Authentik becomes an issuer again.
+    - Linking, group mapping and outage behaviour move to the boundary between Keycloak and
+      the upstream source. ADR-0056 holds those questions.
+
+27. **Is Keycloak a required chart component in OAuth mode?** Decision 2 makes the
+    authorization server an optional chart component, off by default, so an upgrade adds
+    no workload. With Keycloak as the only issuer, OAuth mode cannot run without it. Does
+    the chart turn it on with OAuth mode, or does an operator who already runs Keycloak
+    point Victual at that one? (Decision 2.)
+
+28. **Does the decision 3 resource-server contract still need to work against any
+    issuer?** It was written so that a second issuer could be swapped in (prerequisite 1).
+    Keeping it to standard surface costs nothing today. It also keeps the option of
+    pointing Victual at an operator's existing Keycloak or another server later. Should
+    it stay a requirement, or become a preference? (Decision 3.)
