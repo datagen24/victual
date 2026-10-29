@@ -6,23 +6,28 @@
 //
 //   node probe.mjs              core run: no Preview or experimental feature enabled
 //   node probe.mjs --preview    needs `./run.sh up preview`: delegation (act) cases only
+//   node probe.mjs --expiry     E cases: how long an issued /api token works after its grant is revoked (about 7 min)
 //
 // User tokens come from authorization code + PKCE (S256) driven headlessly through the realm's
 // login form (lib.mjs). No direct (password) grant is used for tokens; case N19 checks the
 // password grant is refused.
 import { execFileSync } from "node:child_process";
-import { deregisterMcpClient, GRANT_CLAIM, registerMcpClient } from "./adapter.mjs";
+import {
+  deregisterMcpClient, GRANT_CLAIM, GRANT_CLIENT_ATTR, GRANT_SCOPE_PREFIX, isOwned, listOwned, OWNER, OWNER_ATTR, RECIPE_ATTR, RECIPE_VERSION, RECIPES, reconcile, registerMcpClient,
+} from "./adapter.mjs";
 import { randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   AT, admin, authorize, claims, err, errd, exchange, finishCode, ISSUER, KC, login, OIDC, REALM, rsCheck, sleep, submitLogin, token, TOKEN, TX,
 } from "./lib.mjs";
 
 const REDIRECT_URI = "http://127.0.0.1:8765/callback"; // the loopback redirect every scripted client uses
-const MODE = process.argv.includes("--preview") ? "preview" : "core";
+const MODE = process.argv.includes("--preview") ? "preview" : process.argv.includes("--expiry") ? "expiry" : "core";
 const S = JSON.parse(readFileSync(new URL("./state.json", import.meta.url)));
 const { mcp, sidecar, uriSidecar, api, other, rogue, noExchange, short, plain } = S.clients;
 const { alice, bob } = S.users;
+/** The login form credentials of a fixture user. */
 const cred = (u) => ({ username: u.username, password: u.password });
 const DISCOVERY = `${ISSUER}/.well-known/openid-configuration`;
 const RS_SIDECAR = { issuer: ISSUER, discovery: DISCOVERY, audience: S.mcpAud };
@@ -31,21 +36,28 @@ const READ = "openid profile victual:read";
 const T0 = Date.now();
 const results = [];
 const facts = {};
+/** Appends one case result: verdict pass, FAIL, or n/a. */
 function record(id, kind, clause, expected, observed, ok, gate = "") {
   results.push({ id, kind, gate, clause, expected, observed: String(observed), verdict: ok === "n/a" ? "n/a" : ok ? "pass" : "FAIL" });
+  console.error(`${new Date().toISOString().slice(11, 19)} ${id} ${results.at(-1).verdict}`); // progress on stderr
 }
+/** A user token from the scripted code + PKCE login (alice and the MCP client by default). */
 const userToken = (scope = READ, user = alice, client = mcp, opts = {}) => login(client, cred(user), { scope, ...opts });
+/** Introspects a token as client `by`; returns the `active` flag. */
 const introspect = async (by, tok) => {
   const r = await token({ token: tok, client_id: by.clientId, client_secret: by.secret }, {}, `${OIDC}/token/introspect`);
   return r.active;
 };
+/** Redeems a refresh token as `client`. */
 const refresh = (client, rt) => token({ grant_type: "refresh_token", client_id: client.clientId, refresh_token: rt, ...(client.secret ? { client_secret: client.secret } : {}) });
+/** Re-encodes a JWT with patched claims and the original signature (for signature checks). */
 const forge = (tok, patch) => {
   const [h, , s] = tok.split(".");
   return `${h}.${Buffer.from(JSON.stringify({ ...claims(tok), ...patch })).toString("base64url")}.${s}`;
 };
 // The client policies come from setup.mjs. setPolicies(names) leaves only those enabled; null restores all.
 const ALL_POLICIES = (await admin("GET", "/client-policies/policies")).policies ?? [];
+/** Leaves only the named client policies enabled; null restores all of them. */
 const setPolicies = (names) => admin("PUT", "/client-policies/policies", { policies: names === null ? ALL_POLICIES : ALL_POLICIES.filter((p) => names.includes(p.name)) });
 const serverinfo = await admin("GET", "/admin/serverinfo");
 const profile = serverinfo.profileInfo;
@@ -58,11 +70,13 @@ facts.mode = MODE;
 const shortTok = MODE === "core" ? (await userToken("openid victual:read", alice, short)).access_token : null;
 
 if (MODE === "core") await core();
+else if (MODE === "expiry") await expiry();
 else await preview();
 
 await finish();
 
 // ============================================================================ core run
+/** The core run: positive and negative cases, then the gates. */
 async function core() {
   // ---- G-features: nothing Preview or experimental is on in this run
   record("G1", "gate", "0055 d2: nothing decision 7 requires may rely on a Preview feature",
@@ -167,6 +181,7 @@ async function core() {
   }
 
   // ---- negative cases: token exchange
+  /** Records a negative case: the response must be refused (with error `wantErr` when given). */
   const neg = (id, clause, wantErr, r, gate = "", extra = "") =>
     record(id, "neg", clause, `refused${wantErr ? ` ${wantErr}` : ""}`, `${errd(r)}${extra}`, r.status >= 400 && (!wantErr || r.error === wantErr), gate);
   {
@@ -275,22 +290,29 @@ async function core() {
 }
 
 // ============================================================================ gates
+/** Runs the gate groups in order after the core positive and negative cases. */
 async function gatesAfterCore({ at, ex, xc, ac }) {
   await exchangerGate({ at });
   await audienceGate();
   await revocationGate({ at, ex, xc, ac });
   await k1Gate();
+  await sharedSessionGate();
   await k2Gate();
   await registrationGate();
   await loginGate();
   await inventoryGate();
+  await recipeGate();
+  await restartGate(); // last: restarts the server container
   await imageFacts();
 }
 
 // ---- G-exchanger: the exchanger identity is set by the server from client authentication
+/** G-exchanger: the exchanger identity comes from client authentication, not from form fields. */
 async function exchangerGate({ at }) {
+  /** A form body from name/value pairs (repeats allowed). */
   const form = (pairs) => new URLSearchParams(pairs);
   const base = [["grant_type", TX], ["subject_token", at.access_token], ["subject_token_type", AT], ["audience", api.clientId], ["scope", "openid victual:read"]];
+  /** A Basic authorization header for client `c`. */
   const basic = (c, secret = c.secret) => ({ Authorization: `Basic ${Buffer.from(`${c.clientId}:${secret}`).toString("base64")}` });
   const rogueWide = (await userToken("openid victual:read victual-rogue-audience")).access_token; // rogue is in this token's aud
   const asRogueBase = [["grant_type", TX], ["subject_token", rogueWide], ["subject_token_type", AT], ["audience", api.clientId], ["scope", "openid victual:read"]];
@@ -331,6 +353,7 @@ async function exchangerGate({ at }) {
 }
 
 // ---- G-audience
+/** G-audience: the MCP client cannot reach other audiences; defaults give no MCP audience. */
 async function audienceGate() {
   const unassigned = await userToken("openid victual-api-audience");
   record("A1", "neg", "0055 d3 / q9: the MCP client cannot obtain a token for a resource it is not permitted",
@@ -359,6 +382,7 @@ async function audienceGate() {
 }
 
 // ---- G-revocation
+/** G-revocation: session identifier, originating client, and the R3 to R6 revocation mechanisms. */
 async function revocationGate({ ex, xc, ac, at }) {
   record("R1", "info", "0055 d6 / q8: a grant/session identifier survives the exchange",
     "sid present in the user token and equal in the exchanged token",
@@ -370,12 +394,14 @@ async function revocationGate({ ex, xc, ac, at }) {
     "a claim in the exchanged token names the MCP client whose grant was used",
     `exchanged claims absent from the user token: ${names.join(",") || "none"}; MCP client id appears anywhere in the exchanged token: ${mentionsMcp}; only azp (sidecar) and sid`,
     mentionsMcp, "G-revocation");
+  /** A user token of `client` and its exchanged /api token, checked active at /api introspection. */
   const fixture = async (client) => {
     const t = await userToken(READ, alice, client);
     const x = await exchange(sidecar, t.access_token, { audience: api.clientId, scope: "openid victual:read" });
     if (!(await introspect(api, x.access_token))) throw new Error("exchanged token not active at /api introspection before revocation");
     return { t, x, sid: claims(t.access_token).sid, client };
   };
+  /** What still works after a revocation: refresh, introspection, stateless check, new exchange. */
   const observe = async (f) => ({
     refresh: errd(await refresh(f.client, f.t.refresh_token)),
     introUser: await introspect(sidecar, f.t.access_token),
@@ -383,6 +409,7 @@ async function revocationGate({ ex, xc, ac, at }) {
     rsExchanged: await rsCheck(f.x.access_token, RS_API),
     reexchange: err(await exchange(sidecar, f.t.access_token, { audience: api.clientId, scope: "openid victual:read" })),
   });
+  /** One observation as text. */
   const show = (o) => `refresh -> ${o.refresh}; introspect user token active=${o.introUser}; introspect exchanged active=${o.introExchanged}; stateless RS check of exchanged: ${o.rsExchanged}; exchange again -> ${o.reexchange}`;
   {
     const f = await fixture(mcp);
@@ -420,11 +447,15 @@ async function revocationGate({ ex, xc, ac, at }) {
 // ---- K1: the exchanged token identifies the originating grant (ADR-0055 prerequisite 10, question 13)
 // The MCP clients k1a and k1b come from adapter.mjs: each has a per-grant client scope whose Hardcoded
 // claim mapper writes `victual_client`, a default scope of that client and an optional scope of the sidecar.
+/** K1: the exchanged token identifies the originating grant, and per-grant revocation (K1r). */
 async function k1Gate() {
   const { k1a, k1b } = S.clients;
   const SC = "openid victual:read";
+  /** Exchange by the sidecar asking for the per-grant scope of client `by`. */
   const grantEx = (subject, by) => exchange(sidecar, subject, { audience: api.clientId, scope: `${SC} ${by.grantScope}` });
+  /** The user-session-note claims of a token, values shortened. */
   const pickNotes = (tok) => Object.fromEntries(Object.entries(claims(tok)).filter(([k]) => k.startsWith("note_")).map(([k, v]) => [k, String(v).slice(0, 24)]));
+  /** Deletes every client scope named `name`. */
   const delScope = async (name) => { for (const x of (await admin("GET", "/client-scopes")).filter((y) => y.name === name)) await admin("DELETE", `/client-scopes/${x.id}`, undefined, { raw: true }); };
 
   // K1a: candidate 1, User Session Note mapper. Which notes does a browser login store, and does one name the client?
@@ -449,6 +480,7 @@ async function k1Gate() {
 
   // K1b: candidate 2, a mapper on the MCP client itself (dedicated scope), and one on the sidecar
   {
+    /** Adds a Hardcoded claim mapper to client `c` itself (its dedicated scope). */
     const add = (c, name, claim, value) => admin("POST", `/clients/${c.id}/protocol-mappers/models`, { name, protocol: "openid-connect", protocolMapper: "oidc-hardcoded-claim-mapper",
       config: { "claim.name": claim, "claim.value": value, "jsonType.label": "String", "access.token.claim": "true", "introspection.token.claim": "true" } });
     await add(k1a, "k1-client-mapper", "k1_on_mcp_client", "mcp"); await add(sidecar, "k1-client-mapper", "k1_on_sidecar", "sidecar");
@@ -500,6 +532,7 @@ async function k1Gate() {
 
   // K1g: candidate 4, sid plus a server-side mapping (admin API: the clients of a session)
   {
+    /** The client ids attached to alice's session `sid`, from the admin API. */
     const sessionClients = async (sid) => Object.values((await admin("GET", `/users/${alice.id}/sessions`)).find((s) => s.id === sid)?.clients ?? {});
     const sep = [claims(ta.access_token).sid, claims(tb.access_token).sid];
     const sepClients = [await sessionClients(sep[0]), await sessionClients(sep[1])];
@@ -568,75 +601,106 @@ async function k1Gate() {
       !!a.consentScreen && !!fin.code && !a2.consentScreen && !!fin2.code, "G-revocation");
   }
 
-  // ---- K1r: revoke one grant by each mechanism; where does the exchanged token stop?
+  // ---- K1r: revoke one grant by each mechanism. Question 20 separates the effects, so each mechanism has
+  // up to three cases, each asserting one outcome:
+  //   -r  refresh access: A's refresh token is refused, B's still works;
+  //   -x  new exchanges: the sidecar cannot exchange A's unexpired user access token, B's still exchanges;
+  //   -t  the already-issued /api token: Keycloak's introspection by the /api client refuses A's exchanged
+  //       token at once and still accepts B's. A stateless check accepts both until expiry (K1s, E cases).
+  // The "lookup inputs" in the -t observation are the admin-API facts a Victual grant check could read
+  // (session holds the client, stored consent, client not-before). Victual's check does not exist; the probe
+  // does not decide anything with them.
+  /** Label for the session topology of a K1r case. */
   const jar = (shared) => (shared ? "same browser session" : "separate sessions");
+  /** Two grants of alice (k1a, k1b), in separate sessions or one shared session, each with an exchanged /api token. */
   const fixture = async (shared, offline = false) => {
     let a = await userToken(SC + (offline ? " offline_access" : ""), alice, k1a);
     if (offline) { const r = await refresh(k1a, a.refresh_token); a = { ...a, access_token: r.access_token, refresh_token: r.refresh_token }; }
     const b = await userToken(SC, alice, k1b, { f: shared ? a._f : undefined });
     return { a, b, xa: await grantEx(a.access_token, k1a), xb: await grantEx(b.access_token, k1b), sidA: claims(a.access_token).sid };
   };
+  /** Online sessions and stored consents of alice, from the admin API. */
   const sessions = async () => ({ online: await admin("GET", `/users/${alice.id}/sessions`), consents: (await admin("GET", `/users/${alice.id}/consents`)).map((c) => c.clientId) });
-  // What Victual would check for an exchanged token: introspection by the /api client, and a lookup keyed on
-  // victual_client, sid and sub (session still holds the client, consent stored, client not-before earlier than iat).
-  const verdictOf = async (x, snapshot) => {
+  /** The admin-API facts a Victual grant check keyed on victual_client, sid and sub could read. Observation only. */
+  const lookupInputs = async (x, snapshot) => {
     const c = claims(x.access_token);
     const [cl] = await admin("GET", `/clients?clientId=${encodeURIComponent(c.victual_client)}`);
     const offline = await admin("GET", `/users/${alice.id}/offline-sessions/${cl.id}`);
     const inSession = snapshot.online.some((s) => s.id === c.sid && Object.values(s.clients).includes(c.victual_client)) || offline.some((s) => s.id === c.sid);
-    const v = { introspect: await introspect(api, x.access_token), sessionHoldsClient: inSession, consent: snapshot.consents.includes(c.victual_client), notBeforeStale: c.iat < (cl.notBefore ?? 0) };
-    return { ...v, blocked: !v.introspect || !v.sessionHoldsClient || !v.consent || v.notBeforeStale };
+    return `session holds client=${inSession} consent=${snapshot.consents.includes(c.victual_client)} iat<notBefore=${c.iat < (cl.notBefore ?? 0)}`;
   };
-  const fmt = (v) => `introspect=${v.introspect} session+client=${v.sessionHoldsClient} consent=${v.consent} notBeforeStale=${v.notBeforeStale} => ${v.blocked ? "BLOCKED" : "valid"}`;
-  const resetNotBefore = async () => { const [c] = await admin("GET", `/clients?clientId=${k1a.clientId}`); if (c.notBefore) await admin("PUT", `/clients/${c.id}`, { ...c, notBefore: 0 }); };
+  /** Sets the not-before of a client (by client id) to `value`, through the admin API. */
+  const setNotBefore = async (clientId, value) => { const [c] = await admin("GET", `/clients?clientId=${encodeURIComponent(clientId)}`); return admin("PUT", `/clients/${c.id}`, { ...c, notBefore: value }, { raw: true }); };
+  /** Clears the not-before of every client a K1r mechanism may have changed. */
+  const resetNotBefore = async () => { for (const id of [k1a.clientId, api.clientId, sidecar.clientId]) await setNotBefore(id, 0); };
+  /** Waits past the current second and returns it, since not-before is in whole seconds. */
+  const now1 = async () => { await sleep(1100); return Math.floor(Date.now() / 1000); };
+  // [number, label, revoke, kind, cases]: kind "per-grant" expects A blocked and B intact, "user-wide" expects both blocked.
   const mechanisms = [
-    ["1", "deleting the user's consent for client A (admin API)", (f) => admin("DELETE", `/users/${alice.id}/consents/${k1a.clientId}`, undefined, { raw: true }), "per-grant"],
-    ["2", "revoking client A's refresh token (RFC 7009)", (f) => fetch(`${OIDC}/revoke`, { method: "POST", body: new URLSearchParams({ token: f.a.refresh_token, token_type_hint: "refresh_token", client_id: k1a.clientId }) }), "per-grant"],
-    ["3", "deleting the user session of grant A (admin API, by sid)", (f) => admin("DELETE", `/sessions/${f.sidA}`, undefined, { raw: true }), "per-grant"],
-    ["4", "client A's not-before (admin API PUT notBefore=now)", async (f) => { await sleep(1100); const [c] = await admin("GET", `/clients?clientId=${k1a.clientId}`); return admin("PUT", `/clients/${c.id}`, { ...c, notBefore: Math.floor(Date.now() / 1000) }, { raw: true }); }, "per-grant"],
-    ["5", "logging the user out of every session (admin API)", (f) => admin("POST", `/users/${alice.id}/logout`, undefined, { raw: true }), "user-wide"],
+    ["1", "deleting the user's consent for client A (admin API)", () => admin("DELETE", `/users/${alice.id}/consents/${k1a.clientId}`, undefined, { raw: true }), "per-grant", "rxt"],
+    ["2", "revoking client A's refresh token (RFC 7009)", (f) => fetch(`${OIDC}/revoke`, { method: "POST", body: new URLSearchParams({ token: f.a.refresh_token, token_type_hint: "refresh_token", client_id: k1a.clientId }) }), "per-grant", "rxt"],
+    ["3", "deleting the user session of grant A (admin API, by sid)", (f) => admin("DELETE", `/sessions/${f.sidA}`, undefined, { raw: true }), "per-grant", "rxt"],
+    ["4", "client A's not-before (admin API PUT notBefore=now)", async () => setNotBefore(k1a.clientId, await now1()), "per-grant", "rxt"],
+    ["5", "logging the user out of every session (admin API)", () => admin("POST", `/users/${alice.id}/logout`, undefined, { raw: true }), "user-wide", "rxt"],
+    // Mechanisms not tried in the 2026-10-26 pass; only the already-issued token is in question.
+    ["8", "the /api client's not-before (admin API PUT notBefore=now on the audience client)", async () => setNotBefore(api.clientId, await now1()), "per-grant", "t"],
+    ["9", "the sidecar's not-before (admin API PUT notBefore=now on the exchanger, the tokens' azp)", async () => setNotBefore(sidecar.clientId, await now1()), "per-grant", "t"],
+    ["10", "the sidecar revokes A's exchanged token (RFC 7009, authenticated as the sidecar)", (f) => fetch(`${OIDC}/revoke`, { method: "POST", body: new URLSearchParams({ token: f.xa.access_token, token_type_hint: "access_token", client_id: sidecar.clientId, client_secret: sidecar.secret }) }), "per-grant", "t"],
   ];
   for (const shared of [false, true]) {
-    for (const [n, label, run, scopeOf] of mechanisms) {
+    for (const [n, label, run, kind, cases] of mechanisms) {
+      if (shared && Number(n) >= 8) continue; // the new mechanisms act on clients or one token, not on sessions
       const f = await fixture(shared);
-      const before = await sessions();
-      const [pa, pb] = [await verdictOf(f.xa, before), await verdictOf(f.xb, before)];
+      const pre = [await introspect(api, f.xa.access_token), await introspect(api, f.xb.access_token)];
       const resp = await run(f);
       const snap = await sessions();
-      const [va, vb] = [await verdictOf(f.xa, snap), await verdictOf(f.xb, snap)];
-      const ra = await refresh(k1a, f.a.refresh_token), rb = await refresh(k1b, f.b.refresh_token);
+      const ia = await introspect(api, f.xa.access_token), ib = await introspect(api, f.xb.access_token);
+      const look = [await lookupInputs(f.xa, snap), await lookupInputs(f.xb, snap)];
       const stateless = [await rsCheck(f.xa.access_token, RS_API), await rsCheck(f.xb.access_token, RS_API)];
+      const xa = await grantEx(f.a.access_token, k1a), xb = await grantEx(f.b.access_token, k1b);
+      const ra = await refresh(k1a, f.a.refresh_token), rb = await refresh(k1b, f.b.refresh_token);
       await resetNotBefore();
-      const want = scopeOf === "user-wide" ? va.blocked && vb.blocked : va.blocked && !vb.blocked;
-      record(`K1r${n}${shared ? "h" : "s"}`, "info", `0055 d6, q13, prerequisite 10: ${label}, ${jar(shared)}`,
-        scopeOf === "user-wide" ? "both grants' exchanged tokens blocked (a user-wide mechanism)" : "A's exchanged token blocked at introspection or the grant lookup; B's still valid",
-        `before: A ${pa.blocked ? "BLOCKED" : "valid"}, B ${pb.blocked ? "BLOCKED" : "valid"}; call -> ${resp.status}; after: A ${fmt(va)}; B ${fmt(vb)}; refresh A -> ${errd(ra)}; refresh B -> ${errd(rb)}; stateless check A/B: ${stateless.join("/")}`,
-        want && !pa.blocked && !pb.blocked, "G-revocation");
+      const id = `K1r${n}${shared ? "h" : "s"}`;
+      const wide = kind === "user-wide";
+      const head = `0055 d6, q13, q20, prerequisite 10: ${label}, ${jar(shared)}`;
+      const call = `call -> ${resp.status}`;
+      if (cases.includes("r")) record(`${id}-r`, "info", `${head}: refresh access`,
+        wide ? "both grants' refresh tokens refused" : "A's refresh token refused; B's still refreshes",
+        `${call}; refresh A -> ${errd(ra)}; refresh B -> ${errd(rb)}`,
+        ra.status >= 400 && (wide ? rb.status >= 400 : rb.status === 200), "G-revocation: refresh access");
+      if (cases.includes("x")) record(`${id}-x`, "info", `${head}: new exchanges`,
+        wide ? "neither grant's unexpired user access token can be exchanged" : "the sidecar cannot exchange A's unexpired user access token; B's still exchanges",
+        `${call}; exchange A's user token -> ${errd(xa)}; exchange B's -> ${errd(xb)}`,
+        xa.status >= 400 && (wide ? xb.status >= 400 : xb.status === 200), "G-revocation: new exchanges");
+      if (cases.includes("t")) record(`${id}-t`, "info", `${head}: the already-issued /api token at Keycloak`,
+        wide ? "both exchanged tokens inactive at introspection by the /api client" : "A's exchanged token inactive at introspection by the /api client at once; B's still active",
+        `before: A active=${pre[0]}, B active=${pre[1]}; ${call}; after: introspect A active=${ia}, B active=${ib}; stateless check A/B: ${stateless.join("/")}; lookup inputs (observation, not a Victual check): A ${look[0]}; B ${look[1]}`,
+        pre[0] === true && pre[1] === true && ia === false && (wide ? ib === false : ib === true), "G-revocation: issued token");
     }
   }
   {
     // K1r6: an offline grant
     const f = await fixture(false, true);
-    const before = await sessions();
-    const [pa, pb] = [await verdictOf(f.xa, before), await verdictOf(f.xb, before)];
+    const pre = [await introspect(api, f.xa.access_token), await introspect(api, f.xb.access_token)];
     const resp = await admin("DELETE", `/sessions/${f.sidA}?isOffline=true`, undefined, { raw: true });
-    const snap = await sessions();
-    const [va, vb] = [await verdictOf(f.xa, snap), await verdictOf(f.xb, snap)];
+    const ia = await introspect(api, f.xa.access_token), ib = await introspect(api, f.xb.access_token);
     const ra = await refresh(k1a, f.a.refresh_token), rb = await refresh(k1b, f.b.refresh_token);
-    record("K1r6s", "info", "0055 d6, q13, prerequisite 10: deleting the offline session of grant A (admin API, isOffline=true), separate sessions",
-      "A's exchanged token blocked; B's still valid",
-      `exchanged token's sid is the offline session (${claims(f.xa.access_token).sid === f.sidA}); call -> ${resp.status}; A ${fmt(va)}; B ${fmt(vb)}; refresh A -> ${errd(ra)}; refresh B -> ${errd(rb)}`,
-      va.blocked && !vb.blocked && !pa.blocked && !pb.blocked, "G-revocation");
+    const head = "0055 d6, q13, q20, prerequisite 10: deleting the offline session of grant A (admin API, isOffline=true), separate sessions";
+    record("K1r6s-r", "info", `${head}: refresh access`, "A's offline refresh token refused; B's still refreshes",
+      `exchanged token's sid is the offline session (${claims(f.xa.access_token).sid === f.sidA}); call -> ${resp.status}; refresh A -> ${errd(ra)}; refresh B -> ${errd(rb)}`,
+      ra.status >= 400 && rb.status === 200, "G-revocation: refresh access");
+    record("K1r6s-t", "info", `${head}: the already-issued /api token at Keycloak`, "A's exchanged token inactive at introspection by the /api client at once; B's still active",
+      `before: A active=${pre[0]}, B active=${pre[1]}; call -> ${resp.status}; after: introspect A active=${ia}, B active=${ib}`,
+      pre[0] === true && pre[1] === true && ia === false && ib === true, "G-revocation: issued token");
   }
   {
-    // K1r7: revoking the access token (RFC 7009) is not a grant revocation
+    // K1r7: revoking the user's access token (RFC 7009) is not a grant revocation
     const f = await fixture(false);
     const resp = await fetch(`${OIDC}/revoke`, { method: "POST", body: new URLSearchParams({ token: f.a.access_token, token_type_hint: "access_token", client_id: k1a.clientId }) });
-    const snap = await sessions();
-    const va = await verdictOf(f.xa, snap);
-    record("K1r7s", "info", "0055 d6: revoking client A's access token (RFC 7009) does not revoke the grant or its exchanged tokens",
-      "the exchanged token stays valid (the guide: revoking the subject access token does not revoke the exchanged one)",
-      `revoke -> ${resp.status}; A ${fmt(va)}; refresh A -> ${errd(await refresh(k1a, f.a.refresh_token))}`, !va.blocked, "G-revocation");
+    const ia = await introspect(api, f.xa.access_token);
+    record("K1r7s", "info", "0055 d6: revoking client A's user access token (RFC 7009) does not revoke the grant or its exchanged tokens",
+      "the exchanged token stays active (the guide: revoking the subject access token does not revoke the exchanged one); refresh still works",
+      `revoke -> ${resp.status}; introspect A's exchanged token active=${ia}; refresh A -> ${errd(await refresh(k1a, f.a.refresh_token))}`, ia === true, "G-revocation");
   }
   {
     // K1s: a stateless check keeps accepting until exp
@@ -644,15 +708,18 @@ async function k1Gate() {
     await admin("DELETE", `/users/${alice.id}/consents/${k1a.clientId}`, undefined, { raw: true });
     const v = await rsCheck(f.xa.access_token, RS_API);
     record("K1s", "info", "0055 d6: a stateless check of an exchanged token after its grant was revoked",
-      "accepted until exp (five minutes at most)", `consent deleted; stateless check -> ${v}; exp in ${claims(f.xa.access_token).exp - Math.floor(Date.now() / 1000)} s`, v === "accepted", "G-revocation");
+      "accepted until exp (the E cases measure when it stops)", `consent deleted; stateless check -> ${v}; exp in ${claims(f.xa.access_token).exp - Math.floor(Date.now() / 1000)} s`, v === "accepted", "G-revocation");
   }
 }
 
 // ---- K2: the registration adapter binds each MCP client to the MCP audience (ADR-0055 prerequisite 11, question 14)
+/** K2: the registration adapter binds each MCP client to the MCP audience. */
 async function k2Gate() {
   const SC = "openid victual:read";
   const created = [];
+  /** Registers a client through the adapter and remembers it for cleanup. */
   const mk = async (name, opts = {}) => { const c = await registerMcpClient(name, { sidecarId: sidecar.id, ...opts }); created.push(c); return c; };
+  /** The aud claim of a token response as an array, or null without a token. */
   const audOf = (r) => (r.access_token ? [].concat(claims(r.access_token).aud ?? []) : null);
   try {
     const c1 = await mk("victual-spike-mcp-k2-1"), c2 = await mk("victual-spike-mcp-k2-2");
@@ -714,13 +781,242 @@ async function k2Gate() {
   }
 }
 
+// ---- K5: a shared provider session revokes its grants together; the affected grants are listed first (question 19)
+/**
+ * K5a (session deletion) and K5b (user logout). Fixtures: alice signs in to k1a and k1b in one browser
+ * session (one sid), alice signs in to k1a again in a separate session, and bob signs in to k1b. Before the
+ * administrative action the probe lists, through the admin API's user-sessions endpoint, the grants (user,
+ * session, client) the action will end. After it, a grant "stops working" when its exchanged /api token is
+ * inactive at introspection by the /api client and its refresh token is refused.
+ */
+async function sharedSessionGate() {
+  const { k1a, k1b } = S.clients;
+  const SC = "openid victual:read";
+  /** One grant: a user token of `client` for `user` (optionally in an existing browser session) and its exchanged /api token. */
+  const grant = async (user, client, f) => {
+    const t = await userToken(SC, user, client, { f });
+    const x = await exchange(sidecar, t.access_token, { audience: api.clientId, scope: `${SC} ${client.grantScope}` });
+    return { user, client, t, x, sid: claims(t.access_token).sid, key: `${user.username}/${claims(t.access_token).sid.slice(0, 8)}/${client.clientId}` };
+  };
+  /** The four grants of the K5 topology. */
+  const topology = async () => {
+    const a1 = await grant(alice, k1a);
+    const a2 = await grant(alice, k1b, a1.t._f); // same browser: same sid as a1
+    const a3 = await grant(alice, k1a); // separate session
+    const b1 = await grant(bob, k1b);
+    return [a1, a2, a3, b1];
+  };
+  /** The grants the admin API lists for the given sessions of a user, as user/sid/client keys. */
+  const listed = async (user, sids) => (await admin("GET", `/users/${user.id}/sessions`)).filter((s) => sids === null || sids.includes(s.id))
+    .flatMap((s) => Object.values(s.clients).map((cid) => ({ key: `${s.username}/${s.id.slice(0, 8)}/${cid}`, userId: s.userId })));
+  /** "stopped", "working" or "mixed" for one grant, from introspection of its exchanged token and one refresh. */
+  const state = async (g) => {
+    const active = await introspect(api, g.x.access_token);
+    const r = await refresh(g.client, g.t.refresh_token);
+    return !active && r.status >= 400 ? "stopped" : active && r.status === 200 ? "working" : `mixed(active=${active}, refresh ${err(r)})`;
+  };
+  /** Set equality of two arrays. */
+  const same = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
+  for (const [id, label, act, sidsOf] of [
+    ["K5a", "deleting the shared session (admin API, by sid)", (gs) => admin("DELETE", `/sessions/${gs[0].sid}`, undefined, { raw: true }), (gs) => [gs[0].sid]],
+    ["K5b", "logging alice out of every session (admin API)", () => admin("POST", `/users/${alice.id}/logout`, undefined, { raw: true }), () => null],
+  ]) {
+    // Earlier cases leave live sessions of alice; K5b would list them too (the first 2026-10-28 run did).
+    // Clear them so the listing is the topology below and nothing else.
+    if (id === "K5b") await admin("POST", `/users/${alice.id}/logout`, undefined, { raw: true });
+    const gs = await topology();
+    const pre = await Promise.all(gs.map((g) => introspect(api, g.x.access_token)));
+    const list = await listed(alice, sidsOf(gs));
+    const resp = await act(gs);
+    const states = [];
+    for (const g of gs) states.push([g.key, await state(g)]);
+    const stopped = states.filter(([, s]) => s === "stopped").map(([k]) => k);
+    const others = states.filter(([k]) => !list.some((l) => l.key === k));
+    const listKeys = list.map((l) => l.key);
+    const remaining = id === "K5b" ? (await admin("GET", `/users/${alice.id}/sessions`)).length : 0;
+    record(id, "info", `0055 d6, q19, prerequisite 10: ${label}: the affected grants are listed before the action and are exactly the grants that stop`,
+      "the listed grants all belong to alice (and, for K5a, to the one session); after the action exactly the listed grants stop (introspection inactive and refresh refused); alice's grant in another session (K5a) and bob's grant keep working",
+      `shared sid a1==a2: ${gs[0].sid === gs[1].sid}; before: all active=${pre.every(Boolean)}; listed=[${listKeys.join(", ")}]; call -> ${resp.status}; after: ${states.map(([k, s]) => `${k} ${s}`).join("; ")}${id === "K5b" ? `; alice's sessions left: ${remaining}` : ""}`,
+      pre.every(Boolean) && gs[0].sid === gs[1].sid && list.every((l) => l.userId === alice.id) && same(listKeys, stopped)
+      && others.length > 0 && others.every(([, s]) => s === "working") && list.length >= 2 && remaining === 0, "G-revocation: shared session (q19)");
+  }
+}
+
+// ---- K4: versioned adapter recipe with ownership stamps and reconciliation (question 18, prerequisite 8)
+/**
+ * Creates adapter clients at the current and the previous recipe version, plus unowned lookalikes, and
+ * checks: stamps survive a read-back (K4a), reconciliation is idempotent (K4b), drift is repaired (K4c),
+ * an owned orphan grant scope is removed (K4d), unowned objects are untouched (K4e), and an upgrade from
+ * recipe 1 to 2 updates and restamps every owned object (K4f). K4g (restart) runs separately at the end.
+ */
+async function recipeGate() {
+  const SC = "openid victual:read";
+  const sid = { sidecarId: sidecar.id };
+  const created = [];
+  /** Registers a client through the adapter and remembers it for cleanup. */
+  const mk = async (name, opts = {}) => { const c = await registerMcpClient(name, { ...sid, ...opts }); created.push(c); return c; };
+  /** The client scope named `name`, or undefined. */
+  const byName = async (name) => (await admin("GET", "/client-scopes")).find((s) => s.name === name);
+  /** Names of the sidecar's optional client scopes. */
+  const sidecarOptional = async () => (await admin("GET", `/clients/${sidecar.id}/optional-client-scopes`)).map((s) => s.name);
+  /** A token of `client` exchanged by the sidecar with the client's grant scope; returns the claims or the error. */
+  const grantToken = async (client) => {
+    const t = await userToken(SC, alice, client);
+    if (!t.access_token) return { error: errd(t) };
+    const x = await exchange(sidecar, t.access_token, { audience: api.clientId, scope: `${SC} ${client.grantScope}` });
+    return x.access_token ? { user: claims(t.access_token), x: claims(x.access_token) } : { error: errd(x) };
+  };
+  // Unowned lookalikes, present through every reconcile run below (K4e checks them at the end).
+  const look = { client: "victual-spike-mcp-k4-lookalike", scope: `${GRANT_SCOPE_PREFIX}victual-spike-mcp-k4-lookalike`, gone: `${GRANT_SCOPE_PREFIX}victual-spike-mcp-k4-gone`, foreign: `${GRANT_SCOPE_PREFIX}victual-spike-mcp-k4-foreign` };
+  await admin("POST", "/clients", { clientId: look.client, publicClient: true, standardFlowEnabled: true, fullScopeAllowed: true, consentRequired: false, redirectUris: [REDIRECT_URI],
+    attributes: { "pkce.code.challenge.method": "S256" }, defaultClientScopes: ["basic", "victual-groups"] });
+  /** A Hardcoded claim mapper writing victual_client = `v`. */
+  const mapper = (v) => ({ name: "victual-grant-client", protocol: "openid-connect", protocolMapper: "oidc-hardcoded-claim-mapper", config: { "claim.name": GRANT_CLAIM, "claim.value": v, "jsonType.label": "String", "access.token.claim": "true" } });
+  await admin("POST", "/client-scopes", { name: look.scope, protocol: "openid-connect", attributes: { "include.in.token.scope": "true" }, protocolMappers: [mapper("lookalike")] });
+  await admin("POST", "/client-scopes", { name: look.gone, protocol: "openid-connect", attributes: { "include.in.token.scope": "true", [GRANT_CLIENT_ATTR]: "victual-spike-mcp-k4-gone" }, protocolMappers: [mapper("gone")] });
+  await admin("POST", "/client-scopes", { name: look.foreign, protocol: "openid-connect", attributes: { [OWNER_ATTR]: "someone-else", [RECIPE_ATTR]: "1", [GRANT_CLIENT_ATTR]: "victual-spike-mcp-k4-gone" }, protocolMappers: [mapper("foreign")] });
+  /** A JSON snapshot of the unowned lookalikes: client representation, its scope lists, and each scope with its mappers. */
+  const snapshotLookalikes = async () => {
+    const [c] = await admin("GET", `/clients?clientId=${look.client}`);
+    const out = { client: c, defaults: (await admin("GET", `/clients/${c.id}/default-client-scopes`)).map((s) => s.name) };
+    for (const n of [look.scope, look.gone, look.foreign]) { const s = await byName(n); out[n] = s ? { ...s, mappers: await admin("GET", `/client-scopes/${s.id}/protocol-mappers/models`) } : null; }
+    return JSON.stringify(out);
+  };
+  const lookBefore = await snapshotLookalikes();
+  const allActions = [];
+  /** One reconcile run against the sidecar; its changes are also collected for K4e. */
+  const run = async (opts = {}) => { const a = await reconcile({ ...sid, ...opts }); allActions.push(...a); return a; };
+  try {
+    // K4a: stamps on a new client and its grant scope survive a read-back; the attribute query finds owned clients
+    const c1 = await mk("victual-spike-mcp-k4-1");
+    const rep = await admin("GET", `/clients/${c1.id}`), sc = await byName(c1.grantScope);
+    const owned = await listOwned();
+    const filtered = (await admin("GET", "/clients?max=1000")).filter(isOwned).map((c) => c.clientId).sort();
+    const viaQuery = owned.clients.map((c) => c.clientId).sort();
+    /** True when an object carries the adapter's owner and current recipe stamps plus `extra` attributes. */
+    const stampOk = (o, extra = {}) => o?.attributes?.[OWNER_ATTR] === OWNER && o.attributes[RECIPE_ATTR] === String(RECIPE_VERSION) && Object.entries(extra).every(([k, v]) => o.attributes[k] === v);
+    record("K4a", "pos", "0055 prerequisite 8, q18: every object the adapter creates records its owner and recipe version through a supported interface",
+      `the client's and the grant scope's attributes hold ${OWNER_ATTR}=${OWNER} and ${RECIPE_ATTR}=${RECIPE_VERSION} after a read-back; the scope names its client; listing by owner returns exactly the adapter-built clients (k1a, k1b, k4-1)`,
+      `client attributes: ${JSON.stringify(Object.fromEntries(Object.entries(rep.attributes).filter(([k]) => k.startsWith("victual."))))}; scope attributes: ${JSON.stringify(Object.fromEntries(Object.entries(sc?.attributes ?? {}).filter(([k]) => k.startsWith("victual."))))}; attribute query q=${OWNER_ATTR}:${OWNER} -> ${owned.query}; listed by owner: [${viaQuery.join(", ")}]; owned scopes ${owned.scopes.length}`,
+      stampOk(rep) && stampOk(sc, { [GRANT_CLIENT_ATTR]: c1.clientId }) && JSON.stringify(viaQuery) === JSON.stringify(filtered) && JSON.stringify(viaQuery) === JSON.stringify([S.clients.k1a.clientId, S.clients.k1b.clientId, c1.clientId].sort()), "G-config: recipe stamps");
+
+    // K4b: idempotent
+    const first = await run(), second = await run();
+    record("K4b", "pos", "0055 prerequisite 8, q18: reconciliation is repeatable", "a second run with nothing changed in between makes no change",
+      `first run: ${first.length} changes${first.length ? ` (${first.join("; ")})` : ""}; second run: ${second.length} changes${second.length ? ` (${second.join("; ")})` : ""}`, second.length === 0, "G-config: reconcile");
+
+    // K4c: drift is repaired
+    {
+      const scope = await byName(c1.grantScope);
+      const [m] = await admin("GET", `/client-scopes/${scope.id}/protocol-mappers/models`);
+      await admin("PUT", `/client-scopes/${scope.id}/protocol-mappers/models/${m.id}`, { ...m, config: { ...m.config, "claim.value": S.clients.k1b.clientId } });
+      await admin("DELETE", `/clients/${c1.id}/default-client-scopes/${S.scopes.mcpAudience}`);
+      await admin("DELETE", `/clients/${sidecar.id}/optional-client-scopes/${scope.id}`);
+      const cur = await admin("GET", `/clients/${c1.id}`);
+      await admin("PUT", `/clients/${c1.id}`, { ...cur, consentRequired: false });
+      await admin("POST", `/clients/${c1.id}/protocol-mappers/models`, { name: "drift-client-mapper", protocol: "openid-connect", protocolMapper: "oidc-hardcoded-claim-mapper",
+        config: { "claim.name": GRANT_CLAIM, "claim.value": "drift", "jsonType.label": "String", "access.token.claim": "true" } });
+      const repair = await run();
+      const after = await admin("GET", `/clients/${c1.id}`);
+      const [m2] = await admin("GET", `/client-scopes/${scope.id}/protocol-mappers/models`);
+      const defaults = (await admin("GET", `/clients/${c1.id}/default-client-scopes`)).map((s) => s.name);
+      const tok = await grantToken(c1);
+      const again = await run();
+      record("K4c", "pos", "0055 prerequisite 8, q18: reconciliation repairs drift in owned objects",
+        "after five manual changes (grant mapper relabelled to another client, audience scope removed, sidecar link removed, Consent required off, a client-level mapper added) one run restores the recipe; tokens name the right client again; the next run changes nothing",
+        `changes: ${repair.join("; ")}; after: claim.value=${m2.config["claim.value"]}, audience default=${defaults.includes("victual-mcp-audience")}, sidecar link=${(await sidecarOptional()).includes(c1.grantScope)}, consentRequired=${after.consentRequired}, client mappers=${(after.protocolMappers ?? []).length}; token: ${tok.error ?? `aud=${JSON.stringify(tok.user.aud)} exchanged ${GRANT_CLAIM}=${tok.x.victual_client}`}; next run: ${again.length} changes`,
+        m2.config["claim.value"] === c1.clientId && defaults.includes("victual-mcp-audience") && (await sidecarOptional()).includes(c1.grantScope) && after.consentRequired && !(after.protocolMappers ?? []).length
+        && tok.x?.victual_client === c1.clientId && again.length === 0, "G-config: reconcile");
+    }
+
+    // K4d: an owned grant scope whose client is gone is removed
+    {
+      const c2 = await registerMcpClient("victual-spike-mcp-k4-2", sid);
+      await admin("DELETE", `/clients/${c2.id}`); // the client is deleted outside the adapter; its grant scope is left behind
+      const present = !!(await byName(c2.grantScope));
+      const out = await run();
+      const gone = !(await byName(c2.grantScope));
+      record("K4d", "pos", "0055 prerequisite 8, q18: reconciliation removes an owned orphan",
+        "an owned grant scope whose client was deleted outside the adapter is deleted, and the sidecar no longer lists it",
+        `scope present before: ${present}; changes: ${out.join("; ")}; scope gone: ${gone}; sidecar lists it: ${(await sidecarOptional()).includes(c2.grantScope)}`,
+        present && gone && !(await sidecarOptional()).includes(c2.grantScope) && out.some((a) => a.includes(c2.grantScope)), "G-config: reconcile");
+    }
+
+    // K4f: upgrade from recipe 1 to recipe 2
+    {
+      const old = [await mk("victual-spike-mcp-k4-3", { version: 1 }), await mk("victual-spike-mcp-k4-4", { version: 1 })];
+      const stampsBefore = await Promise.all(old.map(async (c) => (await admin("GET", `/clients/${c.id}`)).attributes[RECIPE_ATTR]));
+      const lwBefore = (await admin("GET", `/client-scopes/${(await byName(old[0].grantScope)).id}/protocol-mappers/models`))[0].config["lightweight.claim"];
+      const up = await run({ version: 2 });
+      const owned2 = await listOwned();
+      const versions = [...owned2.clients, ...owned2.scopes].map((o) => `${o.clientId ?? o.name}=${o.attributes[RECIPE_ATTR]}`);
+      const sc3 = await byName(old[0].grantScope);
+      const [m3] = await admin("GET", `/client-scopes/${sc3.id}/protocol-mappers/models`);
+      const rep3 = await admin("GET", `/clients/${old[0].id}`);
+      const tok = await grantToken(old[0]);
+      const again = await run({ version: 2 });
+      record("K4f", "pos", "0055 prerequisite 8, q18: an upgrade from recipe 1 to recipe 2 updates every owned object and records the new version",
+        "clients created at recipe 1 get recipe 2's mapper setting (lightweight.claim true) and client description; every owned client and scope then records recipe 2; tokens still name the client; a second run changes nothing",
+        `stamps before: ${stampsBefore.join(",")}; changes: ${up.join("; ")}; owned objects after: ${versions.join(", ")}; k4-3 mapper lightweight.claim before=${lwBefore} after=${m3.config["lightweight.claim"]}, description=${JSON.stringify(rep3.description)}; token ${GRANT_CLAIM}=${tok.x?.victual_client ?? tok.error}; next run: ${again.length} changes`,
+        stampsBefore.every((v) => v === "1") && [...owned2.clients, ...owned2.scopes].every((o) => o.attributes[RECIPE_ATTR] === "2") && lwBefore === "false" && m3.config["lightweight.claim"] === "true" && old.every((c) => up.some((a) => a.includes(c.grantScope) && a.includes("lightweight.claim")))
+        && rep3.description === RECIPES[2].description && tok.x?.victual_client === old[0].clientId && again.length === 0, "G-config: recipe upgrade");
+    }
+
+    // K4e: unowned objects are never touched
+    {
+      const lookAfter = await snapshotLookalikes();
+      const mentions = allActions.filter((a) => Object.values(look).some((n) => a.includes(n)));
+      record("K4e", "neg", "0055 prerequisite 8, q18: reconciliation never touches an object it does not own",
+        "an unstamped client and grant scope with adapter-like names, an unstamped scope naming a missing client, and a scope stamped with another owner are byte-identical after every reconcile run above, and no change names them",
+        `reconcile runs: ${allActions.length} changes in total; changes naming a lookalike: ${mentions.length ? mentions.join("; ") : "none"}; snapshot identical: ${lookAfter === lookBefore}`,
+        lookAfter === lookBefore && mentions.length === 0, "G-config: reconcile");
+    }
+  } finally {
+    for (const c of created) await deregisterMcpClient(c).catch(() => {});
+    const [lc] = await admin("GET", `/clients?clientId=${look.client}`);
+    if (lc) await admin("DELETE", `/clients/${lc.id}`, undefined, { raw: true });
+    for (const n of [look.scope, look.gone, look.foreign]) { const s = await byName(n); if (s) await admin("DELETE", `/client-scopes/${s.id}`, undefined, { raw: true }); }
+  }
+}
+
+/**
+ * K4g: restart the Keycloak container (same PostgreSQL database) and check that every owned object keeps its
+ * ownership and recipe attributes and mapper configuration, that reconciliation then finds nothing to change,
+ * and that a grant token still names its client. Runs last in the core run.
+ */
+async function restartGate() {
+  /** Owned clients and scopes with their victual.* attributes and grant mapper configs, as JSON. */
+  const snap = async () => {
+    const { clients, scopes } = await listOwned();
+    const out = [];
+    for (const c of clients) out.push([c.clientId, Object.fromEntries(Object.entries(c.attributes).filter(([k]) => k.startsWith("victual.")))]);
+    for (const s of scopes) out.push([s.name, s.attributes, (await admin("GET", `/client-scopes/${s.id}/protocol-mappers/models`)).map((m) => m.config)]);
+    return JSON.stringify(out.sort((a, b) => a[0].localeCompare(b[0])));
+  };
+  const before = await snap();
+  const t0 = Date.now();
+  let restarted;
+  try { execFileSync(fileURLToPath(new URL("./run.sh", import.meta.url)), ["restart"], { encoding: "utf8", timeout: 300000 }); restarted = `restart took ${Math.round((Date.now() - t0) / 1000)} s`; } catch (e) { restarted = `restart failed: ${e.message.slice(0, 200)}`; }
+  const after = await snap();
+  const changes = await reconcile({ sidecarId: sidecar.id });
+  const t = await userToken("openid victual:read", alice, S.clients.k1a);
+  const x = t.access_token ? await exchange(sidecar, t.access_token, { audience: api.clientId, scope: `openid victual:read ${S.clients.k1a.grantScope}` }) : t;
+  record("K4g", "pos", "0055 prerequisite 8, q18: ownership and recipe records survive a Keycloak restart",
+    "after a container restart on the same database, owned objects keep their attributes and mapper settings, reconciliation changes nothing, and a grant token still names its client",
+    `${restarted}; owned objects: ${JSON.parse(before).length}; attributes and mappers identical: ${after === before}; reconcile after restart: ${changes.length} changes${changes.length ? ` (${changes.join("; ")})` : ""}; token ${GRANT_CLAIM}=${x.access_token ? claims(x.access_token).victual_client : errd(x)}`,
+    restarted.startsWith("restart took") && after === before && changes.length === 0 && x.access_token && claims(x.access_token).victual_client === S.clients.k1a.clientId, "G-config: recipe stamps");
+}
+
 // ---- Configuration inventory (prerequisite 8): read the realm back and compare it with what setup.mjs promises
+/** K3 and K3b: the installed configuration equals the README inventory. */
 async function inventoryGate() {
   const miss = [];
+  /** Records a difference when `ok` is false. */
   const need = (ok, what) => { if (!ok) miss.push(what); };
   const realm = await admin("GET", "");
   for (const [k, v] of Object.entries({ accessTokenLifespan: 300, ssoSessionIdleTimeout: 1800, ssoSessionMaxLifespan: 36000, revokeRefreshToken: true, refreshTokenMaxReuse: 0, registrationAllowed: false, verifyEmail: false, loginWithEmailAllowed: true })) need(realm[k] === v, `realm ${k}=${realm[k]}`);
   const scopes = await admin("GET", "/client-scopes");
+  /** The mappers of client scope `name` as name:type strings, or null when the scope is absent. */
   const mappersOf = async (name) => { const sc = scopes.find((x) => x.name === name); return sc ? (await admin("GET", `/client-scopes/${sc.id}/protocol-mappers/models`)).map((m) => `${m.name}:${m.protocolMapper}`) : null; };
   const wantScopes = { "victual:read": [], "victual:write": [], "victual:stock": [], "victual:stock:book": [],
     "victual-mcp-audience": ["mcp-resource-audience:oidc-audience-mapper", "sidecar-client-audience:oidc-audience-mapper"],
@@ -729,16 +1025,21 @@ async function inventoryGate() {
     [S.clients.k1a.grantScope]: ["victual-grant-client:oidc-hardcoded-claim-mapper"] };
   for (const [name, want] of Object.entries(wantScopes)) { const have = await mappersOf(name); need(have && want.length === have.length && want.every((w) => have.includes(w)), `scope ${name} mappers ${JSON.stringify(have)}`); }
   const pols = (await admin("GET", "/client-policies/policies")).policies, profs = (await admin("GET", "/client-policies/profiles")).profiles;
+  /** The sorted executor names of client policy profile `n`. */
   const exec = (n) => profs.find((p) => p.name === n)?.executors.map((e) => e.executor).sort().join("+");
   need(exec("victual-downscope") === "downscope-assertion-grant-enforcer", "profile victual-downscope");
   need(exec("victual-dcr") === ["consent-required", "pkce-enforcer", "secure-client-authenticator", "secure-client-uris-pattern"].join("+"), `profile victual-dcr ${exec("victual-dcr")}`);
   for (const n of ["victual-downscope-all", "victual-dcr-anonymous"]) need(pols.find((p) => p.name === n)?.enabled === true, `policy ${n} enabled`);
+  /** The full representation of client `c`. */
   const cl = async (c) => (await admin("GET", `/clients/${c.id}`));
   const m = await cl(mcp), sc = await cl(sidecar), ap = await cl(api), k = await cl(S.clients.k1a);
   need(m.attributes["pkce.code.challenge.method"] === "S256" && m.publicClient && !m.directAccessGrantsEnabled && !m.implicitFlowEnabled && !m.fullScopeAllowed, "mcp client flags");
   need(sc.attributes["standard.token.exchange.enabled"] === "true" && !sc.publicClient, "sidecar flags");
   need(!ap.standardFlowEnabled && !ap.directAccessGrantsEnabled && !ap.serviceAccountsEnabled && !ap.implicitFlowEnabled, "api client flows");
   need(k.consentRequired && k.defaultClientScopes.includes("victual-mcp-audience") && k.defaultClientScopes.includes(S.clients.k1a.grantScope), "adapter client flags");
+  const ksc = scopes.find((x) => x.name === S.clients.k1a.grantScope);
+  need(isOwned(k) && k.attributes[RECIPE_ATTR] === String(RECIPE_VERSION) && isOwned(ksc) && ksc.attributes[RECIPE_ATTR] === String(RECIPE_VERSION) && ksc.attributes[GRANT_CLIENT_ATTR] === S.clients.k1a.clientId,
+    `adapter stamps client=${JSON.stringify(k.attributes)} scope=${JSON.stringify(ksc?.attributes)}`);
   // K3b: the /api client is a resource: no flow may issue it a token
   const apiCc = await token({ grant_type: "client_credentials", client_id: api.clientId, client_secret: api.secret });
   const apiPw = await token({ grant_type: "password", client_id: api.clientId, client_secret: api.secret, username: alice.username, password: alice.password, scope: "openid" });
@@ -748,19 +1049,22 @@ async function inventoryGate() {
     `client_credentials -> ${errd(apiCc)}; password -> ${errd(apiPw)}; authorization code -> ${errd(apiCode)}`,
     apiCc.status >= 400 && apiPw.status >= 400 && apiCode.status >= 400, "G-config");
   record("K3", "info", "0055 prerequisite 8: the installed configuration equals what setup.mjs and adapter.mjs promise (README inventory)",
-    "every realm setting, client scope with its mappers, client policy, profile and client flag listed in the inventory is present with the stated value",
-    miss.length ? `differences: ${miss.join("; ")}` : `realm settings 8, client scopes ${Object.keys(wantScopes).length} with mappers, profiles 2 (${profs.map((p) => p.name).join(", ")}), policies 2, client flags (mcp, sidecar, api, adapter client) all as stated`,
+    "every realm setting, client scope with its mappers, client policy, profile, client flag and adapter stamp listed in the inventory is present with the stated value",
+    miss.length ? `differences: ${miss.join("; ")}` : `realm settings 8, client scopes ${Object.keys(wantScopes).length} with mappers, profiles 2 (${profs.map((p) => p.name).join(", ")}), policies 2, client flags (mcp, sidecar, api, adapter client), adapter ownership and recipe-version stamps on the client and its grant scope (recipe ${RECIPE_VERSION}) all as stated`,
     miss.length === 0, "G-config");
 }
 
+/** D1, D2, K2g, K2h: anonymous dynamic client registration and its policies. */
 async function registrationGate() {
   const URL_REG = `${ISSUER}/clients-registrations/openid-connect`;
+  /** Posts a dynamic registration request; returns status and body. */
   const reg = async (body, headers = {}) => {
     const r = await fetch(URL_REG, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
     const text = await r.text();
     let j; try { j = JSON.parse(text); } catch { j = { raw: text.slice(0, 120) }; }
     return { status: r.status, ...j };
   };
+  /** A registration response as short text. */
   const r2s = (r) => `${r.status}${r.error_description ? ` ${String(r.error_description).slice(0, 70)}` : ""}`;
   const loop = { client_name: "probe-public", redirect_uris: [REDIRECT_URI], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] };
   const d1 = await reg(loop);
@@ -774,6 +1078,7 @@ async function registrationGate() {
     ?? JSON.parse(execFileSync("podman", ["network", "inspect", "victual-spike-keycloak"], { encoding: "utf8" }))[0].subnets[0].gateway;
   const comps = await admin("GET", "/components?type=org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy");
   const trusted = comps.find((c) => c.providerId === "trusted-hosts" && c.subType === "anonymous");
+  /** Sets the trusted hosts of the anonymous Trusted Hosts registration policy. */
   const setTrusted = (hosts, uriMatch) => admin("PUT", `/components/${trusted.id}`, { ...trusted, config: { ...trusted.config, "trusted-hosts": hosts, "host-sending-registration-request-must-match": ["true"], "client-uris-must-match": [String(uriMatch)] } });
   await setPolicies(["victual-downscope-all"]); // D1: Trusted Hosts alone, without victual-dcr-anonymous
   await setTrusted([gw, "localhost", "127.0.0.1"], true);
@@ -798,6 +1103,7 @@ async function registrationGate() {
   const e5 = await reg({ client_name: "probe-confidential-2", redirect_uris: [REDIRECT_URI], token_endpoint_auth_method: "client_secret_basic", grant_types: ["authorization_code"], response_types: ["code"] });
   const made = e1.client_id ? await admin("GET", `/clients?clientId=${e1.client_id}`) : [];
   const attrs = made[0] ? `public=${made[0].publicClient} pkce=${made[0].attributes?.["pkce.code.challenge.method"]} consentRequired=${made[0].consentRequired}` : "";
+  /** A registration response as short text. */
   const sum = (r) => `${r.status}${r.error_description ? ` ${String(r.error_description).slice(0, 70)}` : ""}`;
   record("D2", "info", "0056 prereq 2: a client policy limits anonymous registration to public clients with loopback or https redirects",
     "loopback and https public clients register with PKCE S256 and Consent required; http (non-loopback), wildcard and confidential clients are refused",
@@ -809,6 +1115,7 @@ async function registrationGate() {
   {
     const allowed = comps.find((c) => c.providerId === "allowed-client-templates" && c.subType === "anonymous");
     const MCP_SCOPE = "victual-mcp-audience";
+    /** Registers a client anonymously, then logs in with and without the MCP audience scope. */
     const tryRegister = async (name, scope) => {
       const r = await reg({ ...loop, client_name: name, ...(scope ? { scope } : {}) });
       const [c] = r.client_id ? await admin("GET", `/clients?clientId=${r.client_id}`) : [];
@@ -842,11 +1149,14 @@ async function registrationGate() {
 }
 
 // ---- G-login: users authenticated without Keycloak holding Victual's passwords (identity brokering)
+/** L1 to L4: identity brokering to the stub upstream provider. */
 async function loginGate() {
   const { startStub } = await import("./idp-stub.mjs");
   const stub = await startStub();
   const ALIAS = "victual-stub", FLOW = "victual-first-broker", BROWSER = "victual-idp-only";
+  /** DELETE through the admin API, returning the raw response. */
   const del = (path) => admin("DELETE", path, undefined, { raw: true });
+  /** Removes the identity provider, flows, subject scope and users the L cases created. */
   const cleanup = async () => {
     await admin("PUT", "", { browserFlow: "browser" }, { realm: REALM });
     await del(`/identity-provider/instances/${ALIAS}`);
@@ -887,14 +1197,17 @@ async function loginGate() {
     const subjScope = (await admin("GET", "/client-scopes")).find((x) => x.name === "victual-subject-scope");
     await admin("PUT", `/clients/${sidecar.id}/optional-client-scopes/${subjScope.id}`);
     await admin("PUT", `/clients/${mcp.id}/default-client-scopes/${subjScope.id}`);
+    /** A login through the stub upstream provider as `identity`. */
     const viaStub = async (identity) => {
       stub.identity = identity;
       return login(mcp, {}, { scope: "openid victual:read", hint: ALIAS });
     };
+    /** The Keycloak user named `name` with its credentials and federated identities. */
     const userOf = async (name) => {
       const [u] = await admin("GET", `/users?username=${name}&exact=true`);
       return u && { ...u, credentials: await admin("GET", `/users/${u.id}/credentials`), federated: await admin("GET", `/users/${u.id}/federated-identity`) };
     };
+    /** True when the user holds no password credential. */
     const noPassword = (u) => u && u.credentials.filter((c) => c.type === "password").length === 0;
 
     // L1: a user that does not exist is created by the first brokered login
@@ -955,8 +1268,10 @@ async function loginGate() {
   }
 }
 
+/** I1: image size, uid and memory of the running containers. */
 async function imageFacts() {
   const server = "victual-spike-keycloak-server", pg = "victual-spike-keycloak-pg";
+  /** Runs podman with `args` and returns trimmed stdout. */
   const sh = (args) => execFileSync("podman", args, { encoding: "utf8" }).trim();
   facts.memory = sh(["stats", "--no-stream", "--format", "{{.Name}} {{.MemUsage}} {{.CPUPerc}}", server, pg]).split("\n");
   facts.imageSizeBytes = Number(sh(["image", "inspect", "--format", "{{.Size}}", `quay.io/keycloak/keycloak:${facts.keycloak}`]));
@@ -965,6 +1280,7 @@ async function imageFacts() {
   record("I1", "info", "0055 prereq 3: runs non-root", "uid other than 0", `uid ${uid}; image User=${caps.split(" ")[1]}; memory limit ${Number(caps.split(" ")[0]) / 1048576} MiB; image ${(facts.imageSizeBytes / 1e6).toFixed(0)} MB`, uid !== "0", "G-image");
 }
 // ---- Preview run: delegation (act) via token-exchange-delegation + parameterized-scopes + admin-fine-grained-authz:v2
+/** The Preview run: delegation (act) cases with the Preview features on. */
 async function preview() {
   const consent = S.clients.consent;
   const DELEG = `delegation:client:${sidecar.clientId}`;
@@ -975,7 +1291,9 @@ async function preview() {
   const delegScope = (await admin("GET", "/client-scopes")).find((x) => x.name === "delegation:client");
   record("DP0", "info", "docs: the feature creates a delegation:client client scope in the realm", "present", delegScope ? `present (id ${delegScope.id}, type ${delegScope.type ?? "optional"})` : "absent", !!delegScope, "G-exchanger");
   for (const c of [consent]) await admin("PUT", `/clients/${c.id}/optional-client-scopes/${delegScope.id}`);
+  /** A service-account token of client `c`, used as the actor token. */
   const actorSa = async (c) => token({ grant_type: "client_credentials", client_id: c.clientId, client_secret: c.secret });
+  /** A delegated exchange by the sidecar with an actor token; `extra` replaces or adds form fields. */
   const delegated = async (subject, actor, extra = []) => token(new URLSearchParams([["grant_type", TX], ["client_id", sidecar.clientId], ["client_secret", sidecar.secret],
     ["subject_token", subject], ["subject_token_type", AT], ["actor_token", actor], ["actor_token_type", AT], ["audience", api.clientId], ["scope", "openid victual:read"]].filter(([k]) => k !== "scope" || !extra.some(([e]) => e === "scope")).concat(extra)));
 
@@ -1052,6 +1370,115 @@ async function preview() {
     `${errd(plainEx)}; azp=${kp.azp}; act=${JSON.stringify(kp.act ?? null)}`, plainEx.status === 200 && kp.azp === sidecar.clientId && !kp.act, "G-exchanger");
 }
 
+// ---- Expiry run (question 20): how long an already-issued /api token keeps working after its grant is revoked
+/**
+ * `node probe.mjs --expiry`. For three revocation mechanisms (consent deletion, session deletion, refresh-token
+ * revocation) the probe signs a fresh user in to k1a, exchanges the token for an /api token with the grant
+ * scope, revokes the grant EXPIRY_OFFSET seconds after the exchanged token's iat, and then polls, once a
+ * second, introspection by the /api client and the stateless resource-server check (lib.mjs, 60 s skew) on
+ * that token until both refuse it. One round runs at the realm's real 300 s lifespan; EXPIRY_REPS rounds run
+ * with a 20 s lifespan override on the sidecar (the client the exchanged token is issued to), concurrently.
+ * Victual's grant-revocation check does not exist and is not simulated here.
+ */
+async function expiry() {
+  const { k1a } = S.clients;
+  const SC = "openid victual:read";
+  const OFFSET = 5, REPS = 5, SHORT = 20, POLL_MS = 1000;
+  const temp = [];
+  /** A throwaway user, one per fixture, so consents and sessions of fixtures never interact. */
+  const mkUser = async (tag) => {
+    const username = `expiry-${tag}`, password = `spike-only-${tag}-password`;
+    await admin("POST", "/users", { username, enabled: true, email: `${username}@example.invalid`, emailVerified: true, firstName: tag, lastName: "Spike",
+      credentials: [{ type: "password", value: password, temporary: false }] });
+    const [u] = await admin("GET", `/users?username=${username}&exact=true`);
+    temp.push(u.id);
+    return { username, password, id: u.id };
+  };
+  const REVOKE = {
+    consent: (f) => admin("DELETE", `/users/${f.user.id}/consents/${k1a.clientId}`, undefined, { raw: true }),
+    session: (f) => admin("DELETE", `/sessions/${f.sid}`, undefined, { raw: true }),
+    refresh: (f) => fetch(`${OIDC}/revoke`, { method: "POST", body: new URLSearchParams({ token: f.t.refresh_token, token_type_hint: "refresh_token", client_id: k1a.clientId }) }),
+  };
+  /** One grant of a fresh user and its exchanged /api token. */
+  const fixture = async (mech, tag) => {
+    const user = await mkUser(tag);
+    const t = await login(k1a, cred(user), { scope: SC });
+    const x = t.access_token ? await exchange(sidecar, t.access_token, { audience: api.clientId, scope: `${SC} ${k1a.grantScope}` }) : t;
+    if (!x.access_token) throw new Error(`expiry fixture ${tag}: ${errd(x)}`);
+    return { mech, tag, user, t, x, sid: claims(t.access_token).sid, c: claims(x.access_token), userLife: claims(t.access_token).exp - claims(t.access_token).iat };
+  };
+  /** Revokes the fixture's grant OFFSET s after iat, then polls until introspection and the stateless check both refuse the token. */
+  const watch = async (f) => {
+    const { iat, exp } = f.c;
+    const pre = { intro: await introspect(api, f.x.access_token), rs: await rsCheck(f.x.access_token, RS_API) };
+    await sleep(Math.max(0, (iat + OFFSET) * 1000 - Date.now()));
+    const tRevoke = Date.now() / 1000;
+    const resp = await REVOKE[f.mech](f);
+    const refreshAfter = errd(await refresh(k1a, f.t.refresh_token));
+    let introAt = null, rsAt = null, rsReason = null;
+    while ((introAt === null || rsAt === null) && Date.now() / 1000 < exp + 180) {
+      const now = Date.now() / 1000;
+      if (introAt === null && (await introspect(api, f.x.access_token)) === false) introAt = now;
+      if (rsAt === null) { const v = await rsCheck(f.x.access_token, RS_API); if (v !== "accepted") { rsAt = now; rsReason = v; } }
+      await sleep(POLL_MS);
+    }
+    return { mech: f.mech, tag: f.tag, pre, iat, exp, life: exp - iat, userLife: f.userLife, tRevoke, status: resp.status, refreshAfter, introAt, rsAt, rsReason };
+  };
+  /** A number rounded to one decimal, or "never" for null. */
+  const r1 = (v) => (v === null ? "never" : (Math.round(v * 10) / 10).toString());
+  /** One measurement as text: offsets from iat and from exp, and the delay from revocation. */
+  const show = (m) => `iat+${r1(m.tRevoke - m.iat)} s revoke (${m.status}); refresh after -> ${m.refreshAfter}; introspection refused at iat+${r1(m.introAt === null ? null : m.introAt - m.iat)} s = exp${m.introAt === null ? "?" : `${m.introAt - m.exp >= 0 ? "+" : ""}${r1(m.introAt - m.exp)}`} s, ${r1(m.introAt === null ? null : m.introAt - m.tRevoke)} s after revocation; stateless refused (${m.rsReason}) at iat+${r1(m.rsAt === null ? null : m.rsAt - m.iat)} s = exp+${r1(m.rsAt === null ? null : m.rsAt - m.exp)} s, ${r1(m.rsAt === null ? null : m.rsAt - m.tRevoke)} s after revocation`;
+  /** Whether a measurement shows the bounded delay: introspection refuses by exp (+2 s poll slack), the stateless check by exp + 60 s skew (+2 s). */
+  const bounded = (m) => m.pre.intro === true && m.pre.rs === "accepted" && m.introAt !== null && m.rsAt !== null && m.introAt <= m.exp + 2 && m.rsAt <= m.exp + 62;
+  /** min/median/max of a list of numbers, one decimal. */
+  const stats = (xs) => { const s = [...xs].sort((a, b) => a - b); const med = s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2; return `${r1(s[0])}/${r1(med)}/${r1(s[s.length - 1])}`; };
+
+  const [scRep] = await admin("GET", `/clients?clientId=${sidecar.clientId}`);
+  const realm = await admin("GET", "");
+  let override = "none";
+  try {
+    // Real lifespan: one fixture per mechanism, issued under the realm's 300 s setting.
+    const real = [];
+    for (const m of Object.keys(REVOKE)) real.push(await fixture(m, `real-${m}`));
+    const realWatch = Promise.all(real.map(watch));
+    // Short lifespan: the sidecar's access.token.lifespan override; fall back to the realm value if it does not apply.
+    await admin("PUT", `/clients/${scRep.id}`, { ...scRep, attributes: { ...scRep.attributes, "access.token.lifespan": String(SHORT) } });
+    let probeFix = await fixture("consent", "probe-life");
+    override = `sidecar attribute access.token.lifespan=${SHORT}: exchanged exp-iat=${probeFix.c.exp - probeFix.c.iat} s`;
+    if (probeFix.c.exp - probeFix.c.iat !== SHORT) {
+      await admin("PUT", "", { accessTokenLifespan: SHORT });
+      probeFix = await fixture("consent", "probe-life-realm");
+      override += `; did not apply, so realm accessTokenLifespan=${SHORT}: exchanged exp-iat=${probeFix.c.exp - probeFix.c.iat} s`;
+    }
+    const short = [];
+    for (let i = 1; i <= REPS; i++) for (const m of Object.keys(REVOKE)) short.push(await fixture(m, `short-${m}-${i}`));
+    const [realM, shortM] = await Promise.all([realWatch, Promise.all(short.map(watch))]);
+    record("E0", "info", "0055 d6, q20: the lifespans the expiry measurement runs under",
+      `real: exchanged tokens carry the realm's 300 s; short: an override gives ${SHORT} s`,
+      `real exchanged exp-iat=${realM.map((m) => m.life).join(",")} s (user tokens ${realM.map((m) => m.userLife).join(",")} s); ${override}; short exchanged exp-iat=${[...new Set(shortM.map((m) => m.life))].join(",")} s; revocation at iat+${OFFSET} s; poll interval ${POLL_MS / 1000} s`,
+      realM.every((m) => m.life === 300) && shortM.every((m) => m.life === SHORT), "G-revocation: expiry delay");
+    for (const m of realM) {
+      record(`E1-${m.mech}`, "info", `0055 d6, q20, prerequisite 10: already-issued /api token after ${m.mech === "consent" ? "consent deletion" : m.mech === "session" ? "session deletion" : "refresh-token revocation"}, real 300 s lifespan (one run)`,
+        "refused at introspection by exp at the latest; refused by the stateless check by exp + 60 s (its clock skew) at the latest",
+        show(m), bounded(m), "G-revocation: expiry delay");
+    }
+    for (const mech of Object.keys(REVOKE)) {
+      const ms = shortM.filter((m) => m.mech === mech);
+      const done = ms.filter((m) => m.introAt !== null && m.rsAt !== null);
+      record(`E2-${mech}`, "info", `0055 d6, q20, prerequisite 10: already-issued /api token after ${mech === "consent" ? "consent deletion" : mech === "session" ? "session deletion" : "refresh-token revocation"}, ${SHORT} s override, ${REPS} runs`,
+        "every run: refused at introspection by exp at the latest; refused by the stateless check by exp + 60 s at the latest",
+        `${done.length}/${ms.length} runs measured; min/median/max s: introspection refused after revocation ${stats(done.map((m) => m.introAt - m.tRevoke))}, relative to exp ${stats(done.map((m) => m.introAt - m.exp))}; stateless refused after revocation ${stats(done.map((m) => m.rsAt - m.tRevoke))}, relative to exp ${stats(done.map((m) => m.rsAt - m.exp))}; stateless reason ${[...new Set(done.map((m) => m.rsReason))].join(",")}; refresh after revocation ${[...new Set(ms.map((m) => m.refreshAfter.split(" (")[0]))].join(",")}`,
+        ms.length === REPS && ms.every(bounded), "G-revocation: expiry delay");
+    }
+    facts.expiry = { real: realM, short: shortM, override };
+  } finally {
+    await admin("PUT", `/clients/${scRep.id}`, scRep);
+    await admin("PUT", "", { accessTokenLifespan: realm.accessTokenLifespan });
+    for (const id of temp) await admin("DELETE", `/users/${id}`, undefined, { raw: true });
+  }
+}
+
+/** Writes results.json (or results-<mode>.json) and prints the Markdown table and the counts. */
 async function finish() {
   facts.seconds = Math.round((Date.now() - T0) / 1000);
   const file = MODE === "core" ? "./results.json" : `./results-${MODE}.json`;
