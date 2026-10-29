@@ -63,6 +63,7 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 38 | [Household inventory and the equipment rebuild](38-household-inventory.md) | Draft, research only, 2026-10-19 | Wave-independent and unscheduled. Covers belongings, properties, battery links, maintenance, projects, insurance, heirs, moving and exchange. Implementation waits on the foundation questions and separate architectural decisions. |
 | 39 | [Native backup file export and import](39-native-backup-file.md) | Draft design, 2026-10-19 | Unscheduled and independent of plan 38. Designs a UI-based native backup file; database dumps remain the operational approach. Format, scope and restore architecture are open. |
 | 40 | [Software bills of materials for each release](40-release-sboms.md) | Draft, research only, 2026-10-28; open questions answered 2026-10-28; no issue yet | Wave-independent. Two attested CycloneDX 1.7 SBOMs per image and architecture (Syft over the image, bombon over the Nix closure), on immutable releases; no repository SBOM. Needs a new ADR for signing and provenance, which [ADR-0030](../adr/0030-released-images-are-published-to-ghcr.md) deferred, and release work in the two label repositories. Nix-closure advisory monitoring is proposed and awaits the maintainer's confirmation. |
+| 41 | [Building and shipping Authentik with Nix](41-authentik-nix-build.md) | Draft, research only, 2026-10-28; open questions answered 2026-10-28 except 6 | Supports [ADR-0055](../adr/0055-api-and-mcp-callers-present-oauth-access-tokens-from-a-swappable-authorization-server.md) and [ADR-0056](../adr/0056-an-external-identity-provider-replaces-the-built-in-authorization-server.md) (both Proposed). Community `authentik-nix` flake input, our own image, upstream Helm chart, all in a new `victual-*` repository (not yet created) with [40](40-release-sboms.md)'s release SBOMs. Waits on: the repository, confirmation of stripping `authentik/enterprise/` (question 3), question 6 (outposts), and a patch-release decision building on [ADR-0047](../adr/0047-one-trunk-release-branches-and-promoted-images.md). |
 
 ## Order of operations
 
@@ -105,6 +106,8 @@ Unscheduled work:
   draft; its delivery stages do not assign dates or alter the existing wave order.
 - [Native backup file export and import](39-native-backup-file.md): separate design;
   no delivery slot and no dependency for the equipment rebuild.
+- [Building and shipping Authentik with Nix](41-authentik-nix-build.md): research for the
+  0.6.0 OAuth work; no implementation scheduled.
 - MCP writes, after read-only use is proven
   ([issue 209](https://github.com/datagen24/victual/issues/209)).
 - 05 B, if shopping trips justify it.
