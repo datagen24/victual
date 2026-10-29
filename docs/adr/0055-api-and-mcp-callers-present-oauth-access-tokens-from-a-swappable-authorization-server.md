@@ -155,9 +155,9 @@ in OAuth mode does not remove ordinary local login from Classic mode.
 ### 2. Keycloak is the authorization server
 
 Since 2026-10-29 (question 26), Keycloak is the authorization server. It handles logins
-for the service containers and all token handling: issue, exchange, rotation, revocation
-and client registration. A lab identity provider (Authentik in the maintainer's lab) or
-Entra ID signs people in as an upstream identity source federated into Keycloak.
+between the service containers and token handling. The lab identity provider (Authentik,
+per ADR-0056 answer 1) or Entra ID signs people in as an upstream identity source
+federated into Keycloak.
 Whether Keycloak becomes a required chart component in OAuth mode is question 27. The
 rest of this decision records how the choice was reached; its "next candidate" wording
 predates the clarification.
@@ -177,8 +177,8 @@ link provider identities to the correct application records and preserve their a
 while retaining local bootstrap and break-glass recovery.
 
 Authentik stays the required external compatibility target, whatever is chosen as the
-built-in server (ADR-0056). Since 2026-10-29 that compatibility is as an upstream identity
-source federated into Keycloak, not as an issuer (question 26).
+built-in server (ADR-0056). Whether that target still holds under question 26, and in
+what form, is ADR-0056 question 10.
 
 Whatever is chosen runs as its own workload under ADR-0010: its own container, its own
 PostgreSQL database and role (ADR-0008 permits no other engine), an optional component of
@@ -523,7 +523,8 @@ keychain, and keep sending their per-device Access service token as before.
    tokens. What replaces the swap: the same images, pointed at Keycloak, accept a user who
    signed in through an upstream identity source, with the linking, group and outage
    behaviour of ADR-0056. The Authentik evidence above stays as the record of the earlier
-   design.
+   design. First evidence for the replacement, without the Victual images, is ADR-0056's
+   2026-10-29 brokering spike.
 2. **The chosen built-in server on PostgreSQL at two replicas.** Login, consent, refresh
    rotation and revocation work with two pods sharing one database, and killing a pod
    mid-flow loses no grant. Written for Hydra; since 2026-10-25 it applies to whichever
@@ -1033,6 +1034,8 @@ issuer again. Questions 24 and 25 concern Keycloak and still stand.
     - Prerequisites 1 to 5 and 8 to 11 apply to Keycloak alone. The Authentik evidence under
       them stays as history.
     - Questions 21 to 23 are moot unless Authentik becomes an issuer again.
+    - Decision 2's "required external compatibility target" now reads as Authentik as an
+      upstream identity source; whether it stays required is ADR-0056 question 10.
     - Linking, group mapping and outage behaviour move to the boundary between Keycloak and
       the upstream source. ADR-0056 holds those questions.
 
