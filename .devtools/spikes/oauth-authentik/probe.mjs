@@ -23,21 +23,30 @@ const AT = "urn:ietf:params:oauth:token-type:access_token";
 const { mcp, mcpB, mcpScalar, sidecar, sidecarB, api, other, rogue, noGrant, short } = S.providers;
 const { alice, bob } = S.users;
 const results = [];
+/** Resolves after ms milliseconds. @param {number} ms delay @returns {Promise<void>} */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** Decodes a JWT payload without verifying it. @param {string} t JWT @returns {object} claims */
 const claims = (t) => JSON.parse(Buffer.from(t.split(".")[1], "base64url"));
 
+/** POSTs a form to the token endpoint. @param {object} body form fields @returns {Promise<object>} status plus the JSON answer */
 async function token(body) {
   const r = await fetch(T, { method: "POST", body: new URLSearchParams(body) });
-  return { status: r.status, ...(await r.json()) };
+  const text = await r.text();
+  // A 5xx from the server (an exhausted database under load, fourth pass) is an HTML page, not JSON.
+  try { return { status: r.status, ...JSON.parse(text) }; } catch { return { status: r.status, error: `non-JSON ${r.status}` }; }
 }
+/** Token from the client-credentials grant with a user's app password. @param {object} p provider @param {object} u user @param {string} [scope] scope @returns {Promise<object>} token response */
 const appPasswordToken = (p, u, scope = "openid profile victual:read") =>
   token({ grant_type: "client_credentials", client_id: p.client_id, client_secret: p.client_secret, username: u.username, password: u.app_password, scope });
 const REDIRECT = "http://localhost:8765/callback";
 // Authorization code + PKCE (S256) with a scripted login through Authentik's flow executor API:
 // no browser. Keeps a cookie jar by hand; a POST to the executor answers 302 to the executor.
+/** Authorization code with PKCE and a scripted login through the flow executor API. @param {object} p provider @param {object} u user @param {string} scope scope @param {object} [o] password, pkce mode (S256, plain, none) and extra authorize parameters @returns {Promise<{code: string, verifier: string}>} the code and verifier */
 async function codeFlow(p, u, scope, { password = u.password, pkce = "S256", extra = {} } = {}) {
   const jar = new Map();
+  /** Serialises the cookie jar. @returns {string} Cookie header value */
   const cookie = () => [...jar].map(([k, v]) => `${k}=${v}`).join("; ");
+  /** One request with the cookie jar and the CSRF header; stores Set-Cookie. @param {string} method method @param {string} url URL or path @param {object} [body] JSON body @returns {Promise<Response>} response */
   async function req(method, url, body) {
     const headers = { Cookie: cookie() };
     if (body) { headers["Content-Type"] = "application/json"; headers["X-authentik-CSRF"] = jar.get("authentik_csrf") ?? ""; }
@@ -45,12 +54,14 @@ async function codeFlow(p, u, scope, { password = u.password, pkce = "S256", ext
     for (const c of r.headers.getSetCookie()) { const [kv] = c.split(";"); const i = kv.indexOf("="); jar.set(kv.slice(0, i), kv.slice(i + 1)); }
     return r;
   }
+  /** Follows executor redirects and returns the next flow challenge. @param {string} method method @param {string} url URL @param {object} [body] JSON body @returns {Promise<object>} challenge */
   async function challenge(method, url, body) {
     let r = await req(method, url, body);
     for (let i = 0; i < 6 && r.status === 302 && r.headers.get("location").startsWith("/api/v3/flows/executor/"); i++) r = await req("GET", r.headers.get("location"));
     if (r.status === 302) return { component: "xak-flow-redirect", to: r.headers.get("location") };
     return r.json();
   }
+  /** Answers identification, password and consent stages until the flow redirects. @param {string} slug flow slug @param {string} query original query @returns {Promise<string>} redirect target */
   async function runFlow(slug, query) {
     const ex = `/api/v3/flows/executor/${slug}/?query=${encodeURIComponent(query)}`;
     let c = await challenge("GET", ex);
@@ -86,15 +97,20 @@ async function codeFlow(p, u, scope, { password = u.password, pkce = "S256", ext
   }
   throw new Error("authorize: too many redirects");
 }
+/** Redeems an authorization code. @param {object} p provider @param {object} a code and verifier @param {object} [over] fields to override @returns {Promise<object>} token response */
 const codeGrant = (p, a, over = {}) => token({ grant_type: "authorization_code", client_id: p.client_id, client_secret: p.client_secret, code: a.code, redirect_uri: REDIRECT, code_verifier: a.verifier, ...over });
+/** Login plus code redemption; an error becomes status 0. @param {object} p provider @param {object} u user @param {string} scope scope @returns {Promise<object>} token response */
 const codeToken = async (p, u, scope) => {
   try { return await codeGrant(p, await codeFlow(p, u, scope)); } catch (e) { return { status: 0, error: e.message }; }
 };
 const CODE_CLIENTS = new Set([mcp, mcpB, other].map((p) => p.client_id));
+/** A user token: code flow where the provider has it, otherwise the app-password grant. @param {object} p provider @param {object} u user @param {string} [scope] scope @returns {Promise<object>} token response */
 const userToken = (p, u, scope = "openid profile victual:read") =>
   CODE_CLIENTS.has(p.client_id) && u.password ? codeToken(p, u, scope) : appPasswordToken(p, u, scope);
+/** RFC 8693 exchange of an access token by a client. @param {object} by exchanging client @param {string} subject subject token @param {object} [extra] audience, scope and other fields @returns {Promise<object>} token response */
 const exchange = (by, subject, extra = {}) =>
   token({ grant_type: TX, client_id: by.client_id, client_secret: by.client_secret, subject_token: subject, subject_token_type: AT, ...extra });
+/** Admin API call with the bootstrap token; throws on a non-2xx answer. @param {string} method method @param {string} path path below /api/v3 @param {object} [body] JSON body @returns {Promise<object|null>} JSON, or null for 204 */
 async function admin(method, path, body) {
   const r = await fetch(`${AK}/api/v3${path}`, { method, headers: ADMIN, body: body && JSON.stringify(body) });
   if (!r.ok) throw new Error(`${method} ${path} -> ${r.status} ${(await r.text()).slice(0, 300)}`);
@@ -103,6 +119,7 @@ async function admin(method, path, body) {
 
 // --- resource-server check (ADR-0055 decision 3)
 const jwksCache = new Map();
+/** The ADR-0055 decision 3 resource-server check. @param {string} tok JWT @param {{issuer: string, discovery: string, audience: string}} cfg configuration @returns {Promise<string>} "accepted" or the reason for refusal */
 async function rsCheck(tok, { issuer, discovery, audience }) {
   try {
     const meta = await (await fetch(discovery)).json();
@@ -124,21 +141,58 @@ async function rsCheck(tok, { issuer, discovery, audience }) {
   } catch (e) { return `error ${e.message}`; }
 }
 const ISSUER = `${AK}/`;
+/** Per-provider discovery URL. @param {object} p provider @returns {string} URL */
 const disc = (p) => `${AK}/application/o/${p.slug}/.well-known/openid-configuration`;
 const RS_SIDECAR = { issuer: ISSUER, discovery: disc(mcp), audience: S.mcpResource }; // one fixed MCP resource audience (G2)
 const RS_API = { issuer: ISSUER, discovery: disc(api), audience: api.client_id };
 
+/** Adds one case to the results. @param {string} id case id @param {string} kind pos or neg @param {string} clause record clause @param {string} expected expectation @param {string} observed what happened @param {boolean} ok verdict */
 function record(id, kind, clause, expected, observed, ok) {
   results.push({ id, kind, clause, expected, observed, verdict: ok ? "pass" : "FAIL" });
+  // Written after every case, so a run that dies part-way still leaves its evidence.
+  writeFileSync(new URL("./results.json", import.meta.url), JSON.stringify({ partial: true, results }, null, 2));
 }
+/** Short form of a token response. @param {object} r token response @returns {string} status and error, or status and "token" */
 const err = (r) => r.error ? `${r.status} ${r.error}` : `${r.status} token`;
-// The G5 revoke rule (setup.mjs) is bound by default. `withoutRevoke(fn)` unbinds the policy for the
-// length of fn and always rebinds it, like `ceiling` does for the scope-ceiling policy.
-async function withoutRevoke(fn) {
+// Two revocation mechanisms exist (setup.mjs, run.sh). The in-Authentik revoke rule is bound by default and
+// the webhook receiver only logs. `withoutRevoke(fn)` turns both off for the length of fn; `viaWebhook(fn)`
+// turns the rule off and the receiver's revocation on. Both always restore the default, like `ceiling`
+// does for the scope-ceiling policy.
+/**
+ * Switches the webhook receiver's revocation on or off through its authenticated control path.
+ * @param {boolean} revoke whether the receiver revokes on a reuse post
+ * @returns {Promise<void>}
+ */
+async function hookControl(revoke) {
+  const r = await fetch(`${S.reuse.hook}/control`, { method: "POST", headers: { "X-Victual-Hook-Secret": S.reuse.hookSecret }, body: JSON.stringify({ revoke }) });
+  if (r.status !== 200) throw new Error(`hook control -> ${r.status}`);
+}
+/** Unbinds the in-Authentik revoke rule. @returns {Promise<void>} */
+async function unbindRevoke() {
   await admin("DELETE", `/policies/bindings/${S.reuse.revokeBinding}/`);
-  try { return await fn(); } finally {
-    S.reuse.revokeBinding = (await admin("POST", "/policies/bindings/", { policy: S.reuse.revokePolicy, target: S.reuse.revokeRule, order: 0 })).pk;
-  }
+}
+/** Rebinds the in-Authentik revoke rule and records the new binding pk. @returns {Promise<void>} */
+async function rebindRevoke() {
+  S.reuse.revokeBinding = (await admin("POST", "/policies/bindings/", { policy: S.reuse.revokePolicy, target: S.reuse.revokeRule, order: 0 })).pk;
+}
+/**
+ * Runs fn with no revocation mechanism active (rule unbound, receiver logging only).
+ * @param {() => Promise<any>} fn the case body
+ * @returns {Promise<any>} fn's result
+ */
+async function withoutRevoke(fn) {
+  await unbindRevoke();
+  try { return await fn(); } finally { await rebindRevoke(); }
+}
+/**
+ * Runs fn with the webhook receiver as the only revocation mechanism (Victual-side stand-in).
+ * @param {() => Promise<any>} fn the case body
+ * @returns {Promise<any>} fn's result
+ */
+async function viaWebhook(fn) {
+  await unbindRevoke();
+  await hookControl(true);
+  try { return await fn(); } finally { await hookControl(false); await rebindRevoke(); }
 }
 
 // ============ positive cases
@@ -232,6 +286,7 @@ for (const [id, tok, rs, what] of [
 }
 
 // ============ negative cases: token exchange
+/** Records a refusal case. @param {string} id case id @param {string} clause clause @param {string} expectedErr expected OAuth error, or empty for any @param {object} r token response @param {string} [note] appended text @returns {void} */
 const neg = async (id, clause, expectedErr, r, note = "") =>
   record(id, "neg", clause, `refused ${expectedErr}`, `${err(r)}${r.error_description ? ` (${r.error_description.slice(0, 80)})` : ""}${note}`, r.status >= 400 && (!expectedErr || r.error === expectedErr));
 await neg("N5", "0055 d3: resource indicators are not silently ignored", "invalid_target",
@@ -256,7 +311,9 @@ await neg("N8", "0055 d7: a subject token from an untrusted provider is refused"
 }
 // The scope-ceiling policy (G3) is bound to the /api application by setup.mjs. `ceiling(policyPk, fn)`
 // swaps what is bound for the duration of fn (null: nothing) and always restores the default.
+/** Binds a ceiling policy to the /api application. @param {string} policy policy pk @returns {Promise<string>} binding pk */
 const bindCeiling = async (policy) => (await admin("POST", "/policies/bindings/", { policy, target: S.policies.apiApp, order: 0 })).pk;
+/** Runs fn with another ceiling policy (or none) bound, then restores the default. @param {string|null} policy policy pk or null @param {() => Promise<any>} fn case body @returns {Promise<any>} fn's result */
 async function ceiling(policy, fn) {
   await admin("DELETE", `/policies/bindings/${S.policies.binding}/`);
   let tmp = null;
@@ -326,14 +383,18 @@ async function ceiling(policy, fn) {
 // TokenView.post used to find the provider whose secret was verified) and signs it as
 // victual_exchanger, with the subject token's azp/sid/jti as victual_grant.
 const XC = "victual_exchanger";
+/** HTTP Basic header for a client. @param {object} p client @returns {object} headers */
 const basic = (p) => ({ Authorization: "Basic " + Buffer.from(`${encodeURIComponent(p.client_id)}:${encodeURIComponent(p.client_secret)}`).toString("base64") });
+/** POSTs raw form pairs with headers to the token endpoint. @param {object} headers headers @param {string[][]} pairs form pairs @returns {Promise<object>} token response */
 const rawToken = async (headers, pairs) => {
   const r = await fetch(T, { method: "POST", headers, body: new URLSearchParams(pairs) });
   return { status: r.status, ...(await r.json()) };
 };
+/** Form pairs of an exchange to /api. @param {string} subject subject token @param {string[][]} [extra] more pairs @returns {string[][]} pairs */
 const txBody = (subject, extra = []) => [["grant_type", TX], ["subject_token", subject], ["subject_token_type", AT], ["audience", api.client_id], ["scope", "openid victual:read"], ...extra];
 const sub1 = (await userToken(mcp, alice, "openid profile victual:read")).access_token;
 const sub1c = claims(sub1);
+/** Claims of a response's access token. @param {object} r token response @returns {object} claims or {} */
 const xcOf = (r) => (r.access_token ? claims(r.access_token) : {});
 {
   const a = await exchange(sidecar, sub1, { audience: api.client_id, scope: "openid victual:read" });
@@ -430,11 +491,18 @@ const xcOf = (r) => (r.access_token ? claims(r.access_token) : {});
   // Not the default: Authentik's own `act` is the delegation Actor (P8) and a mapping's `act` replaces it
   // (id_token.py to_dict: id_dict.update(self.claims) runs after act is set).
   const before = (await admin("GET", `/providers/oauth2/${api.pk}/`)).property_mappings;
+  // Fourth pass: no authentik.* import, the same client-auth rule as the exchanger mapping in setup.mjs.
   const expr = [
-    "from authentik.providers.oauth2.utils import extract_client_auth",
-    `if http_request is None or http_request.POST.get("grant_type") != ${JSON.stringify(TX)}:`,
+    "import base64",
+    "from urllib.parse import unquote",
+    "req = request.http_request",
+    `if req is None or req.POST.get("grant_type") != ${JSON.stringify(TX)}:`,
     "    return {}",
-    "client_id, _secret = extract_client_auth(http_request)",
+    'auth = req.META.get("HTTP_AUTHORIZATION", "")',
+    'if regex_match(auth, r"^Basic\\s{1}.+$"):',
+    '    client_id = unquote(base64.b64decode(auth.split()[1]).decode("utf-8").partition(":")[0])',
+    "else:",
+    '    client_id = req.POST.get("client_id", "")',
     'return {"act": {"sub": client_id}}',
   ].join("\n");
   const m = await admin("POST", "/propertymappings/provider/scope/", { name: "victual-spike act-variant", scope_name: "victual:read", expression: expr });
@@ -469,6 +537,7 @@ const xcOf = (r) => (r.access_token ? claims(r.access_token) : {});
     `first login: ${JSON.stringify({ ...g1, sid: String(g1.sid).slice(0, 8), jti: String(g1.jti).slice(0, 6) })}; after refresh: same sid=${g2.sid === g1.sid}, new jti=${g2.jti !== g1.jti}; second login: new sid=${g3.sid !== g1.sid}`,
     g1.azp === mcp.client_id && !!g1.sid && g2.sid === g1.sid && g2.jti !== g1.jti && g3.sid && g3.sid !== g1.sid);
   // Revocation at the authorization server reaches the exchange: delete the subject access token.
+  /** jti of a JWT. @param {string} j JWT @returns {string} jti */
   const jtiOf = (j) => claims(j).jti;
   const rows = (await admin("GET", `/oauth2/access_tokens/?user=${alice.pk}&provider=${mcp.pk}&page_size=100`)).results;
   const row = rows.find((x) => JSON.parse(x.id_token).jti === jtiOf(t3.access_token));
@@ -534,8 +603,10 @@ const xcOf = (r) => (r.access_token ? claims(r.access_token) : {});
 // ============ G3: scope ceiling as required configuration, with bundle scopes
 {
   const bundleTok = (await userToken(mcp, alice, `openid profile ${S.bundle}`)).access_token;
+  /** Exchanges the bundle token for a scope. @param {string} scope scope @returns {Promise<object>} token response */
   const ask = (scope) => exchange(sidecar, bundleTok, { audience: api.client_id, scope });
   const inRead = await ask("openid victual:read"), inWrite = await ask("openid victual:write"), outside = await ask("openid victual:admin");
+  /** Scope of a response's access token. @param {object} r token response @returns {string} scope */
   const gotScope = (r) => (r.access_token ? claims(r.access_token).scope : "");
   record("G3a", "pos", "0055 d7 / open q 7: bundle-aware ceiling, table in the policy (the default policy)",
     "subject holds the bundle: leaves inside it accepted, a leaf outside refused",
@@ -568,6 +639,7 @@ const xcOf = (r) => (r.access_token ? claims(r.access_token) : {});
     bad.status >= 400 && first.status === 200 && replay.status >= 400 && badLogin.startsWith("refused"));
   const none = await codeFlow(mcp, alice, "openid victual:read", { pkce: "none" }).then((x) => token({ grant_type: "authorization_code", client_id: mcp.client_id, client_secret: mcp.client_secret, code: x.code, redirect_uri: REDIRECT }), (e) => ({ status: 0, error: e.message.slice(0, 60) }));
   const plain = await codeFlow(mcp, alice, "openid victual:read", { pkce: "plain" }).then((x) => codeGrant(mcp, x), (e) => ({ status: 0, error: e.message.slice(0, 60) }));
+  /** Code flow with a PKCE mode, then redemption. @param {string} mode none, plain or S256 @returns {Promise<object>} token response */
   const tryPkce = async (mode) => codeFlow(mcp, alice, "openid victual:read", { pkce: mode }).then((x) => mode === "none"
     ? token({ grant_type: "authorization_code", client_id: mcp.client_id, client_secret: mcp.client_secret, code: x.code, redirect_uri: REDIRECT })
     : codeGrant(mcp, x), (e) => ({ status: 0, error: e.message.slice(0, 50) }));
@@ -588,6 +660,7 @@ const xcOf = (r) => (r.access_token ? claims(r.access_token) : {});
     `no challenge -> ${err(nat.none)}; plain -> ${err(nat.plain)}`, nat.none.status !== 200 && nat.plain.status !== 200);
   const sc = "openid profile victual:read offline_access";
   const t1 = await codeToken(mcp, alice, sc);
+  /** Refresh grant on mcp-client. @param {string} rt refresh token @returns {Promise<object>} token response */
   const rf = (rt) => token({ grant_type: "refresh_token", client_id: mcp.client_id, client_secret: mcp.client_secret, refresh_token: rt, scope: sc });
   // Authentik's native behaviour: the revoke rule that setup.mjs installs for G5 is unbound for this case.
   const { r1, reuse, newest } = await withoutRevoke(async () => {
@@ -610,17 +683,39 @@ const xcOf = (r) => (r.access_token ? claims(r.access_token) : {});
 // readable through the documented admin API (the `id_token` field of /oauth2/refresh_tokens/), so Victual
 // can compute the same key without Authentik internals (G5i).
 const REF_SC = "openid profile victual:read offline_access";
+/** Refresh grant. @param {string} rt refresh token @param {object} [p] provider @param {object} [extra] more fields @returns {Promise<object>} token response */
 const rfTok = (rt, p = mcp, extra = {}) => token({ grant_type: "refresh_token", client_id: p.client_id, client_secret: p.client_secret, refresh_token: rt, scope: REF_SC, ...extra });
-const rtRows = async (userPk, providerPk) => (await admin("GET", `/oauth2/refresh_tokens/?${userPk ? `user=${userPk}&` : ""}provider=${providerPk}&page_size=200`)).results;
-const atRows = async (userPk, providerPk) => (await admin("GET", `/oauth2/access_tokens/?user=${userPk}&provider=${providerPk}&page_size=200`)).results;
+/**
+ * Lists every object of an admin API collection, following the pagination (fourth pass: the third pass read one page).
+ * @param {string} path collection path with its filters
+ * @returns {Promise<object[]>} all results
+ */
+async function adminAll(path) {
+  const out = [];
+  for (let page = 1; page; ) {
+    const b = await admin("GET", `${path}${path.includes("?") ? "&" : "?"}page_size=100&page=${page}`);
+    out.push(...b.results);
+    page = b.pagination?.next ? page + 1 : 0;
+  }
+  return out;
+}
+/** Refresh-token rows of a provider, optionally of one user. @param {number|null} userPk user @param {number} providerPk provider @returns {Promise<object[]>} rows */
+const rtRows = (userPk, providerPk) => adminAll(`/oauth2/refresh_tokens/?${userPk ? `user=${userPk}&` : ""}provider=${providerPk}`);
+/** Access-token rows of a provider, optionally of one user. @param {number|null} userPk user @param {number} providerPk provider @returns {Promise<object[]>} rows */
+const atRows = (userPk, providerPk) => adminAll(`/oauth2/access_tokens/?${userPk ? `user=${userPk}&` : ""}provider=${providerPk}`);
+/** Family key (sid|auth_time) from an admin API token row's id_token field. @param {object} row token row @returns {string} key */
 const famOfRow = (row) => { const i = JSON.parse(row.id_token); return `${i.sid ?? "-"}|${i.auth_time}`; };
+/** Family key (sid|auth_time) from a token's claims. @param {string} jwt JWT @returns {string} key */
 const famOfJwt = (jwt) => { const c = claims(jwt); return `${c.sid ?? "-"}|${c.auth_time}`; };
+/** Refresh-token rows of one family. @param {object} u user @param {object} p provider @param {string} fam key @returns {Promise<object[]>} rows */
 const famRows = async (u, p, fam) => (await rtRows(u.pk, p.pk)).filter((x) => famOfRow(x) === fam);
+/** RFC 7662 introspection with a client's credentials. @param {string} tok token @param {object} [p] client @returns {Promise<boolean>} active */
 const introspect = async (tok, p = mcp) => {
   const r = await fetch(`${AK}/application/o/introspect/`, { method: "POST", headers: { Authorization: "Basic " + Buffer.from(`${p.client_id}:${p.client_secret}`).toString("base64") }, body: new URLSearchParams({ token: tok }) });
-  return (await r.json()).active === true;
+  try { return JSON.parse(await r.text()).active === true; } catch { return null; }
 };
 // Wait until a family has no refresh-token rows left; resolves to the elapsed ms, or null on timeout.
+/** Waits until a family has no refresh-token rows (250 ms polling). @param {object} u user @param {object} p provider @param {string} fam key @param {number} [ms] timeout @returns {Promise<number|null>} elapsed ms or null */
 async function settle(u, p, fam, ms = 30000) {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
@@ -629,8 +724,20 @@ async function settle(u, p, fam, ms = 30000) {
   }
   return null;
 }
-const hookEvents = () => execFileSync("podman", ["logs", "victual-spike-authentik-hook"], { encoding: "utf8" })
-  .split("\n").filter((l) => l.startsWith("HOOK ")).map((l) => { const h = JSON.parse(l.slice(5)); return { path: h.path, ...JSON.parse(h.body) }; });
+/**
+ * Reads the receiver's log lines of one kind (HOOK, REVOKE, SKIP, ERROR) as objects.
+ * @param {string} kind line prefix
+ * @returns {object[]} parsed lines in order
+ */
+const hookLines = (kind) => execFileSync("podman", ["logs", "victual-spike-authentik-hook"], { encoding: "utf8" })
+  .split("\n").filter((l) => l.startsWith(`${kind} `)).map((l) => JSON.parse(l.slice(kind.length + 1)));
+/**
+ * Authenticated posts the receiver accepted on its reuse path, each with the posted event's fields.
+ * @returns {object[]} posts in order
+ */
+const hookEvents = () => hookLines("HOOK").filter((h) => h.auth && h.path !== "/control")
+  .map((h) => { try { return { path: h.path, t: h.t, ...JSON.parse(h.body) }; } catch { return { path: h.path, t: h.t }; } });
+/** Waits for an accepted webhook post matching pred (100 ms polling). @param {(h: object) => boolean} pred predicate @param {number} [ms] timeout @returns {Promise<{hook: object, ms: number}|null>} the post and elapsed ms */
 async function waitHook(pred, ms = 20000) {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
@@ -640,6 +747,7 @@ async function waitHook(pred, ms = 20000) {
   }
   return null;
 }
+/** Claims of a response's access token. @param {object} r token response @returns {object} claims or {} */
 const accessOf = (r) => (r.access_token ? claims(r.access_token) : {});
 
 // ---- G5a to G5c: candidates that are not mitigations. A registered client from the adapter (no trust at the sidecar) is the subject.
@@ -717,6 +825,12 @@ const accessOf = (r) => (r.access_token ? claims(r.access_token) : {});
   const reuse = await rfTok(A.refresh_token);
   const hookWait = oldRow ? waitHook((h) => h.context?.token?.pk === oldRow.pk) : Promise.resolve(null); // timed from the reuse response
   const latency = await settle(alice, mcp, famA);
+  // Fourth pass: revocation through the admin API deletes the refresh rows before the access rows, so
+  // revocation is complete only when the family's access-token rows are gone too (finding 19).
+  const activeAtRtGone = [await introspect(A.access_token), await introspect(A2.access_token)];
+  const tAt = Date.now();
+  while ((await atRows(alice.pk, mcp.pk)).some((x) => famOfRow(x) === famA) && Date.now() - tAt < 15000) await sleep(50);
+  const atLatency = Date.now() - tAt;
   const newest = await rfTok(A2.refresh_token);
   const left = await famRows(alice, mcp, famA);
   record("G5d", "pos", "0055 prerequisite 9: reuse of an old refresh token invalidates the whole family, including the newest (revoke rule bound by setup.mjs)",
@@ -733,7 +847,7 @@ const accessOf = (r) => (r.access_token ? claims(r.access_token) : {});
   const exAfter = await exchange(sidecar, A2.access_token, { audience: api.client_id, scope: "openid victual:read" });
   record("G5j", "pos", "0055 d6: the access tokens of a revoked family",
     "stateless check accepts them until exp (expected, 5 minutes); the MCP client's own introspection says inactive after revocation; the sidecar's exchange of them is refused",
-    `exchange of the newest access token after revocation -> ${err(exAfter)}; before: introspection active ${JSON.stringify(activeBefore)}; after revocation: stateless check -> ${stateless.join(", ")}; introspection by the issuing client active ${JSON.stringify(activeAfter)}. Introspection is per provider: before revocation, with the token valid, another client's introspection answered active=${foreign[0]} and the sidecar's active=${foreign[1]}, so a revocation check must go to the issuing client`,
+    `exchange of the newest access token after revocation -> ${err(exAfter)}; before: introspection active ${JSON.stringify(activeBefore)}; when the refresh rows were gone, introspection active ${JSON.stringify(activeAtRtGone)}; the access-token rows were gone ${atLatency} ms later; after that: stateless check -> ${stateless.join(", ")}; introspection by the issuing client active ${JSON.stringify(activeAfter)}. Introspection is per provider: before revocation, with the token valid, another client's introspection answered active=${foreign[0]} and the sidecar's active=${foreign[1]}, so a revocation check must go to the issuing client`,
     activeBefore.every(Boolean) && stateless.every((x) => x === "accepted") && activeAfter.every((x) => !x) && exAfter.status >= 400);
   const ctrl = {
     "same user, other login": await introspect(B.access_token) && (await rfTok(B.refresh_token)).status === 200,
@@ -776,10 +890,17 @@ const accessOf = (r) => (r.access_token ? claims(r.access_token) : {});
     const replay = await rfTok(fork.F.refresh_token);
     const lat = await settle(alice, mcp, fork.famF);
     const branches = await Promise.all(fork.oks.map((r) => rfTok(r.refresh_token)));
-    const activeAfter = await Promise.all(fork.oks.map((r) => introspect(r.access_token)));
+    // Fourth pass: revocation goes through the admin API, refresh tokens first, so the access tokens can
+    // still be active when the refresh rows are gone. Report that, then poll up to 10 s.
+    const activeAtSettle = (await Promise.all(fork.oks.map((r) => introspect(r.access_token)))).filter(Boolean).length;
+    const tA = Date.now();
+    let activeAfter = [];
+    do { activeAfter = await Promise.all(fork.oks.map((r) => introspect(r.access_token))); if (activeAfter.some(Boolean)) await sleep(100); }
+    while (activeAfter.some(Boolean) && Date.now() - tA < 10000);
+    const accessMs = Date.now() - tA;
     record("G5g", "pos", "0055 prerequisite 9: a later reuse revokes every branch of a forked family",
       "after the original token is replayed, every refresh token the parallel refreshes returned is refused and their access tokens are inactive",
-      `fork of ${fork.live} live refresh tokens (attempt ${fork.a}); replay of the original -> ${err(replay)}; family rows gone after ${lat} ms; the ${fork.oks.length} branch refresh tokens now -> ${branches.map((r) => r.status).join(",")}; branch access tokens still active: ${activeAfter.filter(Boolean).length}. Without a replay the branches stay valid (G5f)`,
+      `fork of ${fork.live} live refresh tokens (attempt ${fork.a}); replay of the original -> ${err(replay)}; family rows gone after ${lat} ms; the ${fork.oks.length} branch refresh tokens now -> ${branches.map((r) => r.status).join(",")}; branch access tokens active when the refresh rows were gone: ${activeAtSettle}, still active ${accessMs} ms later: ${activeAfter.filter(Boolean).length}. Without a replay the branches stay valid (G5f)`,
       replay.status >= 400 && lat !== null && branches.every((r) => r.status >= 400) && activeAfter.every((x) => !x));
   } else {
     record("G5g", "pos", "0055 prerequisite 9: a later reuse revokes every branch of a forked family",
@@ -813,26 +934,58 @@ const accessOf = (r) => (r.access_token ? claims(r.access_token) : {});
 // This is what Victual would run: on a reuse post, read the named refresh token, compute the family from its
 // id_token (sid, auth_time) and delete the family's refresh and access tokens. A sweeper does the same for
 // families that hold more than one live refresh token, which concurrent refreshes produce and no event reports.
+/** Deletes a family's refresh and access tokens through the admin API (probe code standing in for Victual). @param {number} userPk user @param {number} providerPk provider @param {string} fam key @returns {Promise<number>} rows deleted */
 async function victualRevokeFamily(userPk, providerPk, fam) {
   let n = 0;
-  for (const r of (await rtRows(userPk, providerPk)).filter((x) => famOfRow(x) === fam)) { await admin("DELETE", `/oauth2/refresh_tokens/${r.pk}/`); n++; }
-  for (const a of (await atRows(userPk, providerPk)).filter((x) => famOfRow(x) === fam)) { await admin("DELETE", `/oauth2/access_tokens/${a.pk}/`); n++; }
+  /** Deletes one token row and counts a 204. @param {string} kind refresh_tokens or access_tokens @param {number} pk row @returns {Promise<void>} */
+  const del = async (kind, pk) => { if ((await fetch(`${AK}/api/v3/oauth2/${kind}/${pk}/`, { method: "DELETE", headers: ADMIN })).status === 204) n++; };
+  // Unrevoked refresh tokens first: they are the ones that can still mint successors.
+  const rts = (await rtRows(userPk, providerPk)).filter((x) => famOfRow(x) === fam).sort((a, b) => Number(a.revoked) - Number(b.revoked));
+  for (const r of rts) await del("refresh_tokens", r.pk);
+  for (const a of (await atRows(userPk, providerPk)).filter((x) => famOfRow(x) === fam)) await del("access_tokens", a.pk);
   return n;
 }
+/** What Victual would do on a reuse post: read the named row, revoke its family. @param {object} hook the post @returns {Promise<number>} rows deleted */
 async function victualOnReuse(hook) {
   const row = await admin("GET", `/oauth2/refresh_tokens/${hook.context.token.pk}/`);
   return victualRevokeFamily(row.user.pk, row.provider.pk, famOfRow(row));
 }
-async function victualSweep(providerPk) {
-  const groups = new Map();
-  for (const r of (await rtRows(null, providerPk)).filter((x) => !x.revoked)) {
-    const k = `${r.user.pk}|${famOfRow(r)}`;
-    groups.set(k, [...(groups.get(k) ?? []), r]);
+/**
+ * The Victual-side sweep for forked families (ADR-0055 question 17). Probe code, not Victual code.
+ * A family is (provider, user, sid, auth_time), read from the admin API's `pk`, `revoked`, `user.pk`,
+ * `provider.pk` and the `id_token` field of /oauth2/refresh_tokens/. A family with more than one
+ * unrevoked refresh token is a fork, because rotation revokes the parent. Marked families are deleted
+ * (refresh and access tokens, unrevoked refresh tokens first) through the admin API. A pass that marked
+ * or deleted something is repeated at once; the sweep stops after two consecutive empty passes 0.5 s
+ * apart (at most 50), so a branch refreshed between listing and delete is caught by a later pass.
+ * Every page of every listed provider is read.
+ * @param {number[]} providerPks providers to sweep
+ * @returns {Promise<{families: number, passes: {found: number, deleted: number}[]}>} marked families and per-pass counts
+ */
+async function victualSweep(providerPks) {
+  const marked = new Map();
+  const passes = [];
+  let quiet = 0;
+  for (let pass = 1; pass <= 50; pass++) {
+    let found = 0, deleted = 0;
+    for (const p of providerPks) {
+      const count = new Map();
+      for (const r of (await rtRows(null, p)).filter((x) => !x.revoked)) {
+        const k = `${p}|${r.user.pk}|${famOfRow(r)}`;
+        count.set(k, { n: (count.get(k)?.n ?? 0) + 1, provider: p, user: r.user.pk, fam: famOfRow(r) });
+      }
+      for (const [k, v] of count) if (v.n > 1 && !marked.has(k)) { marked.set(k, v); found++; }
+    }
+    for (const m of marked.values()) deleted += await victualRevokeFamily(m.user, m.provider, m.fam);
+    passes.push({ found, deleted });
+    quiet = !found && !deleted ? quiet + 1 : 0;
+    if (quiet >= 2) break;
+    if (!found && !deleted) await sleep(500);
   }
-  let families = 0;
-  for (const [k, rows] of groups) if (rows.length > 1) { await victualRevokeFamily(rows[0].user.pk, providerPk, k.split("|").slice(1).join("|")); families++; }
-  return families;
+  return { families: marked.size, passes };
 }
+/** Primary keys of every OAuth2 provider, all pages. @returns {Promise<number[]>} provider pks */
+const allProviders = async () => (await adminAll("/providers/oauth2/")).map((p) => p.pk);
 await withoutRevoke(async () => {
   const V = await codeToken(mcp, alice, REF_SC);
   const famV = famOfJwt(V.access_token);
@@ -858,7 +1011,7 @@ await withoutRevoke(async () => {
     liveBefore = (await famRows(alice, mcp, famOfJwt(F.access_token))).filter((x) => !x.revoked).length;
   }
   const E = await codeToken(mcp, bob, REF_SC); // control, another user
-  const swept = await victualSweep(mcp.pk);
+  const swept = (await victualSweep(await allProviders())).families;
   const branches = await Promise.all(rs.map((r) => rfTok(r.refresh_token)));
   const ctrlE = await rfTok(E.refresh_token);
   record("G5l", "pos", "0055 prerequisite 9, Victual-side: sweep for forked families (concurrent refresh, which raises no event)",
@@ -871,6 +1024,7 @@ await withoutRevoke(async () => {
 // adapter.mjs creates each client the way Victual's adapter would: provider, application, the mcp-aud scope
 // mappings, the PKCE policy, and trust at the sidecar. The probe only names what each variant leaves out.
 const ad = S.adapter;
+/** Registers a client through adapter.mjs. @param {string} name suffix @param {object} [o] adapter options @returns {Promise<object>} client */
 const reg = (name, o) => registerMcpClient(admin, ad, name, o);
 const g6 = {
   x1: await reg("g6-a"), x2: await reg("g6-b"),
@@ -879,6 +1033,7 @@ const g6 = {
   admin: await reg("g6-e-admin", { scopes: ["openid", "victual:read", "victual:admin", "offline_access"] }),
   readonly: await reg("g6-f-readonly", { scopes: ["openid", "offline_access", "victual:read"] }),
 };
+/** Expected aud of a bound client's token. @param {object} c client @returns {string} JSON of the aud list */
 const MCP_AUD = (c) => JSON.stringify([c.client_id, S.mcpResource]);
 try {
   const SC = "openid profile victual:read";
@@ -905,6 +1060,7 @@ try {
     const pick2 = { audience: g6.x2.client_id, resource: S.mcpResource };
     const viaAuthorize = await codeFlow(x, alice, REF_SC, { extra: pick }).then((a) => codeGrant(x, a, pick2), (e) => ({ status: 0, error: e.message.slice(0, 60) }));
     const refreshed = viaAuthorize.refresh_token ? await rfTok(viaAuthorize.refresh_token, x, pick) : { status: "-" };
+    /** aud of a response's access token, as JSON. @param {object} r token response @returns {string} JSON */
     const audOf = (r) => JSON.stringify(accessOf(r).aud);
     const adminAsk = await codeToken(x, alice, "openid victual:read victual:admin");
     const adminOnly = await codeToken(x, alice, "victual:admin");
@@ -969,6 +1125,7 @@ try {
   // G6f: the S256 policy is part of what the adapter attaches, so it must hold on a client the adapter created
   {
     const x = g6.x1;
+    /** Code flow on an adapter client with a PKCE mode, then redemption. @param {string} mode none, plain or S256 @returns {Promise<object>} token response */
     const viaMode = (mode) => codeFlow(x, alice, SC, { pkce: mode }).then((a) => mode === "none"
       ? token({ grant_type: "authorization_code", client_id: x.client_id, client_secret: x.client_secret, code: a.code, redirect_uri: REDIRECT })
       : codeGrant(x, a), (e) => ({ status: 0, error: e.message.slice(0, 50) }));
@@ -1008,6 +1165,337 @@ try {
 } finally {
   for (const c of Object.values(g6)) await deregisterMcpClient(admin, c).catch(() => {});
 }
+// ============ Fourth pass (2026-10-28): ADR-0055 answers 15 to 17
+// The webhook receiver (run.sh) and victualSweep above are probe code standing in for Victual; nothing here is
+// Victual code. Cases that stop or kill the worker run last.
+const SPIKE_DIR = new URL(".", import.meta.url).pathname;
+/** Runs a run.sh subcommand. @param {...string} a arguments @returns {string} its output */
+const runSh = (...a) => execFileSync("./run.sh", a, { cwd: SPIKE_DIR, encoding: "utf8" });
+/** HTTP status of an admin API GET, without throwing. @param {string} path path below /api/v3 @returns {Promise<number>} status */
+const adminStatus = async (path) => (await fetch(`${AK}/api/v3${path}`, { headers: ADMIN })).status;
+/** Unrevoked refresh-token rows of a family. @param {object} u user @param {object} p provider @param {string} fam family key @returns {Promise<object[]>} rows */
+const famLive = async (u, p, fam) => (await famRows(u, p, fam)).filter((x) => !x.revoked);
+/** min, median and max of a list of numbers, as text. @param {number[]} xs values @returns {string} summary */
+const stats = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? `min ${s[0]} / median ${s[Math.floor((s.length - 1) / 2)]} / max ${s[s.length - 1]} ms` : "none"; };
+/**
+ * Polls until no refresh-token row of the family is left, every `step` ms. The admin GET itself takes
+ * some milliseconds, so the result is an upper bound with that granularity.
+ * @param {object} u user @param {object} p provider @param {string} fam family key
+ * @param {number} [ms] timeout @param {number} [step] poll interval
+ * @returns {Promise<number|null>} elapsed ms, or null on timeout
+ */
+async function goneAfter(u, p, fam, ms = 30000, step = 50) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    if (!(await famRows(u, p, fam)).length) return Date.now() - t0;
+    await sleep(step);
+  }
+  return null;
+}
+/**
+ * A rotated chain: a login, then one refresh. The original refresh token is the old one, the second the newest.
+ * @param {object} u user @param {object} p provider
+ * @returns {Promise<{R: object, R2: object, fam: string, oldPk: number}>} both responses, the family key and the old row's pk
+ */
+async function chain(u = alice, p = mcp) {
+  const R = await codeToken(p, u, REF_SC);
+  const fam = famOfJwt(R.access_token);
+  const R2 = await rfTok(R.refresh_token, p);
+  const oldPk = (await famRows(u, p, fam)).find((x) => x.revoked)?.pk;
+  return { R, R2, fam, oldPk };
+}
+/**
+ * Five fully parallel refreshes with one token until at least two leave live refresh tokens (the G5f topology).
+ * @param {object} u user @param {object} p provider
+ * @returns {Promise<{F: object, fam: string, oks: object[], live: number, attempts: number}>} the fork
+ */
+async function makeFork(u = alice, p = mcp) {
+  for (let a = 1; a <= 8; a++) {
+    const F = await codeToken(p, u, REF_SC);
+    const fam = famOfJwt(F.access_token);
+    const oks = (await Promise.all(Array.from({ length: 5 }, () => rfTok(F.refresh_token, p)))).filter((r) => r.status === 200);
+    const live = (await famLive(u, p, fam)).length;
+    if (live >= 2) return { F, fam, oks, live, attempts: a };
+  }
+  throw new Error("no fork in 8 attempts");
+}
+/**
+ * Reuse timing over several chains: from the reuse response to the newest refresh token's row being gone.
+ * @param {number} runs number of reuse events
+ * @returns {Promise<object[]>} per run: ms (null on timeout), reuse status, newest status afterwards
+ */
+async function reuseTiming(runs) {
+  const out = [];
+  for (let i = 0; i < runs; i++) {
+    const c = await chain();
+    const reuse = await rfTok(c.R.refresh_token);
+    const ms = await goneAfter(alice, mcp, c.fam);
+    const after = await rfTok(c.R2.refresh_token);
+    out.push({ ms, reuse: reuse.status, after: after.status });
+  }
+  return out;
+}
+/** Queued or running background tasks by actor, from the tasks API. @returns {Promise<string>} summary */
+async function taskSummary() {
+  try {
+    const rows = await adminAll("/tasks/tasks/?state=queued");
+    const by = {};
+    for (const t of rows) by[t.actor_name] = (by[t.actor_name] ?? 0) + 1;
+    return JSON.stringify(by);
+  } catch (e) { return `tasks API: ${e.message.slice(0, 80)}`; }
+}
+/** Workers the tasks API reports. @returns {Promise<string>} count, or the error */
+async function workerCount() {
+  try { const w = await admin("GET", "/tasks/workers/"); return String((w.results ?? w).length); } catch (e) { return `error ${e.message.slice(0, 60)}`; }
+}
+
+// ---- G5m: bounded delay, ten reuse events per mechanism (question 16)
+{
+  const web = await viaWebhook(() => reuseTiming(10));
+  const rule = await reuseTiming(10);
+  for (const [id, mech, runs] of [["G5m", "webhook receiver (Victual-side stand-in, admin API)", web], ["G5m2", "in-Authentik rule rewritten without internals (requests + admin API)", rule]]) {
+    const ok = runs.every((r) => r.ms !== null && r.reuse >= 400 && r.after >= 400);
+    record(id, "pos", `0055 prerequisite 9 / question 16: bounded delay from reuse to the newest token refused, ${mech}`,
+      "10 reuse events; in each the family's rows are gone and the newest refresh token refused afterwards; min/median/max reported (50 ms polling of the admin API)",
+      `${stats(runs.filter((r) => r.ms !== null).map((r) => r.ms))}; per run ${runs.map((r) => r.ms ?? "timeout").join(",")} ms; newest afterwards ${runs.map((r) => r.after).join(",")}`, ok);
+  }
+}
+
+// ---- G5n: one refresh with the newest token inside the window, and the descendant it issues (question 16)
+await viaWebhook(async () => {
+  const out = [];
+  for (const delay of [0, 100, 200, 300, 400, 600, 800, 1000]) {
+    const c = await chain();
+    const reuse = await rfTok(c.R.refresh_token);
+    if (delay) await sleep(delay);
+    const inside = await rfTok(c.R2.refresh_token);
+    const ms = await goneAfter(alice, mcp, c.fam);
+    await sleep(2000);
+    const rows = (await famRows(alice, mcp, c.fam)).length;
+    const child = inside.refresh_token ? await rfTok(inside.refresh_token) : { status: "-" };
+    const active = inside.access_token ? await introspect(inside.access_token) : null;
+    out.push({ delay, reuse: reuse.status, inside: inside.status, ms, rows, child: child.status, active });
+  }
+  record("G5n", "pos", "0055 prerequisite 9 / question 16: one refresh with the newest token fired inside the delay window, and the descendant it issues (webhook receiver)",
+    "the reuse is refused; whether the refresh inside the window succeeds is reported; whatever it issued is revoked with the family (no rows left, its refresh token refused, its access token inactive)",
+    `8 runs (ms after the reuse response: refresh status, ms until no rows, rows left 2 s later, descendant refresh, descendant access token active): ${out.map((o) => `${o.delay}: ${o.inside}, ${o.ms}, ${o.rows}, ${o.child}, ${o.active}`).join("; ")}`,
+    out.every((o) => o.reuse >= 400 && o.ms !== null && o.rows === 0 && (o.inside !== 200 || (o.child >= 400 && o.active === false))));
+});
+
+// ---- G5n2: adversarial, the newest token's holder refreshes in a tight loop while the old token is reused (question 16)
+await viaWebhook(async () => {
+  const out = [];
+  for (let i = 0; i < 3; i++) {
+    const c = await chain();
+    const produced = [];
+    let cur = c.R2.refresh_token;
+    const t0 = Date.now();
+    const loop = (async () => {
+      while (Date.now() - t0 < 10000) {
+        const r = await rfTok(cur);
+        if (r.status !== 200) return r.status;
+        produced.push({ rt: r.refresh_token, at: r.access_token, ms: Date.now() - t0 });
+        cur = r.refresh_token;
+      }
+      return "still refreshing at 10 s";
+    })();
+    const reuse = await rfTok(c.R.refresh_token);
+    const tReuse = Date.now() - t0;
+    const end = await loop;
+    await sleep(4000);
+    const rows = (await famRows(alice, mcp, c.fam)).length;
+    const live = (await famLive(alice, mcp, c.fam)).length;
+    const lastRefused = produced.length ? (await rfTok(produced[produced.length - 1].rt)).status >= 400 : true;
+    const active = (await Promise.all(produced.slice(-5).map((x) => introspect(x.at)))).filter(Boolean).length;
+    out.push({ reuse: reuse.status, ok: produced.length, last: produced.length ? produced[produced.length - 1].ms - tReuse : null, end, rows, live, lastRefused, active });
+  }
+  record("G5n2", "pos", "0055 prerequisite 9 / question 16: the newest token's holder refreshes in a tight loop during the reuse (webhook receiver, adversarial)",
+    "the loop is stopped: the family ends with no rows, the last token the loop obtained is refused and the last five access tokens are inactive",
+    `3 runs (successful refreshes / ms from the reuse response to the last success / how the loop ended / rows left 4 s later / live / last refresh token refused / of the last 5 access tokens active): ${out.map((o) => `(${o.ok} / ${o.last ?? "-"} / ${o.end} / ${o.rows} / ${o.live} / ${o.lastRefused} / ${o.active})`).join(" ")}`,
+    out.every((o) => o.reuse >= 400 && o.rows === 0 && o.lastRefused && o.active === 0));
+});
+
+// ---- G5r: the Victual-side sweep over the G5f topology, six runs (question 17). No other mechanism is active.
+await withoutRevoke(async () => {
+  const providers = await allProviders();
+  const out = [];
+  for (let i = 1; i <= 6; i++) {
+   try {
+    const B = await codeToken(mcp, alice, REF_SC);  // control: same user and client, another login
+    const C = await codeToken(mcp, bob, REF_SC);    // control: another user
+    const D = await codeToken(mcpB, alice, REF_SC); // control: another client
+    const f = await makeFork();
+    // Runs 4 to 6: the holder of one branch keeps refreshing while the sweep runs.
+    // The loop gives up after 10 s, as in G5n2; the sweep may only converge once it has.
+    const attacker = { produced: [], lastMs: null };
+    const tSweep = Date.now();
+    const att = i >= 4 ? (async () => {
+      let cur = f.oks[0].refresh_token;
+      while (Date.now() - tSweep < 10000) {
+        const r = await rfTok(cur);
+        if (r.status !== 200) return `refused at ${Date.now() - tSweep} ms`;
+        attacker.produced.push(r);
+        attacker.lastMs = Date.now() - tSweep;
+        cur = r.refresh_token;
+      }
+      return "gave up at 10 s";
+    })() : Promise.resolve("none");
+    const sw = await victualSweep(providers);
+    const sweepMs = Date.now() - tSweep;
+    const attEnd = await att;
+    await sleep(1500);
+    const rows = (await famRows(alice, mcp, f.fam)).length;
+    // The branches and the attacker's last five tokens, one request at a time: a few hundred parallel
+    // requests exhausted PostgreSQL's connections in a trial run ("too many clients already").
+    const toks = [...f.oks, ...attacker.produced.slice(-5)];
+    let refused = true, active = 0;
+    for (const r of toks) {
+      if ((await rfTok(r.refresh_token)).status < 400) refused = false;
+      if (await introspect(r.access_token)) active++;
+    }
+    const ctrl = [await introspect(B.access_token) && (await rfTok(B.refresh_token)).status === 200,
+      await introspect(C.access_token) && (await rfTok(C.refresh_token)).status === 200,
+      await introspect(D.access_token, mcpB) && (await rfTok(D.refresh_token, mcpB)).status === 200];
+    out.push({ i, attempts: f.attempts, live: f.live, passes: sw.passes.map((p) => `${p.found}:${p.deleted}`).join(" "), families: sw.families, sweepMs, attacker: attacker.produced.length, attLast: attacker.lastMs, attEnd, rows, refused, active, ctrl: ctrl.every(Boolean) });
+   } catch (e) { out.push({ i, error: e.message.slice(0, 160) }); }
+  }
+  record("G5r", "pos", "0055 prerequisite 9 / question 17: a Victual-side sweep finds every descendant of a concurrent-refresh fork and revokes through the admin API",
+    "6 runs of the G5f topology (runs 4 to 6 with a branch refreshing during the sweep): no row of the forked family left, every branch and attacker-produced refresh token refused, their access tokens inactive; another login of the same user and client, another user and another client keep working",
+    out.map((o) => o.error ? `run ${o.i}: error ${o.error}` : `run ${o.i}: fork of ${o.live} live after ${o.attempts} attempt(s); passes (new families:rows deleted) ${o.passes}; families swept ${o.families}; sweep took ${o.sweepMs} ms; attacker refreshes ${o.attacker}, last success at ${o.attLast ?? "-"} ms, loop ${o.attEnd}; rows left ${o.rows}; all refused ${o.refused}; active ${o.active}; controls ok ${o.ctrl}`).join("; "),
+    out.every((o) => o.rows === 0 && o.refused && o.active === 0 && o.ctrl));
+  // The same runs 4 to 6, judged on whether the sweep stopped the refreshing branch while it was still refreshing.
+  const adv = out.filter((o) => o.i >= 4);
+  record("G5r2", "pos", "0055 prerequisite 9 / question 17: the sweep stops a branch whose holder keeps refreshing (runs 4 to 6 of G5r, adversarial)",
+    "the holder's next refresh is refused while the sweep runs, before the holder's 10 s loop gives up",
+    adv.map((o) => o.error ? `run ${o.i}: error ${o.error}` : `run ${o.i}: ${o.attacker} refreshes, last success at ${o.attLast ?? "-"} ms, loop ${o.attEnd}, sweep finished at ${o.sweepMs} ms`).join("; "),
+    adv.every((o) => !o.error && String(o.attEnd).startsWith("refused")));
+});
+
+// ---- G5s: the webhook sender is authenticated, and the receiver does not act on unconfirmed events
+{
+  await unbindRevoke();
+  let a, b;
+  try {
+    // A real reuse event, posted by Authentik while the receiver only logs.
+    const c = await chain();
+    await rfTok(c.R.refresh_token);
+    const got = await waitHook((h) => h.context?.token?.pk === c.oldPk);
+    const body = got ? JSON.stringify({ action: got.hook.action, event_uuid: got.hook.event_uuid, user: got.hook.user, context: got.hook.context }) : "{}";
+    await hookControl(true);
+    /** POSTs a body to the receiver's reuse path. @param {object} headers headers @param {string} b body @returns {Promise<number>} status */
+    const post = async (headers, b) => (await fetch(`${S.reuse.hook}/refresh-reuse`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: b })).status;
+    const noHeader = await post({}, body);
+    const wrong = await post({ "X-Victual-Hook-Secret": "wrong" }, body);
+    const forged = await post({ "X-Victual-Hook-Secret": S.reuse.hookSecret }, JSON.stringify({ ...JSON.parse(body), event_uuid: "00000000-0000-4000-8000-000000000000" }));
+    await sleep(3000);
+    const rowsAfterBad = (await famRows(alice, mcp, c.fam)).length;
+    const skips = hookLines("SKIP").filter((s) => s.event === "00000000-0000-4000-8000-000000000000").length;
+    const real = await post({ "X-Victual-Hook-Secret": S.reuse.hookSecret }, body);
+    const goneMs = await goneAfter(alice, mcp, c.fam, 15000);
+    a = { got: !!got, noHeader, wrong, forged, rowsAfterBad, skips, real, goneMs };
+    // Authentik itself without the header mapping: the receiver refuses its post and revokes nothing.
+    await admin("PATCH", `/events/transports/${S.reuse.transport}/`, { webhook_mapping_headers: null });
+    try {
+      const d = await chain();
+      await rfTok(d.R.refresh_token);
+      const t0 = Date.now();
+      let refusedPost = null;
+      while (Date.now() - t0 < 20000 && !refusedPost) {
+        refusedPost = hookLines("HOOK").find((h) => { try { return !h.auth && JSON.parse(h.body).context?.token?.pk === d.oldPk; } catch { return false; } });
+        if (!refusedPost) await sleep(200);
+      }
+      await sleep(3000);
+      b = { refusedPost: !!refusedPost, rows: (await famLive(alice, mcp, d.fam)).length };
+    } finally {
+      await admin("PATCH", `/events/transports/${S.reuse.transport}/`, { webhook_mapping_headers: S.reuse.headerMapping });
+    }
+  } finally {
+    await hookControl(false);
+    await rebindRevoke();
+  }
+  const fromAuthentik = hookLines("HOOK").filter((h) => h.path === "/refresh-reuse");
+  record("G5s", "neg", "0055 prerequisite 9: the reuse webhook authenticates its sender (header from a second webhook mapping), and the receiver acts only on events the events API confirms",
+    "POSTs without the header or with a wrong one: 401 and nothing revoked; an authenticated POST naming an event that does not exist: no revocation; the real event, authenticated: family revoked; Authentik's post with the header mapping removed: 401 and the family stays",
+    `real reuse post received: ${a.got}; no header -> ${a.noHeader}; wrong header -> ${a.wrong}; authenticated, unknown event_uuid -> ${a.forged}, receiver skipped it ${a.skips} time(s); family rows after these three ${a.rowsAfterBad}; the real body with the header -> ${a.real}, family gone after ${a.goneMs} ms. Header mapping removed: Authentik's post refused ${b.refusedPost}, live rows after 3 s ${b.rows}. Posts on /refresh-reuse in this run: ${fromAuthentik.length}, unauthenticated ${fromAuthentik.filter((h) => !h.auth).length} (the probe's own two and the stripped one)`,
+    a.got && a.noHeader === 401 && a.wrong === 401 && a.rowsAfterBad > 0 && a.skips >= 1 && a.real === 204 && a.goneMs !== null && b.refusedPost && b.rows > 0);
+}
+
+// ---- G5p: a lagging worker. A burst of events through the admin API queues tasks ahead of the reuse event.
+await viaWebhook(async () => {
+  const out = [];
+  for (const n of [300, 1000]) {
+    const c = await chain();
+    const t0 = Date.now();
+    let made = 0, failed = "";
+    for (let i = 0; i < n; i += 25) {
+      const rs = await Promise.all(Array.from({ length: Math.min(25, n - i) }, (_, k) => fetch(`${AK}/api/v3/events/events/`, { method: "POST", headers: ADMIN, body: JSON.stringify({ action: "configuration_warning", app: "victual-spike-load", context: { i: i + k } }) })));
+      made += rs.filter((r) => r.ok).length;
+      if (!failed && rs.some((r) => !r.ok)) failed = `${rs.find((r) => !r.ok).status} ${(await rs.find((r) => !r.ok).text()).slice(0, 100)}`;
+    }
+    const loadMs = Date.now() - t0;
+    const queued = await taskSummary();
+    const reuse = await rfTok(c.R.refresh_token);
+    const ms = await goneAfter(alice, mcp, c.fam, 300000, 200);
+    const after = await rfTok(c.R2.refresh_token);
+    out.push({ n, made, failed, loadMs, queued, reuse: reuse.status, ms, after: after.status });
+  }
+  record("G5p", "pos", "0055 prerequisite 9 / question 16: revocation delay with a lagging worker (event burst queued ahead of the reuse)",
+    "revocation still lands; the delay grows with the queue and is reported",
+    out.map((o) => `${o.n} events posted (${o.made} accepted${o.failed ? `, first refusal ${o.failed}` : ""}) in ${o.loadMs} ms, queued tasks then ${o.queued}; reuse -> ${o.reuse}; family gone after ${o.ms ?? "timeout (300 s)"} ms; newest afterwards -> ${o.after}`).join("; "),
+    out.every((o) => o.made > 0 && o.ms !== null && o.after >= 400));
+});
+
+// ---- G5o: worker stopped. Reuse and a refresh by the newest token's holder during the outage, then restart.
+await viaWebhook(async () => {
+  const c = await chain();
+  runSh("worker-stop");
+  const workersStopped = await workerCount();
+  const hooks0 = hookEvents().length;
+  const reuse = await rfTok(c.R.refresh_token);
+  await sleep(20000);
+  const liveDuring = (await famLive(alice, mcp, c.fam)).length;
+  const newestActive = await introspect(c.R2.access_token);
+  const during = await rfTok(c.R2.refresh_token);
+  const queued = await taskSummary();
+  const postsDuring = hookEvents().length - hooks0;
+  const event = (await admin("GET", `/events/events/?action=suspicious_request&ordering=-created&page_size=5`)).results.some((e) => e.context?.token?.pk === c.oldPk);
+  runSh("worker-start");
+  const t0 = Date.now();
+  const hookP = waitHook((h) => h.context?.token?.pk === c.oldPk, 240000);
+  const ms = await goneAfter(alice, mcp, c.fam, 240000, 200);
+  const hook = await hookP;
+  const after = [await rfTok(c.R2.refresh_token), during.refresh_token ? await rfTok(during.refresh_token) : { status: "-" }];
+  const activeAfter = during.access_token ? await introspect(during.access_token) : null;
+  record("G5o", "pos", "0055 prerequisite 9 / question 16: revocation when the worker is stopped (webhook receiver)",
+    "nothing is revoked while the worker is down; the event and its tasks persist; after the worker starts the family is revoked, including a descendant issued during the outage",
+    `workers reported after stop: ${workersStopped}; reuse -> ${reuse.status}; after 20 s with the worker down: suspicious_request event stored ${event}, posts ${postsDuring}, live rows ${liveDuring}, newest access token active ${newestActive}, a refresh by the newest token's holder -> ${err(during)}, queued tasks ${queued}; worker started: post after ${hook?.ms ?? "none"} ms, family gone after ${ms ?? "timeout (240 s)"} ms from the start; afterwards newest -> ${after[0].status}, the outage descendant -> ${after[1].status}, its access token active ${activeAfter}`,
+    reuse.status >= 400 && event && postsDuring === 0 && liveDuring >= 1 && during.status === 200 && ms !== null && after.every((r) => r.status >= 400) && activeAfter === false);
+});
+
+// ---- G5q: worker killed (SIGKILL) right after a reuse, then started. Does the event's work survive?
+// The kill goes out 0, 50 and 100 ms after the reuse response (podman itself takes some time to deliver it).
+await viaWebhook(async () => {
+  const out = [];
+  for (const delay of [0, 50, 100]) {
+    const c = await chain();
+    const reuse = await rfTok(c.R.refresh_token);
+    if (delay) await sleep(delay);
+    runSh("worker-kill");
+    await sleep(5000);
+    const liveAfterKill = (await famLive(alice, mcp, c.fam)).length;
+    const posted = hookEvents().some((h) => h.context?.token?.pk === c.oldPk);
+    const queued = await taskSummary();
+    runSh("worker-start");
+    const ms = await goneAfter(alice, mcp, c.fam, 240000, 200);
+    const after = await rfTok(c.R2.refresh_token);
+    out.push({ delay, reuse: reuse.status, liveAfterKill, posted, queued, ms, after: after.status });
+  }
+  record("G5q", "pos", "0055 prerequisite 9 / question 16: the worker is killed (SIGKILL) just after a reuse and started again",
+    "the family is revoked once the worker runs again (the task is not lost)",
+    out.map((o) => `kill ${o.delay} ms after the reuse: 5 s later posted ${o.posted}, live rows ${o.liveAfterKill}, queued tasks ${o.queued}; after start: family gone after ${o.ms ?? "timeout (240 s)"} ms; newest -> ${o.after}`).join("; "),
+    out.every((o) => o.reuse >= 400 && o.ms !== null && o.after >= 400));
+});
+
 writeFileSync(new URL("./results.json", import.meta.url), JSON.stringify({ at: new Date().toISOString(), authentik: (await admin("GET", "/admin/version/")).version_current, results }, null, 2));
 console.log("| ID | Clause | Expected | Observed | Verdict |\n|---|---|---|---|---|");
 for (const r of results) console.log(`| ${r.id} | ${r.clause} | ${r.expected} | ${r.observed.replaceAll("|", "\\|")} | ${r.verdict} |`);

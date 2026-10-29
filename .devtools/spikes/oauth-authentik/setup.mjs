@@ -24,12 +24,20 @@ const AK = process.env.AK ?? "http://localhost:9000";
 const H = { Authorization: "Bearer spike-only-bootstrap-token-0123456789", "Content-Type": "application/json" };
 const P = "victual-spike";
 
+/**
+ * Calls Authentik's admin API with the bootstrap token and throws on a non-2xx answer.
+ * @param {string} method HTTP method
+ * @param {string} path path below /api/v3
+ * @param {object} [body] JSON body
+ * @returns {Promise<object|null>} parsed JSON, or null for an empty body
+ */
 async function api(method, path, body) {
   const r = await fetch(`${AK}/api/v3${path}`, { method, headers: H, body: body && JSON.stringify(body) });
   const text = await r.text();
   if (!r.ok) throw new Error(`${method} ${path} -> ${r.status} ${text.slice(0, 400)}`);
   return text ? JSON.parse(text) : null;
 }
+/** Lists one page of up to 200 objects of an admin API collection. @param {string} path collection path @returns {Promise<object[]>} the results */
 const list = async (path) => (await api("GET", `${path}${path.includes("?") ? "&" : "?"}page_size=200`)).results;
 
 // --- clean up a previous run
@@ -46,6 +54,7 @@ for (const p of await list("/policies/event_matcher/")) if (p.name.startsWith(P)
 
 // --- shared pieces
 const flows = await list("/flows/instances/");
+/** Returns the pk of a flow by slug. @param {string} slug flow slug @returns {string} flow pk */
 const flow = (slug) => flows.find((f) => f.slug === slug).pk;
 const authzFlow = flow("default-provider-authorization-implicit-consent");
 const invalFlow = flow("default-provider-invalidation-flow");
@@ -62,8 +71,10 @@ for (let i = 0; i < 90; i++) {
   if (["openid", "profile", "offline_access"].every((n) => builtin.some((m) => m.scope_name === n && m.managed))) break;
   await new Promise((r) => setTimeout(r, 2000));
 }
+/** Returns the pk of a built-in (managed) scope mapping. @param {string} name scope name @returns {string} mapping pk */
 const scope = (name) => builtin.find((m) => m.scope_name === name && m.managed).pk;
 
+/** Creates a scope mapping named after the scope. @param {string} scope_name scope @param {string} [expression] Python expression @param {string} [suffix] name suffix @returns {Promise<string>} mapping pk */
 const mapping = async (scope_name, expression = "return {}", suffix = "") =>
   (await api("POST", "/propertymappings/provider/scope/", { name: `${P} ${scope_name}${suffix}`, scope_name, expression })).pk;
 const read = await mapping("victual:read");
@@ -81,6 +92,7 @@ const TX = "urn:ietf:params:oauth:grant-type:token-exchange";
 // for the alphabetically first granted bound scope emits it. List form keeps the client_id
 // in aud so the OIDC id_token still names its client.
 const MCP_BOUND = ["openid", "victual:read", "victual:write", BUNDLE];
+/** Builds the mcp-aud expression for one bound scope (G2). @param {string} scope_name scope @returns {string} Python expression */
 const audExpression = (scope_name) => `
 bound = ${JSON.stringify(MCP_BOUND)}
 granted = [s for s in token.scope if s in bound]
@@ -94,22 +106,35 @@ for (const s_ of MCP_BOUND) mcpAud.push(await mapping(s_, audExpression(s_), " m
 const scalarAud = await mapping("openid", `return {"aud": ${JSON.stringify(MCP_RESOURCE)}}`, " mcp-aud-scalar");
 
 // G1: sign the exchanger into the token. Runs while the token endpoint builds an exchanged token
-// (grant_type token-exchange). extract_client_auth is the function TokenView.post used to find
-// the provider whose secret TokenRequest.parse then verified, so this is the authenticated client.
-// The subject token was verified before any mapping runs; it is only decoded here, for the
-// originating-grant claim.
+// (grant_type token-exchange). Fourth pass (ADR-0055 question 15): no `authentik.*` import. The
+// expression reads only the documented `request.http_request` and the documented `regex_match`
+// helper, plus Python's base64, json and urllib.parse. It repeats the rule of Authentik's
+// extract_client_auth, which TokenView.post uses to find the provider whose secret
+// TokenRequest.parse then compares: the Basic header first, the form client_id and client_secret
+// only without one. The third pass called that function and looked the provider up in
+// OAuth2Provider; the lookup is gone, so the expression no longer skips a public client. It emits
+// nothing unless a secret was presented. A public client that sends any secret would be named, but
+// only the exchangers in the /api provider's jwt_federation_providers reach an /api token, and
+// both are confidential. The subject token was verified before any mapping runs; it is only
+// decoded here, for the originating-grant claim.
 const EXCHANGER_EXPRESSION = `
 import base64, json
-from authentik.providers.oauth2.models import OAuth2Provider
-from authentik.providers.oauth2.utils import extract_client_auth
-req = http_request
+from urllib.parse import unquote
+req = request.http_request
 if req is None or req.POST.get("grant_type") != ${JSON.stringify(TX)}:
     return {}
-client_id, _secret = extract_client_auth(req)
-exchanger = OAuth2Provider.objects.filter(client_id=client_id, client_type="confidential").first()
-if exchanger is None:
+auth = req.META.get("HTTP_AUTHORIZATION", "")
+if regex_match(auth, r"^Basic\\s{1}.+$"):
+    try:
+        client_id, _, secret = base64.b64decode(auth.split()[1]).decode("utf-8").partition(":")
+        client_id, secret = unquote(client_id), unquote(secret)
+    except Exception:
+        return {}
+else:
+    client_id, secret = req.POST.get("client_id", ""), req.POST.get("client_secret", "")
+if not client_id or not secret:
     return {}
-out = {"victual_exchanger": exchanger.client_id}
+out = {"victual_exchanger": client_id}
 try:
     seg = req.POST.get("subject_token", "").split(".")[1]
     subject = json.loads(base64.urlsafe_b64decode(seg + "=" * (-len(seg) % 4)))
@@ -121,6 +146,7 @@ return out
 const exchangerMappings = [];
 for (const s_ of ["victual:read", "victual:write", "victual:admin"]) exchangerMappings.push(await mapping(s_, EXCHANGER_EXPRESSION, " exchanger"));
 
+/** Creates an OAuth2 provider and its application with the spike defaults (G-cases). @param {string} name suffix after the prefix @param {object} extra provider fields to override @returns {Promise<object>} the provider */
 async function provider(name, extra) {
   const p = await api("POST", "/providers/oauth2/", {
     name: `${P}-${name}`, authorization_flow: authzFlow, invalidation_flow: invalFlow,
@@ -210,6 +236,7 @@ for (const [k, p] of Object.entries({ mcp, mcpB })) {
 
 // --- users, group, app passwords
 const group = await api("POST", "/core/groups/", { name: `${P}-adults` });
+/** Creates a user with an app password and a login password. @param {string} username username @param {string[]} groups group pks @returns {Promise<object>} pk, username, app_password, password */
 async function user(username, groups) {
   const u = await api("POST", "/core/users/", { username, name: username, is_active: true, groups, path: "victual-spike" });
   const ident = `${username}-app-password`;
@@ -226,46 +253,85 @@ const bob = await user("spike-bob", []);
 // Authentik rotates refresh tokens and marks the old one `revoked`. A presented revoked token is
 // refused and raises a suspicious_request event whose context names the token (token/refresh_token.py).
 // Nothing else happens. Two notification rules close the gap. Both run on the worker after the event
-// is saved, so they are asynchronous (seconds):
+// is saved, so they are asynchronous:
 //   1. revoke: an expression policy bound to a notification rule. Authentik evaluates it for every
-//      event (request.context["event"]); it deletes every refresh and access token of the same family
-//      and returns False, so no notification is created. A policy with side effects is a convention
-//      this spike relies on, not a documented feature, and it imports internal models.
-//   2. alert: the built-in event matcher policy bound to a rule with a webhook transport. That is how
-//      Victual would observe reuse; it could then revoke through the admin API (G5i).
+//      event; the event is the documented request.context["event"]. Fourth pass (question 15): no
+//      `authentik.*` import and no direct row deletion. It revokes through Authentik's admin API with
+//      the documented `requests` session object and an API token, the same calls Victual would make,
+//      and returns False, so no notification is created. A policy with side effects is still a
+//      convention, not a documented feature, and the token sits in the expression.
+//   2. alert: the built-in event matcher policy bound to a rule with a webhook transport. The
+//      transport sends the shared-secret header from a second webhook mapping (G5s). The receiver
+//      in run.sh stands in for Victual; it revokes through the admin API when told to (G5i to G5r).
 // Family key: Authentik stores no parent link or family id. Every refresh token minted by rotation
-// copies provider, user, session and auth_time from its parent (views/token.py create_refresh_response),
-// so those four fields identify the chain, and also the branches a concurrent refresh creates (G5f).
+// copies provider, user, session and auth_time from its parent (views/token.py create_refresh_response).
+// The admin API shows sid and auth_time inside the `id_token` field, so user, provider, sid and
+// auth_time identify the chain, and also the branches a concurrent refresh creates (G5f).
 // Two grants of one client in one login session share the key: revoking one revokes both (fail closed).
+// Both mechanisms delete unrevoked refresh tokens first, repeat a pass that deleted something at once,
+// and stop after two consecutive empty passes 0.5 s apart (at most 50), so a successor saved
+// after one listing is caught by the next (G5h, G5n).
+const AK_INTERNAL = "http://victual-spike-authentik-server:9000/api/v3"; // the server, from inside the podman network
 const REVOKE_EXPRESSION = `
-from authentik.providers.oauth2.models import AccessToken, RefreshToken
+import json, time
 ev = request.context.get("event")
 ref = (ev.context.get("token") or {}) if ev is not None else {}
 if ev is None or ev.action != "suspicious_request" or ref.get("model_name") != "refreshtoken":
     return False
-tok = RefreshToken.objects.filter(pk=ref.get("pk")).first()
-if tok is None:
+api = ${JSON.stringify(AK_INTERNAL)}
+hdr = {"Authorization": ${JSON.stringify(H.Authorization)}}
+got = requests.get(api + "/oauth2/refresh_tokens/" + str(ref.get("pk")) + "/", headers=hdr, timeout=10)
+if got.status_code != 200:
     return False
-family = {"provider": tok.provider, "user": tok.user, "session": tok.session, "auth_time": tok.auth_time}
-gone_r = RefreshToken.objects.filter(**family).delete()[0]
-gone_a = AccessToken.objects.filter(**family).delete()[0]
-ak_logger.warning("refresh token reuse: family revoked", provider=tok.provider_id, user=tok.user_id, refresh=gone_r, access=gone_a)
+row = got.json()
+idt = json.loads(row["id_token"])
+fam = [idt.get("sid"), idt.get("auth_time")]
+q = {"user": row["user"]["pk"], "provider": row["provider"]["pk"], "page_size": 100}
+passes = quiet = 0
+while passes < 50:
+    found = {}
+    for kind in ("refresh_tokens", "access_tokens"):
+        rows, page = [], 1
+        while page:
+            lst = requests.get(api + "/oauth2/" + kind + "/", params=dict(q, page=page), headers=hdr, timeout=10).json()
+            rows += lst["results"]
+            page = page + 1 if lst["pagination"]["next"] else 0
+        mine = [x for x in rows if [json.loads(x["id_token"]).get("sid"), json.loads(x["id_token"]).get("auth_time")] == fam]
+        found[kind] = sorted(mine, key=lambda x: bool(x.get("revoked")))
+        if kind == "refresh_tokens":
+            for x in found[kind]:
+                requests.delete(api + "/oauth2/refresh_tokens/" + str(x["pk"]) + "/", headers=hdr, timeout=10)
+    for x in found["access_tokens"]:
+        requests.delete(api + "/oauth2/access_tokens/" + str(x["pk"]) + "/", headers=hdr, timeout=10)
+    gone = len(found["refresh_tokens"]) + len(found["access_tokens"])
+    passes += 1
+    ak_logger.warning("refresh token reuse: family revocation pass", token=ref.get("pk"), deleted=gone, passes=passes)
+    quiet = quiet + 1 if gone == 0 else 0
+    if quiet >= 2:
+        break
+    if gone == 0:
+        time.sleep(0.5)
 return False
 `.trim();
 const revokePolicy = await api("POST", "/policies/expression/", { name: `${P}-refresh-reuse-revoke`, expression: REVOKE_EXPRESSION });
 const revokeRule = await api("POST", "/events/rules/", { name: `${P}-refresh-reuse-revoke`, severity: "alert" });
 const revokeBinding = await api("POST", "/policies/bindings/", { policy: revokePolicy.pk, target: revokeRule.pk, order: 0 });
 const HOOK_URL = "http://victual-spike-authentik-hook:8766/refresh-reuse";
+const HOOK_SECRET = "spike-only-hook-secret-0123456789"; // run.sh passes the same value to the receiver
 const notifyGroup = await api("POST", "/core/groups/", { name: `${P}-notify` });
 await api("POST", "/core/users/", { username: "spike-notify", name: "spike-notify", is_active: true, groups: [notifyGroup.pk], path: "victual-spike" });
 const hookBody = await api("POST", "/propertymappings/notification/", { name: `${P}-reuse-body`, expression: `
 ev = notification.event
 return {"action": ev.action, "event_uuid": str(ev.event_uuid), "user": ev.user, "context": ev.context}
 `.trim() });
-const hookTransport = await api("POST", "/events/transports/", { name: `${P}-reuse-webhook`, mode: "webhook", webhook_url: HOOK_URL, webhook_mapping_body: hookBody.pk, send_once: true });
+// The documented "Webhook Header Mapping" (API field webhook_mapping_headers) authenticates the sender (G5s).
+const hookHeaders = await api("POST", "/propertymappings/notification/", { name: `${P}-reuse-headers`, expression: `return {"X-Victual-Hook-Secret": ${JSON.stringify(HOOK_SECRET)}}` });
+const hookTransport = await api("POST", "/events/transports/", { name: `${P}-reuse-webhook`, mode: "webhook", webhook_url: HOOK_URL, webhook_mapping_body: hookBody.pk, webhook_mapping_headers: hookHeaders.pk, send_once: true });
 const alertMatcher = await api("POST", "/policies/event_matcher/", { name: `${P}-suspicious-request`, action: "suspicious_request" });
 const alertRule = await api("POST", "/events/rules/", { name: `${P}-refresh-reuse-alert`, severity: "alert", transports: [hookTransport.pk], destination_group: notifyGroup.pk });
 const alertBinding = await api("POST", "/policies/bindings/", { policy: alertMatcher.pk, target: alertRule.pk, order: 0 });
+// The receiver starts with revocation off; the in-Authentik rule above is the default mechanism.
+await fetch("http://127.0.0.1:8766/control", { method: "POST", headers: { "X-Victual-Hook-Secret": HOOK_SECRET }, body: JSON.stringify({ revoke: false }) });
 
 const state = {
   ak: AK, group: { pk: group.pk, name: group.name },
@@ -275,7 +341,8 @@ const state = {
   users: { alice, bob },
   policies: { ceiling: policy.pk, ceilingPlain: policyPlain.pk, apiApp: apiApp.pk, binding: binding.pk, pkce: pkcePolicy.pk, pkceBindings },
   mcpResource: MCP_RESOURCE, bundle: BUNDLE,
-  reuse: { revokePolicy: revokePolicy.pk, revokeRule: revokeRule.pk, revokeBinding: revokeBinding.pk, alertRule: alertRule.pk, alertBinding: alertBinding.pk, matcher: alertMatcher.pk, hookUrl: HOOK_URL },
+  reuse: { revokePolicy: revokePolicy.pk, revokeRule: revokeRule.pk, revokeBinding: revokeBinding.pk, alertRule: alertRule.pk, alertBinding: alertBinding.pk, matcher: alertMatcher.pk, hookUrl: HOOK_URL,
+    hook: "http://127.0.0.1:8766", hookSecret: HOOK_SECRET, transport: hookTransport.pk, headerMapping: hookHeaders.pk },
   // Everything adapter.mjs needs to register a client the way Victual's adapter would (G6).
   adapter: {
     prefix: P, authzFlow, invalFlow, signingKey, redirectUri: "http://localhost:8765/callback", pkcePolicy: pkcePolicy.pk,
