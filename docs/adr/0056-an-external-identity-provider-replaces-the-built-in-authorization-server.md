@@ -9,7 +9,10 @@
   Authentik side of prerequisite 4 and recorded evidence against prerequisites 2 and 3.
   The maintainer answered open question 7 on 2026-10-25 (decision 11), and on 2026-10-26
   amended decision 7 to match ADR-0055 decision 1: in OAuth mode, password login is
-  limited to bootstrap and break-glass accounts.
+  limited to bootstrap and break-glass accounts. The maintainer's 2026-10-29
+  clarification (question 9) reverses decision 1's premise: Keycloak always issues the
+  tokens, and an external identity provider federates into it as an upstream source. The
+  title no longer describes that model (question 10).
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -93,6 +96,13 @@ and the pages it links. These are documentation claims; none was run in this rep
 ## Decision (proposed)
 
 ### 1. One issuer, and it is the external provider when one is configured
+
+**Superseded in part, 2026-10-29 (question 9).** The one issuer is always Keycloak
+(ADR-0055 decision 2). An external identity provider, Authentik in the maintainer's lab or
+Entra ID, federates into Keycloak as an upstream identity source. Keycloak stays deployed,
+and Victual and the sidecar see only Keycloak's issuer and subjects. Where the text below
+says the built-in server is not deployed, or that the external provider issues tokens or
+performs token exchange, it records the earlier design.
 
 One authorization server per install issues every token, either the built-in one or an
 external one; Victual never issues tokens. This is ADR-0055 decision 1. With an external
@@ -453,3 +463,37 @@ response. The answers do not accept this record.
    > **Response:** datagen24, 2026-10-26: amend decision 7 so that in OAuth mode local
    > password login is limited to bootstrap and break-glass accounts, matching ADR-0055
    > decision 1; Classic mode keeps ordinary local login. (Decision 7.)
+
+### Upstream identity providers, 2026-10-29
+
+9. **Does the external provider replace the authorization server, or federate into it?**
+
+   > **Response:** datagen24, 2026-10-29: "the authserver job is to handle all the logins
+   > between service containers, and token handling. For me my internal Auth server for my
+   > lab would federate with the auth server container, or use entra to authenticate."
+   > Recorded as: Keycloak issues every token; Authentik or Entra ID federates into
+   > Keycloak as an upstream identity source. This supersedes answer 1's "Authentik issues
+   > production tokens". (Decision 1; ADR-0055 question 26.)
+
+   What this changes in this record, as the recorder reads it:
+
+   - Prerequisites 2 and 3 are moot: MCP clients register with Keycloak, and audiences come
+     from Keycloak (ADR-0055 prerequisites 5 and 11).
+   - Prerequisite 4 becomes a brokering test: a group change at the upstream source must
+     reach Victual through Keycloak.
+   - Prerequisite 5 has two layers. With Keycloak up and the upstream source down,
+     Keycloak's own local login is the recovery path. With Keycloak down, Victual's local
+     bootstrap and break-glass accounts are (decision 7).
+   - Decision 3's rule that an email match never links applies to Keycloak's first-login
+     flow as well, since Keycloak now links the upstream identity to the account Victual
+     maps.
+
+10. **What should this record be called, and what does it cover?** Its title says an
+    external provider replaces the built-in server, the opposite of answer 9. Options:
+    rename it so that external providers federate into Keycloak (the file name keeps its
+    number), or supersede it with a new record for upstream identity. (All decisions.)
+
+11. **Does Entra ID federate into Keycloak directly, or through the lab identity
+    provider?** Answer 9 allows both readings. Directly, Keycloak holds the Entra
+    configuration and production needs no Authentik. Through Authentik, Keycloak has one
+    upstream and Authentik brokers Entra, as answer 1 described. (Decision 1.)
