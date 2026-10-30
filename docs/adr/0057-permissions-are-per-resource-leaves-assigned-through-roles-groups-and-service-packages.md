@@ -7,7 +7,8 @@
   decisions 2, 4, 7 and 9 and recorded under Open questions. Prerequisite 5 is met;
   prerequisites 1 to 3 are not, and answer 3 keeps the catalog and household roles open
   until their leaf lists are written. On 2026-10-30 the maintainer asked how service
-  credentials could move to Keycloak; questions 6 and 7 record the proposal.
+  credentials could move to Keycloak; questions 6 to 8 record the proposal and a spike of
+  its in-cluster half.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-25, against `master` at `42883e0e`. Design only: it changes no
@@ -450,3 +451,30 @@ questions settle how it proves which service it is.
    its own data directory, so a restart does not need pairing again; today's paired label
    workers can need it. Redemption stays on `/api` because a device on the network must
    reach it. (Decision 7.)
+
+#### Service-account spike, 2026-10-30
+
+Keycloak 26.8.1 inside the kind cluster, no feature flags set
+(`.devtools/spikes/oauth-keycloak-ksa/`, cases S0 to S12). Evidence for question 6's
+in-cluster half, not acceptance:
+
+- Both features are enabled as shipped (S0). A pod's projected service-account token
+  obtained a client-credentials token for exactly its own client. Another account, the same
+  account name in another namespace, and a token for another audience were refused (S1 to
+  S5). A client secret was refused, because none exists (S11).
+- The MCP sidecar's token exchange authenticated with its service-account token and kept the
+  user as subject (S12), so ADR-0055 decision 7's confidential client needs no secret.
+- Disabling the Keycloak client refused the workload at once (S8). Deleting the account or the
+  pod in Kubernetes did not: Keycloak validates the token offline, and accepted it until it
+  expired (S9, S10). It also accepted a reused token and a 24-hour one (S6, S7).
+
+Not tested: pairing (question 7), Keycloak outside the cluster, the Talos cluster's issuer
+discovery, and the Victual images.
+
+8. **How is a workload's access ended?** The spike shows that Kubernetes deletions do not
+   reach Keycloak, so offboarding a service means disabling its Keycloak client, and its
+   last access token still runs out its five minutes. Keycloak puts no limit on the
+   service-account token's age, so the chart's projected-token lifetime sets how long a
+   copied token stays useful; Kubernetes allows 600 s at the shortest. Should Victual's
+   services page disable the Keycloak client when a service account is revoked, and should
+   the chart fix the projected-token lifetime at 600 s? (Decision 7; question 6.)
