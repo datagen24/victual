@@ -1274,10 +1274,14 @@ async function imageFacts() {
   /** Runs podman with `args` and returns trimmed stdout. */
   const sh = (args) => execFileSync("podman", args, { encoding: "utf8" }).trim();
   facts.memory = sh(["stats", "--no-stream", "--format", "{{.Name}} {{.MemUsage}} {{.CPUPerc}}", server, pg]).split("\n");
-  facts.imageSizeBytes = Number(sh(["image", "inspect", "--format", "{{.Size}}", `quay.io/keycloak/keycloak:${facts.keycloak}`]));
-  const uid = sh(["exec", server, "id", "-u"]);
+  facts.image = sh(["inspect", "--format", "{{.ImageName}}", server]);
+  facts.imageSizeBytes = Number(sh(["image", "inspect", "--format", "{{.Size}}", facts.image]));
+  // The Nix-built image has no `id` (no shell, no coreutils): fall back to the user podman reports
+  // for PID 1 and the uid in the image's User field.
   const caps = sh(["inspect", "--format", "{{.HostConfig.Memory}} {{.Config.User}}", server]);
-  record("I1", "info", "0055 prereq 3: runs non-root", "uid other than 0", `uid ${uid}; image User=${caps.split(" ")[1]}; memory limit ${Number(caps.split(" ")[0]) / 1048576} MiB; image ${(facts.imageSizeBytes / 1e6).toFixed(0)} MB`, uid !== "0", "G-image");
+  let uid;
+  try { uid = sh(["exec", server, "id", "-u"]); } catch { uid = `${caps.split(" ")[1].split(":")[0]} (PID 1 user ${sh(["top", server, "user"]).split("\n")[1]?.trim()}; no id in the image)`; }
+  record("I1", "info", "0055 prereq 3: runs non-root", "uid other than 0", `uid ${uid}; image ${facts.image} User=${caps.split(" ")[1]}; memory limit ${Number(caps.split(" ")[0]) / 1048576} MiB; image ${(facts.imageSizeBytes / 1e6).toFixed(0)} MB`, !uid.startsWith("0"), "G-image");
 }
 // ---- Preview run: delegation (act) via token-exchange-delegation + parameterized-scopes + admin-fine-grained-authz:v2
 /** The Preview run: delegation (act) cases with the Preview features on. */

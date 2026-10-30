@@ -48,6 +48,12 @@ decides any verdict; finding 18 and the gate table are corrected.
 Keycloak 26.8.1 is still the newest release on 2026-10-28 (`gh api repos/keycloak/keycloak/releases`:
 26.8.1 published 2026-10-13). The spike stays pinned to it.
 
+The 2026-10-29 fourth pass covers two gaps the earlier passes left:
+
+- Prerequisite 2: two production-mode replicas on one PostgreSQL database, with replicas killed
+  mid-flow (`ha.mjs`, H cases, finding 25).
+- Prerequisite 3: a Nix-built image in the shape ADR-0013 sets (`nix/image.nix`, finding 26).
+
 ## Run
 
 ```bash
@@ -63,6 +69,9 @@ node setup.mjs && node probe.mjs --preview
 ./run.sh readonly        # second instance on a read-only root filesystem, :8181 (needs ./run.sh up)
 ./run.sh stats           # memory of both containers
 ./run.sh restart         # restart the server container on the same database (the probe calls it for K4g)
+./run.sh ha-up           # builds an optimized image, then two production-mode replicas on one database, :8183 and :8184
+node ha.mjs              # H cases through a proxy on :8180; runs setup.mjs; writes results-ha.json (about 4 min)
+./run.sh ha-down         # removes both replicas and drops their database; the PostgreSQL container stays
 ```
 
 No npm install is needed: the probe uses `node:crypto` and `fetch` only. `run.sh` generates the
@@ -74,9 +83,10 @@ are gitignored.
 Files: `setup.mjs` (realm, clients, client scopes, client policies, users), `adapter.mjs` (the
 adapter simulation: the pinned recipe versions, `registerMcpClient`, `deregisterMcpClient`,
 `listOwned` and `reconcile`, used by `setup.mjs` and by the K2 and K4 cases), `probe.mjs` (the cases), `lib.mjs` (admin REST, scripted login, resource-server
-check), `idp-stub.mjs` (stub upstream provider for the L cases), `run.sh`.
+check), `idp-stub.mjs` (stub upstream provider for the L cases), `run.sh`. The fourth pass adds
+`ha.mjs` (the two-replica cases and their proxy) and `nix/image.nix` (the Nix-built image).
 
-## Gates (2026-10-25, extended 2026-10-26 and 2026-10-28)
+## Gates (2026-10-25, extended 2026-10-26, 2026-10-28 and 2026-10-29)
 
 Same four gates as the [Authentik report](../oauth-authentik/README.md) (G1 to G4), then the
 rest of what ADR-0055 decision 2 and the open questions ask of Keycloak. "Config" means a
@@ -113,6 +123,8 @@ feature, unless the row says "needs Preview".
 | Victual-owned login (no longer a gate since the 2026-10-25 clarification) | evidence only. met-with-config: identity brokering to an upstream OIDC provider creates or links a Keycloak user with no password credential, and the browser flow can be reduced to the redirector. The User Storage SPI was read, not run (untested) | L1, L2, L4 |
 | Victual subject in the token (not required since the 2026-10-25 clarification: Victual maps Keycloak's stable `sub`, P3) | evidence only. met-with-config: Keycloak's `sub` is its own UUID. Victual's subject can be copied into a claim, but only from a client scope requested at the exchange; a mapper on the client itself is not applied to the exchanged token | L3 |
 | Licence, image, runtime | Apache-2.0; image 478 MB (arm64); runs as uid 1000; read-only root filesystem works after a build step with a tmpfs for `/tmp` and the data directory; 520 to 620 MiB for the server after the probe, 50 to 77 MiB for PostgreSQL | I1, `./run.sh readonly`, `./run.sh stats` |
+| Two replicas on one database (0055 prerequisite 2) | met for two containers behind a proxy: production-mode replicas cluster over the shared database (JDBC_PING). Login, consent, rotation, revocation and exchange work across replicas. One replica killed mid-login, between code and redemption, or holding the grant loses nothing; both killed loses only logins in progress | H0 to H9p |
+| Nix-built image (0055 prerequisite 3, ADR-0013) | met on arm64: `nix/image.nix` builds 26.8.1 from the flake's nixpkgs pin, uid 65532, no shell, read-only root with two tmpfs mounts. The core probe gives the same verdicts as on the upstream image. 827 MB against the upstream 478 MB | I1, finding 26 |
 
 Core run (2026-10-28): **101 of 123 cases pass, 21 FAIL, 1 n/a** (P8 needs the Preview run).
 The 21 FAIL rows:
@@ -384,6 +396,35 @@ Preview run (`./run.sh up preview`, `node probe.mjs --preview`):
 | DP8 | 0055 d7: a plain exchange in the Preview realm is unchanged | `azp` = sidecar; no `act` | As expected | pass |
 
 The 2026-10-25 Preview run reported DP2 as a FAIL (200 with `victual:write`). That run did not have the `victual-downscope-all` policy in the Preview realm. With `setup.mjs` installing it, the delegated exchange refuses widening, so the policy covers delegation. The Preview run was executed twice in total (2026-10-25 and 2026-10-26); K1 does not depend on it.
+
+Two-replica run (`./run.sh ha-up`, `node ha.mjs`, 2026-10-29). Two production-mode replicas
+(`start --optimized` from a `kc.sh build --db=postgres --cache=ispn` image, cache stack
+`jdbc-ping`) on one PostgreSQL database, each capped at 1200 MiB, behind the probe's proxy on
+:8180. The proxy alternates per request and skips a replica that refuses the connection, as a
+Kubernetes Service skips an unready pod. Kills are `podman kill -s KILL`.
+
+| ID | Clause | Expected | Observed | Verdict |
+|---|---|---|---|---|
+| H0 | 0055 prerequisite 2: two replicas share state | both replicas log a two-member Infinispan view | both log view `(2) [ha-a, ha-b]`; two rows in `jgroups_ping`; `cache-ispn.xml` defines no cache, so Keycloak's built-in cache defaults apply | pass |
+| H1 | prerequisite 2: login and consent across replicas | six login, consent and code redemptions, alternating replicas per request, all issue tokens | 6/6 issued; 10 requests to each replica | pass |
+| H2 | prerequisite 2: refresh rotation across replicas (decision 6) | rotate on a, then on b; reuse of the first rotated token on a refused, then the newest refused on b | rotate a 200; rotate b 200; reuse on a `400 invalid_grant` (reuse exceeded); newest on b `400 invalid_grant` | pass |
+| H3 | prerequisite 2: revocation across replicas | a refresh token revoked on a (RFC 7009) is refused on b | revoke on a 200; refresh on b `400 invalid_grant` (session not active); the access token inactive at introspection on b | pass |
+| H4a | prerequisite 2; the K1 lookups | alice's sessions and consents read directly from each replica are identical | 8 sessions and the same consent on both | pass |
+| H4b | prerequisite 2: administrative revocation across replicas | a session deleted through b's admin API refuses its refresh token on a | delete on b 204; refresh on a `400 invalid_grant` | pass |
+| H5 | prerequisite 2 with decision 7: exchange across replicas | a user token from a, exchanged by the sidecar on b, is accepted at `/api` | exchange on b 200; `/api` check accepted | pass |
+| H6 | prerequisite 2: a pod killed mid-login | login form from a; a killed; credentials and code redemption on b issue a token | 200 token; every request after the kill reached b | pass |
+| H6r | prerequisite 2: a killed replica rejoins | the restarted replica logs a two-member view | both log `(2) [ha-b, ha-a]` | pass |
+| H7 | prerequisite 2: a pod killed between code and redemption | code issued by b; b killed; the code is redeemed on a | 200 token | pass |
+| H8 | prerequisite 2: a pod killed while holding the grant | grant from a; a killed; refresh on b works; the rotated-away token is refused on the restarted a | refresh on b 200; old token on a `400 invalid_grant` (reuse exceeded) | pass |
+| H9 | prerequisite 2: full outage | both killed and restarted; a refresh token from before the outage works and the consent remains | the grant's session row was in `offline_user_session` before the outage; refresh 200; sidecar check accepted; consent present | pass |
+| H9p | observation: what a full outage loses | a login whose form was served before the outage | the credentials were answered with the login form again: the authentication session did not survive | obs |
+
+Nix image run (`./run.sh nix-up`, `node setup.mjs && node probe.mjs`, 2026-10-29). The core run
+against `localhost/victual-spike-keycloak-nix:26.8.1` (finding 26), read-only root with
+`--read-only-tmpfs=false`. Every case present in both runs gave the same verdict as the upstream
+image's core run above (101 pass; the same 22 FAIL and n/a). K4g restarted the container in
+23 s. I1 reads `uid 65532 (PID 1 user keycloak; no id in the image)`; the image has no `id`, so I1
+now falls back to podman's view of PID 1.
 
 ## Findings
 
@@ -659,6 +700,42 @@ The 2026-10-25 Preview run reported DP2 as a FAIL (200 with `victual:write`). Th
     bob's grant unaffected and no session of alice left (K5b). Offline sessions are listed by a
     different endpoint (`/users/{id}/offline-sessions/{client}`) and were not part of K5.
 
+25. **Two replicas on one database lose no grant to a single kill (H0 to H9p, prerequisite
+    2).** Two production-mode replicas cluster through JDBC_PING over the shared database with no
+    setting beyond `KC_CACHE=ispn` and `KC_CACHE_STACK=jdbc-ping`. Every step of a login, a rotation,
+    a revocation and an exchange works with consecutive requests on different replicas. The admin
+    API returns the same sessions and consents from both, so the K1 lookups read one view.
+
+    What survives which failure:
+
+    - One replica killed: a login in progress, an issued but unredeemed code, and a grant whose
+      refresh token the dead replica issued all continue on the other (H6 to H8). A replica that
+      restarts rejoins and refuses a refresh token rotated away while it was down (H8).
+    - Both killed: grants survive because Keycloak 26 persists user sessions (the grant's session
+      row is in `offline_user_session`), and consent is a database row (H9). Logins in progress are
+      lost; the user signs in again (H9p).
+
+    Limits: two containers behind a proxy in the probe, not two pods behind the chart's Service.
+    No rolling upgrade, network partition, graceful shutdown or production TLS. Each replica used
+    496 to 544 MiB after the run.
+26. **A Nix-built image runs with no shell on a read-only root (I1, prerequisite 3).**
+    `nix/image.nix` builds from the nixpkgs revision `flake.lock` pins, whose `keycloak` is 26.8.1,
+    the same release as the rest of the spike. Three departures from the nixpkgs package:
+
+    - `kc.sh build` runs inside the derivation with `db=postgres`, `health-enabled=true` and
+      `cache=ispn`, so the image starts with `start --optimized` and never writes its install tree.
+    - `bin/` is deleted: `kc.sh` and the admin CLI are bash scripts. The entrypoint is the java
+      command line `kc.sh` 26.8.1 execs, written out, so no shell is in the closure.
+    - `data/` is a symlink to `/var/lib/keycloak/data`, a tmpfs at runtime.
+
+    The image runs as uid 65532 with `--read-only --read-only-tmpfs=false` and two tmpfs mounts
+    (`/tmp`, the data directory); `podman exec … sh` fails because there is no shell. It started in
+    2.0 s and used 550 MiB after the probe. The runtime closure is the Keycloak tree (168 MiB, no
+    references) and OpenJDK headless 21.0.12 (618 MiB with glibc and its libraries). The image is
+    827 MB against the upstream image's 478 MB. nixpkgs' `jre_headless` is a full headless JDK
+    with `jmods`; a `jlink`-trimmed runtime would close most of the gap and was not tried. arm64
+    only; amd64 not built.
+
 ## Configuration inventory (prerequisite 8)
 
 ADR-0055 prerequisite 8 accepts provider configuration when it uses a supported provider
@@ -746,9 +823,9 @@ Gaps that block a clean prerequisite 8 for Keycloak:
   probe's resource-server check was pointed at Keycloak.
 - Victual's immediate grant-revocation check (question 20). It does not exist. The `-t` cases
   print the admin-API facts it would read as an observation and decide nothing with them.
-- Two Keycloak replicas on PostgreSQL (clustering, session sharing, and whether the session and
-  consent lookups of K1 see the same data on both): one `start-dev` server, and one
-  `start --optimized` server for the read-only check. Production hostname and TLS.
+- Replicas as pods behind the chart's Service, a rolling upgrade between versions, a network
+  partition between replicas, and production hostname and TLS. The H cases use two containers
+  behind the probe's proxy (finding 25).
 - A delegated exchange with a subject token from a client without Consent required. K1 was not
   tested with delegation.
 - K1 for a client without Consent required: there is no stored consent to revoke, so the other
@@ -761,7 +838,8 @@ Gaps that block a clean prerequisite 8 for Keycloak:
   one token only).
 - Polling Keycloak's user events for a revoked grant, caching the K1 lookup, and its cost per
   request. Initial access tokens and the `authenticated` subtype of the registration policies.
-- Behaviour when a mapper or policy fails; amd64 image size and memory; a Nix-built image.
+- Behaviour when a mapper or policy fails; amd64 images, Nix-built or upstream; a `jlink`-trimmed
+  Java runtime for the Nix image.
 - The device flow, DPoP, upgrade between Keycloak versions, break-glass with Keycloak
   stopped (ADR-0056 prerequisite 5), back-channel logout, and an Entra ID upstream.
 - Any version other than 26.8.1.
