@@ -6,7 +6,8 @@
   maintainer answered all five open questions on 2026-10-25; the answers are folded into
   decisions 2, 4, 7 and 9 and recorded under Open questions. Prerequisite 5 is met;
   prerequisites 1 to 3 are not, and answer 3 keeps the catalog and household roles open
-  until their leaf lists are written.
+  until their leaf lists are written. On 2026-10-30 the maintainer asked how service
+  credentials could move to Keycloak; questions 6 and 7 record the proposal.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-25, against `master` at `42883e0e`. Design only: it changes no
@@ -414,3 +415,38 @@ by the response. The answers do not accept this record.
    > independently authorized agent acts as itself. An assistant using a human's
    > delegated token acts as that human; it gains no permissions from a separate agent
    > account. (Decision 4.)
+
+### Service credentials through Keycloak, 2026-10-30
+
+The maintainer asked whether the authorization server should handle the service
+registration tokens (MCP sidecar, label renderer, label worker), with pairing through a
+services page instead of today's manual copy into a Secret. Keycloak issues every token
+since ADR-0055 question 26. Decision 7 already settles what a service may do; these
+questions settle how it proves which service it is.
+
+6. **Do service credentials become Keycloak clients?** Proposed:
+
+   - Each service account is a Keycloak client using the client-credentials grant, with
+     five-minute access tokens. Victual maps the client to its service account, and the
+     package version decides its leaves, as decision 7 states.
+   - A workload inside the cluster authenticates with its projected Kubernetes
+     service-account token as a client assertion, so no secret is stored. Keycloak
+     26.8.1 enables this by default (`kubernetes-service-accounts`,
+     `client-auth-federated`).
+   - A workload outside the cluster pairs (question 7) and authenticates with a key pair
+     it generated (`private_key_jwt`), so no shared secret exists.
+   - Classic mode keeps today's worker and renderer keys (ADR-0055 decision 9).
+
+   The cost: a service keeps working through a Keycloak outage only until its current
+   access token expires, where a Victual key works whenever Victual is up. (Decision 7;
+   ADR-0055 decisions 2 and 8.)
+
+7. **Where does pairing live?** Proposed: an administrator holding
+   `SERVICE_ACCOUNTS_MANAGE` adds a service on a services page in Victual, picks its
+   package version, and receives a one-time pairing code valid for minutes. The device
+   starts with Victual's URL and the code, generates a key pair, and redeems the code with
+   its public key on Victual's `/api`. Victual's registration adapter (ADR-0055 decision 8)
+   then creates the Keycloak client bound to that key. The device keeps its private key in
+   its own data directory, so a restart does not need pairing again; today's paired label
+   workers can need it. Redemption stays on `/api` because a device on the network must
+   reach it. (Decision 7.)

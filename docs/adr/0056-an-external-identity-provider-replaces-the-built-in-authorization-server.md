@@ -14,6 +14,7 @@
   tokens, and an external identity provider federates into it as an upstream source. The
   title no longer describes that model (question 10). A brokering spike the same day
   tested Keycloak with Authentik upstream; its findings raise questions 12 and 13.
+  Question 14 (2026-10-30) asks where first-run setup lives.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -537,3 +538,26 @@ Not tested: Entra ID, offline tokens, Victual's group recompute and the Victual 
     is the only way to sign in anew (U8d), and the browser flow must keep the form for it.
     Should decision 7's rule apply at Keycloak too: password login only for bootstrap and
     break-glass accounts, with everyone else refused there? (Decision 7; prerequisite 5.)
+
+### First-run setup, 2026-10-30
+
+14. **Does first-run setup run as an on-demand Job, reachable only through a tunnel?** The
+    maintainer has been considering a web service in the migration container for the
+    first-run experience. Proposed:
+
+    - It runs from the migrate image as a Job that an operator starts on demand. That image
+      already holds the only database role that can run DDL and the only PHP with
+      `pdo_sqlite` (ADR-0013 decision 6), which a Grocy import needs.
+    - It listens on a cluster-internal port only. The operator reaches it with
+      `kubectl port-forward`, so Kubernetes access to the namespace is the gate before any
+      Victual user exists. It exits when setup finishes.
+    - It covers the bootstrap administrator (decision 5), Keycloak's realm and upstream
+      identity provider, and the legacy import. If it applies Keycloak configuration it
+      holds Keycloak admin credentials too, which is the reason it is not a long-running
+      service.
+    - Service pairing does not live there: devices must reach redemption on `/api`, and
+      adding a printer later should not need `kubectl` (ADR-0057 question 7).
+    - Installs without Kubernetes have no tunnel. There it binds to localhost and prints a
+      one-time setup URL in the container log.
+
+    (Decisions 5 and 7; ADR-0057 question 7.)
