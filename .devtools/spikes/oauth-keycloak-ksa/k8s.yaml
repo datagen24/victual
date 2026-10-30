@@ -1,0 +1,95 @@
+# Keycloak 26.8.1 inside the kind cluster, in its own namespace, plus the service accounts and one
+# pod the probe uses. Keycloak runs in-cluster so it reaches the API server's service-account issuer
+# discovery with its own service-account token and trusts the cluster CA (ADR-0057 question 6).
+# start-dev with its embedded file database: persistence is not under test. No KC_FEATURES: the
+# features under test must work as shipped. The admin credential comes from the kcsa-admin Secret,
+# which run.sh creates from a generated .secrets.env (gitignored). Reached only by kubectl port-forward.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kcsa-spike
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kcsa-other
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: keycloak, namespace: kcsa-spike}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: victual-label-worker, namespace: kcsa-spike}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: victual-label-renderer, namespace: kcsa-spike}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: victual-mcp, namespace: kcsa-spike}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: intruder, namespace: kcsa-spike}
+---
+# Same name as the worker's account, in another namespace.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: victual-label-worker, namespace: kcsa-other}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: keycloak, namespace: kcsa-spike}
+spec:
+  selector: {app: keycloak}
+  ports: [{name: http, port: 8080, targetPort: 8080}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: keycloak, namespace: kcsa-spike}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: keycloak}}
+  template:
+    metadata: {labels: {app: keycloak}}
+    spec:
+      serviceAccountName: keycloak
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.8.1
+          args: ["start-dev"]
+          env:
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              valueFrom: {secretKeyRef: {name: kcsa-admin, key: username}}
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: kcsa-admin, key: password}}
+            - {name: KC_HOSTNAME, value: "http://localhost:8190"}
+            - {name: KC_TRUSTSTORE_PATHS, value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt}
+          ports: [{containerPort: 8080}]
+          resources:
+            requests: {cpu: 250m, memory: 700Mi}
+            limits: {memory: 1200Mi}
+          readinessProbe:
+            httpGet: {path: /realms/master, port: 8080}
+            periodSeconds: 3
+---
+# A label worker as it would run: a projected token whose audience is Keycloak's realm issuer.
+# Same image as Keycloak, so the node pulls nothing else; it only sleeps.
+apiVersion: v1
+kind: Pod
+metadata: {name: worker, namespace: kcsa-spike}
+spec:
+  serviceAccountName: victual-label-worker
+  containers:
+    - name: worker
+      image: quay.io/keycloak/keycloak:26.8.1
+      command: ["sleep", "3600"]
+      resources: {limits: {memory: 64Mi}}
+      volumeMounts: [{name: kc-token, mountPath: /var/run/secrets/tokens}]
+  volumes:
+    - name: kc-token
+      projected:
+        sources:
+          - serviceAccountToken: {path: kctoken, expirationSeconds: 600, audience: "http://localhost:8190/realms/victual"}
