@@ -9,7 +9,11 @@
   Authentik side of prerequisite 4 and recorded evidence against prerequisites 2 and 3.
   The maintainer answered open question 7 on 2026-10-25 (decision 11), and on 2026-10-26
   amended decision 7 to match ADR-0055 decision 1: in OAuth mode, password login is
-  limited to bootstrap and break-glass accounts.
+  limited to bootstrap and break-glass accounts. The maintainer's 2026-10-29
+  clarification (question 9) reverses decision 1's premise: Keycloak always issues the
+  tokens, and an external identity provider federates into it as an upstream source. The
+  title no longer describes that model (question 10). A brokering spike the same day
+  tested Keycloak with Authentik upstream; its findings raise questions 12 and 13.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -93,6 +97,13 @@ and the pages it links. These are documentation claims; none was run in this rep
 ## Decision (proposed)
 
 ### 1. One issuer, and it is the external provider when one is configured
+
+**Superseded in part, 2026-10-29 (question 9).** The one issuer is always Keycloak
+(ADR-0055 decision 2). An external identity provider, the lab's Authentik (answer 1) or
+Entra ID, federates into Keycloak as an upstream identity source. Keycloak stays deployed,
+and Victual and the sidecar see only Keycloak's issuer and subjects. Where the text below
+says the built-in server is not deployed, or that the external provider issues tokens or
+performs token exchange, it records the earlier design.
 
 One authorization server per install issues every token, either the built-in one or an
 external one; Victual never issues tokens. This is ADR-0055 decision 1. With an external
@@ -453,3 +464,76 @@ response. The answers do not accept this record.
    > **Response:** datagen24, 2026-10-26: amend decision 7 so that in OAuth mode local
    > password login is limited to bootstrap and break-glass accounts, matching ADR-0055
    > decision 1; Classic mode keeps ordinary local login. (Decision 7.)
+
+### Upstream identity providers, 2026-10-29
+
+9. **Does the external provider replace the authorization server, or federate into it?**
+
+   > **Response:** datagen24, 2026-10-29: "the authserver job is to handle all the logins
+   > between service containers, and token handling. For me my internal Auth server for my
+   > lab would federate with the auth server container, or use entra to authenticate."
+   > Recorded as: Keycloak issues every token; Authentik or Entra ID federates into
+   > Keycloak as an upstream identity source. This supersedes answer 1's "Authentik issues
+   > production tokens". (Decision 1; ADR-0055 question 26.)
+
+   What this changes in this record, as the recorder reads it:
+
+   - Prerequisites 2 and 3 are moot: MCP clients register with Keycloak, and audiences come
+     from Keycloak (ADR-0055 prerequisites 5 and 11).
+   - Prerequisite 4 becomes a brokering test: a group change at the upstream source must
+     reach Victual through Keycloak.
+   - Prerequisite 5 has two layers. With Keycloak up and the upstream source down,
+     Keycloak's own local login is the recovery path. With Keycloak down, Victual's local
+     bootstrap and break-glass accounts are (decision 7).
+   - Decision 3's rule that an email match never links applies to Keycloak's first-login
+     flow as well, since Keycloak now links the upstream identity to the account Victual
+     maps.
+
+10. **What should this record be called, and what does it cover?** Its title says an
+    external provider replaces the built-in server, the opposite of answer 9. Options:
+    rename it so that external providers federate into Keycloak (the file name keeps its
+    number), or supersede it with a new record for upstream identity. Either way, is
+    Authentik still a required compatibility target, now as an upstream source, or only
+    the identity provider the maintainer's lab runs? (All decisions; ADR-0055 decision 2.)
+
+11. **Does Entra ID federate into Keycloak directly, or through the lab identity
+    provider?** Answer 9 allows both readings. Directly, Keycloak holds the Entra
+    configuration and production needs no Authentik. Through Authentik, Keycloak has one
+    upstream and Authentik brokers Entra, as answer 1 described. (Decision 1.)
+
+#### Brokering spike, 2026-10-29
+
+Keycloak 26.8.1 brokering to Authentik 2026.8.5, both by configuration
+(`.devtools/spikes/oauth-keycloak-upstream/`, cases U1 to U8e). Evidence for this model,
+not acceptance of a prerequisite:
+
+- A person signed in at Authentik and received a token under Keycloak's issuer and subject.
+  A second login mapped to the same subject (U1, U2). Upstream groups reached the token
+  (U4).
+- An upstream identity whose email matched a local Keycloak account was refused and linked
+  nothing, with a first-login flow of one step, "Create User If Unique". Keycloak's shipped
+  flow instead offers to link the account after verification (U3, U3b).
+- A group removed at Authentik stayed in refreshed tokens and in logins inside a live
+  Keycloak session. It left only after a fresh upstream login, which updated every session
+  of that user. Without one, it lasts up to the realm's SSO maximum (U5a to U5d). Decision
+  4's "within one access-token lifetime" does not hold as configured.
+- Authentik's back-channel logout ended the Keycloak session within 1 s when the Authentik
+  session ended (U7). After a deactivation at Authentik the Keycloak session was gone when
+  checked 10 s later; that run did not capture which request ended it (U6a).
+- With Authentik stopped, refresh and logins inside a live session kept working, and a new
+  brokered login ended on a connection error. Keycloak's own login form and master admin
+  kept working, which needs the browser flow to keep the password form (U8).
+
+Not tested: Entra ID, offline tokens, Victual's group recompute and the Victual images.
+
+12. **How stale may an upstream group removal be?** Keycloak copies groups only at a
+    brokered login, so a removal waits for the person's next upstream sign-in. Options: a
+    short Keycloak SSO maximum, which bounds it at the cost of more upstream sign-ins;
+    accepting "next upstream sign-in" as decision 4's bound; or ending sessions upstream
+    when membership changes, which neither server does on its own. (Decision 4;
+    prerequisite 4.)
+
+13. **Which accounts may use Keycloak's own password login?** During an upstream outage it
+    is the only way to sign in anew (U8d), and the browser flow must keep the form for it.
+    Should decision 7's rule apply at Keycloak too: password login only for bootstrap and
+    break-glass accounts, with everyone else refused there? (Decision 7; prerequisite 5.)
