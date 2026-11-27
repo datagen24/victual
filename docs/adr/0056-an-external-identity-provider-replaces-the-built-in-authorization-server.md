@@ -15,6 +15,10 @@
   title no longer describes that model (question 10). A brokering spike the same day
   tested Keycloak with Authentik upstream; its findings raise questions 12 and 13.
   Question 14 (2026-10-30) asks where first-run setup lives.
+  On 2026-11-27 the maintainer answered questions 10, 11, 13 and 14. A new record for
+  upstream identity into Keycloak will supersede this one. Entra ID federates into
+  Keycloak directly. Keycloak's password login is for bootstrap and break-glass accounts
+  only. First-run setup is an on-demand Job. Question 12 is open.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -497,10 +501,18 @@ response. The answers do not accept this record.
     Authentik still a required compatibility target, now as an upstream source, or only
     the identity provider the maintainer's lab runs? (All decisions; ADR-0055 decision 2.)
 
+    > **Response:** datagen24, 2026-11-27: supersede. The project switched to Keycloak after the spikes
+    > because Authentik had a problem: it has no atomic refresh-token family revocation
+    > (ADR-0055 questions 21 to 23). A new record for upstream identity into Keycloak will
+    > supersede this one. Authentik is not a required compatibility target (answer 11).
+
 11. **Does Entra ID federate into Keycloak directly, or through the lab identity
     provider?** Answer 9 allows both readings. Directly, Keycloak holds the Entra
     configuration and production needs no Authentik. Through Authentik, Keycloak has one
     upstream and Authentik brokers Entra, as answer 1 described. (Decision 1.)
+
+    > **Response:** datagen24, 2026-11-27: Entra ID federates into Keycloak directly, because Authentik
+    > is excluded. Production needs no Authentik.
 
 #### Brokering spike, 2026-10-29
 
@@ -539,6 +551,9 @@ Not tested: Entra ID, offline tokens, Victual's group recompute and the Victual 
     Should decision 7's rule apply at Keycloak too: password login only for bootstrap and
     break-glass accounts, with everyone else refused there? (Decision 7; prerequisite 5.)
 
+    > **Response:** datagen24, 2026-11-27: yes. Decision 7's rule applies at Keycloak too: password login
+    > there is for bootstrap and break-glass accounts only.
+
 ### First-run setup, 2026-10-30
 
 14. **Does first-run setup run as an on-demand Job, reachable only through a tunnel?** The
@@ -561,3 +576,5 @@ Not tested: Entra ID, offline tokens, Victual's group recompute and the Victual 
       one-time setup URL in the container log.
 
     (Decisions 5 and 7; ADR-0057 question 7.)
+
+    > **Response:** datagen24, 2026-11-27: yes, as proposed. It is the most secure of the options.
