@@ -572,6 +572,26 @@ keychain, and keep sending their per-device Access service token as before.
    - Size: 827 MB, against the upstream 478 MB, because nixpkgs' headless JDK is not trimmed.
    - Not built for amd64.
    - Licence: Apache-2.0, but no plan records a review.
+
+   **Keycloak, 2026-11-27: image met on amd64 and arm64; licence review recorded, its
+   recommendations undecided.** The same `nix/image.nix` built on amd64 at `e9c61d42`, from a
+   nixpkgs checkout whose NAR hash equals the pin. The image is 827 MB, the same as arm64. It
+   runs as uid 65532 on a read-only root with two tmpfs mounts, and has no shell (`docker exec`
+   of `sh`, `/bin/sh` and `bash` fails). It reached ready on PostgreSQL 16 and issued a token.
+   The core probe was not run on amd64. [Plan 44](../plans/44-keycloak-licence-and-image.md)
+   records the licence review:
+
+   - Keycloak is Apache-2.0, and nothing in the image forbids redistribution on GHCR.
+   - Of the 482 jars, 16 are copyleft with no permissive option: EPL-2.0, GPL-2.0 with the
+     Classpath or Universal FOSS exception, MPL-2.0 and LGPL-2.1. The JDK, glibc and the GCC
+     runtime libraries are copyleft as well. Each is used unmodified.
+   - Redistributing them obliges offering their source and shipping their licence texts. The
+     image does neither for its Nix libraries, and the six published images have the same gap.
+   - [Plan 40](../plans/40-release-sboms.md)'s SBOMs do not cover the image.
+
+   Plan 44's recommendations (drop two unused JDBC drivers, ship licence texts, publish source,
+   trim the JDK) await the maintainer. Reproduce with the commands in plan 44 and
+   `.devtools/spikes/oauth-keycloak/licences/`.
 4. **Token exchange.** RFC 8693 exchange as decision 7 describes works against Hydra and
    against Authentik 2026.8 or later. If Hydra cannot do it, the candidate table is
    reopened before acceptance. Since 2026-10-25 it reads: against the built-in candidate
