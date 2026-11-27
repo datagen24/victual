@@ -19,7 +19,8 @@
   upstream identity into Keycloak will supersede this one. Entra ID federates into
   Keycloak directly. Keycloak's password login is for bootstrap and break-glass accounts
   only. First-run setup is an on-demand Job. Answer 12 ends sessions on a SCIM
-  change, with the session lifetime as the fallback; question 15 asks how.
+  change, with the session lifetime as the fallback. Answer 15 chooses an admin-event poller
+  that ends sessions after a SCIM change, and an 8-hour session lifetime as the fallback.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -624,3 +625,16 @@ answer to it:
 
 Not tested: Entra ID's provisioning service, linking to a brokered Entra login, the poller as a
 Victual job, and the Victual images.
+
+> **Response:** datagen24, 2026-11-27: use the admin-event poller; the fallback session
+> lifetime is 8 hours. Recorded as: Keycloak receives SCIM from the upstream. A poller reads
+> Keycloak's `GROUP_MEMBERSHIP` admin events and calls the admin logout for the
+> affected user, which ends that user's Keycloak sessions. Keycloak's maximum SSO session
+> lifetime is 8 hours, which bounds a group removal that arrives without SCIM. Decision 4's bound
+> is therefore the poll interval plus the six-minute token bound when SCIM arrives, and 8 hours
+> when it does not.
+>
+> Open in the recorder's reading, for the implementation to settle: the poll interval, and
+> whether the poller also ends Victual's own browser session, which answer 12's "logs that user
+> out" suggests. Where the poller runs is tracked with the housekeeping checks in
+> [issue 1141](https://github.com/datagen24/victual/issues/1141).
