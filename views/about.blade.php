@@ -30,6 +30,8 @@
 				id="system-info">
 				<div class="row">
 					<div class="col-auto">
+						{{-- The PHP, database engine and OS rows are absent for a user without ADMIN,
+							because ApplicationService::GetSystemInfo() leaves those keys out for them. --}}
 						<table class="table table-borderless table-responsive table-sm text-left">
 							<tr>
 								<td class="text-right">Version</td>
@@ -40,22 +42,28 @@
 								<td><code>{{ $versionInfo->ReleaseDate }}</code> <time class="timeago timeago-contextual text-muted"
 										datetime="{{ $versionInfo->ReleaseDate }}"></time></td>
 							</tr>
+							@isset($systemInfo['php_version'])
 							<tr>
 								<td class="text-right">PHP Version</td>
 								<td><code>{{ $systemInfo['php_version'] }}</code></td>
 							</tr>
+							@endisset
+							@isset($systemInfo['database_engine'])
 							<tr>
 								<td class="text-right">Database Engine</td>
 								<td><code>{{ $systemInfo['database_engine'] }}</code></td>
 							</tr>
+							@endisset
 							<tr>
 								<td class="text-right">Database Version</td>
 								<td><code>{{ $systemInfo['db_version'] }}</code></td>
 							</tr>
+							@isset($systemInfo['os'])
 							<tr>
 								<td class="text-right">OS</td>
 								<td><code>{{ $systemInfo['os'] }}</code></td>
 							</tr>
+							@endisset
 							<tr>
 								<td class="text-right">Client</td>
 								<td><code>{{ $systemInfo['client'] }}</code></td>

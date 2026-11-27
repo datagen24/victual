@@ -23,6 +23,7 @@ use Victual\Controllers\Api\TasksApiController;
 use Victual\Controllers\Api\UsersApiController;
 use Victual\Middleware\PathParameterMiddleware;
 use Victual\Tests\Support\JsonShape;
+use Victual\Services\ApplicationService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 use Victual\Tests\Support\RouteInventory;
@@ -1335,6 +1336,37 @@ class ContractTest extends PgsqlSchemaTestCase
 
 		self::assertSame([], $unexpectedStatuses, "CHILD got a status other than 200/403 on a route Admin could read: " . implode('; ', $unexpectedStatuses));
 		self::assertSame([], $missingCoverage, 'permission_fields names these entity.field pairs as CHILD-redacted, and the route reaches them at the mapped path, but CHILD received them anyway: ' . implode(', ', $missingCoverage));
+	}
+
+	/**
+	 * Plan 42 open question 3: GET /api/system/info sends the PHP, database and kernel
+	 * fields to ADMIN only. Leg 7 above cannot see this, because it compares against
+	 * permission_fields and these four keys are not entity fields; so the route is checked
+	 * here directly, against the same recorded bodies: CHILD receives none of the four
+	 * keys, Admin receives all of them, and both receive the rest.
+	 */
+	#[Depends('testRestrictedSweepMatchesGolden')]
+	public function testSystemInfoEnvironmentFieldsReachAdminOnly(): void
+	{
+		$key = 'GET /api/system/info';
+		self::assertSame(200, self::$adminSnapshot[$key]['status'] ?? null, 'Admin reads system info');
+		self::assertSame(200, self::$restrictedSnapshot[$key]['status'] ?? null, 'CHILD reads system info too: only fields are withheld');
+
+		$admin = self::$adminBodies[$key];
+		$restricted = self::$restrictedBodies[$key];
+
+		foreach (ApplicationService::ENVIRONMENT_FIELDS as $field)
+		{
+			self::assertArrayHasKey($field, $admin, "Admin receives $field");
+			self::assertArrayNotHasKey($field, $restricted, "CHILD does not receive $field, not even as null");
+		}
+
+		foreach (['victual_version', 'db_version', 'stock_booking_idempotency', 'client'] as $field)
+		{
+			self::assertArrayHasKey($field, $restricted, "CHILD still receives $field");
+		}
+
+		self::assertSame(ApplicationService::ENVIRONMENT_FIELDS, array_values(array_diff(array_keys($admin), array_keys($restricted))), 'the four environment fields are the whole difference');
 	}
 
 	private static function collectFieldNames($value, array &$out): void

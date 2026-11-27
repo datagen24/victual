@@ -1782,11 +1782,7 @@
         "status": 200,
         "shape": {
             "client": "string",
-            "database_engine": "string",
             "db_version": "integer",
-            "os": "string",
-            "php_version": "string",
-            "sqlite_version": "string",
             "stock_booking_idempotency": {
                 "header": "string",
                 "operations": [

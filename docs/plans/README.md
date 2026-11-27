@@ -177,6 +177,7 @@ named in the last column.
 | S15 | Open | Regex filter bounds. Not closed by 14 piece 2 (landed 2026-09-17) — separately-scoped input-validation work, unscheduled. |
 | S20, S22, S24, S26 | Open | See sweep; unscheduled. |
 | S30, S31 | Fixed | 19: piece 1 gated the six domain reads (2026-09-05), piece 2 gated prices (2026-09-15, [issue 84](https://github.com/datagen24/victual/issues/84)) and its four remaining channels closed the same day ([issue 176](https://github.com/datagen24/victual/issues/176), migration 0282). S31's own point — that the feature flag is not a permission — is what `User::PricesVisible()` now carries. |
+| S33 | Fixed | `/api/system/info` environment fields gated on `ADMIN` (plan 42 question 3); becomes `SYSTEM_INFO_READ` with plan 42's catalog. |
 | R1 | Fixed, regression check landed 2026-09-17 | 14 piece 2: `tests/Pgsql/ContractTest.php::testSystemConfigRetainsFeatureFlagStock` asserts `/system/config` retains `FEATURE_FLAG_STOCK`. |
 
 Initial parity findings #44–#48 are fixed or recorded as accepted differences. The parity
