@@ -1,10 +1,10 @@
 {
   "meta": {
-    "started": "2026-11-27T20:13:16.041Z",
-    "finished": "2026-11-27T20:15:40.188Z",
+    "started": "2026-11-27T20:25:34.490Z",
+    "finished": "2026-11-27T20:27:49.811Z",
     "keycloak": "26.8.1",
     "node": "v22.23.5",
-    "base": "7fbed58"
+    "base": "41fd416"
   },
   "results": [
     {
@@ -25,7 +25,7 @@
       "id": "U1",
       "clause": "ADR-0055 q18: upgrade version 1 to version 2",
       "expected": "exit 0, nothing left unapplied",
-      "observed": "exit 0; 35 changes in 2786 ms, including the read-back pass; unapplied []",
+      "observed": "exit 0; 35 changes in 2494 ms, including the read-back pass; unapplied []",
       "verdict": "pass"
     },
     {
@@ -67,7 +67,7 @@
       "id": "M1",
       "clause": "plan 43: a second apply changes nothing",
       "expected": "exit 0, zero changes, Keycloak's partial export unchanged",
-      "observed": "exit 0; 0 changes; export 4424356745f036d5 -> 4424356745f036d5",
+      "observed": "exit 0; 0 changes; export 5ba6791adfb41aec -> 5ba6791adfb41aec",
       "verdict": "pass"
     },
     {
@@ -235,7 +235,7 @@
       "id": "N6a",
       "clause": "ADR-0055 d7, ADR-0057 q6: the sidecar exchanges with its service-account token",
       "expected": "200; aud is /api; same sub",
-      "observed": "200; subject aud [\"victual-mcp\",\"http://localhost:3000/mcp\"]; exchanged aud \"http://localhost:8080/api\"; azp victual-mcp; same sub true",
+      "observed": "200; subject aud [\"http://localhost:3000/mcp\",\"victual-mcp\"]; exchanged aud \"http://localhost:8080/api\"; azp victual-mcp; same sub true",
       "verdict": "pass"
     },
     {
@@ -263,7 +263,7 @@
       "id": "N6e",
       "clause": "ADR-0055 d3: the MCP client's token carries the MCP audience",
       "expected": "aud includes the MCP resource URI",
-      "observed": "[\"victual-mcp\",\"http://localhost:3000/mcp\"]",
+      "observed": "[\"http://localhost:3000/mcp\",\"victual-mcp\"]",
       "verdict": "pass"
     },
     {

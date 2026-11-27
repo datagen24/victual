@@ -259,7 +259,7 @@ container and quay.io was not used. Working copy: branch `claude/opus5_keycloak-
 cd .devtools/keycloak-config && ./run.sh up && node test.mjs
 ```
 
-The recorded run started at 20:13 UTC from commit `7fbed58`: all 53 pass or fail cases passed,
+The recorded run started at 20:25 UTC from commit `41fd416`: all 53 pass or fail cases passed,
 and five cases are observations. Phases U to F then ran three more times on the same instance
 with no FAIL. The full table is
 [`results.md`](../../.devtools/keycloak-config/results/results.md).
