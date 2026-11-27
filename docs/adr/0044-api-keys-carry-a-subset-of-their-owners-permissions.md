@@ -3,6 +3,10 @@
 - **Status:** Accepted, 2026-10-25. The record names no acceptance prerequisites, so this
   is bookkeeping only per the lifecycle rule. Acceptance does not choose the release it
   ships in.
+- **Narrowed 2026-11-27** by
+  [ADR-0057](0057-permissions-are-per-resource-leaves-assigned-through-roles-groups-and-service-packages.md)
+  decision 7: special-purpose keys (decision 8 here) keep their own scoping only until each
+  moves to a service account. Every other decision remains in force.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-10, against `master` at `40b0358f`. Design work only: it changes no

@@ -1,6 +1,13 @@
 # ADR-0043: Creating shared master data is a right of its own, placed below MASTER_DATA_EDIT
 
 - **Status:** **Accepted 2026-10-12.** Prerequisites are stated in the accepting pull request.
+- **Partly superseded 2026-11-27** by
+  [ADR-0057](0057-permissions-are-per-resource-leaves-assigned-through-roles-groups-and-service-packages.md).
+  Decisions 1 and 2 are replaced: `MASTER_DATA_ADD` becomes the parent of per-resource create
+  leaves instead of a leaf gating create on a stated set. Decision 7's bullet keeping delete
+  with `MASTER_DATA_EDIT` is replaced for tasks only: `TASKS_DELETE` sits under `TASKS`. Chore
+  delete stays with `MASTER_DATA_EDIT`. Decisions 3 to 6 and the rest of decision 7 remain in
+  force.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-10, against `master` at `0639a23d`. Design work only: it changes no
