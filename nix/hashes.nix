@@ -49,5 +49,8 @@
   #
   # Moved 2026-10-24 for the zod 4.6.5 -> 4.6.7 bump (PR 1101), from the "got:" value of
   # that PR's failing `flake` check.
-  mcpNpmDeps = "sha256-1fQMaQ9M6KmUF7S4N3Q3qMXlhG5iKuAK1dW0IBtmsBo=";
+  #
+  # Moved 2026-11-27 for the @modelcontextprotocol/node 2.0.0 -> 2.1.0 bump (PR 1138), with
+  # prefetch-npm-deps.
+  mcpNpmDeps = "sha256-e7lnv+DV+skaYnO4vFTeFGEkxlryjUZw5C1ypbZPKrY=";
 }
