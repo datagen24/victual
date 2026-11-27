@@ -53,7 +53,21 @@ const assert = require('node:assert/strict');
 		await Promise.all([page.waitForNavigation(), page.locator('#roles-save').click()]);
 		assert.equal(await cb.isChecked(), true);
 		assert.equal(await cb.isDisabled(), false);
-		assert.deepEqual((await api('users/' + user.id + '/permissions')).filter(p => p.has_permission).map(p => p.permission_name), ['STOCK_VIEW']);
+		// Since migration 0320 STOCK_VIEW is a bundle of plan 42's read leaves, which the user
+		// resolves through it: compare what is held outside STOCK_VIEW's subtree.
+		const held = await api('users/' + user.id + '/permissions');
+		const byId = new Map(held.map(p => [p.permission_id, p]));
+		const underStockView = p =>
+		{
+			for (let parent = byId.get(p.parent); parent; parent = byId.get(parent.parent))
+			{
+				if (parent.permission_id === stock) return true;
+			}
+			return false;
+		};
+		assert.deepEqual(held.filter(p => p.has_permission && !underStockView(p)).map(p => p.permission_name), ['STOCK_VIEW']);
+		assert.ok(held.filter(p => p.has_permission && underStockView(p)).every(p => p.permission_name.endsWith('_READ') || p.permission_name.startsWith('CONSUMPTION_')),
+			'STOCK_VIEW confers reads, and the consumption writes plan 42 gates by it alone');
 		await Promise.all([page.waitForNavigation(), page.locator('#permission-save').click()]);
 		console.log('ROLE BROWSER CHECKS PASSED');
 	}
