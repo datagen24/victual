@@ -22,7 +22,9 @@
   each of which names the decision here that reconciles it.
 - **Relationship:** if accepted, partly supersedes accepted
   [ADR-0043](0043-creating-shared-master-data-is-a-right-below-master-data-edit.md)
-  decisions 1 and 2 (one flat create right over a stated set of entities) and extends
+  decisions 1 and 2 (one flat create right over a stated set of entities). It also
+  supersedes the task half of decision 7's bullet keeping chore and task delete with
+  `MASTER_DATA_EDIT` (plan 42 answer 1). It extends
   accepted [ADR-0018](0018-role-grants-and-domain-reads.md)'s union with a group source
   (decision 4). Keeps [ADR-0014](0014-administering-a-user-is-a-subset-question.md) and
   ADR-0018's no-deny rule unchanged. If accepted, narrows accepted
@@ -152,15 +154,23 @@ of accepting this record, because both need the migration to exist.
 
 This partly supersedes ADR-0043 decisions 1 and 2: `MASTER_DATA_ADD` stops being a leaf
 that gates create on a stated set and becomes the parent of per-resource create leaves.
-Decisions 3 to 7 of ADR-0043 hold. Decision 6 matters most here: creating a row still
-confers no right over it.
+It also supersedes the task half of the bullet of ADR-0043 decision 7 that keeps chore and
+task delete with `MASTER_DATA_EDIT`: `TASKS_DELETE` sits under `TASKS`, an intentional change
+the upgrade's list names ([plan 42](../plans/42-permission-catalog.md) answer 1).
+`CHORES_DELETE` stays under `MASTER_DATA_EDIT`, because deleting a chore erases its history.
+Decisions 3 to 6 of ADR-0043 hold, and the rest of decision 7. Decision 6 matters
+most here: creating a row still confers no right over it.
 
 ### 3. Reads are explicit, and upgrade grants the reads people already have
 
 Every readable resource gets a `*_READ` leaf, and every route that reads it, page, API,
 generic object route, MCP tool and file access alike, checks it. Authentication alone
 reads nothing beyond the caller's own profile and settings and the capabilities response
-that describes the caller.
+that describes the caller. The exemption also covers the routes the front end needs before it knows what
+the caller may do: system configuration, server time, the database change time, translations
+and the API description. The environment fields of `/api/system/info` (PHP, database engine
+and kernel versions) need `SYSTEM_INFO_READ` under `ADMIN` and are absent without it
+([plan 42](../plans/42-permission-catalog.md) answer 3).
 
 Where today's code checks no permission on a read, the upgrade gives every existing user
 and every existing role that read, as ADR-0018 did for its six view leaves. New users get
