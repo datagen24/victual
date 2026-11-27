@@ -9817,7 +9817,16 @@
 								"schema": {
 									"type": "array",
 									"items": {
-										"type": "object"
+										"type": "object",
+										"properties": {
+											"dead_letter_reason": {
+												"type": [
+													"string",
+													"null"
+												],
+												"description": "Why the job was dead-lettered: the text its outbox row recorded when it was dead-lettered, for example `Printer deleted`. Present on every job; null unless `state` is `dead_lettered`, so a cancelled job, whose outbox row records `Cancelled: ...`, reports null. The text is free-form and is not a code to match on (ADR-0053 question 6)."
+											}
+										}
 									}
 								}
 							}

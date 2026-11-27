@@ -7,7 +7,7 @@
 <button id="label-jobs-refresh" class="btn btn-primary">{{ $__t('Refresh') }}</button>
 <p id="label-jobs-error" role="alert"></p>
 <table class="table table-striped mt-3">
- <thead><tr><th>{{ $__t('Job') }}</th><th>{{ $__t('Printer') }}</th><th>{{ $__t('State') }}</th><th>{{ $__t('Error') }}</th><th>{{ $__t('Last status age (seconds)') }}</th><th>{{ $__t('Action') }}</th></tr></thead>
+ <thead><tr><th>{{ $__t('Job') }}</th><th>{{ $__t('Printer') }}</th><th>{{ $__t('State') }}</th><th>{{ $__t('Error') }}</th><th>{{ $__t('Reason it cannot be delivered') }}</th><th>{{ $__t('Last status age (seconds)') }}</th><th>{{ $__t('Action') }}</th></tr></thead>
  <tbody id="label-jobs-rows"></tbody>
 </table>
 @stop
