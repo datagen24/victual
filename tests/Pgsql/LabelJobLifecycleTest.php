@@ -539,6 +539,53 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 		self::assertSame('dead_lettered', $awaitingAuthRow['outcome'], 'A job merely awaiting human re-authorization (no live attempt, not cancelled) is still swept');
 	}
 
+	// --- Issue 1102: the dead-letter reason in GET /api/labels/jobs ---------------------------
+
+	/**
+	 * Issue 1102 (ADR-0053 question 6): an operator saw `dead_lettered` and no reason. Monitor()
+	 * now carries the outbox row's last_error as `dead_letter_reason`, through the real route and
+	 * JSON encoding. Three jobs share one printer: one is dead-lettered by deleting that printer,
+	 * one was cancelled first (its outbox row is dead-lettered with "Cancelled: ...", which is
+	 * not a dead-letter reason, ADR-0053 question 4), and one on a second printer stays queued.
+	 * The page column and the OpenAPI property are checked here too, so the three stay in step.
+	 */
+	public function testJobsMonitorReportsTheDeadLetterReasonOnlyForDeadLetteredJobs(): void
+	{
+		[, $printer] = self::newPrinter();
+		[, $otherPrinter] = self::newPrinter();
+		$deadLettered = self::enqueue($printer, 'Lifecycle reason dead-lettered');
+		$cancelled = self::enqueue($printer, 'Lifecycle reason cancelled');
+		$queued = self::enqueue($otherPrinter, 'Lifecycle reason queued');
+		self::tx(static fn () => (new LabelOperationsService(self::$db))->Cancel($cancelled, 'lifecycle reason test'));
+
+		$adminKey = self::issueAdminKey();
+		$delete = self::Send('DELETE', '/api/labels/printers/' . $printer, $adminKey);
+		self::assertSame(200, $delete['status'], 'Printer delete failed: ' . $delete['body']);
+
+		$response = self::Send('GET', '/api/labels/jobs', $adminKey);
+		self::assertSame(200, $response['status'], 'An admin may read the jobs monitor: ' . $response['body']);
+		$byId = array_column($response['json'], null, 'id');
+
+		self::assertSame('dead_lettered', $byId[$deadLettered]['state'] ?? null, 'Precondition: deleting the printer dead-lettered the queued job');
+		self::assertSame('Printer deleted', $byId[$deadLettered]['dead_letter_reason'], 'The reason is the outbox row\'s last_error, unchanged');
+
+		self::assertSame('cancelled', $byId[$cancelled]['state'] ?? null, 'Precondition: the cancelled job still reports cancelled');
+		self::assertArrayHasKey('dead_letter_reason', $byId[$cancelled], 'The key is present on every job');
+		self::assertNull($byId[$cancelled]['dead_letter_reason'], 'A cancelled job\'s "Cancelled: ..." text is not reported as a dead-letter reason');
+		$cancelledOutbox = self::$db->query('SELECT last_error FROM print_jobs j JOIN outbox o ON o.id = j.outbox_id WHERE j.id = ' . $cancelled)->fetchColumn();
+		self::assertStringStartsWith('Cancelled:', (string)$cancelledOutbox, 'Control: the cancelled job\'s outbox row does carry last_error, so the null above is the CASE, not a missing value');
+
+		self::assertNotSame('dead_lettered', $byId[$queued]['state'] ?? null, 'Precondition: the job on the surviving printer is not dead-lettered');
+		self::assertArrayHasKey('dead_letter_reason', $byId[$queued], 'The key is present on every job');
+		self::assertNull($byId[$queued]['dead_letter_reason'], 'A job that is not dead-lettered has no reason');
+
+		$spec = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), true, 512, JSON_THROW_ON_ERROR);
+		$item = $spec['paths']['/labels/jobs']['get']['responses']['200']['content']['application/json']['schema']['items'];
+		self::assertSame(['string', 'null'], $item['properties']['dead_letter_reason']['type'] ?? null, 'victual.openapi.json documents the field as a nullable string');
+
+		self::assertStringContainsString('job.dead_letter_reason', file_get_contents(VICTUAL_ROOT_PATH . '/public/viewjs/labelprintjobs.js'), 'The print jobs page shows the field');
+	}
+
 	// --- Assignment B1: a live attempt that outlives its printer ------------------------------
 
 	/**

@@ -15,9 +15,9 @@ memory). Touches [plan 02](02-mcp-endpoint.md)'s per-key boundary (spec section 
 **Status:** draft, research only; revised 2026-10-25. No issue exists yet and no migration number is
 claimed; claim the next free one in `migrations/RESERVATIONS.md` when it is written.
 ADR-0044 was accepted on 2026-10-25, and its open questions 1 and 2 were answered on
-2026-10-11, so implementation is no longer gated on the record. No release is chosen. The
-Proposed [ADR-0057](../adr/0057-permissions-are-per-resource-leaves-assigned-through-roles-groups-and-service-packages.md)
-keeps the key intersection but would express key scopes over its per-resource catalog.
+2026-10-11, so implementation is no longer gated on the record. No release is chosen.
+[ADR-0057](../adr/0057-permissions-are-per-resource-leaves-assigned-through-roles-groups-and-service-packages.md), accepted 2026-11-27, keeps the key intersection and expresses key scopes over its
+per-resource catalog (decision 8), which [plan 42](42-permission-catalog.md) lists.
 
 Question 1 below is answered by ADR-0044 decision 7. Questions 2 and 3 retain draft
 recommendations; no maintainer answer is recorded for them.
@@ -35,19 +35,19 @@ the edges under "Holes to close".
 
 ADR-0044 authorizes scoped user-owned keys against the accepted permission catalog.
 This plan does not depend on selecting an OAuth authorization server. It does not implement
-the Proposed ADR-0055, ADR-0056 or ADR-0057.
+the Proposed ADR-0055 or ADR-0056, or the accepted ADR-0057.
 
-The Proposed [ADR-0057](../adr/0057-permissions-are-per-resource-leaves-assigned-through-roles-groups-and-service-packages.md)
-would put roles, key selections and OAuth scopes over one per-resource permission catalog.
-Its groups would contribute to the owner's effective permissions; the key would remain
-bounded by its own selection. Its service credentials would use immutable API role package
-versions. User-owned keys would continue to use explicit selections, with roles and presets
+The accepted [ADR-0057](../adr/0057-permissions-are-per-resource-leaves-assigned-through-roles-groups-and-service-packages.md)
+puts roles, key selections and OAuth scopes over one per-resource permission catalog.
+Its groups contribute to the owner's effective permissions; the key remains
+bounded by its own selection. Its service credentials use immutable API role package
+versions. User-owned keys continue to use explicit selections, with roles and presets
 used only to prefill the dialog. This plan adds no service accounts or packages.
 
-If ADR-0057 is accepted and implemented, presets and the permission tree must use that
+Once ADR-0057 is implemented, presets and the permission tree must use that
 catalog. A catalog migration must compare scoped keys' allowed operations before and after,
 as well as users' access. ADR-0044 currently expands key grants through the hierarchy;
-this plan does not replace that rule with the frozen leaf sets proposed for service packages.
+this plan does not replace that rule with the frozen leaf sets ADR-0057 decision 7 sets for service packages.
 
 The Proposed [ADR-0055](../adr/0055-api-and-mcp-callers-present-oauth-access-tokens-from-a-swappable-authorization-server.md)
 would retain static keys indefinitely on installs without an authorization server.
@@ -133,7 +133,7 @@ intersection in PHP is complete; nothing needs pushing into the DB session.
 2. **Reads that check no permission** (`EntityReadPolicy` has `'api_keys' => null`; some
    read routes are ungated). A scoped key keeps those reads. State this limit in the docs
    rather than imply a scoped key is sealed; it is a pre-existing property of the route set,
-   and plan 19 closed the six domain reads, not everything. ADR-0057 proposes explicit
+   and plan 19 closed the six domain reads, not everything. ADR-0057 requires explicit
    resource-read checks, but they are not supplied by this plan. Recheck the remaining
    ungated reads against the implementation commit and document what remains reachable.
 3. **Key minting and editing (checked, currently closed).** Header keys are tried only when
@@ -145,7 +145,7 @@ intersection in PHP is complete; nothing needs pushing into the DB session.
    un-scope a key defeats the feature.
 4. **The special-purpose keys** (calendar, label worker/verifier/renderer) have their own
    scoping and are out of scope. `CreateApiKey` for them must keep `scoped = 0`.
-   ADR-0057 proposes moving them individually to service accounts and package versions.
+   ADR-0057 decision 7 moves them individually to service accounts and package versions.
    Each move requires its own plan and evidence that the credential's rights are preserved.
 5. **Owner demotion.** Intersection handles it, but also assert a scoped key whose owner
    loses ADMIN does not keep an ADMIN-derived leaf.
@@ -185,8 +185,8 @@ intersection in PHP is complete; nothing needs pushing into the DB session.
 creation, changed by revocation and replacement; routine rotation preserves scope; (c) roles are templates, not assignments; (d) read-only
 composes with scope; (e) the `DELETE api_keys` rule. Cross-reference ADR-0018, ADR-0007,
 and update `docs/mcp-interface-spec.md` §4.2 with the implementation. ADR-0044 was accepted
-on 2026-10-25. The Proposed ADR-0057 changes the catalog and service-credential model only
-if separately accepted; this plan does not grant it authority.
+on 2026-10-25. ADR-0057, accepted 2026-11-27, changes the catalog and service-credential
+model; this plan does not implement those changes.
 
 ## Alternatives considered
 - **Key assigned to a role.** Reuses a table, but a role is a union-of-grants bundle with

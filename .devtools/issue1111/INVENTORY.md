@@ -15,6 +15,7 @@ controller name is a line in that file.
 |---|---|
 | Tree | `42883e0e0eb3ea9be338555eea96c0ab1e68675c` (`master`, "Merge pull request #1110", version 0.5.5), clean worktree |
 | Date | 2026-10-25 |
+| Refreshed | 2026-11-27 against `master` at `e013eade`: the extractor's output, compared without line numbers, matched `routes-raw.tsv` (270 routes, same handlers and tokens); no commit touched `routes.php`, `controllers/`, `services/` or `middleware/` since `42883e0e`; 41 `PERMISSION_*` constants. Line numbers above still refer to `42883e0e`. See [plan 42](../../docs/plans/42-permission-catalog.md#inventory-refresh). |
 | Run or read | **Read only.** PHP is not installed on this host; nothing was executed against a database, no request was sent. Every cell is static inference from source. |
 | Route enumeration | `routes.php` parsed by `.devtools/issue1111/extract-route-permissions.py` (regex over the file). Output: `.devtools/issue1111/routes-raw.tsv` (270 routes: line, verb, path, handler, permission tokens with `NAME@line`). |
 | Token extraction | Same script: for each handler it lists every `PERMISSION_*` constant in the method body, plus names of policy objects, and follows `$this->`/`self::` helpers of the same class two levels (`via <helper>`). |

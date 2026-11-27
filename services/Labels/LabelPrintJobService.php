@@ -73,6 +73,11 @@ class LabelPrintJobService extends LabelService
         // verifies one - and `cancelled` is its own state because a cancelled job never
         // printed, and recording it as printed or dead-lettered would say something untrue
         // about a physical object.
+        //
+        // `dead_letter_reason` is the outbox row's last_error, which every label path writes once,
+        // in the same statement that sets dead_lettered_at (ADR-0053, Context). It is shown only
+        // when `state` is dead_lettered: a cancelled job's outbox row is dead-lettered too, with
+        // "Cancelled: ...", but that text is not a dead-letter reason (ADR-0053 question 4).
         return $this->Query("SELECT j.*, p.name AS printer_name, a.id AS attempt_id, a.error_text, a.reported_outcome, a.reported_detail,
     EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP-s.last_seen_at)) AS printer_status_age,
     CASE WHEN j.cancelled_at IS NOT NULL THEN 'cancelled'
@@ -93,6 +98,7 @@ class LabelPrintJobService extends LabelService
      WHEN a.ended_at IS NULL AND a.id IS NOT NULL THEN 'claimed'
      WHEN j.attempts_made=j.attempts_authorized THEN 'awaiting_authorization'
      ELSE 'queued' END AS state
+   , CASE WHEN j.cancelled_at IS NULL AND j.outcome='dead_lettered' THEN o.last_error END AS dead_letter_reason
    , r.state AS render_state, r.error_code AS render_error_code, r.error_element AS render_error_element, r.error_detail AS render_error_detail
    FROM print_jobs j JOIN outbox o ON o.id=j.outbox_id
    LEFT JOIN label_render_requests r ON r.id=j.render_request_id

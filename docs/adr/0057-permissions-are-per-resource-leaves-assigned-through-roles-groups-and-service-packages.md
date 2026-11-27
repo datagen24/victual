@@ -1,16 +1,10 @@
 # ADR-0057: Permissions are per-resource leaves, assigned through roles, groups and service packages
 
-- **Status:** **Proposed.** Nothing here constrains work until the maintainer accepts it in a
-  separate pull request. It records the assignment model the maintainer set out in
-  [issue 1111](https://github.com/datagen24/victual/issues/1111) on 2026-10-25. The
-  maintainer answered all five open questions on 2026-10-25; the answers are folded into
-  decisions 2, 4, 7 and 9 and recorded under Open questions. Prerequisite 5 is met;
-  prerequisites 1 to 3 are not, and answer 3 keeps the catalog and household roles open
-  until their leaf lists are written. On 2026-10-30 the maintainer asked how service
-  credentials could move to Keycloak; questions 6 to 8 record the proposal and a spike of
-  its in-cluster half.
-  The maintainer answered questions 6 to 8 on 2026-11-27, accepting the proposals as
-  written.
+- **Status:** **Accepted 2026-11-27**, before ADR-0055 fixes its scope list, as
+  [issue 1111](https://github.com/datagen24/victual/issues/1111) asks. The accepting pull
+  request states how each acceptance prerequisite was met: the inventory re-checked against `947daa80`, the catalog and household
+  roles in [plan 42](../plans/42-permission-catalog.md), and the open questions answered on
+  2026-10-25 and 2026-11-27. Acceptance does not choose the release that implements it.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-25, against `master` at `42883e0e`. Design only: it changes no
@@ -20,12 +14,14 @@
   [ADR-0055](0055-api-and-mcp-callers-present-oauth-access-tokens-from-a-swappable-authorization-server.md)
   and [ADR-0056](0056-an-external-identity-provider-replaces-the-built-in-authorization-server.md),
   each of which names the decision here that reconciles it.
-- **Relationship:** if accepted, partly supersedes accepted
+- **Relationship:** partly supersedes accepted
   [ADR-0043](0043-creating-shared-master-data-is-a-right-below-master-data-edit.md)
-  decisions 1 and 2 (one flat create right over a stated set of entities) and extends
+  decisions 1 and 2 (one flat create right over a stated set of entities). It also
+  supersedes the task half of decision 7's bullet keeping chore and task delete with
+  `MASTER_DATA_EDIT` (plan 42 answer 1). It extends
   accepted [ADR-0018](0018-role-grants-and-domain-reads.md)'s union with a group source
   (decision 4). Keeps [ADR-0014](0014-administering-a-user-is-a-subset-question.md) and
-  ADR-0018's no-deny rule unchanged. If accepted, narrows accepted
+  ADR-0018's no-deny rule unchanged. Narrows accepted
   [ADR-0044](0044-api-keys-carry-a-subset-of-their-owners-permissions.md) decision 8
   (decision 7 here) and keeps the rest of it. Reconciles the Proposed ADR-0055 and
   ADR-0056 without treating either as accepted. Must be accepted before ADR-0055 fixes its scope
@@ -152,15 +148,23 @@ of accepting this record, because both need the migration to exist.
 
 This partly supersedes ADR-0043 decisions 1 and 2: `MASTER_DATA_ADD` stops being a leaf
 that gates create on a stated set and becomes the parent of per-resource create leaves.
-Decisions 3 to 7 of ADR-0043 hold. Decision 6 matters most here: creating a row still
-confers no right over it.
+It also supersedes the task half of the bullet of ADR-0043 decision 7 that keeps chore and
+task delete with `MASTER_DATA_EDIT`: `TASKS_DELETE` sits under `TASKS`, an intentional change
+the upgrade's list names ([plan 42](../plans/42-permission-catalog.md) answer 1).
+`CHORES_DELETE` stays under `MASTER_DATA_EDIT`, because deleting a chore erases its history.
+Decisions 3 to 6 of ADR-0043 hold, and the rest of decision 7. Decision 6 matters
+most here: creating a row still confers no right over it.
 
 ### 3. Reads are explicit, and upgrade grants the reads people already have
 
 Every readable resource gets a `*_READ` leaf, and every route that reads it, page, API,
 generic object route, MCP tool and file access alike, checks it. Authentication alone
 reads nothing beyond the caller's own profile and settings and the capabilities response
-that describes the caller.
+that describes the caller. The exemption also covers the routes the front end needs before it knows what
+the caller may do: system configuration, server time, the database change time, translations
+and the API description. The environment fields of `/api/system/info` (PHP, database engine
+and kernel versions) need `SYSTEM_INFO_READ` under `ADMIN` and are absent without it
+([plan 42](../plans/42-permission-catalog.md) answer 3).
 
 Where today's code checks no permission on a read, the upgrade gives every existing user
 and every existing role that read, as ADR-0018 did for its six view leaves. New users get

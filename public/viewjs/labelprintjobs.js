@@ -10,7 +10,7 @@
    jobs.forEach(function (job)
    {
     var row = $('<tr>');
-    [job.id, job.printer_name || job.printer_id, states[job.state] || job.state, job.error_text || '', job.printer_status_age === null ? __t('Never reported') : Math.floor(Number(job.printer_status_age))].forEach(function (value)
+    [job.id, job.printer_name || job.printer_id, states[job.state] || job.state, job.error_text || '', job.dead_letter_reason || '', job.printer_status_age === null ? __t('Never reported') : Math.floor(Number(job.printer_status_age))].forEach(function (value)
     { row.append($('<td>').text(value)); });
     var action = $('<td>');
     if (['failed', 'blocked', 'uncertain', 'uncertain_but_reported'].includes(job.state) && job.attempts_made === job.attempts_authorized)
