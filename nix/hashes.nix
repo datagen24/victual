@@ -50,7 +50,10 @@
   # Moved 2026-10-24 for the zod 4.6.5 -> 4.6.7 bump (PR 1101), from the "got:" value of
   # that PR's failing `flake` check.
   #
-  # Moved 2026-11-27 for the hono 4.13.13 -> 4.13.18 bump (PR 1140), with prefetch-npm-deps;
-  # it matches the "got:" value of that PR's failing `flake` check.
-  mcpNpmDeps = "sha256-PklHCZXvCa8TTB5mQZj9tjX/mhTAZPq2NxL79hCToD4=";
+  # Moved 2026-11-27 for the @modelcontextprotocol/node 2.0.0 -> 2.1.0 bump (PR 1138), with
+  # prefetch-npm-deps.
+  #
+  # Moved 2026-11-27 again for the hono 4.13.13 -> 4.13.18 bump (PR 1140), merged on top of
+  # PR 1138's lockfile, with prefetch-npm-deps.
+  mcpNpmDeps = "sha256-HfNDp+5u5uwZcjEFDAHiFbl2zLoFCsyGcRQj9s+gocM=";
 }
