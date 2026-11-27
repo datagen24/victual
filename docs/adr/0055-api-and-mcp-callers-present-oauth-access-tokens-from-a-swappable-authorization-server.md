@@ -26,8 +26,8 @@
   open.
   On 2026-11-27 the maintainer closed questions 21 to 23 and answered questions 24, 25,
   27 and 28. The stated worst case is six minutes (decision 6). The measured delay is
-  enough for acceptance. A split into all-in-one and distributed charts needs its own
-  record. The standard-surface contract is a preference (decision 3).
+  enough for acceptance. One chart carries an all-in-one and a distributed values file
+  (decision 2). The standard-surface contract is a preference (decision 3).
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -162,8 +162,9 @@ Since 2026-10-29 (question 26), Keycloak is the authorization server. It handles
 between the service containers and token handling. The lab identity provider (Authentik,
 per ADR-0056 answer 1) or Entra ID signs people in as an upstream identity source
 federated into Keycloak.
-Whether Keycloak becomes a required chart component in OAuth mode is question 27. The
-rest of this decision records how the choice was reached; its "next candidate" wording
+The chart ships it as a component that an all-in-one values file turns on with OAuth mode;
+a distributed values file points Victual at an external Keycloak instead (question 27).
+The rest of this decision records how the choice was reached; its "next candidate" wording
 predates the clarification.
 
 No built-in authorization server is selected. Ory Hydra was the provisional target and is
@@ -1075,11 +1076,12 @@ issuer again. Questions 24 and 25 concern Keycloak and still stand.
     > all in one chart and a distributed chart where there are more options for external
     > services."
     >
-    > Recorded as, in the recorder's reading: there will be two charts. The all-in-one chart
-    > runs Keycloak with Victual. The distributed chart offers more external services,
-    > including pointing Victual at a Keycloak the operator already runs. Splitting the chart
-    > is a change to [ADR-0038](0038-kubernetes-deployments-ship-as-a-helm-chart.md)'s single chart, so
-    > it needs its own record. Decision 2 is not edited until that record exists.
+    > The maintainer then revised it the same day: two charts would increase the project's
+    > work, so there is one chart with two values files. Recorded as: the all-in-one values
+    > file turns Keycloak on with OAuth mode. The distributed values file points Victual at
+    > external services, including a Keycloak the operator already runs. This stays within
+    > [ADR-0038](0038-kubernetes-deployments-ship-as-a-helm-chart.md)'s single chart, whose
+    > decision 8 already ships deployments as values files, so it needs no new record.
 
 28. **Does the decision 3 resource-server contract still need to work against any
     issuer?** It was written so that a second issuer could be swapped in (prerequisite 1).
