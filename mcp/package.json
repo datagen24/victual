@@ -19,7 +19,7 @@
     "probe": "node scripts/probe.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/node": "^2.0.0",
+    "@modelcontextprotocol/node": "^2.1.0",
     "@modelcontextprotocol/server": "^2.3.1",
     "hono": "^4.13.13",
     "zod": "^4.6.7"
