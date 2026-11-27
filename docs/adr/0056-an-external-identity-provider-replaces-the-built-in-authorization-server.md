@@ -18,7 +18,8 @@
   On 2026-11-27 the maintainer answered questions 10, 11, 13 and 14. A new record for
   upstream identity into Keycloak will supersede this one. Entra ID federates into
   Keycloak directly. Keycloak's password login is for bootstrap and break-glass accounts
-  only. First-run setup is an on-demand Job. Question 12 is open.
+  only. First-run setup is an on-demand Job. Answer 12 ends sessions on a SCIM
+  change, with the session lifetime as the fallback; question 15 asks how.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -546,6 +547,13 @@ Not tested: Entra ID, offline tokens, Victual's group recompute and the Victual 
     when membership changes, which neither server does on its own. (Decision 4;
     prerequisite 4.)
 
+    > **Response:** datagen24, 2026-11-27: this is the problem SCIM was designed for, tied
+    > to session lifetime limits. A membership change received through SCIM logs that user
+    > out on receipt. Without one, the user is logged out when the session lifetime ends,
+    > and gets the new permissions at the next login. Decision 4's bound is therefore the
+    > session lifetime limit, shortened to the SCIM delivery delay where the upstream sends
+    > SCIM. Question 15 asks how that works with Keycloak.
+
 13. **Which accounts may use Keycloak's own password login?** During an upstream outage it
     is the only way to sign in anew (U8d), and the browser flow must keep the form for it.
     Should decision 7's rule apply at Keycloak too: password login only for bootstrap and
@@ -578,3 +586,14 @@ Not tested: Entra ID, offline tokens, Victual's group recompute and the Victual 
     (Decisions 5 and 7; ADR-0057 question 7.)
 
     > **Response:** datagen24, 2026-11-27: yes, as proposed. It is the most secure of the options.
+
+### Group removal through SCIM, 2026-11-27
+
+15. **Which component receives SCIM, and what session lifetime is the fallback?** Answer 12
+    ends a user's sessions when a SCIM membership change arrives. The recorder has not
+    verified that Keycloak 26.8.1 accepts inbound SCIM; none of the spikes tested it. The
+    options are a SCIM receiver in Keycloak, if one is supported, or a SCIM endpoint on
+    Victual that recomputes the user's roles and ends their Keycloak sessions through the
+    admin API. Entra ID sends SCIM to an application endpoint. The fallback also needs a
+    value: what maximum Keycloak session lifetime bounds a removal when no SCIM change
+    arrives? (Decision 4; prerequisite 4; answer 12.)

@@ -447,6 +447,9 @@ questions settle how it proves which service it is.
    > **Response:** datagen24, 2026-11-27: accepted as proposed. The maintainer considers it the
    > ideal design. The stated cost stands: during a Keycloak outage a service keeps working
    > only until its current access token expires, at most five minutes.
+   >
+   > Follow-up, datagen24, 2026-11-27: Keycloak's availability target therefore needs to be
+   > similar to Victual's.
 
 7. **Where does pairing live?** Proposed: an administrator holding
    `SERVICE_ACCOUNTS_MANAGE` adds a service on a services page in Victual, picks its
