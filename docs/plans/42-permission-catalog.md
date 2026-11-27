@@ -533,3 +533,69 @@ editor shows each leaf's read prerequisites and offers to add them (ADR-0057 dec
 
    > **Response:** datagen24, 2026-11-27: the household manager works well. Recorded as
    > written, label printing included.
+
+## Implementation
+
+ADR-0057 is implemented in pieces, one pull request each, against
+[issue 1111](https://github.com/datagen24/victual/issues/1111). Piece 1 changes the tree and
+no code check. Pieces 3 to 9 move the checks the inventory lists, one area at a time. Once the
+leaves exist, a check against a bundle is a defect, because it ignores a leaf granted alone
+(ADR-0057 decision 2). Until its piece lands, an area's checks stay on today's bundles, so
+existing accounts keep working.
+
+### Piece 1: the seed and its self-check
+
+Migration 0320 (`migrations/0320.pgsql.sql`) does the following:
+
+- It seeds the 180 resource leaves, the 9 action leaves and `LABELS_ADMIN` under the parents
+  in [Catalog](#catalog) and [Domain actions](#domain-actions).
+- It grants `USERFIELDS_READ` and `USERENTITIES_READ` to every existing user and role.
+- It seeds `HOUSEHOLD_MANAGER` with the Adult role's grants plus `MASTER_DATA_EDIT`.
+- It runs ADR-0057 decision 2's comparison over every user, role and API key, in the
+  migration's own transaction.
+
+The comparison treats each new leaf as gated by its nearest pre-existing ancestor, or by the
+gate `permission_catalog_gates()` names. Any difference that
+`permission_catalog_intentional_changes()` does not list raises SQLSTATE VP057 and names each
+principal and leaf. That list holds answer 1 and answer 3:
+
+- `TASKS_DELETE` moves from `MASTER_DATA_EDIT` to `TASKS`, gained and lost.
+- `SYSTEM_INFO_READ` is lost by every principal without `ADMIN`.
+
+A fresh install runs the migration after `InitialDataSeeder` has created the bootstrap
+administrator, so the comparison covers that account. `DatabaseImporter` records the
+imported users' and keys' sets before it replays the seed files. It then calls
+`permission_catalog_seed()` and runs the same assertion, in one transaction.
+
+The group and service leaves (`GROUPS_*`, `GROUP_MEMBERS_UPDATE`, `SERVICE_ACCOUNTS_MANAGE`)
+are not seeded in piece 1. They gate resources that do not exist yet, so they would be
+grantable rows that control nothing. They arrive in pieces 11 and 12 and use the same
+comparison functions.
+
+### Later pieces
+
+| Piece | Scope | Inventory | Depends on |
+|---|---|---|---|
+| 2 | A `PERMISSION_*` constant for each new leaf. A test that fails when a check names a bundle, with an allow-list of today's bundle checks that each later piece shrinks. A role's open reads granted to every new user at creation, so that piece 3's definition-read checks refuse nobody who could read before. | 2.1, 5 | 1 |
+| 3 | The generic object routes (`GenericEntityApiController` and `GenericEntityController`): entity and operation to leaf. This includes the code half of change (a), where task delete checks `TASKS_DELETE`, and the definition reads, which check `USERFIELDS_READ` and `USERENTITIES_READ`. | 3.1–3.6, 5.3, 5.6, App. A | 2 |
+| 4 | Stock and shopping API and pages: bookings check `STOCK_ENTRIES_READ`, undo checks `STOCK_BOOKINGS_UNDO`, merge checks `PRODUCTS_MERGE` and `STOCK_ENTRIES_UPDATE`, list print checks `SHOPPING_LISTS_PRINT`, and the external lookup checks `PRODUCTS_READ` and `PRODUCTS_CREATE`. | 3.2, 3.3, 4.1, 5.7, 5.12 | 2 |
+| 5 | Recipes, meal plan, chores, tasks, batteries, equipment and calendar API and pages, with `CHORES_ASSIGN` and `CHORES_MERGE`. | 3.4, 3.5, 4.2 | 2 |
+| 6 | File routes: product and recipe pictures, equipment manuals, user pictures (`FilesApiController`'s read map). `UserfileOwnerPolicy` stays the reader rule for userfield files (ADR-0048). | 3.6 rows 32–36 | 2 |
+| 7 | Labels: the `LABELS_ADMIN` leaves, plus `LABELS_PRINT`, `LABEL_JOBS_REPRINT`, `LABEL_JOBS_CANCEL` and `LABEL_ARTIFACTS_PROMOTE`. Machine routes stay credential-typed (inv. 4.5). | 3.7, 4.4 | 2 |
+| 8 | Users, roles, keys and medication consumption: the `USER_ACCOUNTS_*`, `ROLES_*`, `USER_ROLES_*` and `API_KEYS_*` leaves under ADR-0014's subset checks, and the consumption globals beside the record rights. | 3.8, 4.3, 4.4 | 2 |
+| 9 | MCP tools: each tool's check moves to its leaf, through the same ceiling as user keys (ADR-0044). | 4.4, 4.5 | 3–8 |
+| 10 | `/api/system/info` reads `SYSTEM_INFO_READ` in place of `ADMIN`. This applies once the change gating the environment fields behind `ADMIN` (answer 3's code half) has landed. | 5.14 | 2 |
+| 11 | Groups (decision 4): tables, the group source in `user_permissions_resolved`, `GROUPS_*` and `GROUP_MEMBERS_UPDATE` seeded through the piece 1 comparison, and membership previews. | none yet | 2 |
+| 12 | Service accounts and API role packages (decision 7): `SERVICE_ACCOUNTS_MANAGE`, immutable package versions, and the move of each special-purpose key, with the same comparison. | 4.5 | 11 |
+| 13 | The permission UI: leaves grouped by feature and resource, plain-language labels in `localization/permissions.pot` for the 190 new names, bundles shown as "all of these", read prerequisites offered and never added silently (decision 3), and "which leaves, and why" (decision 6). | none | 2, 11 |
+| 14 | The allowed-and-refused probe from [Verification](#verification), per role and workflow, on web, API, generic object routes, MCP and file routes. | all | 3–9 |
+
+### Found while building piece 1
+
+- Seven consumption writes sit under `STOCK_VIEW` (preset update and delete, the four share
+  leaves except read, and refill create and update), because `STOCK_VIEW` is their only global
+  gate today and the record rights do the limiting. Guest and Child therefore resolve them,
+  which matches what those roles pass today. If a Guest should hold no write leaf at all, the
+  fix is a different parent, which is an intentional change for the list.
+- The permission editor lists every row of `permission_hierarchy`, so the 190 new names appear
+  there after piece 1 under their constant names, untranslated, until piece 13 adds labels.

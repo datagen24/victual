@@ -109,8 +109,8 @@ use Victual\Services\StockService;
  *     `user_settings_defaults`, `system_db_changed_time`) are this engine's own configuration
  *     rather than a household's data, seeded fresh rather than carried from a source that (for
  *     several of them) predates their existence entirely; db/pgsql/roles-seed.sql,
- *     db/pgsql/prices-seed.sql, db/pgsql/view-leaves-seed.sql and
- *     db/pgsql/master-data-add-seed.sql restore, in an import that applies row migrations,
+ *     db/pgsql/prices-seed.sql, db/pgsql/view-leaves-seed.sql,
+ *     db/pgsql/master-data-add-seed.sql and migration 0320's permission_catalog_seed() restore, in an import that applies row migrations,
  *     what TRUNCATE ... CASCADE clears via a foreign key into a table that *is* replaced, and the
  *     permission_hierarchy rows migrations added after the frozen SQLite line (see the
  *     `applyRowMigrations` branch below).
@@ -320,6 +320,31 @@ class DatabaseImporter
 	 * @param DatabaseDialect $targetDialect Dialect matching $target (quoting, id counter resync)
 	 * @param callable|null $progress Receives one human-readable string per progress line, or null for silence
 	 */
+	/**
+	 * Gates for the comparison an import runs, beyond migration 0320's own
+	 * (permission_catalog_gates()): the permissions roles-seed.sql restores that a source
+	 * frozen at 0265 never had. Their reads checked nothing before migration 0266, which granted
+	 * them to every user, so every user held them (JSON null). Every other restored leaf is
+	 * gated by its nearest ancestor in the source's tree, which the comparison works out.
+	 */
+	private const IMPORT_PERMISSION_GATES = [
+		'STOCK_VIEW' => null,
+		'SHOPPINGLIST_VIEW' => null,
+		'CHORES_VIEW' => null,
+		'TASKS_VIEW' => null,
+		'RECIPES_VIEW' => null,
+		'MEALPLAN_VIEW' => null,
+	];
+
+	/**
+	 * Whether the target has migration 0320's comparison functions. A target is migrated to
+	 * the latest number before an import, so this is false only for a target older than 0320.
+	 */
+	private function PermissionUpgradeCheckAvailable(): bool
+	{
+		return $this->Target->query("SELECT to_regprocedure('permission_catalog_seed()')")->fetchColumn() !== null;
+	}
+
 	public function __construct(\PDO $source, \PDO $target, DatabaseDialect $targetDialect, ?callable $progress = null)
 	{
 		$this->Source = $source;
@@ -1051,44 +1076,84 @@ class DatabaseImporter
 			// purpose, so it runs after the assertions that prove the copy itself was exact.
 			$this->RebuildPriceCaches();
 
-			// The frozen source replaces permission_hierarchy, and TRUNCATE CASCADE
-			// clears role grants. Restore the target's read leaves and built-in grants
-			// only after the verbatim-copy assertions have succeeded.
-			if ($this->Target->query("SELECT to_regclass('roles')")->fetchColumn() !== null)
+			// ADR-0057 decision 2: the importer runs the same before-and-after comparison as
+			// migration 0320. Record what each imported user and key resolves under the
+			// source's own tree, before any seed below changes that tree.
+			// The copy above has committed; the record, the seed replays and the comparison
+			// share one transaction of their own, so a refusal leaves no half-restored tree.
+			$checkPermissions = $this->PermissionUpgradeCheckAvailable();
+			if ($checkPermissions)
 			{
-				$this->Target->exec(file_get_contents(__DIR__ . '/../../db/pgsql/roles-seed.sql'));
+				$this->Target->beginTransaction();
+				$this->Target->query("SELECT permission_snapshot_record(ARRAY['user', 'api_key'])");
 			}
 
-			// And the same again for plan 19 piece 2's half of the permission tree, which
-			// roles-seed.sql does not carry. permission_fields references
-			// permission_hierarchy(name), so the TRUNCATE ... CASCADE above empties it
-			// whether or not it is a table this importer copies - and it is not, the SQLite
-			// line being frozen below the migration that created it. Without this every
-			// price channel is unredacted after an import and PricesVisible() is false for
-			// every user including ADMIN, because STOCK_PRICES_VIEW is gone from the
-			// hierarchy too. Issue #176 item 1.
-			if ($this->Target->query("SELECT to_regclass('permission_fields')")->fetchColumn() !== null)
+			try
 			{
-				$this->Target->exec(file_get_contents(__DIR__ . '/../../db/pgsql/prices-seed.sql'));
+
+				// The frozen source replaces permission_hierarchy, and TRUNCATE CASCADE
+				// clears role grants. Restore the target's read leaves and built-in grants
+				// only after the verbatim-copy assertions have succeeded.
+				if ($this->Target->query("SELECT to_regclass('roles')")->fetchColumn() !== null)
+				{
+					$this->Target->exec(file_get_contents(__DIR__ . '/../../db/pgsql/roles-seed.sql'));
+				}
+
+				// And the same again for plan 19 piece 2's half of the permission tree, which
+				// roles-seed.sql does not carry. permission_fields references
+				// permission_hierarchy(name), so the TRUNCATE ... CASCADE above empties it
+				// whether or not it is a table this importer copies - and it is not, the SQLite
+				// line being frozen below the migration that created it. Without this every
+				// price channel is unredacted after an import and PricesVisible() is false for
+				// every user including ADMIN, because STOCK_PRICES_VIEW is gone from the
+				// hierarchy too. Issue #176 item 1.
+				if ($this->Target->query("SELECT to_regclass('permission_fields')")->fetchColumn() !== null)
+				{
+					$this->Target->exec(file_get_contents(__DIR__ . '/../../db/pgsql/prices-seed.sql'));
+				}
+
+				// And migration 0299's BATTERIES_VIEW, CALENDAR_VIEW and EQUIPMENT_VIEW leaves,
+				// which neither file above carries and no frozen source can. Without them the
+				// battery, calendar and equipment pages refuse every user including ADMIN, who
+				// reaches a leaf only through permission_tree. Every statement in the file is
+				// guarded with NOT EXISTS, so it adds nothing to a target that already has them.
+				// No to_regclass guard: the file touches permission_hierarchy alone, which every
+				// target has, and a missing parent makes its INSERT ... SELECT insert nothing.
+				$this->Target->exec(file_get_contents(__DIR__ . '/../../db/pgsql/view-leaves-seed.sql'));
+
+				// And migration 0308's MASTER_DATA_ADD, the right to create shared master data
+				// (ADR-0043, issue 742). The frozen SQLite line cannot carry it, and without the
+				// row every account, ADMIN included, is refused when it creates a product,
+				// location, unit, group or store. The file is the one migration 0308 itself
+				// reads, so the two cannot differ. Like the files above it runs only in an import that
+				// applies row migrations. It is guarded with NOT EXISTS and, like the
+				// file above, touches permission_hierarchy alone.
+				$this->Target->exec(file_get_contents(__DIR__ . '/../../db/pgsql/master-data-add-seed.sql'));
+
+				// And migration 0320's permission catalog (plan 42), the household manager role and
+				// the open definition reads. Then the comparison: a difference not on plan 42's list
+				// throws (SQLSTATE VP057) and the import transaction rolls back.
+				if ($checkPermissions)
+				{
+					$this->Target->query('SELECT permission_catalog_seed()');
+					$intended = (int)$this->Target->query(
+						'SELECT permission_upgrade_assert(permission_catalog_gates() || '
+						. $this->Target->quote(json_encode(self::IMPORT_PERMISSION_GATES)) . '::JSONB, '
+						. "permission_catalog_intentional_changes(), 'legacy import')"
+					)->fetchColumn();
+					($this->Progress)("  permission check: every imported user and key resolves what it did, apart from $intended listed change(s)");
+					$this->Target->commit();
+				}
 			}
+			catch (\Throwable $ex)
+			{
+				if ($this->Target->inTransaction())
+				{
+					$this->Target->rollBack();
+				}
 
-			// And migration 0299's BATTERIES_VIEW, CALENDAR_VIEW and EQUIPMENT_VIEW leaves,
-			// which neither file above carries and no frozen source can. Without them the
-			// battery, calendar and equipment pages refuse every user including ADMIN, who
-			// reaches a leaf only through permission_tree. Every statement in the file is
-			// guarded with NOT EXISTS, so it adds nothing to a target that already has them.
-			// No to_regclass guard: the file touches permission_hierarchy alone, which every
-			// target has, and a missing parent makes its INSERT ... SELECT insert nothing.
-			$this->Target->exec(file_get_contents(__DIR__ . '/../../db/pgsql/view-leaves-seed.sql'));
-
-			// And migration 0308's MASTER_DATA_ADD, the right to create shared master data
-			// (ADR-0043, issue 742). The frozen SQLite line cannot carry it, and without the
-			// row every account, ADMIN included, is refused when it creates a product,
-			// location, unit, group or store. The file is the one migration 0308 itself
-			// reads, so the two cannot differ. Like the files above it runs only in an import that
-			// applies row migrations. It is guarded with NOT EXISTS and, like the
-			// file above, touches permission_hierarchy alone.
-			$this->Target->exec(file_get_contents(__DIR__ . '/../../db/pgsql/master-data-add-seed.sql'));
+				throw $ex;
+			}
 		}
 
 		return $report;

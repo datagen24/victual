@@ -27,6 +27,7 @@
 			<file>tests/Pgsql/ViewPermissionMigrationTest.php</file>
 			<file>tests/Pgsql/MasterDataAddMigrationTest.php</file>
 			<file>tests/Pgsql/MasterDataAddPermissionTest.php</file>
+			<file>tests/Pgsql/PermissionCatalogMigrationTest.php</file>
 			<file>tests/Pgsql/MergeProductsPermissionTest.php</file>
 			<file>tests/Pgsql/StockBookingNeedsStockViewTest.php</file>
 		</testsuite>

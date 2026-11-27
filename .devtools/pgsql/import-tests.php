@@ -354,7 +354,9 @@ foreach ([$min, $max] as $version)
 	$expectedGrants = 6 * (int)Scalar($source, 'SELECT COUNT(*) FROM users');
 	Check('imported users keep all previous reads', (int)$backfilled === $expectedGrants, (string)$expectedGrants, (string)$backfilled);
 	$roleGrants = Scalar($target, 'SELECT COUNT(*) FROM role_permissions');
-	Check('built-in role grants restored', (int)$roleGrants === 28, '28', (string)$roleGrants);
+	// roles-seed.sql's 28, then migration 0320's: the household manager's 12 grants and the two
+	// open definition reads on each of the five built-in roles.
+	Check('built-in role grants restored', (int)$roleGrants === 28 + 12 + 2 * 5, '50', (string)$roleGrants);
 
 	// Plan 19 piece 2's half of the tree. permission_fields references
 	// permission_hierarchy(name), so the importer's TRUNCATE ... CASCADE empties it even
@@ -472,6 +474,23 @@ foreach ([$min, $max] as $version)
 	Check('a MASTER_DATA_EDIT-only account resolves MASTER_DATA_ADD', $addEditor === 1, '1', (string)$addEditor);
 	Check('the Adult role does not resolve MASTER_DATA_ADD', $addAdult === 0, '0', (string)$addAdult);
 	Check('the Child role does not resolve MASTER_DATA_ADD', $addChild === 0, '0', (string)$addChild);
+
+	// Migration 0320's permission catalog (ADR-0057, plan 42), restored by
+	// permission_catalog_seed() after the files above. The importer ran ADR-0057 decision 2's
+	// comparison over every imported user and key on the way; reaching this line means it
+	// passed. What is checked here is that the restore is complete.
+	$catalogMissing = (int)Scalar($target, 'SELECT COUNT(*) FROM permission_catalog_leaves() c
+		LEFT JOIN permission_hierarchy ph ON ph.name = c.name
+		LEFT JOIN permission_hierarchy pp ON pp.id = ph.parent
+		WHERE pp.name IS DISTINCT FROM c.parent');
+	Check('every catalog leaf is restored under its parent', $catalogMissing === 0, '0 misplaced or missing', (string)$catalogMissing);
+	$managerGrants = (int)Scalar($target, "SELECT COUNT(*) FROM roles r JOIN role_permissions rp ON rp.role_id = r.id WHERE r.code = 'HOUSEHOLD_MANAGER' AND r.builtin = 1");
+	Check('the household manager role has its 14 grants back', $managerGrants === 14, '14', (string)$managerGrants);
+	$withoutOpenRead = (int)Scalar($target, "SELECT COUNT(*) FROM users u WHERE NOT EXISTS (SELECT 1 FROM user_permissions_resolved r
+		WHERE r.user_id = u.id AND r.permission_name = 'USERFIELDS_READ')");
+	Check('every imported user resolves USERFIELDS_READ', $withoutOpenRead === 0, '0 users without it', (string)$withoutOpenRead);
+	$adminTaskDelete = (int)Scalar($target, "SELECT COUNT(*) FROM user_permissions_resolved WHERE user_id = (SELECT id FROM users WHERE username = 'admin') AND permission_name = 'TASKS_DELETE'");
+	Check('ADMIN resolves TASKS_DELETE after an import', $adminTaskDelete === 1, '1', (string)$adminTaskDelete);
 
 	// The two row transformations the target's own migration run could not see, because it
 	// ran against an empty database and the rows arrived afterwards.
@@ -794,6 +813,54 @@ Check('ordinary six-decimal comparisons remain unchanged', ValueComparison::COMP
 	'six decimals absorb a sub-micro difference and expose a larger one', 'comparison behavior checked');
 $target = null;
 unlink($precisionSource);
+
+// --- ADR-0057 decision 2: the importer's permission comparison ------------------------
+//
+// The shared fixture's only account is the administrator, who holds every leaf before and
+// after, so the comparison above had nothing to compare. This source adds accounts that hold
+// the old tree's permissions without ADMIN, and a second copy plants a row the catalog does
+// not expect, which must make the import refuse.
+echo PHP_EOL . 'I. Permission comparison on import (ADR-0057 decision 2, migration 0320)' . PHP_EOL;
+
+$permissionSource = $scratch . '/permissions.db';
+copy($fixture, $permissionSource);
+$source = new \PDO('sqlite:' . $permissionSource);
+$source->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+$source->exec("INSERT INTO users (id, username, password) VALUES (8101, 'p42-tasks', 'x'), (8102, 'p42-master-data', 'x'), (8103, 'p42-none', 'x'), (8104, 'p42-stock', 'x')");
+$source->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT 8101, id FROM permission_hierarchy WHERE name = 'TASKS'");
+$source->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT 8102, id FROM permission_hierarchy WHERE name = 'MASTER_DATA_EDIT'");
+$source->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT 8104, id FROM permission_hierarchy WHERE name = 'STOCK'");
+
+$source = null;
+[$code, $output] = RunImport($dataPath, $permissionSource, ['--force']);
+$target = Target($dbName);
+$permissionFailure = $code === 0 ? '' : trim($output);
+$messages = explode("\n", $output);
+$checkLine = implode('', array_filter($messages, fn($m) => str_contains($m, 'permission check')));
+Check('the comparison ran and passed', $permissionFailure === '' && $checkLine !== '',
+	'a permission check line, no exception', $permissionFailure !== '' ? $permissionFailure : ($checkLine === '' ? 'no permission check line' : trim($checkLine)));
+$resolves = fn(int $userId, string $leaf) => (int)Scalar($target, "SELECT COUNT(*) FROM user_permissions_resolved WHERE user_id = $userId AND permission_name = '$leaf'");
+Check('a TASKS holder gains task delete, change (a)', $resolves(8101, 'TASKS_DELETE') === 1, '1', (string)$resolves(8101, 'TASKS_DELETE'));
+Check('a MASTER_DATA_EDIT holder without TASKS loses it, change (a)', $resolves(8102, 'TASKS_DELETE') === 0, '0', (string)$resolves(8102, 'TASKS_DELETE'));
+Check('a MASTER_DATA_EDIT holder keeps chore delete', $resolves(8102, 'CHORES_DELETE') === 1, '1', (string)$resolves(8102, 'CHORES_DELETE'));
+Check('an account with no grants keeps the reads every user had', $resolves(8103, 'STOCK_VIEW') + $resolves(8103, 'USERFIELDS_READ') === 2, '2', (string)($resolves(8103, 'STOCK_VIEW') + $resolves(8103, 'USERFIELDS_READ')));
+Check('a STOCK holder resolves the stock leaves', $resolves(8104, 'STOCK_ENTRIES_UPDATE') === 1 && $resolves(8104, 'PRODUCTS_UPDATE') === 0, '1 and 0',
+	$resolves(8104, 'STOCK_ENTRIES_UPDATE') . ' and ' . $resolves(8104, 'PRODUCTS_UPDATE'));
+
+// A source tree that already places a catalog name elsewhere: the seed refuses, the
+// restore rolls back, and the import reports it.
+$source = new \PDO('sqlite:' . $permissionSource);
+$source->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+$source->exec("INSERT INTO permission_hierarchy (name, parent) SELECT 'PRODUCTS_READ', id FROM permission_hierarchy WHERE name = 'MASTER_DATA_EDIT'");
+$source = null;
+[$code, $output] = RunImport($dataPath, $permissionSource, ['--force']);
+$permissionFailure = $code === 0 ? '' : $output;
+Check('an unexpected tree makes the import refuse', str_contains($permissionFailure, 'PRODUCTS_READ (expected under STOCK_VIEW, found under MASTER_DATA_EDIT)'),
+	'the misplaced leaf named', $permissionFailure === '' ? 'no exception' : (str_contains($permissionFailure, 'PRODUCTS_READ (expected') ? 'named' : substr($permissionFailure, -300)));
+Check('the refused restore left no catalog row behind', (int)Scalar($target, "SELECT COUNT(*) FROM permission_hierarchy WHERE name = 'LABELS_ADMIN'") === 0,
+	'0 rows', Scalar($target, "SELECT COUNT(*) FROM permission_hierarchy WHERE name = 'LABELS_ADMIN'") . ' rows');
+$target = null;
+unlink($permissionSource);
 
 // The scratch directory, not the committed fixtures. Recursive because the data directory
 // gains a view cache: the command under test loads the configuration, and HTMLPurifier's
