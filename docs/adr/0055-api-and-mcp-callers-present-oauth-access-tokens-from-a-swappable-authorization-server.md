@@ -24,6 +24,10 @@
   issues every token, with a lab identity provider or Entra ID federating into it as an
   upstream identity source. Questions 21 to 23 are moot under it; questions 27 and 28 are
   open.
+  On 2026-11-27 the maintainer closed questions 21 to 23 and answered questions 24, 25,
+  27 and 28. The stated worst case is six minutes (decision 6). The measured delay is
+  enough for acceptance. A split into all-in-one and distributed charts needs its own
+  record. The standard-surface contract is a preference (decision 3).
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -196,6 +200,9 @@ URL. Either way the returned metadata must name the pinned issuer, or the config
 is refused. Its JWKS comes from that metadata. Nothing else about the authorization
 server is configured or assumed.
 
+Keeping to this standard surface is a preference since 2026-11-27, not a requirement
+(question 28). Keycloak is the only issuer the project tests against.
+
 The discovery URL exists because the Authentik spike needed it: with one issuer for the
 install, Authentik serves no discovery document at the issuer URL (prerequisite 1). The
 maintainer approved it on 2026-10-25.
@@ -315,7 +322,8 @@ carries the same rule on its own.
   supported operations; a periodic best-effort cleanup does not.
 - Revocation at the authorization server takes effect within the access-token lifetime,
   because resource servers validate statelessly and do not introspect on each request.
-  Five minutes is the stated worst case (question 24).
+  The stated worst case is the five-minute access-token lifetime plus the 60 s clock skew
+  decision 3 permits: six minutes after issue (question 24).
 - Victual can also cut access at once, without introspection. It keeps a row per client
   grant (owner, client id, scope ceiling, last used, revoked). A request whose token names
   a revoked client, an unmapped subject or a disabled user is refused on that request.
@@ -330,7 +338,7 @@ carries the same rule on its own.
 - Revoking refresh access and rejecting an already-issued API token are separate effects
   (question 20). The second is Victual's immediate grant-revocation check above, or else
   the access-token lifetime, measured, is its delay.
-- Write scopes do not introspect either (open question 3). The five-minute worst case
+- Write scopes do not introspect either (open question 3). The six-minute worst case
   above, together with Victual's own grant-row revocation, is the revocation design.
 
 ### 7. The sidecar exchanges the user's token; it does not forward it
@@ -972,6 +980,9 @@ issuer again. Questions 24 and 25 concern Keycloak and still stand.
     reads only documented context cannot revoke anything. (Authentik report findings 19 and 20;
     cases G5d, G5g, G5h, G5m2. Decision 3; prerequisites 8 and 9.)
 
+    > **Response:** datagen24, 2026-11-27: closed. Keycloak is the only issuer (answer 26), so
+    > this question no longer applies. The Authentik evidence above stays as history.
+
 22. **Is a revocation delay bounded by worker health a "documented bounded delay"?** On
     Authentik the delay is under about 1.2 s while the worker is healthy. A refresh in the
     first 400 ms still succeeds, but its descendant is revoked with the family (case
@@ -985,6 +996,9 @@ issuer again. Questions 24 and 25 concern Keycloak and still stand.
     One option is to state the bound as "worker healthy" and require a worker health
     alarm. Another is to treat the looping holder as part of question 23. (Authentik report
     findings 21 and 22. Decision 6; prerequisite 9.)
+
+    > **Response:** datagen24, 2026-11-27: closed. Keycloak is the only issuer (answer 26), so
+    > this question no longer applies. The Authentik evidence above stays as history.
 
 23. **Concurrent and continuous refresh on Authentik: which way forward?** Answer 17
     asked for a mitigation and granted no exception yet. Authentik has no atomic family
@@ -1000,12 +1014,19 @@ issuer again. Questions 24 and 25 concern Keycloak and still stand.
 
     (Authentik report finding 22; cases G5f, G5r, G5r2. Decision 6; prerequisite 9.)
 
+    > **Response:** datagen24, 2026-11-27: closed. Keycloak is the only issuer (answer 26), so
+    > this question no longer applies. The Authentik evidence above stays as history.
+
 24. **What worst case does decision 6 state?** Decision 6 says five minutes. Decision 3
     lets a resource server accept 60 s of clock skew on `exp`. The Keycloak run measured a
     stateless check accepting a revoked grant's token until `exp` + 60.2 to 60.7 s, six
     minutes after issue (Keycloak report finding 23; cases E0 to E2). The options are to
     state the worst case as the access-token lifetime plus the permitted skew, or to
     shorten the lifetime or the skew so that five minutes holds. (Decisions 3 and 6.)
+
+    > **Response:** datagen24, 2026-11-27: six minutes is acceptable. The documentation states the
+    > worst case as the five-minute access-token lifetime plus the 60 s clock skew that
+    > decision 3 permits. Decision 6 now says so.
 
 25. **Must Victual's immediate grant-revocation check be built and tested before
     acceptance?** Answer 20 allows either that check or a measured expiry delay as the
@@ -1016,6 +1037,11 @@ issuer again. Questions 24 and 25 concern Keycloak and still stand.
     listener that calls an HTTP endpoint. Is the measured delay enough for acceptance, with
     the check built as part of the implementation? Or is the check itself acceptance
     evidence? (Keycloak report findings 18, 19 and 23. Decision 6; prerequisite 10.)
+
+    > **Response:** datagen24, 2026-11-27: the measured delay is enough for acceptance. Validating a
+    > revocation can come later, during implementation or in a housekeeping job. The
+    > housekeeping checks are backlogged as
+    > [issue 1141](https://github.com/datagen24/victual/issues/1141).
 
 ### Authorization server and upstream identity, 2026-10-29
 
@@ -1045,8 +1071,22 @@ issuer again. Questions 24 and 25 concern Keycloak and still stand.
     the chart turn it on with OAuth mode, or does an operator who already runs Keycloak
     point Victual at that one? (Decision 2.)
 
+    > **Response:** datagen24, 2026-11-27: "I am thinking we are getting to a point where there is an
+    > all in one chart and a distributed chart where there are more options for external
+    > services."
+    >
+    > Recorded as, in the recorder's reading: there will be two charts. The all-in-one chart
+    > runs Keycloak with Victual. The distributed chart offers more external services,
+    > including pointing Victual at a Keycloak the operator already runs. Splitting the chart
+    > is a change to [ADR-0038](0038-kubernetes-deployments-ship-as-a-helm-chart.md)'s single chart, so
+    > it needs its own record. Decision 2 is not edited until that record exists.
+
 28. **Does the decision 3 resource-server contract still need to work against any
     issuer?** It was written so that a second issuer could be swapped in (prerequisite 1).
     Keeping it to standard surface costs nothing today. It also keeps the option of
     pointing Victual at an operator's existing Keycloak or another server later. Should
     it stay a requirement, or become a preference? (Decision 3.)
+
+    > **Response:** datagen24, 2026-11-27: a preference. Victual can be tested only against the
+    > project's own infrastructure and designs. Decision 3's standard-surface contract stays
+    > the way it is written, but no issuer other than Keycloak is a test target.
