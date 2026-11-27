@@ -2,10 +2,12 @@
 
 Throwaway. On 2026-10-30 the maintainer asked whether Keycloak should handle Victual's service
 registration tokens (MCP sidecar, label renderer, label worker) instead of keys copied by hand into
-a Secret. The proposal is
+a Secret. The proposal tested is
 [ADR-0057](../../../docs/adr/0057-permissions-are-per-resource-leaves-assigned-through-roles-groups-and-service-packages.md)
 question 6: a workload inside the cluster authenticates to Keycloak with its projected Kubernetes
-service-account token, so no secret is stored. This spike checks that path. Pairing for devices
+service-account token, so no secret is stored. This spike checks that path. The record was
+Proposed when the spike ran. On 2026-11-27 the maintainer accepted question 6's proposal, and
+ADR-0057 was accepted the same day in [PR 1146](https://github.com/datagen24/victual/pull/1146). Pairing for devices
 outside the cluster (question 7) is not tested here.
 
 "pass" and "FAIL" compare against question 6's proposal; "obs" records behaviour it does not
