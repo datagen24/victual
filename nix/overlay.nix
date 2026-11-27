@@ -106,6 +106,9 @@ in
     # Question 1 amendment (2026-09-19).
     mcp = self.callPackage ./mcp.nix { };
 
+    # The Keycloak realm reconciler (deploy/keycloak/, plan 43), on the sidecar's Node.
+    keycloakSetup = self.callPackage ./keycloak-setup.nix { };
+
     imageLib = self.callPackage ./images/lib.nix { };
 
     image-app = self.callPackage ./images/app.nix { };
@@ -114,6 +117,7 @@ in
     image-label-renderer = self.callPackage ./images/label-renderer.nix { };
     image-label-worker = self.callPackage ./images/label-worker.nix { };
     image-mcp = self.callPackage ./images/mcp.nix { };
+    image-keycloak-setup = self.callPackage ./images/keycloak-setup.nix { };
 
     loadImages = self.callPackage ./images/load.nix { };
 

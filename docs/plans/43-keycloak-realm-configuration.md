@@ -9,9 +9,10 @@ acceptance prerequisite 8 on Keycloak, and for
 decision 11.
 
 Status: draft, 2026-11-27. The configuration, the reconciler and the harness are in the tree
-(`deploy/keycloak/`, `.devtools/keycloak-config/`). The Helm chart does not run them yet; that
-is the follow-up in [Chart integration](#chart-integration). ADR-0055 and ADR-0058 stay
-Proposed. Nothing here accepts or amends a record.
+(`deploy/keycloak/`, `.devtools/keycloak-config/`). The Helm chart runs the reconciler as an
+opt-in hook Job from its own image; the chart does not run Keycloak itself yet (see
+[Executed](#executed)). ADR-0055 and ADR-0058 stay Proposed. Nothing here accepts or amends a
+record.
 
 ## Problem and outcome
 
@@ -302,6 +303,10 @@ Limits on these results:
    image, which has PHP and no Node.js. The options are a Nix-built Node.js Job image, or a
    PHP port of the reconciler in the migrate image. The harness tests behaviour through the
    CLI, so it can test either.
+
+   > **Response:** datagen24, 2026-11-27: a new Nix-built image, `victual-keycloak-setup`.
+   > The alternatives offered were adding `deploy/keycloak/` to the MCP sidecar's image and
+   > porting the reconciler to PHP for the migrate image.
 3. **Should `manage-users` be narrowed for the SCIM sender and the session poller?** Either
    credential can grant `victual-local-login` and set a password today. Keycloak's
    fine-grained admin permissions might restrict them to users and groups; untested.
@@ -312,3 +317,68 @@ Limits on these results:
 5. **Does a scheduled `--check` belong in the chart?** It would report drift between upgrades,
    but needs a read-only admin credential that lives in the cluster, which decision 8's
    on-demand Job avoids.
+
+## Executed
+
+### Chart integration: the setup Job, 2026-11-27
+
+What shipped:
+
+- **Image:** `victual-keycloak-setup` (`nix/keycloak-setup.nix`, `nix/images/keycloak-setup.nix`),
+  per the answer to open question 2. It holds `deploy/keycloak/`'s reconciler, realm
+  configuration and adapter recipe, and runs on the MCP sidecar's stripped Node 24 runtime. Its
+  entrypoint is `node reconcile.mjs`, as uid 65532 in `/tmp`. Two new `nix/checks.nix` checks:
+  `keycloak-setup-image-has-no-shell`, and `keycloak-setup-refuses-an-empty-environment`, which
+  runs the packaged entrypoint with no variables and expects exit 1 naming them. The `nix`
+  workflow writes it as a seventh release stream, and `release.yml` publishes it with the other
+  six. Its path filter now includes `deploy/keycloak/`.
+- **Chart:** `templates/keycloak-setup.yaml`, off by default. With `keycloakSetup.enabled` the
+  Job runs as a `post-install,post-upgrade` hook with `backoffLimit: 0`. Its delete policy is
+  `before-hook-creation`, so a failed run's log stays readable. `keycloakSetup.checkOnly` adds
+  `--check`, and exit 2 on drift fails the helm command. The trigger was the maintainer's choice
+  on 2026-11-27: an opt-in hook, turned on for the run that should apply the realm.
+- **Values:** `url`, `redirectUri` and `kubernetesIssuer` are required when the Job is on.
+  `apiAudience` defaults to `<baseUrl>/api`, `postLogoutRedirectUri` to `<baseUrl>/`, and
+  `mcpAudience` to `https://<mcp.ingress.host>/mcp`; without a sidecar Ingress the template
+  refuses an empty `mcpAudience`. `VICTUAL_NAMESPACE` is the release's namespace. The schema
+  refuses `CHANGE-ME`, a malformed URL, and an Entra ID tenant without a client id.
+
+Departures from [Chart integration](#chart-integration):
+
+- The chart does not run Keycloak. The Job targets whatever Keycloak `keycloakSetup.url` names,
+  so it serves the distributed values file now. The all-in-one values file needs Keycloak as a
+  chart component first.
+- The two Secrets are read with `envFrom`, not one `secretKeyRef` per variable. The admin
+  Secret holds either a client credential or the bootstrap admin's username and password, and
+  `envFrom` lets the operator choose without a chart value.
+- The chart never renders either Secret, whatever `secrets.source` says. The admin credential
+  therefore exists only while the operator keeps the Secret, as ADR-0058 decision 8 intends.
+
+Verification, 2026-11-27, on branch `claude/opus5_keycloak-setup-job` in a Linux x86-64 cloud
+container:
+
+- `nix build .#image-keycloak-setup` and the two new checks built, with `nixpkgs` and the label
+  inputs overridden to local clones at their locked revisions, because the environment's proxy
+  does not serve GitHub archive downloads. `nix flake check --no-build` evaluated every check.
+  The image's config reads `User 65532:65532`, `WorkingDir /tmp`, and the entrypoint above. Its
+  uncompressed stream is 195 MB.
+- The image's entrypoint was run from its store paths as uid 65532, with the environment
+  `helm template` rendered for the Job, against the harness's Keycloak 26.8.1. No container
+  runtime was available, so the read-only root filesystem was not exercised. The first apply
+  made 39 changes and the second none; `--check` exited 0. After an `accessTokenLifespan`
+  change, `--check` exited 2, an apply repaired it, and `--check` exited 0 again. A label-worker
+  token issued afterwards carried the chart's derived `/api` audience.
+- `python3 -m unittest discover -s .devtools/ci`: 123 tests passed with Helm 4.3.1 from the
+  pinned nixpkgs. CI pins 4.3.0; `get.helm.sh` was not reachable. This includes nine new
+  `KeycloakSetupTest` cases, the matrix entries in `ci/inline-all-features.yaml` and
+  `ci/existing-secrets.yaml`, and `render_k3s.py --check`.
+
+Remaining:
+
+- Keycloak as a chart component, for the all-in-one values file (ADR-0055 answer 27; plan 44
+  has its image).
+- An install on kind with the published images. The Job has not run in a cluster.
+- The two Secrets through `secrets.source`'s 1Password mode, if an operator wants them managed
+  outside `kubectl`.
+- [ADR-0030](../adr/0030-released-images-are-published-to-ghcr.md) decision 5 (Proposed) names
+  six images; the release now publishes seven.

@@ -1,0 +1,129 @@
+{{- /*
+Keycloak's realm, applied by the reconciler (deploy/keycloak/, plan 43), as an opt-in
+post-install and post-upgrade hook.
+
+Off by default. An operator turns keycloakSetup.enabled on for the one `helm install` or
+`helm upgrade` that should apply the realm, with the admin credential in a Secret created
+for that run, then turns it off and deletes the Secret. The Job therefore holds Keycloak
+admin credentials only while it runs (ADR-0058 decision 8, Proposed). The reconciler never
+writes users, credentials, sessions or groups, so running it again is safe (plan 43, cases
+U5, D4 and P1).
+
+It reads two Secrets the chart never renders, whatever secrets.source says: the admin
+credential (keycloakSetup.adminSecret) and the realm's client secrets
+(keycloakSetup.realmSecret). Every other variable deploy/keycloak/example.env lists comes
+from values below. It reads no database credential, no Victual Secret and no ConfigMap.
+
+A refusal or a failed apply exits non-zero, and backoffLimit 0 fails the helm command; the
+report is this Job's log:
+
+  kubectl logs job/victual-keycloak-setup
+
+Comments live inside template blocks in this file, not as `#` lines: deploy/k3s/ is rendered
+with --no-hooks, and a comment-only chunk would become a file there (render_k3s.py).
+*/ -}}
+{{- if .Values.keycloakSetup.enabled }}
+{{- $k := .Values.keycloakSetup }}
+{{- $base := include "victual.baseUrl" . | trimSuffix "/" }}
+{{- $mcpAudience := $k.mcpAudience }}
+{{- if and (not $mcpAudience) .Values.mcp.enabled .Values.mcp.ingress.enabled .Values.mcp.ingress.host }}
+{{- $mcpAudience = printf "https://%s/mcp" .Values.mcp.ingress.host }}
+{{- end }}
+{{- if not $mcpAudience }}
+{{- fail "keycloakSetup.mcpAudience: empty, and there is no mcp.ingress.host to derive it from" }}
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: victual-keycloak-setup
+  labels:
+    app.kubernetes.io/name: victual
+    app.kubernetes.io/component: keycloak-setup
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    {{- /*
+    Replaced by the next run's, and otherwise kept: a refusal's report is this Job's log,
+    and deleting a failed hook (hook-failed) would delete it.
+    */}}
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  {{- /* One run. A retry repeats the same refusal and blurs the exit code. */}}
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: victual-keycloak-setup
+    spec:
+      {{- /*
+      The reconciler talks to Keycloak's admin REST API, never to the Kubernetes API, so no
+      token is mounted (issue #861).
+      */}}
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      os:
+        name: linux
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+      containers:
+        - name: keycloak-setup
+          image: {{ include "victual.image" (dict "root" . "name" "victual-keycloak-setup") }}
+          {{- if $k.checkOnly }}
+          args: ["--check"]
+          {{- end }}
+          env:
+            - name: KEYCLOAK_URL
+              value: {{ $k.url | trimSuffix "/" | quote }}
+            {{- with $k.adminUrl }}
+            - name: KEYCLOAK_ADMIN_URL
+              value: {{ . | trimSuffix "/" | quote }}
+            {{- end }}
+            - name: KEYCLOAK_ADMIN_REALM
+              value: {{ $k.adminRealm | quote }}
+            - name: VICTUAL_REDIRECT_URI
+              value: {{ $k.redirectUri | quote }}
+            - name: VICTUAL_POST_LOGOUT_REDIRECT_URI
+              value: {{ $k.postLogoutRedirectUri | default (printf "%s/" $base) | quote }}
+            - name: VICTUAL_API_AUDIENCE
+              value: {{ $k.apiAudience | default (printf "%s/api" $base) | quote }}
+            - name: VICTUAL_MCP_AUDIENCE
+              value: {{ $mcpAudience | quote }}
+            {{- /* The workloads' service accounts live in the release's namespace. */}}
+            - name: VICTUAL_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            - name: KUBERNETES_SA_ISSUER
+              value: {{ $k.kubernetesIssuer | quote }}
+            {{- with $k.entra.tenantId }}
+            - name: ENTRA_TENANT_ID
+              value: {{ . | quote }}
+            - name: ENTRA_CLIENT_ID
+              value: {{ $k.entra.clientId | quote }}
+            {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ $k.adminSecret }}
+            - secretRef:
+                name: {{ $k.realmSecret }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          {{- with .Values.resources.keycloakSetup }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

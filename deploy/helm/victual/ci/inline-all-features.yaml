@@ -30,3 +30,8 @@ secrets:
     influxdbToken: influxdb-token
     labelRendererKey: renderer-key
     labelWorkerKey: worker-key
+keycloakSetup:
+  enabled: true
+  url: https://auth.victual.example.com
+  redirectUri: https://victual.example.com/oauth/callback
+  kubernetesIssuer: https://kubernetes.default.svc.cluster.local

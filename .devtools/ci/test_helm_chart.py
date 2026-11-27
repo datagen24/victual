@@ -17,6 +17,7 @@ file skips locally and fails under CI.
 """
 import copy
 import json
+import re
 import os
 from pathlib import Path
 import shutil
@@ -161,6 +162,7 @@ class ValuesMatrixTest(unittest.TestCase):
             ("Secret", "victual-influxdb"),
             ("Job", "victual-upgrade-preflight"),
             ("Job", "victual-publish-state"),
+            ("Job", "victual-keycloak-setup"),
         ]:
             self.assertIn(wanted, seen)
 
@@ -611,6 +613,115 @@ class McpExposureTest(unittest.TestCase):
         values = filled_inline(False)
         values["mcp"] = {"enabled": True, "ingress": {"enabled": True, "className": "traefik", "host": ""}}
         self.assertIn("/mcp/ingress/host", refusal(values))
+
+
+KEYCLOAK = ROOT / "deploy/keycloak"
+# The realm's secrets and the reconciler's admin credential: the variables the Job's two
+# Secrets supply, so the chart never names their values (deploy/keycloak/example.env).
+KEYCLOAK_SECRET_KEYS = {
+    "VICTUAL_CLIENT_SECRET", "SCIM_CLIENT_SECRET", "ENTRA_CLIENT_SECRET",
+    "KEYCLOAK_ADMIN_CLIENT_ID", "KEYCLOAK_ADMIN_CLIENT_SECRET",
+    "KEYCLOAK_ADMIN_USERNAME", "KEYCLOAK_ADMIN_PASSWORD",
+}
+
+
+def keycloak_values(**extra):
+    """filled_inline() with the realm setup on, and every value it requires."""
+    values = filled_inline(False)
+    values["keycloakSetup"] = {
+        "enabled": True,
+        "url": "https://auth.victual.example.com",
+        "redirectUri": "https://victual.example.com/oauth/callback",
+        "mcpAudience": "https://mcp.victual.example.com/mcp",
+        "kubernetesIssuer": "https://kubernetes.default.svc.cluster.local",
+        **extra,
+    }
+    return values
+
+
+@needs_helm
+class KeycloakSetupTest(unittest.TestCase):
+    """Plan 43's chart integration: the realm reconciler as an opt-in hook Job."""
+
+    JOB = "victual-keycloak-setup"
+
+    def job(self, values):
+        """The setup Job rendered from `values`."""
+        return hooks(render(values))[self.JOB]
+
+    def test_off_by_default_and_absent_from_every_rendering_without_it(self):
+        """The base, the no-features matrix entry, kind and Talos render no setup Job."""
+        for path in [CHART / "ci/k3s-values.yaml", CHART / "ci/inline-no-features.yaml", *DEPLOYMENTS]:
+            with self.subTest(path.name):
+                self.assertNotIn(self.JOB, by_kind(render(path), "Job"))
+
+    def test_it_runs_after_install_and_upgrade_from_its_own_image(self):
+        """A post-install and post-upgrade hook, one run, the image's own entrypoint."""
+        job = self.job(keycloak_values())
+        annotations = job["metadata"]["annotations"]
+        self.assertEqual(annotations["helm.sh/hook"], "post-install,post-upgrade")
+        # The report is the Job's log: a failed hook must not be deleted, and one run only.
+        self.assertNotIn("hook-failed", annotations.get("helm.sh/hook-delete-policy", ""))
+        self.assertEqual(job["spec"]["backoffLimit"], 0)
+        (container,) = pod_spec(job)["containers"]
+        self.assertEqual(container["image"].rsplit(":", 1)[0], "ghcr.io/datagen24/victual-keycloak-setup")
+        self.assertNotIn("command", container)
+        self.assertNotIn("args", container)
+
+    def test_check_only_passes_check(self):
+        """checkOnly runs the reconciler with --check."""
+        (container,) = pod_spec(self.job(keycloak_values(checkOnly=True)))["containers"]
+        self.assertEqual(container["args"], ["--check"])
+
+    def test_it_reads_only_its_two_secrets_and_no_victual_secret(self):
+        """ADR-0058 decision 8: the admin credential, and nothing of Victual's."""
+        docs = render(keycloak_values())
+        (container,) = pod_spec(hooks(docs)[self.JOB])["containers"]
+        self.assertEqual([r["secretRef"]["name"] for r in container["envFrom"]],
+                         ["victual-keycloak-admin", "victual-keycloak-realm"])
+        self.assertFalse([e for e in container["env"] if "valueFrom" in e])
+        self.assertEqual(secret_readers(docs, "victual-keycloak-admin"), {("Job", self.JOB, "keycloak-setup")})
+        self.assertNotIn(self.JOB, {name for _, name, _ in secret_readers(docs, "victual-db-migrate")})
+        # The chart never renders either Secret, whatever secrets.source is.
+        self.assertFalse({"victual-keycloak-admin", "victual-keycloak-realm"} & set(by_kind(docs, "Secret")))
+
+    def test_every_variable_the_realm_reads_is_supplied(self):
+        """The Job's env and its two Secrets together cover every ${NAME} in the configuration."""
+        wanted = set()
+        for f in [KEYCLOAK / "realm.json", *sorted((KEYCLOAK / "identity-providers").glob("*.json"))]:
+            text = json.dumps({k: v for k, v in json.loads(f.read_text()).items() if k != "$comment"})
+            wanted |= set(re.findall(r"\$\{([A-Z][A-Z0-9_]*)\}", text))
+        values = keycloak_values(entra={"tenantId": "00000000-0000-0000-0000-000000000000", "clientId": "entra-app"})
+        (container,) = pod_spec(self.job(values))["containers"]
+        env = {e["name"]: e["value"] for e in container["env"]}
+        self.assertEqual(wanted - set(env) - KEYCLOAK_SECRET_KEYS, set())
+        self.assertFalse(set(env) & KEYCLOAK_SECRET_KEYS, "a secret would be a plain value in the manifest")
+        self.assertEqual(env["VICTUAL_NAMESPACE"], "default")
+        self.assertEqual(env["VICTUAL_API_AUDIENCE"], "https://victual.example.com/api")
+        self.assertEqual(env["VICTUAL_POST_LOGOUT_REDIRECT_URI"], "https://victual.example.com/")
+
+    def test_the_mcp_audience_comes_from_the_sidecar_ingress_when_unset(self):
+        """An empty mcpAudience is the sidecar Ingress's https://<host>/mcp."""
+        values = keycloak_values(mcpAudience="")
+        values["mcp"] = {"enabled": True, "ingress": {"enabled": True, "className": "traefik", "host": "mcp.victual.example.com"}}
+        (container,) = pod_spec(self.job(values))["containers"]
+        self.assertIn({"name": "VICTUAL_MCP_AUDIENCE", "value": "https://mcp.victual.example.com/mcp"}, container["env"])
+
+    def test_no_mcp_audience_and_no_sidecar_ingress_is_refused(self):
+        """With nothing to derive it from, the template refuses an empty mcpAudience."""
+        self.assertIn("keycloakSetup.mcpAudience", refusal(keycloak_values(mcpAudience="")))
+
+    def test_required_fields_are_refused_empty_when_enabled(self):
+        """The schema names each required field that is empty."""
+        for field in ("url", "redirectUri", "kubernetesIssuer"):
+            with self.subTest(field):
+                self.assertIn(f"/keycloakSetup/{field}", refusal(keycloak_values(**{field: ""})))
+
+    def test_a_placeholder_and_an_entra_tenant_without_a_client_are_refused(self):
+        """CHANGE-ME is refused here too, and an Entra ID tenant needs its client id."""
+        self.assertIn("/keycloakSetup/url", refusal(keycloak_values(url="https://CHANGE-ME")))
+        values = keycloak_values(entra={"tenantId": "00000000-0000-0000-0000-000000000000", "clientId": ""})
+        self.assertIn("/keycloakSetup/entra/clientId", refusal(values))
 
 
 if __name__ == "__main__":

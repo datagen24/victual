@@ -7,7 +7,7 @@
 
 # --- Which version -----------------------------------------------------------------------
 image:
-  # Where the six images are published (ADR-0030). kind points this at `localhost` to run
+  # Where the seven images are published (ADR-0030). kind points this at `localhost` to run
   # the working tree's build.
   registry: ghcr.io/datagen24
   # Empty means the chart's appVersion, which is the release this chart was published with.
@@ -112,6 +112,53 @@ upgradePreflight:
   # decision 9). Neither runs for `kubectl apply -k deploy/k3s`, which has no hooks.
   enabled: true
 
+# --- Keycloak's realm (optional, for OAuth mode) --------------------------------------------
+keycloakSetup:
+  # Off by default. Turned on, a post-install and post-upgrade hook Job runs the realm
+  # reconciler (deploy/keycloak/, plan 43) from the victual-keycloak-setup image against the
+  # Keycloak at `url`, on that one `helm install` or `helm upgrade`. Turn it off again
+  # afterwards and delete the admin Secret: the Job holds Keycloak admin credentials only
+  # while it runs (ADR-0058 decision 8). A refused or failed apply fails the helm command;
+  # `kubectl logs job/victual-keycloak-setup` is the report. Not run by
+  # `kubectl apply -k deploy/k3s`, which has no hooks.
+  enabled: false
+  # true runs `--check`: report what an apply would change, write nothing, and fail the
+  # helm command when the realm has drifted.
+  checkOnly: false
+  # Keycloak's public base URL, the prefix of the realm's issuer (KEYCLOAK_URL).
+  url: ""
+  # Where the Job reaches Keycloak's admin API, when that differs from `url`, such as an
+  # in-cluster Service. Empty uses `url`.
+  adminUrl: ""
+  # The realm the admin credential belongs to.
+  adminRealm: master
+  # Two Secrets you create in the release's namespace before the run; the chart renders
+  # neither, whatever secrets.source says.
+  #   adminSecret: KEYCLOAK_ADMIN_CLIENT_ID and KEYCLOAK_ADMIN_CLIENT_SECRET (a client in
+  #                adminRealm), or KEYCLOAK_ADMIN_USERNAME and KEYCLOAK_ADMIN_PASSWORD.
+  #   realmSecret: VICTUAL_CLIENT_SECRET and SCIM_CLIENT_SECRET; ENTRA_CLIENT_SECRET too
+  #                when entra.tenantId is set.
+  adminSecret: victual-keycloak-admin
+  realmSecret: victual-keycloak-realm
+  # Victual's browser-login redirect URI, registered on its Keycloak client.
+  redirectUri: ""
+  # Where Keycloak sends the browser after logout. Empty is <baseUrl>/.
+  postLogoutRedirectUri: ""
+  # The /api resource's canonical URI (ADR-0055 decision 3). Empty is <baseUrl>/api.
+  apiAudience: ""
+  # The MCP sidecar's canonical resource URI. Empty is https://<mcp.ingress.host>/mcp when
+  # the sidecar's Ingress is on; otherwise it must be set.
+  mcpAudience: ""
+  # The cluster's service-account issuer, which Keycloak trusts for the workloads' client
+  # authentication (ADR-0057 question 6). `kubectl get --raw
+  # /.well-known/openid-configuration` prints it as `issuer`.
+  kubernetesIssuer: ""
+  # Entra ID as an upstream identity provider: a template, untested against a tenant
+  # (ADR-0058 prerequisites 2 to 4). Empty tenantId leaves it out.
+  entra:
+    tenantId: ""
+    clientId: ""
+
 # --- Any other setting -------------------------------------------------------------------
 # Every setting in docs/manual/configuration.md, by its name there (no VICTUAL_ prefix).
 # The database, URL, MQTT and InfluxDB settings come from the sections above and are
@@ -205,10 +252,13 @@ resources:
   labelWorker:
     requests: {cpu: 50m, memory: 32Mi}
     limits: {cpu: "1", memory: 128Mi}
-  # The two hook Jobs above.
+  # The hook Jobs above.
   upgradePreflight:
     requests: {cpu: 50m, memory: 128Mi}
     limits: {memory: 256Mi}
   publishState:
     requests: {cpu: 50m, memory: 128Mi}
     limits: {memory: 256Mi}
+  keycloakSetup:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {memory: 192Mi}

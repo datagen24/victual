@@ -1,6 +1,6 @@
 # Publish a tagged release's images (ADR-0030).
 #
-# A `v*` tag placed on master builds the six Nix images for x86_64 and aarch64, boots and
+# A `v*` tag placed on master builds the seven Nix images for x86_64 and aarch64, boots and
 # walks each architecture's images through the `nix` workflow, pushes them to GHCR as one
 # multi-architecture tag per image, pushes the Helm chart to GHCR as an OCI artifact
 # (ADR-0038 decision 5), and creates the GitHub release with their digests.
@@ -149,7 +149,7 @@ jobs:
         run: |
           set -euo pipefail
           : > digests.txt
-          for component in app web migrate label-renderer label-worker mcp; do
+          for component in app web migrate label-renderer label-worker mcp keycloak-setup; do
             ref="$REGISTRY/victual-$component:$VERSION"
             docker buildx imagetools create --tag "$ref" "$ref-amd64" "$ref-arm64"
             digest=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' | jq -r .digest)
