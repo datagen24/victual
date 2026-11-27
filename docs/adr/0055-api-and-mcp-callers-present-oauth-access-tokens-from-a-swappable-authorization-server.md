@@ -181,13 +181,14 @@ that keeps ordinary passwords in Victual is an acceptance gate. Migration must i
 link provider identities to the correct application records and preserve their access,
 while retaining local bootstrap and break-glass recovery.
 
-Authentik stays the required external compatibility target, whatever is chosen as the
-built-in server (ADR-0056). Whether that target still holds under question 26, and in
-what form, is ADR-0056 question 10.
+Authentik is not a compatibility target, neither as issuer nor as upstream (ADR-0056
+answer 10, 2026-11-27). The Authentik evidence in this record is history. An earlier
+version of this paragraph made Authentik the required external compatibility target.
 
 Whatever is chosen runs as its own workload under ADR-0010: its own container, its own
 PostgreSQL database and role (ADR-0008 permits no other engine), an optional component of
-the Helm chart (ADR-0038) that is off by default, two replicas. An upgrade therefore adds
+the Helm chart (ADR-0038) that is off by default, two replicas. The all-in-one values file
+turns it on with OAuth mode (question 27). An upgrade therefore adds
 no workload until an operator turns the component on (open question 5). The rest of this
 record does not depend on which server is chosen, except through decision 7's exchange
 and decision 8's registration adapter.
