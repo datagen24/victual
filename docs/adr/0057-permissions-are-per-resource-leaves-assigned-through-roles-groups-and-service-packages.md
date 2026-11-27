@@ -9,6 +9,8 @@
   until their leaf lists are written. On 2026-10-30 the maintainer asked how service
   credentials could move to Keycloak; questions 6 to 8 record the proposal and a spike of
   its in-cluster half.
+  The maintainer answered questions 6 to 8 on 2026-11-27, accepting the proposals as
+  written.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-25, against `master` at `42883e0e`. Design only: it changes no
@@ -240,8 +242,11 @@ An **API role package** is a named, versioned set of leaves, kept apart from rol
   move changes. That keeps ADR-0044 decision 4's rule that a mutable bundle never moves a
   live credential, and answers issue 1111's second design question (open question 2).
 - For an urgent reduction, one atomic action reassigns every credential on a version to
-  a narrower one. Revoking a credential takes effect on its next request, as a key
-  revocation does today. Retiring a package version requires reassigning or revoking its
+  a narrower one. Revoking a static key takes effect on its next request, as a key
+  revocation does today. Revoking a Keycloak service credential takes effect within the
+  access-token lifetime plus the permitted clock skew, six minutes at worst (answer 8's
+  follow-up). Victual's immediate grant-revocation check would shorten that to the next
+  request once it is built (issue 1141). Retiring a package version requires reassigning or revoking its
   credentials first.
 - Provisioning service accounts and credentials requires `SERVICE_ACCOUNTS_MANAGE`, a
   leaf under `ADMIN` (open question 1). That leaf alone does not let anyone grant an
@@ -442,6 +447,13 @@ questions settle how it proves which service it is.
    access token expires, where a Victual key works whenever Victual is up. (Decision 7;
    ADR-0055 decisions 2 and 8.)
 
+   > **Response:** datagen24, 2026-11-27: accepted as proposed. The maintainer considers it the
+   > ideal design. The stated cost stands: during a Keycloak outage a service keeps working
+   > only until its current access token expires, at most five minutes.
+   >
+   > Follow-up, datagen24, 2026-11-27: Keycloak's availability target therefore needs to be
+   > similar to Victual's.
+
 7. **Where does pairing live?** Proposed: an administrator holding
    `SERVICE_ACCOUNTS_MANAGE` adds a service on a services page in Victual, picks its
    package version, and receives a one-time pairing code valid for minutes. The device
@@ -451,6 +463,9 @@ questions settle how it proves which service it is.
    its own data directory, so a restart does not need pairing again; today's paired label
    workers can need it. Redemption stays on `/api` because a device on the network must
    reach it. (Decision 7.)
+
+   > **Response:** datagen24, 2026-11-27: yes, this is the design for devices. No paired devices
+   > exist yet, so it stays a design until one does.
 
 #### Service-account spike, 2026-10-30
 
@@ -478,3 +493,16 @@ discovery, and the Victual images.
    copied token stays useful; Kubernetes allows 600 s at the shortest. Should Victual's
    services page disable the Keycloak client when a service account is revoked, and should
    the chart fix the projected-token lifetime at 600 s? (Decision 7; question 6.)
+
+   > **Response:** datagen24, 2026-11-27: yes to both. Revoking a service account on the services page
+   > disables its Keycloak client, and the chart fixes the projected-token lifetime at
+   > 600 s.
+   >
+   > Follow-up, datagen24, 2026-11-27: "Immediate revocation for service accounts is ideal,
+   > but the practical question is can we can; in reality, the question is probably the same
+   > worst-case bounded 5m + SKEW." Recorded as: a revoked service credential's last access
+   > token is accepted for at most the five-minute lifetime plus the 60 s skew, six minutes,
+   > the same bound user grants have (ADR-0055 answer 24). Immediate revocation stays the
+   > goal; it arrives with Victual's grant-revocation check (ADR-0055 decision 6, issue 1141).
+   > Answer 2's "immediate credential revocation" holds for static keys, and for service
+   > credentials once that check exists. Decision 7 now says so.

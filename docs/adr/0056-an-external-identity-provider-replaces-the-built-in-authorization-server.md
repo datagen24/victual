@@ -15,6 +15,12 @@
   title no longer describes that model (question 10). A brokering spike the same day
   tested Keycloak with Authentik upstream; its findings raise questions 12 and 13.
   Question 14 (2026-10-30) asks where first-run setup lives.
+  On 2026-11-27 the maintainer answered questions 10, 11, 13 and 14. A new record for
+  upstream identity into Keycloak will supersede this one. Entra ID federates into
+  Keycloak directly. Keycloak's password login is for bootstrap and break-glass accounts
+  only. First-run setup is an on-demand Job. Answer 12 ends sessions on a SCIM
+  change, with the session lifetime as the fallback. Answer 15 chooses an admin-event poller
+  that ends sessions after a SCIM change, and an 8-hour session lifetime as the fallback.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-24, against `master` at `d40f5afb`. Design only: it changes no code,
@@ -497,10 +503,18 @@ response. The answers do not accept this record.
     Authentik still a required compatibility target, now as an upstream source, or only
     the identity provider the maintainer's lab runs? (All decisions; ADR-0055 decision 2.)
 
+    > **Response:** datagen24, 2026-11-27: supersede. The project switched to Keycloak after the spikes
+    > because Authentik had a problem: it has no atomic refresh-token family revocation
+    > (ADR-0055 questions 21 to 23). A new record for upstream identity into Keycloak will
+    > supersede this one. Authentik is not a required compatibility target (answer 11).
+
 11. **Does Entra ID federate into Keycloak directly, or through the lab identity
     provider?** Answer 9 allows both readings. Directly, Keycloak holds the Entra
     configuration and production needs no Authentik. Through Authentik, Keycloak has one
     upstream and Authentik brokers Entra, as answer 1 described. (Decision 1.)
+
+    > **Response:** datagen24, 2026-11-27: Entra ID federates into Keycloak directly, because Authentik
+    > is excluded. Production needs no Authentik.
 
 #### Brokering spike, 2026-10-29
 
@@ -534,10 +548,24 @@ Not tested: Entra ID, offline tokens, Victual's group recompute and the Victual 
     when membership changes, which neither server does on its own. (Decision 4;
     prerequisite 4.)
 
+    > **Response:** datagen24, 2026-11-27: this is the problem SCIM was designed for, tied
+    > to session lifetime limits. A membership change received through SCIM logs that user
+    > out on receipt. Without one, the user is logged out when the session lifetime ends,
+    > and gets the new permissions at the next login. Decision 4's bound is therefore the
+    > session lifetime limit, shortened to the SCIM delivery delay where the upstream sends
+    > SCIM. Question 15 asks how that works with Keycloak.
+    >
+    > Revised by answer 15 and the SCIM spike: SCIM delivery alone does not end a session
+    > (case M4). The bound with SCIM is the poller's interval plus the six-minute token bound,
+    > and without SCIM it is the 8-hour session lifetime.
+
 13. **Which accounts may use Keycloak's own password login?** During an upstream outage it
     is the only way to sign in anew (U8d), and the browser flow must keep the form for it.
     Should decision 7's rule apply at Keycloak too: password login only for bootstrap and
     break-glass accounts, with everyone else refused there? (Decision 7; prerequisite 5.)
+
+    > **Response:** datagen24, 2026-11-27: yes. Decision 7's rule applies at Keycloak too: password login
+    > there is for bootstrap and break-glass accounts only.
 
 ### First-run setup, 2026-10-30
 
@@ -561,3 +589,56 @@ Not tested: Entra ID, offline tokens, Victual's group recompute and the Victual 
       one-time setup URL in the container log.
 
     (Decisions 5 and 7; ADR-0057 question 7.)
+
+    > **Response:** datagen24, 2026-11-27: yes, as proposed. It is the most secure of the options.
+
+### Group removal through SCIM, 2026-11-27
+
+15. **Which component receives SCIM, and what session lifetime is the fallback?** Answer 12
+    ends a user's sessions when a SCIM membership change arrives. The recorder has not
+    verified that Keycloak 26.8.1 accepts inbound SCIM; none of the spikes tested it. The
+    options are a SCIM receiver in Keycloak, if one is supported, or a SCIM endpoint on
+    Victual that recomputes the user's roles and ends their Keycloak sessions through the
+    admin API. Entra ID sends SCIM to an application endpoint. The fallback also needs a
+    value: what maximum Keycloak session lifetime bounds a removal when no SCIM change
+    arrives? (Decision 4; prerequisite 4; answer 12.)
+
+#### SCIM spike, 2026-11-27
+
+Keycloak 26.8.1 receiving SCIM 2.0 from a scripted provisioning client
+(`.devtools/spikes/oauth-keycloak-scim/`, cases F0 to X2). Evidence for question 15, not an
+answer to it:
+
+- Keycloak's SCIM API is a supported feature, on by default and switched on per realm. It
+  accepts a bearer token from a confidential client that holds `manage-users` and carries the
+  realm's SCIM base URL as its audience. A read-only caller, a token without the audience and
+  a public client are refused (F0, N1 to N5).
+- A SCIM group removal changed Keycloak's membership within 74 ms, and the next refresh issued a
+  token without the group. A token issued earlier keeps it until it expires, so the stale window
+  is ADR-0055 answer 24's six minutes, not the SSO maximum of brokered groups (M3, M5, M6; U5).
+- The removal did not end the user's session, which answer 12 asks for (M4 FAIL). Keycloak has
+  no HTTP event listener and no workflow step that logs a user out. A poller that reads the
+  `GROUP_MEMBERSHIP` admin event and calls the admin logout ended the session; the old refresh
+  token was refused 90 ms after the call (L1 to L3). Its poll interval adds to the delay, and it
+  does not end Victual's own browser session.
+- `active: false` through SCIM refused the next refresh (M8). A user created without `active` is
+  created disabled (M1), and group members are added only with PATCH (M0).
+- Keycloak drops `externalId` unless a user-profile attribute is annotated
+  `kc.scim.schema.attribute: externalId` (X1, X2). Linking a SCIM-created user to the person's
+  brokered login needs that stable upstream id.
+
+Not tested: Entra ID's provisioning service, linking to a brokered Entra login, the poller as a
+Victual job, and the Victual images.
+
+> **Response:** datagen24, 2026-11-27: use the admin-event poller; the fallback session
+> lifetime is 8 hours. Recorded as: Keycloak receives SCIM from the upstream. A poller reads
+> Keycloak's `GROUP_MEMBERSHIP` admin events and calls the admin logout for the
+> affected user, which ends that user's Keycloak sessions. Keycloak's maximum SSO session
+> lifetime is 8 hours, which bounds a group removal that arrives without SCIM. Decision 4's bound
+> is therefore the poll interval plus the six-minute token bound when SCIM arrives, and 8 hours
+> when it does not.
+>
+> Open in the recorder's reading, for the implementation to settle: the poll interval, and
+> whether the poller also ends Victual's own browser session, which answer 12's "logs that user
+> out" suggests. Where the poller runs is tracked with the housekeeping checks in
+> [issue 1141](https://github.com/datagen24/victual/issues/1141).
