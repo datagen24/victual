@@ -554,6 +554,10 @@ Not tested: Entra ID, offline tokens, Victual's group recompute and the Victual 
     > and gets the new permissions at the next login. Decision 4's bound is therefore the
     > session lifetime limit, shortened to the SCIM delivery delay where the upstream sends
     > SCIM. Question 15 asks how that works with Keycloak.
+    >
+    > Revised by answer 15 and the SCIM spike: SCIM delivery alone does not end a session
+    > (case M4). The bound with SCIM is the poller's interval plus the six-minute token bound,
+    > and without SCIM it is the 8-hour session lifetime.
 
 13. **Which accounts may use Keycloak's own password login?** During an upstream outage it
     is the only way to sign in anew (U8d), and the browser flow must keep the form for it.

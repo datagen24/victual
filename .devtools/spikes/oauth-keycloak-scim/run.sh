@@ -12,7 +12,7 @@ case "${1:-up}" in
       https://github.com/keycloak/keycloak/releases/download/$TAG/keycloak-$TAG.tar.gz; tar xzf keycloak-$TAG.tar.gz; }
     [ -f .admin.pw ] || openssl rand -hex 16 > .admin.pw
     KC_BOOTSTRAP_ADMIN_USERNAME=admin KC_BOOTSTRAP_ADMIN_PASSWORD=$(cat .admin.pw) \
-      nohup keycloak-$TAG/bin/kc.sh start-dev --http-port 8180 > kc.log 2>&1 &
+      nohup keycloak-$TAG/bin/kc.sh start-dev --http-host 127.0.0.1 --http-port 8180 > kc.log 2>&1 &
     for _ in $(seq 1 90); do
       curl -fsS http://127.0.0.1:8180/realms/master/.well-known/openid-configuration >/dev/null 2>&1 \
         && { echo "keycloak ready ($TAG)"; exit 0; }

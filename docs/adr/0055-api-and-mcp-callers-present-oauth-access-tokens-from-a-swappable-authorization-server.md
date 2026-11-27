@@ -202,7 +202,10 @@ is refused. Its JWKS comes from that metadata. Nothing else about the authorizat
 server is configured or assumed.
 
 Keeping to this standard surface is a preference since 2026-11-27, not a requirement
-(question 28). Keycloak is the only issuer the project tests against.
+(question 28). Keycloak is the only issuer the project tests against. The same applies to
+the paragraphs below that keep the images unchanged between servers and run a swap test:
+prerequisite 1's swap test is superseded, so these are preferences an implementation
+follows where it can, and no acceptance gate tests them.
 
 The discovery URL exists because the Authentik spike needed it: with one issuer for the
 install, Authentik serves no discovery document at the issuer URL (prerequisite 1). The
@@ -321,8 +324,8 @@ carries the same rule on its own.
   granted (question 17). Provider-supported atomic handling is preferred. A Victual-side
   sweep qualifies only if it reliably identifies every descendant and revokes them through
   supported operations; a periodic best-effort cleanup does not.
-- Revocation at the authorization server takes effect within the access-token lifetime,
-  because resource servers validate statelessly and do not introspect on each request.
+- Revocation at the authorization server takes effect within the access-token lifetime
+  plus the permitted clock skew, because resource servers validate statelessly and do not introspect on each request.
   The stated worst case is the five-minute access-token lifetime plus the 60 s clock skew
   decision 3 permits: six minutes after issue (question 24).
 - Victual can also cut access at once, without introspection. It keeps a row per client

@@ -21,6 +21,11 @@ def case(cid, ok, detail):
     print(f"{cid:4} {tag:4} {detail}")
 
 
+def refused(status, body):
+    """True only for the token endpoint's refusal of a dead grant: 400 with invalid_grant."""
+    return status == 400 and isinstance(body, dict) and body.get("error") == "invalid_grant"
+
+
 def scim(method, path, body, tok):
     """Call the realm's SCIM API with the SCIM media type."""
     return req(method, S + path, body, tok, ctype=SCIM_JSON)
@@ -81,7 +86,7 @@ def membership(admin, tok):
     k = req("GET", R + f"/users/{uid}", token=admin)[1]
     case("M7", not k["enabled"], f"PATCH active=false -> {s}; enabled={k['enabled']}; sessions listed {sessions(admin, uid)}")
     s, nb = user_refresh(second["refresh_token"])
-    case("M8", s != 200, f"refresh after deactivation -> {s} {nb.get('error') if s != 200 else ''}")
+    case("M8", refused(s, nb), f"refresh after deactivation -> {s} {nb.get('error') if s != 200 else ''}")
 
 
 def logout_poller(admin, tok):
@@ -99,7 +104,7 @@ def logout_poller(admin, tok):
     s = req("POST", R + f"/users/{uid}/logout", {}, admin)[0]
     case("L2", sessions(admin, uid) == 0, f"admin logout -> {s}; sessions {sessions(admin, uid)}")
     s, nb = user_refresh(first["refresh_token"])
-    case("L3", s != 200, f"refresh after logout -> {s} {nb.get('error') if s != 200 else ''} ({(time.time()-t0)*1000:.0f} ms)")
+    case("L3", refused(s, nb), f"refresh after logout -> {s} {nb.get('error') if s != 200 else ''} ({(time.time()-t0)*1000:.0f} ms)")
 
 
 def authorization(admin, tok):
@@ -129,10 +134,14 @@ def external_id(admin, tok):
     for a in bare["attributes"]:
         if a["name"] == "upstreamId":
             a["annotations"] = {}
-    req("PUT", R + "/users/profile", bare, admin)
-    s, u, _ = scim("POST", "/Users", {"schemas": [USER_SCHEMA], "userName": "x1-" + STAMP, "externalId": "oid-x1"}, tok)
-    case("X1", None, f"no mapping: create -> {s}; externalId returned {u.get('externalId')}")
-    req("PUT", R + "/users/profile", up, admin)
+    if req("PUT", R + "/users/profile", bare, admin)[0] != 200:
+        raise SystemExit("X1: could not remove the externalId annotation")
+    try:
+        s, u, _ = scim("POST", "/Users", {"schemas": [USER_SCHEMA], "userName": "x1-" + STAMP, "externalId": "oid-x1"}, tok)
+        case("X1", None, f"no mapping: create -> {s}; externalId returned {u.get('externalId')}")
+    finally:
+        if req("PUT", R + "/users/profile", up, admin)[0] != 200:
+            raise SystemExit("X1: could not restore the user profile; rerun setup on a fresh realm")
     s, u, _ = scim("POST", "/Users", {"schemas": [USER_SCHEMA], "userName": "x2-" + STAMP, "externalId": "oid-x2-" + STAMP}, tok)
     attr = req("GET", R + f"/users/{u['id']}", token=admin)[1].get("attributes", {}).get("upstreamId")
     found = scim("GET", f'/Users?filter=externalId%20eq%20%22oid-x2-{STAMP}%22', None, tok)[1].get("totalResults")

@@ -2,9 +2,17 @@
 user-profile attribute that stores SCIM externalId."""
 import sys
 
-from lib import B, R, REALM, S, client_ids, req, admin_token
+from lib import B, R, REALM, S, client_ids, req as _req, admin_token
 
 SCIM_AUD = B + S  # the audience the SCIM endpoint requires: the realm's SCIM base URL
+
+
+def req(method, url, body=None, token=None):
+    """Send one configuration write or read, and stop setup if Keycloak refuses it."""
+    s, b, h = _req(method, url, body, token)
+    if s >= 300:
+        sys.exit(f"{method} {url} -> {s}: {b}")
+    return s, b, h
 
 
 def audience_mapper():
@@ -28,7 +36,7 @@ def caller(admin, client_id, secret, roles, audience=True):
 def main():
     """Build the realm from nothing; fail loudly if it already exists."""
     admin = admin_token()
-    s, b, _ = req("POST", "/admin/realms", {"realm": REALM, "enabled": True, "scimApiEnabled": True,
+    s, b, _ = _req("POST", "/admin/realms", {"realm": REALM, "enabled": True, "scimApiEnabled": True,
                                              "adminEventsEnabled": True, "adminEventsDetailsEnabled": True,
                                              "eventsEnabled": True}, admin)
     if s != 201:
@@ -46,7 +54,7 @@ def main():
     up["attributes"].append({"name": "upstreamId", "displayName": "Upstream id", "multivalued": False,
                              "permissions": {"view": ["admin"], "edit": ["admin"]},
                              "annotations": {"kc.scim.schema.attribute": "externalId"}})
-    print("user profile", req("PUT", R + "/users/profile", up, admin)[0])
+    req("PUT", R + "/users/profile", up, admin)
     print("realm", REALM, "ready")
 
 
