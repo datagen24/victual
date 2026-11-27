@@ -338,11 +338,13 @@ async function phaseRefusals(ctx) {
   ctx.base = await snapshot();
   /** Runs a refusal case: the digest must not move unless `writes` is set. */
   const refuse = async (id, clause, expected, args, env, want, { writes = false } = {}) => {
-    const d0 = await L.configDigest();
+    const e0 = await L.configExport();
     const r = await L.reconcileCli(args, env);
-    const d1 = await L.configDigest();
+    const e1 = await L.configExport();
+    const d0 = e0.digest, d1 = e1.digest;
+    const moved = d0 === d1 ? "" : ` (${L.exportDiff(e0.doc, e1.doc).join("; ")})`;
     const leaked = [L.ENV.VICTUAL_CLIENT_SECRET, L.ENV.SCIM_CLIENT_SECRET].some((s) => JSON.stringify(r.report).includes(s) || r.stderr.includes(s));
-    rec(id, clause, expected, `exit ${r.code}; ${r.report.error ?? ""}${r.report.conflicts?.length ? `; ${r.report.conflicts.join("; ")}` : ""}; export ${d0 === d1 ? "unchanged" : "CHANGED"}; secrets in output ${leaked}`,
+    rec(id, clause, expected, `exit ${r.code}; ${r.report.error ?? ""}${r.report.conflicts?.length ? `; ${r.report.conflicts.join("; ")}` : ""}; export ${d0 === d1 ? "unchanged" : `CHANGED${moved}`}; secrets in output ${leaked}`,
       r.code === want && (writes || d0 === d1) && !leaked);
     return r;
   };

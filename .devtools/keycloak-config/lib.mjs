@@ -58,9 +58,44 @@ export function reconcileCli(args = [], extraEnv = {}) {
  * Volatile fields Keycloak rewrites on its own are not part of the configuration and are removed.
  */
 export async function configDigest(realm = REALM) {
-  const x = await kcRealm(realm).call("POST", "/partial-export?exportClients=true&exportGroupsAndRoles=true");
-  const text = JSON.stringify(x, (k, v) => (k === "notBefore" ? undefined : v));
-  return createHash("sha256").update(text).digest("hex").slice(0, 16);
+  return (await configExport(realm)).digest;
+}
+
+/**
+ * The partial export behind configDigest: { digest, doc }. Arrays of strings are sorted: Keycloak
+ * stores them as sets and exports them in varying order (a client's default scopes came back in
+ * two orders over 30 exports with no write in between, 2026-11-27). Arrays of objects, such as
+ * flow executions, keep their order.
+ */
+export async function configExport(realm = REALM) {
+  /** Drops notBefore and sorts string arrays. */
+  const norm = (k, v) => (k === "notBefore" ? undefined : Array.isArray(v) && v.every((x) => typeof x === "string") ? [...v].sort() : v);
+  const doc = JSON.parse(JSON.stringify(await kcRealm(realm).call("POST", "/partial-export?exportClients=true&exportGroupsAndRoles=true"), norm));
+  return { digest: createHash("sha256").update(JSON.stringify(doc)).digest("hex").slice(0, 16), doc };
+}
+
+/**
+ * Names where two exports differ: a top-level key, or for a list of named objects the entry's
+ * name (clientId, alias or name) and the first differing key inside it. For diagnosing a case
+ * whose export moved.
+ */
+export function exportDiff(a, b) {
+  const out = [];
+  for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    if (JSON.stringify(a[k]) === JSON.stringify(b[k])) continue;
+    if (Array.isArray(a[k]) && Array.isArray(b[k])) {
+      const id = (x) => x?.clientId ?? x?.alias ?? x?.name ?? JSON.stringify(x).slice(0, 40);
+      const ma = new Map(a[k].map((x) => [id(x), x])), mb = new Map(b[k].map((x) => [id(x), x]));
+      for (const n of new Set([...ma.keys(), ...mb.keys()])) {
+        const x = ma.get(n), y = mb.get(n);
+        if (JSON.stringify(x) === JSON.stringify(y)) continue;
+        const inner = x && y && typeof x === "object" ? Object.keys({ ...x, ...y }).filter((q) => JSON.stringify(x[q]) !== JSON.stringify(y[q])) : [];
+        out.push(`${k}[${n}]${x ? "" : " added"}${y ? "" : " removed"}${inner.length ? `.${inner.join(",")}` : ""}`);
+      }
+      if (!out.some((o) => o.startsWith(`${k}[`))) out.push(`${k} (order)`);
+    } else out.push(k);
+  }
+  return out;
 }
 
 /** Form-encoded POST to the token endpoint of `realm`; returns { status, body }. */
