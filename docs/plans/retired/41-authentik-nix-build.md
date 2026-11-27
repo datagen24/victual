@@ -1,16 +1,19 @@
 # 41. Building and shipping Authentik with Nix
 
 Research how Authentik, the reference identity provider for the 0.6.0 OAuth work, can be
-built by Nix the way Victual's own images are ([ADR-0013](../adr/0013-nix-built-container-images.md)),
+built by Nix the way Victual's own images are ([ADR-0013](../../adr/0013-nix-built-container-images.md)),
 so its version is pinned in `flake.lock` and delivered with the rest of the stack.
 
-Status: draft, research only, 2026-10-28. The maintainer answered six of the seven open
+**Status: retired 2026-11-27.** The maintainer excluded Authentik: Keycloak is the only issuer,
+and Entra ID federates into it directly ([ADR-0056](../../adr/0056-an-external-identity-provider-replaces-the-built-in-authorization-server.md)
+answers 10 and 11). Nothing below is scheduled; it is kept as evidence. Before retirement:
+draft, research only, 2026-10-28. The maintainer answered six of the seven open
 questions on 2026-10-28; the answers are recorded under [Open questions](#open-questions)
 and reconciled into the sections below. Question 3's stripping step is a proposal awaiting
 confirmation, and question 6 is unanswered. No implementation, image, chart change or
 accepted decision follows from this document. It does not amend
-[ADR-0055](../adr/0055-api-and-mcp-callers-present-oauth-access-tokens-from-a-swappable-authorization-server.md)
-or [ADR-0056](../adr/0056-an-external-identity-provider-replaces-the-built-in-authorization-server.md),
+[ADR-0055](../../adr/0055-api-and-mcp-callers-present-oauth-access-tokens-from-a-swappable-authorization-server.md)
+or [ADR-0056](../../adr/0056-an-external-identity-provider-replaces-the-built-in-authorization-server.md),
 both Proposed.
 
 ## Recommendation
@@ -25,7 +28,7 @@ entrypoint-dependent probes and security context, and carry the blueprints.
 
 Following the maintainer's answers, that work lives in its own repository, suggested name
 `datagen24/victual-authentik`, with its own release lifecycle and the SBOM and attestation
-work of [plan 40](40-release-sboms.md). The image is built by us, published with the
+work of [plan 40](../40-release-sboms.md). The image is built by us, published with the
 unified release, and (proposed) built with `authentik/enterprise/` removed so it can be
 public. It carries a named exception to the no-shell check for Python and is rebuilt only
 when its pin changes. It includes no outposts, pending the maintainer's answer to question 6. See [Repository split](#repository-split).
@@ -42,7 +45,7 @@ stops being maintained.
 The 0.6.0 release moves API and MCP authentication to OAuth 2.1 tokens from an external
 authorization server, with Authentik as the required compatibility target (ADR-0055
 decisions 2, 3 and 7; ADR-0056). The Authentik spike
-([`.devtools/spikes/oauth-authentik/`](../../.devtools/spikes/oauth-authentik/README.md))
+([`.devtools/spikes/oauth-authentik/`](../../../.devtools/spikes/oauth-authentik/README.md))
 runs `ghcr.io/goauthentik/server:2026.8.5` as two containers, server and worker. That image
 is a Debian build pinned by tag, outside the flake, with a shell, running as uid 1000.
 
@@ -116,10 +119,10 @@ swappable), `datagen24/victual-identity` is the alternative.
 | The image derivation, its checks and the image publication | A reference to the pinned Authentik release: a released tag of the new repository, pinned like the label repositories' |
 | The values file for the upstream `goauthentik/helm` chart | The spike under `.devtools/spikes/oauth-authentik/` and the swap test, pointed at the released image |
 | The blueprints the swap test relies on (ADR-0055 prerequisite 8) | |
-| Release SBOMs, attestation and provenance for the image, per [plan 40](40-release-sboms.md) | |
+| Release SBOMs, attestation and provenance for the image, per [plan 40](../40-release-sboms.md) | |
 
 Plan 40 already describes this shape for the label repositories
-([its section on them](40-release-sboms.md#label-repositories-publish-their-own-attested-sboms)):
+([its section on them](../40-release-sboms.md#label-repositories-publish-their-own-attested-sboms)):
 a release workflow on a signed tag, immutable releases, an attested SBOM and SLSA
 provenance, and a pin in Victual to the released tag rather than a branch. The Authentik
 repository adopts the same list.
@@ -294,7 +297,7 @@ The recommendation is the upstream chart, `goauthentik/helm` (its 2026.8.5 relea
 Victual's chart continues to take only the issuer URL and client settings, which ADR-0056
 already places in environment variables and Helm values. Under the repository split, the
 values file lives in the new repository. The image is published beside the others
-by the release workflow ([ADR-0030](../adr/0030-released-images-are-published-to-ghcr.md),
+by the release workflow ([ADR-0030](../../adr/0030-released-images-are-published-to-ghcr.md),
 Proposed) and referenced by digest in the Authentik values file.
 
 ### GeoIP
@@ -447,7 +450,7 @@ release machinery must allow rapid patch releases for Dependabot and other vulne
 findings. A patch release carries no breaking API change; it contains only dependency
 changes or regression fixes. That machinery is cross-cutting, not specific to Authentik.
 
-[ADR-0047](../adr/0047-one-trunk-release-branches-and-promoted-images.md) (Proposed) already
+[ADR-0047](../../adr/0047-one-trunk-release-branches-and-promoted-images.md) (Proposed) already
 provides the branch shape: a fix lands on `master`, is cherry-picked to
 `release/<major>.<minor>`, and a patch version is a tag on that branch, promoted through UAT
 without a rebuild. It does not define how fast that path runs, what may enter a patch
@@ -457,7 +460,7 @@ This plan depends on it and does not design it.
 Under the repository split, an Authentik patch is a release of the new repository (a new
 `authentik-nix` tag adopted, rebuilt, attested), followed by a Victual patch release that
 moves the pinned reference. Plan 40's proposed advisory monitoring
-([Advisory monitoring for the Nix closure](40-release-sboms.md#advisory-monitoring-for-the-nix-closure))
+([Advisory monitoring for the Nix closure](../40-release-sboms.md#advisory-monitoring-for-the-nix-closure))
 would apply to the new repository's closure too; upstream's GitHub security advisories
 are the more direct signal for Authentik itself.
 
