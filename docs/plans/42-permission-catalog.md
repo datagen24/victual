@@ -1,15 +1,18 @@
 # 42. The permission catalog and household roles
 
-Write down every permission leaf the Proposed
+Write down every permission leaf the accepted
 [ADR-0057](../adr/0057-permissions-are-per-resource-leaves-assigned-through-roles-groups-and-service-packages.md)
 introduces, its parent in today's tree, its read prerequisites and the operations each
 resource does not support. Then define the household roles as exact leaf lists. This is the
 input ADR-0057 acceptance prerequisites 2 and 3 ask for.
 
-Status: draft, 2026-11-27. Design input only: no migration, seed or code change follows from
-this document, and ADR-0057 stays Proposed. The maintainer answered all six open questions on
-2026-11-27, which approves the role lists in [Household roles](#household-roles) for
-prerequisite 3.
+Status: accepted catalog, 2026-11-27. ADR-0057 was accepted on 2026-11-27 in
+[PR 1146](https://github.com/datagen24/victual/pull/1146), which named this plan as the
+evidence for prerequisites 2 and 3. This plan now records the accepted catalog and household
+roles. The maintainer answered all six open questions on 2026-11-27, which approved the role
+lists in [Household roles](#household-roles). This document is design input: it adds no
+migration, seed or code change, and acceptance does not choose the release that implements
+the catalog.
 
 ## Problem and outcome
 
