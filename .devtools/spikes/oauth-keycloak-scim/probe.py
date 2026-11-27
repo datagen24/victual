@@ -26,6 +26,11 @@ def refused(status, body):
     return status == 400 and isinstance(body, dict) and body.get("error") == "invalid_grant"
 
 
+def error_of(body):
+    """Return the OAuth error code of a response body, or the body itself if it is not JSON."""
+    return body.get("error") if isinstance(body, dict) else str(body)[:80]
+
+
 def scim(method, path, body, tok):
     """Call the realm's SCIM API with the SCIM media type."""
     return req(method, S + path, body, tok, ctype=SCIM_JSON)
@@ -86,7 +91,7 @@ def membership(admin, tok):
     k = req("GET", R + f"/users/{uid}", token=admin)[1]
     case("M7", not k["enabled"], f"PATCH active=false -> {s}; enabled={k['enabled']}; sessions listed {sessions(admin, uid)}")
     s, nb = user_refresh(second["refresh_token"])
-    case("M8", refused(s, nb), f"refresh after deactivation -> {s} {nb.get('error') if s != 200 else ''}")
+    case("M8", refused(s, nb), f"refresh after deactivation -> {s} {error_of(nb) if s != 200 else ''}")
 
 
 def logout_poller(admin, tok):
@@ -104,7 +109,7 @@ def logout_poller(admin, tok):
     s = req("POST", R + f"/users/{uid}/logout", {}, admin)[0]
     case("L2", sessions(admin, uid) == 0, f"admin logout -> {s}; sessions {sessions(admin, uid)}")
     s, nb = user_refresh(first["refresh_token"])
-    case("L3", refused(s, nb), f"refresh after logout -> {s} {nb.get('error') if s != 200 else ''} ({(time.time()-t0)*1000:.0f} ms)")
+    case("L3", refused(s, nb), f"refresh after logout -> {s} {error_of(nb) if s != 200 else ''} ({(time.time()-t0)*1000:.0f} ms)")
 
 
 def authorization(admin, tok):

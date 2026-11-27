@@ -497,12 +497,13 @@ keychain, and keep sending their per-device Access service token as before.
   identity mapping and client grants), rows in ADR-0056's audit table, and a JWT
   validator. The sidecar gains the same
   validator, RFC 9728 metadata and a token-exchange client. No tool changes.
-- Revocation at the authorization server has a stated latency of up to five minutes.
+- Revocation at the authorization server has a stated latency of up to six minutes: the
+  five-minute access-token lifetime plus the 60 s clock skew (question 24).
   Revocation in Victual is immediate.
 - Every MCP request may cost one token-exchange round trip when the sidecar's cache is
   cold.
 - Scope cannot widen a user, so a stolen token is bounded by its owner's permissions and
-  its scopes, and by five minutes once the authorization server revokes it.
+  its scopes, and by six minutes once the authorization server revokes it.
 - Spec section 4 is amended when this is implemented: section 4.1's static-key-only
   posture and its `404` for protected-resource metadata no longer hold.
 
