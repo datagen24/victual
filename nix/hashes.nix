@@ -52,5 +52,8 @@
   #
   # Moved 2026-11-27 for the @modelcontextprotocol/node 2.0.0 -> 2.1.0 bump (PR 1138), with
   # prefetch-npm-deps.
-  mcpNpmDeps = "sha256-e7lnv+DV+skaYnO4vFTeFGEkxlryjUZw5C1ypbZPKrY=";
+  #
+  # Moved 2026-11-27 again for the hono 4.13.13 -> 4.13.18 bump (PR 1140), merged on top of
+  # PR 1138's lockfile, with prefetch-npm-deps.
+  mcpNpmDeps = "sha256-HfNDp+5u5uwZcjEFDAHiFbl2zLoFCsyGcRQj9s+gocM=";
 }
