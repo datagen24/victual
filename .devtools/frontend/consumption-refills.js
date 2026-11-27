@@ -31,6 +31,29 @@
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 
+/**
+ * The effective permissions in a user's permission rows that are not below a granted one.
+ * @param {object[]} rows the rows of GET /api/users/{id}/permissions
+ * @param {string[]} granted the permission names granted directly
+ * @returns {string[]} sorted names
+ */
+const effectiveOutsideGrants = (rows, granted) =>
+{
+	// Since migration 0320 a granted permission also confers the plan 42 leaves below it, so
+	// compare what is held outside the subtrees of the grants.
+	const byId = new Map(rows.map(p => [p.permission_id, p]));
+	const grantedIds = new Set(rows.filter(p => granted.includes(p.permission_name)).map(p => p.permission_id));
+	const underGrant = p =>
+	{
+		for (let parent = byId.get(p.parent); parent; parent = byId.get(parent.parent))
+		{
+			if (grantedIds.has(parent.permission_id)) return true;
+		}
+		return false;
+	};
+	return rows.filter(p => Number(p.has_permission) === 1 && !underGrant(p)).map(p => p.permission_name).sort();
+};
+
 function arg(name, fallback)
 {
 	const i = process.argv.indexOf('--' + name);
@@ -104,7 +127,7 @@ async function api(page, path, method = 'GET', body)
 			const rows = await api(admin.page, 'users/' + user.id + '/permissions');
 			rows.forEach(row => { permissionIds[row.permission_name] = row.permission_id; });
 			await api(admin.page, 'users/' + user.id + '/permissions', 'PUT', { permissions: permissions.map(n => { assert.ok(permissionIds[n], n); return permissionIds[n]; }) });
-			const effective = (await api(admin.page, 'users/' + user.id + '/permissions')).filter(p => Number(p.has_permission) === 1).map(p => p.permission_name).sort();
+			const effective = effectiveOutsideGrants(await api(admin.page, 'users/' + user.id + '/permissions'), permissions);
 			assert.deepEqual(effective, [...permissions].sort(), 'the fixture user holds exactly the intended permissions');
 			return user;
 		}
