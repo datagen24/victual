@@ -1,0 +1,6 @@
+keycloak-*
+*.tar.gz
+.admin.pw
+kc.log
+results.json
+__pycache__/

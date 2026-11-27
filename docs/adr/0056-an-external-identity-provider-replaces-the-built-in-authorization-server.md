@@ -597,3 +597,30 @@ Not tested: Entra ID, offline tokens, Victual's group recompute and the Victual 
     admin API. Entra ID sends SCIM to an application endpoint. The fallback also needs a
     value: what maximum Keycloak session lifetime bounds a removal when no SCIM change
     arrives? (Decision 4; prerequisite 4; answer 12.)
+
+#### SCIM spike, 2026-11-27
+
+Keycloak 26.8.1 receiving SCIM 2.0 from a scripted provisioning client
+(`.devtools/spikes/oauth-keycloak-scim/`, cases F0 to X2). Evidence for question 15, not an
+answer to it:
+
+- Keycloak's SCIM API is a supported feature, on by default and switched on per realm. It
+  accepts a bearer token from a confidential client that holds `manage-users` and carries the
+  realm's SCIM base URL as its audience. A read-only caller, a token without the audience and
+  a public client are refused (F0, N1 to N5).
+- A SCIM group removal changed Keycloak's membership within 74 ms, and the next refresh issued a
+  token without the group. A token issued earlier keeps it until it expires, so the stale window
+  is ADR-0055 answer 24's six minutes, not the SSO maximum of brokered groups (M3, M5, M6; U5).
+- The removal did not end the user's session, which answer 12 asks for (M4 FAIL). Keycloak has
+  no HTTP event listener and no workflow step that logs a user out. A poller that reads the
+  `GROUP_MEMBERSHIP` admin event and calls the admin logout ended the session; the old refresh
+  token was refused 90 ms after the call (L1 to L3). Its poll interval adds to the delay, and it
+  does not end Victual's own browser session.
+- `active: false` through SCIM refused the next refresh (M8). A user created without `active` is
+  created disabled (M1), and group members are added only with PATCH (M0).
+- Keycloak drops `externalId` unless a user-profile attribute is annotated
+  `kc.scim.schema.attribute: externalId` (X1, X2). Linking a SCIM-created user to the person's
+  brokered login needs that stable upstream id.
+
+Not tested: Entra ID's provisioning service, linking to a brokered Entra login, the poller as a
+Victual job, and the Victual images.
