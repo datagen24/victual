@@ -74,5 +74,17 @@ in
     ]
   );
 
+  # The Keycloak realm reconciler (deploy/keycloak/, plan 43): its code, the realm
+  # configuration and the adapter recipe it applies. Not the README or example.env, so a
+  # documentation edit does not rebuild the image.
+  keycloakSetupFiles = fs.unions [
+    (root + "/deploy/keycloak/reconcile.mjs")
+    (root + "/deploy/keycloak/adapter.mjs")
+    (root + "/deploy/keycloak/lib")
+    (root + "/deploy/keycloak/realm.json")
+    (root + "/deploy/keycloak/adapter-recipe.json")
+    (root + "/deploy/keycloak/identity-providers")
+  ];
+
   toSource = fileset: fs.toSource { inherit root fileset; };
 }

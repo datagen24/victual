@@ -116,8 +116,36 @@ Keycloak cannot enforce the rest by configuration:
 - **Leaf scopes** (ADR-0055 decision 5): only the four bundles are declared. The leaf list
   depends on ADR-0057's catalog ([plan 42](../../docs/plans/42-permission-catalog.md)).
 
-## Chart integration
+## Run it from the Helm chart
 
-Not wired yet. The all-in-one and distributed values files (ADR-0055 answer 27) both run the
-reconciler, as ADR-0058 decision 8's setup Job, against the Keycloak they use. Plan 43 describes
-the follow-up.
+The chart runs the reconciler as an opt-in hook Job, `victual-keycloak-setup`, from the
+`victual-keycloak-setup` image. The image holds this directory's reconciler, realm configuration
+and recipe, on the MCP sidecar's Node. The Job is off by default. Turn it on for the one
+`helm install` or `helm upgrade` that should apply the realm:
+
+1. Create the two Secrets in the release's namespace. The chart renders neither:
+
+   ```sh
+   kubectl -n victual create secret generic victual-keycloak-admin \
+     --from-literal=KEYCLOAK_ADMIN_CLIENT_ID=... --from-literal=KEYCLOAK_ADMIN_CLIENT_SECRET=...
+   kubectl -n victual create secret generic victual-keycloak-realm \
+     --from-literal=VICTUAL_CLIENT_SECRET=... --from-literal=SCIM_CLIENT_SECRET=...
+   ```
+
+   The admin Secret may hold `KEYCLOAK_ADMIN_USERNAME` and `KEYCLOAK_ADMIN_PASSWORD` instead.
+   Add `ENTRA_CLIENT_SECRET` to the realm Secret when `keycloakSetup.entra.tenantId` is set.
+2. Set `keycloakSetup.enabled: true`, with `url`, `redirectUri` and `kubernetesIssuer`, and
+   `mcpAudience` unless the sidecar's Ingress is on. `values.yaml` documents each field and its
+   default. Run `helm upgrade --install`.
+3. The Job runs after the release's resources are applied. A refusal or a failed apply fails the
+   helm command; `kubectl logs job/victual-keycloak-setup` is the report.
+4. Set `keycloakSetup.enabled: false` again and delete `victual-keycloak-admin`, so that no
+   admin credential stays in the namespace (ADR-0058 decision 8).
+
+`keycloakSetup.checkOnly: true` runs `--check` instead: it writes nothing, and fails the helm
+command when the realm has drifted.
+
+The chart does not run Keycloak itself yet. The Job applies the realm to whatever Keycloak `url`
+names, which is the distributed values file's case (ADR-0055 answer 27). Plan 43's
+[Executed](../../docs/plans/43-keycloak-realm-configuration.md#executed) section records what
+was verified and what remains.

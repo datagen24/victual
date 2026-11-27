@@ -285,6 +285,88 @@
         "enabled"
       ]
     },
+    "keycloakSetup": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "checkOnly": {
+          "type": "boolean"
+        },
+        "url": {
+          "$ref": "#/$defs/text",
+          "pattern": "^(https?://[^\\s/]+.*)?$"
+        },
+        "adminUrl": {
+          "$ref": "#/$defs/text",
+          "pattern": "^(https?://[^\\s/]+.*)?$"
+        },
+        "adminRealm": {
+          "$ref": "#/$defs/text",
+          "minLength": 1
+        },
+        "adminSecret": {
+          "$ref": "#/$defs/secretName"
+        },
+        "realmSecret": {
+          "$ref": "#/$defs/secretName"
+        },
+        "redirectUri": {
+          "$ref": "#/$defs/text",
+          "pattern": "^(https?://[^\\s/]+.*)?$"
+        },
+        "postLogoutRedirectUri": {
+          "$ref": "#/$defs/text",
+          "pattern": "^(https?://[^\\s/]+.*)?$"
+        },
+        "apiAudience": {
+          "$ref": "#/$defs/text",
+          "pattern": "^(https?://[^\\s/]+.*)?$"
+        },
+        "mcpAudience": {
+          "$ref": "#/$defs/text",
+          "pattern": "^(https?://[^\\s/]+.*)?$"
+        },
+        "kubernetesIssuer": {
+          "$ref": "#/$defs/text",
+          "pattern": "^(https?://[^\\s/]+.*)?$"
+        },
+        "entra": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tenantId": {
+              "$ref": "#/$defs/text",
+              "pattern": "^([0-9a-fA-F-]{36})?$"
+            },
+            "clientId": {
+              "$ref": "#/$defs/text"
+            }
+          },
+          "required": [
+            "tenantId",
+            "clientId"
+          ]
+        }
+      },
+      "required": [
+        "enabled",
+        "checkOnly",
+        "url",
+        "adminUrl",
+        "adminRealm",
+        "adminSecret",
+        "realmSecret",
+        "redirectUri",
+        "postLogoutRedirectUri",
+        "apiAudience",
+        "mcpAudience",
+        "kubernetesIssuer",
+        "entra"
+      ]
+    },
     "settings": {
       "type": "object",
       "$comment": "Each name is one from docs/manual/configuration.md, without VICTUAL_, holding one value: a list cannot be set from the environment.",
@@ -862,6 +944,71 @@
                   "className",
                   "host"
                 ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "keycloakSetup": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "keycloakSetup": {
+            "properties": {
+              "url": {
+                "minLength": 1
+              },
+              "redirectUri": {
+                "minLength": 1
+              },
+              "kubernetesIssuer": {
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "keycloakSetup": {
+            "properties": {
+              "entra": {
+                "properties": {
+                  "tenantId": {
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "tenantId"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "keycloakSetup": {
+            "properties": {
+              "entra": {
+                "properties": {
+                  "clientId": {
+                    "minLength": 1
+                  }
+                }
               }
             }
           }

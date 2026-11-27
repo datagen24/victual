@@ -46,6 +46,7 @@ of the signal check (9), and the K3S apply.
 | `.#image-label-renderer` | the label renderer, a Rust binary | pinned from `datagen24/victual-label-renderer` |
 | `.#image-label-worker` | the label delivery worker, a Rust binary | pinned from `datagen24/victual-label-worker` |
 | `.#image-mcp` | `victual-mcp`, the read-only MCP sidecar | a Node process built from `mcp/` in this repository — **unbuilt**; see [issue #86](https://github.com/datagen24/victual/issues/86) |
+| `.#image-keycloak-setup` | `reconcile.mjs`, the Keycloak realm reconciler, a hook Job | the sidecar's Node and `deploy/keycloak/` ([plan 43](../docs/plans/43-keycloak-realm-configuration.md)) |
 
 All run as uid 65532, contain no shell and no package manager, and are built from
 `scratch` — there is no base image and therefore no base image's CVEs.

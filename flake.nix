@@ -90,6 +90,7 @@
             labelRenderer
             labelWorker
             mcp
+            keycloakSetup
             ;
         }
         // lib.optionalAttrs (builtins.elem system linuxSystems) {
@@ -100,6 +101,7 @@
             image-label-renderer
             image-label-worker
             image-mcp
+            image-keycloak-setup
             ;
           # `nix build` with no attribute gives the thing most people want first.
           default = v.image-app;

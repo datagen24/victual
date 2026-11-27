@@ -15,7 +15,7 @@
 # The release workflow calls this one once per architecture (ADR-0030), so that the images
 # a tag publishes are the images that passed the boot test and the walk below, on the
 # architecture they were built for. Called that way it skips the path filter, runs on the
-# runner it is given, and hands the six image streams on as an artifact. It never holds a
+# runner it is given, and hands the seven image streams on as an artifact. It never holds a
 # registry credential: pushing is the caller's job, with a token this workflow does not see.
 
 name: nix
@@ -31,7 +31,7 @@ on:
         type: string
         default: ubuntu-latest
       artifact-name:
-        description: When set, the six image streams are uploaded as an artifact of this name
+        description: When set, the seven image streams are uploaded as an artifact of this name
         type: string
         default: ''
   pull_request:
@@ -55,6 +55,10 @@ on:
       # fail here, not on the next unrelated nix/ change.
       - 'mcp/**'
       - '!mcp/**/*.md'
+      # The Keycloak setup image packages deploy/keycloak/ (nix/keycloak-setup.nix); its
+      # checks run the packaged reconciler.
+      - 'deploy/keycloak/**'
+      - '!deploy/keycloak/**/*.md'
   push:
     branches: [master]
     paths:
@@ -77,6 +81,10 @@ on:
       # fail here, not on the next unrelated nix/ change.
       - 'mcp/**'
       - '!mcp/**/*.md'
+      # The Keycloak setup image packages deploy/keycloak/ (nix/keycloak-setup.nix); its
+      # checks run the packaged reconciler.
+      - 'deploy/keycloak/**'
+      - '!deploy/keycloak/**/*.md'
 
 jobs:
   # A release build is not filtered by path: a tag is built whatever its last commit touched.
@@ -337,16 +345,16 @@ jobs:
 
       # Only after the walk: an image that has not served every page is not handed on. The
       # streams are written from the same store paths the boot test loaded, so the bytes the
-      # release pushes are the bytes that were tested. All six, where the build step above
-      # names three, because the label and MCP images ship with a release too; nix flake
-      # check has already asserted each of them shell-free.
-      - name: Write the six image streams for the release
+      # release pushes are the bytes that were tested. All seven, where the build step above
+      # names three, because the label, MCP and Keycloak setup images ship with a release
+      # too; nix flake check has already asserted each of them shell-free.
+      - name: Write the seven image streams for the release
         if: inputs.artifact-name != ''
         run: |
           set -euo pipefail
           out="$RUNNER_TEMP/images"
           mkdir -p "$out"
-          for img in image-app image-web image-migrate image-label-renderer image-label-worker image-mcp; do
+          for img in image-app image-web image-migrate image-label-renderer image-label-worker image-mcp image-keycloak-setup; do
             "$(nix build ".#$img" --no-link --print-out-paths --print-build-logs)" > "$out/${img#image-}.tar"
           done
           ls -l "$out"

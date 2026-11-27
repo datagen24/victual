@@ -27,6 +27,7 @@
   labelRenderer,
   labelWorker,
   mcp,
+  keycloakSetup,
   runtime,
   imageLib,
   version,
@@ -141,6 +142,56 @@ in
         wc -l < "$closure/store-paths" | sed 's/^/store paths: /'
         touch $out
       '';
+
+  # The Keycloak setup image's closure: the reconciler's files and the sidecar's Node. The
+  # same assertion as the sidecar's, held separately because it is a separate image.
+  keycloak-setup-image-has-no-shell =
+    runCommand "victual-check-keycloak-setup-no-shell"
+      {
+        closure = closureInfo {
+          rootPaths = [
+            keycloakSetup
+            keycloakSetup.node
+          ];
+        };
+      }
+      ''
+        found=""
+        for forbidden in ${lib.escapeShellArgs forbiddenInRuntimeClosure}; do
+          if grep -qE "^/nix/store/[a-z0-9]{32}-$forbidden(-[0-9]|\$)" "$closure/store-paths"; then
+            found="$found $forbidden"
+          fi
+        done
+
+        if [ -n "$found" ]; then
+          echo "The Keycloak setup closure contains:$found" >&2
+          echo "Find the reference with: nix why-depends .#keycloakSetup nixpkgs#bash" >&2
+          exit 1
+        fi
+
+        echo "The Keycloak setup closure holds no shell and no interpreter other than Node."
+        wc -l < "$closure/store-paths" | sed 's/^/store paths: /'
+        touch $out
+      '';
+
+  # The packaged reconciler loads and refuses an empty environment before any network
+  # call: the image's entrypoint, run with no variables, must exit 1 with a JSON report
+  # naming the unset variables. That shows every module the entrypoint imports is in the
+  # package and that realm.json parsed; it reaches no Keycloak, so it runs in the sandbox.
+  keycloak-setup-refuses-an-empty-environment =
+    runCommand "victual-check-keycloak-setup-refuses" { } ''
+      set +e
+      env -i ${keycloakSetup.node}/bin/node ${keycloakSetup.entrypoint} > report.json 2> stderr.txt
+      code=$?
+      set -e
+      if [ "$code" != 1 ] || ! grep -qE '"error": "configuration refused: .*unset variables: ' report.json; then
+        echo "expected exit 1 and 'configuration refused: ... unset variables', got exit $code:" >&2
+        cat report.json stderr.txt >&2
+        exit 1
+      fi
+      grep -o 'unset variables: [^"]*' report.json
+      touch $out
+    '';
 
   image-has-no-shell =
     runCommand "victual-check-no-shell"

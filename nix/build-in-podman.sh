@@ -213,7 +213,7 @@ cmd_images() {
 	# they were missing until 2026-09-20, so `images` left the label workloads at whatever
 	# tag happened to be in podman already, and a manifest referencing the current tag found
 	# no image. deploy/README.md's label table is what they are for.
-	for img in image-app image-web image-migrate image-mcp image-label-renderer image-label-worker; do
+	for img in image-app image-web image-migrate image-mcp image-label-renderer image-label-worker image-keycloak-setup; do
 		log "building .#$img and loading it into $CONTAINER_ENGINE"
 		# The flags are spelled out rather than interpolated from NIX_FLAGS: `${NIX_FLAGS[*]}`
 		# flattens `--extra-experimental-features` and its single argument
