@@ -73,7 +73,19 @@ const base = index < 0 ? 'http://127.0.0.1:8200' : process.argv[index + 1];
   assert.equal(job.state, 'awaiting_artifact');
   await page.goto(base + '/labelprintjobs');
   await page.waitForFunction(() => document.querySelector('#label-jobs-rows').textContent.includes('Waiting for label rendering'));
+
+  // Issue 1102: deleting the printer dead-letters the queued job with "Printer deleted", and the
+  // monitor shows that reason in its own column, under its own header.
+  const deleted = await page.request.delete(base + '/api/labels/printers/' + printer.id);
+  assert.ok(deleted.ok(), 'printer delete: ' + await deleted.text());
+  await page.goto(base + '/labelprintjobs');
+  const jobRow = page.locator('#label-jobs-rows tr').filter({ has: page.locator('td:first-child', { hasText: new RegExp('^' + job.id + '$') }) });
+  await jobRow.locator('td', { hasText: 'Cannot deliver' }).waitFor();
+  const headers = await page.locator('table thead th').allTextContents();
+  const cells = await jobRow.locator('td').allTextContents();
+  assert.equal(cells.length, headers.length, 'one cell per header');
+  assert.equal(cells[headers.indexOf('Reason it cannot be delivered')], 'Printer deleted');
   assert.deepEqual(errors, []);
-  console.log('PASS renderer and worker keys issued from the page, schema-generated printer form, 422 combination refusal, saved configuration, queued artifact gate and monitor');
+  console.log('PASS renderer and worker keys issued from the page, schema-generated printer form, 422 combination refusal, saved configuration, queued artifact gate, monitor and dead-letter reason');
  } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
