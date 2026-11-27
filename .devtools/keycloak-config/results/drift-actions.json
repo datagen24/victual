@@ -1,0 +1,107 @@
+{
+  "drifts": [
+    {
+      "name": "access-token lifespan 3600",
+      "expect": "realm: set accessTokenLifespan"
+    },
+    {
+      "name": "offline_access optional on victual",
+      "expect": "client victual: remove optional scope offline_access"
+    },
+    {
+      "name": "PKCE off and a wildcard redirect on victual",
+      "expect": "client victual: set redirectUris,attributes.pkce.code.challenge.method"
+    },
+    {
+      "name": "groups mapper deleted",
+      "expect": "client scope victual-groups: create mapper groups"
+    },
+    {
+      "name": "deny step disabled in the browser flow",
+      "expect": "flow victual-browser: rebuild"
+    },
+    {
+      "name": "downscope policy deleted",
+      "expect": "client policies: set victual-downscope-all"
+    },
+    {
+      "name": "manage-users revoked from the SCIM sender",
+      "expect": "client victual-scim: grant realm-management manage-users"
+    },
+    {
+      "name": "manage-users removed from the SCIM sender's scope mappings",
+      "expect": "client victual-scim: scope-map realm-management manage-users"
+    },
+    {
+      "name": "externalId annotation removed",
+      "expect": "user profile: upstreamId"
+    },
+    {
+      "name": "offline_access back in the default roles",
+      "expect": "default roles: remove offline_access"
+    },
+    {
+      "name": "browser flow bound to Keycloak's built-in flow",
+      "expect": "realm flow bindings: set browserFlow"
+    },
+    {
+      "name": "victual client secret changed",
+      "expect": "client victual: set secret"
+    },
+    {
+      "name": "MCP audience scope allowed to anonymous registrants (ADR-0055 K2h)",
+      "expect": "registration policy anonymous/Allowed Client Scopes: set allowed-client-scopes"
+    },
+    {
+      "name": "extra mapper on victual",
+      "expect": "client victual: remove undeclared mapper harness-extra"
+    },
+    {
+      "name": "session poller client deleted",
+      "expect": "client victual-session-poller: create"
+    },
+    {
+      "name": "adapter client's PKCE removed",
+      "expect": "adapter client harness-mcp-1: set attributes.pkce.code.challenge.method"
+    }
+  ],
+  "check": [
+    "realm: set accessTokenLifespan",
+    "default roles: remove offline_access",
+    "client scope victual-groups: create mapper groups",
+    "flow victual-browser: rebuild (tree or description differs)",
+    "realm flow bindings: set browserFlow",
+    "client victual: set redirectUris,attributes.pkce.code.challenge.method",
+    "client victual: set secret",
+    "client victual: remove undeclared mapper harness-extra",
+    "client victual: remove optional scope offline_access",
+    "client victual-session-poller: create",
+    "client victual-scim: grant realm-management manage-users",
+    "client victual-scim: scope-map realm-management manage-users",
+    "adapter client harness-mcp-1: set attributes.pkce.code.challenge.method",
+    "client victual: remove forbidden optional scope offline_access",
+    "client policies: set victual-downscope-all",
+    "registration policy anonymous/Allowed Client Scopes: set allowed-client-scopes",
+    "user profile: upstreamId"
+  ],
+  "apply": [
+    "realm: set accessTokenLifespan",
+    "default roles: remove offline_access",
+    "client scope victual-groups: create mapper groups",
+    "flow victual-browser: rebuild (tree or description differs)",
+    "realm flow bindings: set browserFlow",
+    "client victual: set redirectUris,attributes.pkce.code.challenge.method",
+    "client victual: set secret",
+    "client victual: remove undeclared mapper harness-extra",
+    "client victual: remove optional scope offline_access",
+    "client victual-session-poller: create",
+    "client victual-session-poller: grant realm-management view-users,view-events,manage-users",
+    "client victual-session-poller: scope-map realm-management view-users,view-events,manage-users",
+    "client victual-scim: grant realm-management manage-users",
+    "client victual-scim: scope-map realm-management manage-users",
+    "adapter client harness-mcp-1: set attributes.pkce.code.challenge.method",
+    "client policies: set victual-downscope-all",
+    "registration policy anonymous/Allowed Client Scopes: set allowed-client-scopes",
+    "user profile: upstreamId"
+  ]
+}

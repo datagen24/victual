@@ -253,21 +253,28 @@ Run on 2026-11-27 in a Linux x86-64 cloud container. Keycloak 26.8.1 from the re
 (SHA-256 `4e2740b181faa2ea623a1c2ecf00855935311e546046e2f857615a47ed24cbe8`), `start-dev` on
 PostgreSQL 16, OpenJDK 21.0.13, Node.js 22.23.5. Docker's daemon was not running in the
 container and quay.io was not used. Working copy: branch `claude/opus5_keycloak-realm-config-p8`;
-the run records its base commit in `results/results.json`. Reproduce with:
+`results/results.json` records the commit each run started from. Reproduce with:
 
 ```sh
 cd .devtools/keycloak-config && ./run.sh up && node test.mjs
 ```
 
-All 54 pass or fail cases passed; four cases are observations. The full table is
+The recorded run started at 20:13 UTC from commit `7fbed58`: all 53 pass or fail cases passed,
+and five cases are observations. Phases U to F then ran three more times on the same instance
+with no FAIL. The full table is
 [`results.md`](../../.devtools/keycloak-config/results/results.md).
+
+An earlier run failed case F5 once: the export digest moved although nothing was written. The
+moved field was a client's `defaultClientScopes`, which Keycloak exported in two orders over 30
+exports with no write in between. The digest now sorts string lists, which Keycloak stores as
+sets, and names the part of the export that moved when a case finds one.
 
 | Requirement | Cases | Result |
 |---|---|---|
 | 3. Idempotent | M1, M2, U2, D3, F11 | A second and third apply made zero changes; Keycloak's partial export hashed the same before and after |
 | 4. Repairs drift | D1 to D3 | 16 drifts made through the admin API, including a disabled deny step, a deleted client policy, a wildcard redirect, `offline_access` back in the default roles, and the MCP audience on the anonymous allowed-scope list (the ADR-0055 K2h hazard). `--check` named all 16 and wrote nothing; one apply repaired them |
 | 5. Keeps users and sessions | U5, U6, D4, D5, P1 | Five users (a break-glass account, two ordinary accounts, a brokered user with a federated identity, a SCIM user with its upstream id and group) kept their ids, credential ids, links, groups and session counts through the upgrade, the drift repair and every refusal case. A session from before the upgrade kept refreshing |
-| 6. Upgrades | U0 to U4 | Version 1 to version 2 made 35 changes in 3.4 s, including the read-back pass: a removed client and client scope deleted, the SSO maximum changed, the browser flow rebuilt with its gate, a new flow bound, and the adapter's client moved from recipe 2 to recipe 3 |
+| 6. Upgrades | U0 to U4 | Version 1 to version 2 made 35 changes in 2.8 s, including the read-back pass: a removed client and client scope deleted, the SSO maximum changed, the browser flow rebuilt with its gate, a new flow bound, and the adapter's client moved from recipe 2 to recipe 3 |
 | 7. Refuses or reports | F1 to F10 | Unset variable, unknown key, `CHANGE-ME`, version pin, unowned object, forbidden recipe: refused with nothing written. A write Keycloak refused stopped the run and named the call. No secret value appeared in any output |
 | 8. Generated objects | U4, F10 | The adapter's objects were brought to the pinned recipe; a recipe listing a forbidden scope was refused |
 | Policies | N1a to N10b, B1 | Every positive case succeeded and every negative case was refused, as listed in [What the realm contains](#what-the-realm-contains) |
