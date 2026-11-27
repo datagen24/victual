@@ -2131,7 +2131,16 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 	 */
 	public function testSystemInfoReportsTheEngineActuallyServingTheInstallation()
 	{
-		$info = ApplicationService::GetInstance()->GetSystemInfo(self::request('GET', ['User-Agent' => 'HelperUnits/1.0']));
+		self::grant(['ADMIN']);
+
+		try
+		{
+			$info = ApplicationService::GetInstance()->GetSystemInfo(self::request('GET', ['User-Agent' => 'HelperUnits/1.0']));
+		}
+		finally
+		{
+			self::grant([]);
+		}
 
 		self::assertSame(phpversion(), $info['php_version']);
 		self::assertSame('HelperUnits/1.0', $info['client'], 'plan 15-C8: the client is read through PSR-7');
@@ -2144,6 +2153,105 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertArrayHasKey('sqlite_version', $info, 'ADR-0005: the key stays in the response whatever the driver situation is');
 		self::assertArrayHasKey('os', $info);
 		self::assertStringContainsString(php_uname('s'), $info['os']);
+	}
+
+	/**
+	 * Plan 42 open question 3: the PHP, database and kernel versions go to ADMIN only. A
+	 * caller without it gets none of the four keys - absent, not null - and keeps the
+	 * Victual version, the migration number, the booking capability and the client.
+	 */
+	public function testSystemInfoLeavesTheEnvironmentFieldsOutForACallerWithoutAdmin()
+	{
+		$request = self::request('GET', ['User-Agent' => 'HelperUnits/1.0']);
+
+		self::grant(['STOCK_VIEW', 'USERS_READ', 'MASTER_DATA_EDIT']);
+		$restricted = ApplicationService::GetInstance()->GetSystemInfo($request);
+
+		self::grant(['ADMIN']);
+		$admin = ApplicationService::GetInstance()->GetSystemInfo($request);
+
+		self::grant([]);
+
+		self::assertSame(
+			['stock_booking_idempotency', 'victual_version', 'db_version', 'client'],
+			array_keys($restricted),
+			'only the four fields every authenticated caller keeps'
+		);
+		foreach (ApplicationService::ENVIRONMENT_FIELDS as $field)
+		{
+			self::assertArrayNotHasKey($field, $restricted, "$field is absent rather than null");
+			self::assertArrayHasKey($field, $admin, "an administrator still receives $field");
+		}
+
+		self::assertSame(
+			['stock_booking_idempotency', 'victual_version', 'php_version', 'sqlite_version', 'database_engine', 'db_version', 'os', 'client'],
+			array_keys($admin),
+			'the administrator\'s response keeps its keys in the order it always had'
+		);
+		self::assertSame($admin['db_version'], $restricted['db_version']);
+		self::assertSame('HelperUnits/1.0', $restricted['client']);
+		self::assertSame($admin['victual_version']->Version, $restricted['victual_version']->Version);
+		self::assertSame($admin['stock_booking_idempotency'], $restricted['stock_booking_idempotency']);
+	}
+
+	/**
+	 * Fails closed: a process with no authenticated user gets no environment fields, which
+	 * is what the 500 page sees on a route that throws before authentication.
+	 */
+	public function testSystemInfoLeavesTheEnvironmentFieldsOutWhenNoUserIsAuthenticated()
+	{
+		$verdict = self::runHelper(
+			['task' => 'system-info-unauthenticated', 'schema' => self::Schema()],
+			[
+				'DB_DRIVER' => 'pgsql',
+				'DB_HOST' => (string)getenv('PGHOST'),
+				'DB_PORT' => (string)getenv('PGPORT'),
+				'DB_NAME' => (string)getenv('PHPUNIT_DB_NAME'),
+				'DB_USER' => (string)getenv('PGUSER'),
+				'DB_PASSWORD' => (string)getenv('PGPASSWORD')
+			]
+		);
+
+		self::assertTrue($verdict['ok'], 'the unauthenticated call failed: ' . ($verdict['message'] ?? ''));
+		self::assertFalse($verdict['result']['user_defined'], 'the helper really has no VICTUAL_USER_ID');
+		self::assertSame(['stock_booking_idempotency', 'victual_version', 'db_version', 'client'], $verdict['result']['keys']);
+	}
+
+	/**
+	 * Fails closed when the permission read itself throws, as it does when the database
+	 * connection is the thing that broke: no environment fields and no exception.
+	 */
+	public function testSystemInfoLeavesTheEnvironmentFieldsOutWhenThePermissionReadThrows()
+	{
+		self::grant(['ADMIN']);
+
+		$connection = new \ReflectionProperty(DatabaseService::class, 'DbConnection');
+		$real = $connection->getValue();
+
+		$failing = new class
+		{
+			/** Every table read throws, which is how the permission lookup sees a lost connection. */
+			public function __call($name, $arguments)
+			{
+				throw new \RuntimeException('the connection is gone');
+			}
+		};
+
+		try
+		{
+			$connection->setValue(null, $failing);
+			$method = new \ReflectionMethod(ApplicationService::class, 'CallerMaySeeEnvironment');
+
+			self::assertFalse($method->invoke(null), 'a permission read that throws is answered as "not an administrator"');
+		}
+		finally
+		{
+			$connection->setValue(null, $real);
+		}
+
+		self::assertTrue($method->invoke(null), 'and an administrator is recognised again once the connection is back');
+
+		self::grant([]);
 	}
 
 	/**
@@ -2175,7 +2283,9 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 			// from here: the attribute read throws rather than answering.
 			$property->setValue(null, new \stdClass());
 
-			$info = ApplicationService::GetInstance()->GetSystemInfo();
+			// GetEnvironmentInfo(): GetSystemInfo() would also fail to read the caller's
+			// permissions through the broken connection and leave the field out entirely.
+			$info = ApplicationService::GetInstance()->GetEnvironmentInfo();
 
 			self::assertSame('unavailable', $info['database_engine'], 'the diagnostic degrades instead of throwing');
 		}
@@ -2184,7 +2294,7 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 			$property->setValue(null, $real);
 		}
 
-		self::assertStringStartsWith('PostgreSQL', ApplicationService::GetInstance()->GetSystemInfo()['database_engine'], 'and recovers once the connection is back');
+		self::assertStringStartsWith('PostgreSQL', ApplicationService::GetInstance()->GetEnvironmentInfo()['database_engine'], 'and recovers once the connection is back');
 	}
 
 	/**
@@ -2235,7 +2345,7 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 
 		// The negative control: in this process, which does have the driver, both fields
 		// carry a value
-		self::assertNotSame('', ApplicationService::GetInstance()->GetSystemInfo()['sqlite_version']);
+		self::assertNotSame('', ApplicationService::GetInstance()->GetEnvironmentInfo()['sqlite_version']);
 		self::assertNotSame('', ApplicationService::GetInstance()->GetSystemTime()['time_local_sqlite3']);
 	}
 

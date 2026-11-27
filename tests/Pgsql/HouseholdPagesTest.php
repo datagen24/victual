@@ -1609,6 +1609,38 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('<code>' . phpversion() . '</code>', $html);
 	}
 
+	/**
+	 * Plan 42 open question 3: a caller without ADMIN sees the About page without the PHP,
+	 * database engine and OS rows - the rows are not rendered at all, rather than rendered
+	 * empty - and still sees the version, release date, schema version and client.
+	 */
+	public function testAboutPageOmitsTheEnvironmentRowsForACallerWithoutAdmin(): void
+	{
+		self::grantRole('CHILD');
+		$html = self::render(fn () => self::$system->About(self::request(), self::response(), []), 'GET /about as CHILD');
+
+		foreach (['PHP Version', 'Database Engine', '>OS<'] as $label)
+		{
+			self::assertStringNotContainsString($label, $html, "no $label row for a caller without ADMIN");
+		}
+		self::assertStringNotContainsString('<code>' . phpversion() . '</code>', $html, 'the PHP version is not on the page');
+		self::assertStringNotContainsString('<code>PostgreSQL ', $html, 'the engine version is not on the page');
+		self::assertStringNotContainsString('<code></code>', $html, 'no row is left behind with an empty value');
+
+		$version = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/version.json'));
+		self::assertStringContainsString('<code>' . $version->Version . '</code>', $html, 'the version row stays');
+		$migration = (int)self::$db->query('SELECT MAX(migration) FROM migrations')->fetchColumn();
+		self::assertStringContainsString('<code>' . $migration . '</code>', $html, 'the database version row stays');
+		self::assertStringContainsString('>Client<', $html, 'the client row stays');
+
+		self::grantRole('ADMIN');
+		$html = self::render(fn () => self::$system->About(self::request(), self::response(), []), 'GET /about as ADMIN');
+		foreach (['PHP Version', 'Database Engine', '>OS<'] as $label)
+		{
+			self::assertStringContainsString($label, $html, "an administrator still sees the $label row");
+		}
+	}
+
 	/** The about page shows the newest changelog release version and renders one entry for every changelog file. */
 	public function testAboutPageCarriesTheChangelogNewestFirst(): void
 	{

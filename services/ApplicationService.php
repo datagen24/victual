@@ -2,6 +2,7 @@
 
 namespace Victual\Services;
 
+use Victual\Controllers\Users\User;
 use Victual\Services\Time\Instant;
 
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -108,26 +109,87 @@ class ApplicationService extends BaseService
 	}
 
 	/**
-	 * Collects environment information for the "About" dialog / system info API endpoint.
+	 * The keys of GetSystemInfo() that describe the server's software rather than Victual:
+	 * the PHP, database and kernel versions. Only an administrator receives them.
+	 */
+	public const ENVIRONMENT_FIELDS = ['php_version', 'sqlite_version', 'database_engine', 'os'];
+
+	/**
+	 * Collects version and environment information for the About page, the 500 page and
+	 * GET /api/system/info.
+	 *
+	 * The ENVIRONMENT_FIELDS keys are present only when the current user holds ADMIN. For
+	 * anyone else they are absent from the array, not null: the same convention as price
+	 * field redaction. Any credential, a Guest or Child account or a restricted API key
+	 * included, could otherwise read the exact PHP, database and kernel versions (plan 42,
+	 * open question 3). The check is ADMIN until plan 42's catalog adds SYSTEM_INFO_READ
+	 * under ADMIN; switch it to that leaf then.
 	 *
 	 * @param Request|null $request The current request, for the "client" field below
 	 * (plan 15-C8: read through PSR-7 rather than $_SERVER directly). Null is answered
 	 * the same as a request carrying no User-Agent header - every caller has one in
 	 * scope, but a service method should not require it to run.
-	 * @return array {victual_version: object, php_version: string, sqlite_version: string, db_version: int, os: string, client: string}
+	 * @return array {stock_booking_idempotency: array, victual_version: object, php_version?: string, sqlite_version?: string, database_engine?: string, db_version: int, os?: string, client: string}
 	 */
 	public function GetSystemInfo(?Request $request = null)
 	{
-		return [
+		$environment = self::CallerMaySeeEnvironment() ? $this->GetEnvironmentInfo() : [];
+
+		// The keys in the order the endpoint has always sent them, so an administrator's
+		// response is unchanged; array_filter drops the environment keys for anyone else.
+		$info = [
 			'stock_booking_idempotency' => StockBookingIdempotencyService::Capability(),
 			'victual_version' => $this->GetInstalledVersion(),
+			'php_version' => $environment['php_version'] ?? null,
+			'sqlite_version' => $environment['sqlite_version'] ?? null,
+			'database_engine' => $environment['database_engine'] ?? null,
+			'db_version' => $this->DB->migrations()->max('migration'),
+			'os' => $environment['os'] ?? null,
+			'client' => $request !== null ? ($request->getHeaderLine('User-Agent') ?: 'unknown') : 'unknown'
+		];
+
+		return array_filter($info, fn($key) => $environment !== [] || !in_array($key, self::ENVIRONMENT_FIELDS, true), ARRAY_FILTER_USE_KEY);
+	}
+
+	/**
+	 * The ENVIRONMENT_FIELDS values, unconditionally. GetSystemInfo() decides who receives
+	 * them; this method does not check anything.
+	 *
+	 * @return array {php_version: string, sqlite_version: string, database_engine: string, os: string}
+	 */
+	public function GetEnvironmentInfo(): array
+	{
+		return [
 			'php_version' => phpversion(),
 			'sqlite_version' => self::GetSqliteVersion(),
 			'database_engine' => $this->GetDatabaseEngine(),
-			'db_version' => $this->DB->migrations()->max('migration'),
-			'os' => php_uname('s') . ' ' . php_uname('r') . ' ' . php_uname('v') . ' ' . php_uname('m'),
-			'client' => $request !== null ? ($request->getHeaderLine('User-Agent') ?: 'unknown') : 'unknown'
+			'os' => php_uname('s') . ' ' . php_uname('r') . ' ' . php_uname('v') . ' ' . php_uname('m')
 		];
+	}
+
+	/**
+	 * Whether the current user may see ENVIRONMENT_FIELDS. Plan 42: becomes
+	 * SYSTEM_INFO_READ when the permission catalog lands.
+	 *
+	 * Fails closed. The 500 page calls GetSystemInfo() on routes that run before
+	 * authentication defines VICTUAL_USER_ID, and sometimes because the database is the
+	 * thing that broke; neither case may turn into a disclosure or a second exception.
+	 */
+	private static function CallerMaySeeEnvironment(): bool
+	{
+		if (!defined('VICTUAL_USER_ID'))
+		{
+			return false;
+		}
+
+		try
+		{
+			return User::HasPermissions(User::PERMISSION_ADMIN);
+		}
+		catch (\Throwable $ex)
+		{
+			return false;
+		}
 	}
 
 	/**

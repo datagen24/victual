@@ -82,7 +82,7 @@ class RbacTest extends PgsqlSchemaTestCase
 		// data (the SPA shell, static informational pages, the API's own documentation).
 		'LoginController' => 'Pre-authentication pages (login form itself)',
 		'SystemController' => 'Root/about/manifest/barcode-scanner-testing carry no household data',
-		'SystemApiController' => 'GetConfig is a deliberate, documented allowlist of non-sensitive settings (SystemApiController::EXPOSED_SETTINGS); GetSystemInfo/GetSystemTime/GetDbChangedTime/GetLocalizationStrings carry no household data either',
+		'SystemApiController' => 'GetConfig is a deliberate, documented allowlist of non-sensitive settings (SystemApiController::EXPOSED_SETTINGS); GetSystemInfo/GetSystemTime/GetDbChangedTime/GetLocalizationStrings carry no household data either, and GetSystemInfo leaves its server environment fields out for a caller without ADMIN (ApplicationService::ENVIRONMENT_FIELDS)',
 		'OpenApiController' => 'ApiKeysList is the caller\'s own keys (self-scoped); DocumentationSpec/DocumentationUi describe the API shape, not data',
 
 		// Explicitly ADMIN-gated - verified by grep for User::CheckPermission(...PERMISSION_ADMIN) in each file.

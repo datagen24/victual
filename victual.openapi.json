@@ -507,16 +507,23 @@
 		"/system/info": {
 			"get": {
 				"summary": "Returns information about the installed Victual version, PHP runtime and OS",
+				"description": "Every authenticated caller receives victual_version, db_version, stock_booking_idempotency and client. The server environment fields php_version, sqlite_version, database_engine and os are present only for a caller holding ADMIN, and absent from the response for everyone else.",
 				"tags": [
 					"System"
 				],
 				"responses": {
 					"200": {
-						"description": "An DbChangedTimeResponse object",
+						"description": "The installed version, the schema version and the booking capability; the server environment for an administrator",
 						"content": {
 							"application/json": {
 								"schema": {
 									"type": "object",
+									"required": [
+										"victual_version",
+										"db_version",
+										"client",
+										"stock_booking_idempotency"
+									],
 									"properties": {
 										"victual_version": {
 											"type": "object",
@@ -531,15 +538,19 @@
 											}
 										},
 										"php_version": {
-											"type": "string"
+											"type": "string",
+											"x-visibility": "ADMIN",
+											"description": "The PHP version serving this installation. Present only for a caller holding ADMIN; absent, not null, for everyone else."
 										},
 										"sqlite_version": {
 											"type": "string",
-											"description": "The SQLite library version compiled into PHP. Empty where pdo_sqlite is not installed, which is every serving container image since ADR-0008 made PostgreSQL the only runtime engine - see database_engine for what is actually serving."
+											"description": "The SQLite library version compiled into PHP. Empty where pdo_sqlite is not installed, which is every serving container image since ADR-0008 made PostgreSQL the only runtime engine - see database_engine for what is actually serving. Present only for a caller holding ADMIN; absent, not null, for everyone else.",
+											"x-visibility": "ADMIN"
 										},
 										"database_engine": {
 											"type": "string",
-											"description": "The database engine serving this installation and its version, e.g. \"PostgreSQL 16.10\", or \"unavailable\" when the connection cannot be interrogated."
+											"description": "The database engine serving this installation and its version, e.g. \"PostgreSQL 16.10\", or \"unavailable\" when the connection cannot be interrogated. Present only for a caller holding ADMIN; absent, not null, for everyone else.",
+											"x-visibility": "ADMIN"
 										},
 										"db_version": {
 											"type": "integer",
@@ -547,7 +558,8 @@
 										},
 										"os": {
 											"type": "string",
-											"description": "The operating system the server runs on, as PHP's php_uname() reports it: name, release, version and machine type."
+											"description": "The operating system the server runs on, as PHP's php_uname() reports it: name, release, version and machine type. Present only for a caller holding ADMIN; absent, not null, for everyone else.",
+											"x-visibility": "ADMIN"
 										},
 										"client": {
 											"type": "string",

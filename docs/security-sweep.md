@@ -1097,6 +1097,27 @@ reverting `CheckGroupIsKnown()` to a no-op and confirming the suite catches it (
 400 was required), before restoring the fix and re-running the full `run-tests.sh all`
 suite clean.
 
+**S33 | Low — *fixed* — any credential could read the server's exact PHP, database and
+kernel versions.** Recorded 2026-11-27 from [plan 42](plans/42-permission-catalog.md) open
+question 3. `GET /api/system/info` (`ApplicationService::GetSystemInfo`) checked no permission
+and answered every authenticated caller with `php_version`, `sqlite_version`,
+`database_engine` and the full `php_uname()` in `os`: kernel name, release, build string and
+architecture. A Guest or Child account, or any restricted API key, could read them. The About
+page showed the same values to the same callers. [S9](#findings) closed the anonymous half of
+this disclosure on the 500 page; this is the authenticated half, in scope under
+[ADR-0006](adr/0006-authenticated-issues-in-scope.md).
+
+Rated Low: the values are reconnaissance data that name which published vulnerabilities apply,
+and they give no access by themselves.
+
+**Fixed 2026-11-27.** `GetSystemInfo()` leaves the four keys out unless the caller holds
+`ADMIN`, absent rather than `null`, as price fields are. The four keys are
+`ApplicationService::ENVIRONMENT_FIELDS`. The check fails closed when no user is authenticated
+or the permission read throws. The About page and the 500 page read the same method, so the
+fix covers both. The check is `ADMIN` until plan 42's catalog adds `SYSTEM_INFO_READ` under it.
+`ContractTest::testSystemInfoEnvironmentFieldsReachAdminOnly` and three `HelperUnitsTest`
+cases assert it.
+
 Two plans should absorb items rather than a hotfix: **14 piece 2** takes the
 `/system/config` contract test (R1), the body-schema validation that closes S16, and a
 filter-contract line for S15. **02** must not inherit the query-string key path (S11)

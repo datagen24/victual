@@ -45,6 +45,15 @@ and cannot now.
 the other half and is independent: it says whether this installation tracks prices at all.
 Prices are shown when the flag is on *and* the user holds the permission.
 
+## Server details
+
+The About page and `GET /api/system/info` show the PHP version, the database engine and its
+version, and the operating system only to an account that holds `ADMIN`. Every other account
+and API key sees the Victual version, the database version, the stock booking capability and
+its own client. The About page leaves the other rows out. The API response leaves out
+`php_version`, `sqlite_version`, `database_engine` and `os`, the same way a price field is
+absent rather than `null`.
+
 ## Domain reads
 
 Nine domains have a read permission: `STOCK_VIEW`, `SHOPPINGLIST_VIEW`, `CHORES_VIEW`,

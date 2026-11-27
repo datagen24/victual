@@ -192,7 +192,9 @@ switch ($spec['task'])
 				->exec('SET search_path TO ' . $spec['schema'] . ', public');
 
 			$service = \Victual\Services\ApplicationService::GetInstance();
-			$info = $service->GetSystemInfo();
+			// GetEnvironmentInfo() rather than GetSystemInfo(): this process authenticates
+			// nobody, and GetSystemInfo() gives the environment fields to ADMIN only.
+			$info = $service->GetEnvironmentInfo();
 			$time = $service->GetSystemTime((int)($spec['offset'] ?? 0));
 
 			return [
@@ -201,6 +203,20 @@ switch ($spec['task'])
 				'database_engine' => $info['database_engine'],
 				'time_local' => $time['time_local'],
 				'time_local_sqlite3' => $time['time_local_sqlite3']
+			];
+		});
+		break;
+
+	case 'system-info-unauthenticated':
+		BootConfiguration($spec);
+		Report(function () use ($spec)
+		{
+			\Victual\Services\DatabaseService::GetInstance()->GetDbConnectionRaw()
+				->exec('SET search_path TO ' . $spec['schema'] . ', public');
+
+			return [
+				'user_defined' => defined('VICTUAL_USER_ID'),
+				'keys' => array_keys(\Victual\Services\ApplicationService::GetInstance()->GetSystemInfo())
 			];
 		});
 		break;
