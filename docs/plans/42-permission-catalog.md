@@ -7,9 +7,9 @@ resource does not support. Then define the household roles as exact leaf lists. 
 input ADR-0057 acceptance prerequisites 2 and 3 ask for.
 
 Status: draft, 2026-11-27. Design input only: no migration, seed or code change follows from
-this document, and ADR-0057 stays Proposed. The maintainer answered open questions 1, 2, 4, 5
-and 6 on 2026-11-27, which approves the role lists in [Household roles](#household-roles) for
-prerequisite 3. Question 3 has a revised proposal awaiting an answer.
+this document, and ADR-0057 stays Proposed. The maintainer answered all six open questions on
+2026-11-27, which approves the role lists in [Household roles](#household-roles) for
+prerequisite 3.
 
 ## Problem and outcome
 
@@ -265,7 +265,8 @@ also needs `CONSUMPTION_PRESETS_READ`.
 | Resource (inv.) | Read |
 |---|---|
 | Calendar (63) | `CALENDAR_VIEW`, unchanged, plus each event source's read leaf |
-| System information and configuration (`/api/system/*`, `/api/openapi/specification`) | open question 3 |
+| System configuration, time, change time, translations, API description | no leaf: part of the self-service exemption (answer 3) |
+| System information (`/api/system/info`) | Victual version, migration number and capability fields: no leaf. PHP, database engine and kernel fields: `SYSTEM_INFO_READ` (`ADMIN`), absent without it (answer 3) |
 
 ## Domain actions
 
@@ -315,14 +316,17 @@ and outside the catalog (inv. 4.5); ADR-0057 decision 7's service packages cover
   expected difference is the added leaves themselves: each account gains the new leaves under
   nodes it already holds. The intentional-change list has one entry, from answer 1: every
   account and role holding `TASKS`, directly or through a role, gains task delete. The seeded
-  `ADULT` is the main case. Open question 3 may add a second entry.
+  `ADULT` is the main case. Answer 3 adds a second: every account without `ADMIN` stops
+  receiving the `php_version`, `sqlite_version`, `database_engine` and `os` fields of
+  `/api/system/info`.
 - **Partly supersedes ADR-0043 decision 7.** That decision, Accepted, keeps chore and task
   delete with `MASTER_DATA_EDIT`. ADR-0057 names the task half of that bullet in its own
   supersession; the chore half stands.
 - **Moves code to leaves.** Every check named in the inventory is rewritten against the
   leaf, and a check against a bundle becomes a defect (ADR-0057 decision 2).
 
-Counts, from the tables above on 2026-11-27: 179 new resource leaves, 9 new action leaves,
+Counts, from the tables above on 2026-11-27: 180 new resource leaves (including
+`SYSTEM_INFO_READ`), 9 new action leaves,
 `LABELS_ADMIN`, and 6 group and service leaves. All 41 existing permissions remain; 23 of
 them, besides `ADMIN`, gain children and act as bundles. The resource count is reproducible
 with the command in [Verification](#verification).
@@ -430,9 +434,9 @@ editor shows each leaf's read prerequisites and offers to add them (ADR-0057 dec
     | grep -oE '`[A-Z_]+_(CREATE|READ|UPDATE|DELETE)`' | sort -u | wc -l
   ```
 
-  On 2026-11-27 it printed 184. Five of those names are not new resource leaves:
+  On 2026-11-27 it printed 185. Five of those names are not new resource leaves:
   `USERS_CREATE`, `USERS_READ` and `SHOPPINGLIST_ITEMS_DELETE` already exist, and
-  `GROUPS_CREATE` and `GROUP_MEMBERS_UPDATE` are group leaves. That leaves 179.
+  `GROUPS_CREATE` and `GROUP_MEMBERS_UPDATE` are group leaves. That leaves 180.
 - **No upgrade change:** in the implementing pull request, the migration's before-and-after
   comparison passes with an empty intentional-change list on the demo dataset and on a fresh
   install (ADR-0057 decision 2).
@@ -500,6 +504,11 @@ editor shows each leaf's read prerequisites and offers to add them (ADR-0057 dec
    absent for callers without the leaf, as price fields are (ADR-0005's documented field
    redaction). That is a wire change for non-administrators and goes on the intentional-change
    list.
+
+   > **Response:** datagen24, 2026-11-27: "Yes, gate the system info fields behind admin, that
+   > is to much info to expose to an untrusted party". Recorded: the revised proposal stands.
+   > `SYSTEM_INFO_READ` under `ADMIN` gates the PHP, database and kernel fields; the other
+   > routes join the self-service exemption, which ADR-0057 decision 3 now lists.
 4. **Do userfield and custom entity definitions stay readable by everyone?** The leaves exist
    and the upgrade grants them to everyone, which keeps today's behaviour. The alternative is
    to grant them only to roles whose forms show userfields, which is every role above.

@@ -166,7 +166,11 @@ most here: creating a row still confers no right over it.
 Every readable resource gets a `*_READ` leaf, and every route that reads it, page, API,
 generic object route, MCP tool and file access alike, checks it. Authentication alone
 reads nothing beyond the caller's own profile and settings and the capabilities response
-that describes the caller.
+that describes the caller. The exemption also covers the routes the front end needs before it knows what
+the caller may do: system configuration, server time, the database change time, translations
+and the API description. The environment fields of `/api/system/info` (PHP, database engine
+and kernel versions) need `SYSTEM_INFO_READ` under `ADMIN` and are absent without it
+([plan 42](../plans/42-permission-catalog.md) answer 3).
 
 Where today's code checks no permission on a read, the upgrade gives every existing user
 and every existing role that read, as ADR-0018 did for its six view leaves. New users get
