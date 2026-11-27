@@ -236,7 +236,7 @@ Follow-up, not in this change. ADR-0055 answer 27 sets one chart with two values
 - **Distributed values file:** the same Job runs against the operator's Keycloak, with an admin
   client credential the operator provides. An operator who manages that realm another way does
   not run the Job, and `--check` reports how the realm differs from Victual's configuration.
-- **Image:** the Job needs Node.js and `deploy/keycloak/`. Under ADR-0013 that is a Nix-built
+- **Image:** Keycloak's own Nix-built image and its licence review are [plan 44](44-keycloak-licence-and-image.md)'s. The reconciler Job needs Node.js and `deploy/keycloak/`. Under ADR-0013 that is a Nix-built
   image, or the reconciler is ported to PHP and runs from the migrate image that ADR-0058
   decision 8 names (open question 2).
 - **Upgrades:** a chart upgrade that changes `realm.json` raises `configVersion`, and the

@@ -74,12 +74,22 @@ const base = index < 0 ? 'http://127.0.0.1:8200' : process.argv[index + 1];
   await page.goto(base + '/labelprintjobs');
   await page.waitForFunction(() => document.querySelector('#label-jobs-rows').textContent.includes('Waiting for label rendering'));
 
-  // Issue 1102: deleting the printer dead-letters the queued job with "Printer deleted", and the
-  // monitor shows that reason in its own column, under its own header.
-  const deleted = await page.request.delete(base + '/api/labels/printers/' + printer.id);
+  // Issue 1102: deleting a printer dead-letters its queued job with "Printer deleted", and the
+  // monitor shows that reason in its own column, under its own header. A second printer is used
+  // and deleted, because location-print.js runs next against this instance and needs the first
+  // one: the locations list offers a print control only while a printer exists.
+  const doomed = await post('labels/printers', {
+   name: name + ' doomed', worker_id: worker.id, driver_id: driver.driver_id, driver_schema_version: driver.schema_version,
+   connection: '127.0.0.1:9101', connection_type: 'tcp', model: 'QL-820NWBc',
+   settings: { media: '62red', resolution_x: 300, resolution_y: 300, color_mode: 'black_red' }
+  });
+  const doomedLocation = await post('objects/locations', { name: name + ' doomed' });
+  const doomedContext = await (await page.request.get(base + '/api/labels/locations/' + doomedLocation.created_object_id + '/context')).json();
+  const doomedJob = await post('labels/locations/' + doomedLocation.created_object_id + '/print', { printer_id: doomed.id, import_epoch: doomedContext.import_epoch });
+  const deleted = await page.request.delete(base + '/api/labels/printers/' + doomed.id);
   assert.ok(deleted.ok(), 'printer delete: ' + await deleted.text());
   await page.goto(base + '/labelprintjobs');
-  const jobRow = page.locator('#label-jobs-rows tr').filter({ has: page.locator('td:first-child', { hasText: new RegExp('^' + job.job_id + '$') }) });
+  const jobRow = page.locator('#label-jobs-rows tr').filter({ has: page.locator('td:first-child', { hasText: new RegExp('^' + doomedJob.job_id + '$') }) });
   await jobRow.locator('td', { hasText: 'Cannot deliver' }).waitFor();
   const headers = await page.locator('table:has(#label-jobs-rows) thead th').allTextContents();
   const cells = await jobRow.locator('td').allTextContents();

@@ -35,6 +35,10 @@ let
     postInstall = (old.postInstall or "") + ''
       rm -rf $out/bin
       rm -rf $out/data
+      # PostgreSQL is the only runtime database (ADR-0008), so the MySQL (GPL-2.0 with the
+      # Universal FOSS exception) and MariaDB (LGPL-2.1) drivers are never loaded (plan 44).
+      rm $out/lib/lib/main/com.mysql.mysql-connector-j-*.jar
+      rm $out/lib/lib/main/org.mariadb.jdbc.mariadb-java-client-*.jar
       ln -s /var/lib/keycloak/data $out/data
     '';
     postFixup = ""; # it wrapped the bin/ scripts, which are gone
