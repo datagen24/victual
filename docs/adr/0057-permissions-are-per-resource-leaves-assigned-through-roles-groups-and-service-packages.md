@@ -23,8 +23,8 @@
 - **Relationship:** if accepted, partly supersedes accepted
   [ADR-0043](0043-creating-shared-master-data-is-a-right-below-master-data-edit.md)
   decisions 1 and 2 (one flat create right over a stated set of entities). It also
-  supersedes decision 7's bullet keeping chore and task delete with `MASTER_DATA_EDIT` (plan
-  42 answer 1). It extends
+  supersedes the task half of decision 7's bullet keeping chore and task delete with
+  `MASTER_DATA_EDIT` (plan 42 answer 1). It extends
   accepted [ADR-0018](0018-role-grants-and-domain-reads.md)'s union with a group source
   (decision 4). Keeps [ADR-0014](0014-administering-a-user-is-a-subset-question.md) and
   ADR-0018's no-deny rule unchanged. If accepted, narrows accepted
@@ -154,10 +154,11 @@ of accepting this record, because both need the migration to exist.
 
 This partly supersedes ADR-0043 decisions 1 and 2: `MASTER_DATA_ADD` stops being a leaf
 that gates create on a stated set and becomes the parent of per-resource create leaves.
-It also supersedes the bullet of ADR-0043 decision 7 that keeps chore and task delete with
-`MASTER_DATA_EDIT`: `CHORES_DELETE` and `TASKS_DELETE` sit under `CHORES` and `TASKS`, an
-intentional change the upgrade's list names ([plan 42](../plans/42-permission-catalog.md)
-answer 1). Decisions 3 to 6 of ADR-0043 hold, and the rest of decision 7. Decision 6 matters
+It also supersedes the task half of the bullet of ADR-0043 decision 7 that keeps chore and
+task delete with `MASTER_DATA_EDIT`: `TASKS_DELETE` sits under `TASKS`, an intentional change
+the upgrade's list names ([plan 42](../plans/42-permission-catalog.md) answer 1).
+`CHORES_DELETE` stays under `MASTER_DATA_EDIT`, because deleting a chore erases its history.
+Decisions 3 to 6 of ADR-0043 hold, and the rest of decision 7. Decision 6 matters
 most here: creating a row still confers no right over it.
 
 ### 3. Reads are explicit, and upgrade grants the reads people already have

@@ -143,7 +143,7 @@ plan entry writes need `RECIPES_READ`, `PRODUCTS_READ`, `QUANTITY_UNITS_READ` an
 
 | Resource (inv.) | Create (parent) | Read (parent) | Update (parent) | Delete (parent) |
 |---|---|---|---|---|
-| Chores (21) | `CHORES_CREATE` (`CHORES`) | `CHORES_READ` (`CHORES_VIEW`) | `CHORES_UPDATE` (`CHORES`) | `CHORES_DELETE` (`CHORES`) |
+| Chores (21) | `CHORES_CREATE` (`CHORES`) | `CHORES_READ` (`CHORES_VIEW`) | `CHORES_UPDATE` (`CHORES`) | `CHORES_DELETE` (`MASTER_DATA_EDIT`) |
 | Chore log (22) | n/a: written by tracking | `CHORE_LOG_READ` (`CHORES_VIEW`) | n/a | n/a: executions are undone |
 | Tasks (23) | `TASKS_CREATE` (`TASKS`) | `TASKS_READ` (`TASKS_VIEW`) | `TASKS_UPDATE` (`TASKS`) | `TASKS_DELETE` (`TASKS`) |
 | Task categories (24) | `TASK_CATEGORIES_CREATE` (`MASTER_DATA_EDIT`) | `TASK_CATEGORIES_READ` (`TASKS_VIEW`) | `TASK_CATEGORIES_UPDATE` (`MASTER_DATA_EDIT`) | `TASK_CATEGORIES_DELETE` (`MASTER_DATA_EDIT`) |
@@ -151,10 +151,12 @@ plan entry writes need `RECIPES_READ`, `PRODUCTS_READ`, `QUANTITY_UNITS_READ` an
 | Battery charge cycles (26) | n/a: written by charging | `BATTERY_CHARGE_CYCLES_READ` (`BATTERIES_VIEW`) | n/a | n/a: charges are undone |
 | Equipment (27) | `EQUIPMENT_CREATE` (`EQUIPMENT`) | `EQUIPMENT_READ` (`EQUIPMENT_VIEW`) | `EQUIPMENT_UPDATE` (`EQUIPMENT`) | `EQUIPMENT_DELETE` (`EQUIPMENT`) |
 
-Chore and task delete move from `MASTER_DATA_EDIT`, today's gate (inv. 5.3), to `CHORES` and
-`TASKS` (answer 1). That is an intentional change: every holder of `CHORES` or `TASKS` gains
-delete. Deleting a chore also deletes its execution history, through the
-`trg_cascade_chore_removal` trigger. Chore writes need `PRODUCTS_READ` and `USER_ACCOUNTS_READ` (assignment);
+Task delete moves from `MASTER_DATA_EDIT`, today's gate (inv. 5.3), to `TASKS` (answer 1). That
+is an intentional change: every holder of `TASKS` gains task delete. Chore delete stays under
+`MASTER_DATA_EDIT`, because deleting a chore also deletes its execution history through the
+`trg_cascade_chore_removal` trigger. A chore that should stop is disabled instead: `chores.active`
+is a column the chore form already edits, so disabling is `CHORES_UPDATE` and keeps the history.
+Chore writes need `PRODUCTS_READ` and `USER_ACCOUNTS_READ` (assignment);
 task writes need `TASK_CATEGORIES_READ` and `USER_ACCOUNTS_READ`; equipment writes need
 `EQUIPMENT_READ`.
 
@@ -312,11 +314,11 @@ and outside the catalog (inv. 4.5); ADR-0057 decision 7's service packages cover
   resolved set before and after (ADR-0057 decision 2). With the placements above the only
   expected difference is the added leaves themselves: each account gains the new leaves under
   nodes it already holds. The intentional-change list has one entry, from answer 1: every
-  account and role holding `CHORES` or `TASKS`, directly or through a role, gains chore or
-  task delete. The seeded `ADULT` is the main case. Open question 3 may add a second entry.
+  account and role holding `TASKS`, directly or through a role, gains task delete. The seeded
+  `ADULT` is the main case. Open question 3 may add a second entry.
 - **Partly supersedes ADR-0043 decision 7.** That decision, Accepted, keeps chore and task
-  delete with `MASTER_DATA_EDIT`. ADR-0057 must name decision 7's delete bullet in its own
-  supersession before this change ships.
+  delete with `MASTER_DATA_EDIT`. ADR-0057 names the task half of that bullet in its own
+  supersession; the chore half stands.
 - **Moves code to leaves.** Every check named in the inventory is rewritten against the
   leaf, and a check against a bundle becomes a defect (ADR-0057 decision 2).
 
@@ -370,7 +372,8 @@ Day-to-day use of every feature, without changing shared master data.
 Not held: `MASTER_DATA_EDIT`, `MASTER_DATA_ADD`, `USERS_CREATE`, `USERS_EDIT`, `ADMIN`.
 
 This is today's closure (35 permissions) with one intentional change: an adult can now
-delete chores and tasks, as well as create and edit them (answer 1). An adult still cannot
+delete tasks, as well as create and edit them (answer 1). An adult creates, edits and disables
+chores but does not delete them, because a delete erases the chore's history. An adult still cannot
 create a product, location or store (answer 5).
 
 Workflows: buying and consuming, keeping the shopping list, cooking, tracking chores and
@@ -451,6 +454,13 @@ editor shows each leaf's read prerequisites and offers to add them (ADR-0057 dec
    > tasks, i am not sure of the reasoning for not giving them delete". Recorded: both move.
    > ADR-0043 decision 7 kept delete with `MASTER_DATA_EDIT` without a stated reason, so
    > ADR-0057 supersedes that bullet. A deleted chore takes its execution history with it.
+   >
+   > Follow-up, datagen24, 2026-11-27: "on CHORES_DELETE, well this creates a conundrum, i
+   > chore has history. i think we need to be able to disable so the history does not go
+   > away. Delete should remain with Master Data controls as it is rather distructive".
+   > Recorded: `CHORES_DELETE` stays under `MASTER_DATA_EDIT`; `TASKS_DELETE` moves under
+   > `TASKS`. Disabling already exists: `chores.active` is on the chore form, so an adult
+   > disables a chore with `CHORES_UPDATE` and its history stays.
 2. **Is `LABELS_ADMIN` the right container for the label management leaves?** It adds one
    bundle so that label administration can be delegated without `ADMIN`. The alternative is
    21 leaves directly under `ADMIN`. Proposed: `LABELS_ADMIN`.
