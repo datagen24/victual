@@ -740,8 +740,12 @@ now falls back to podman's view of PID 1.
     uid 65532, no shell, read-only root under Docker. It reached ready and issued a token; the
     probe was not run, because `run.sh` drives podman. A `jlink` runtime of all 69 modules of the
     same JDK is 166 MiB against 568 MiB. Built as an image, that change would come to about
-    405 MB, but no such image was built. The licence review and its jar inventory
-    (`licences/`) are in [plan 44](../../../docs/plans/44-keycloak-licence-and-image.md).
+    405 MB, but no such image was built.
+
+    The licence review and its jar inventory
+    (`licences/`) are in [plan 44](../../../docs/plans/44-keycloak-licence-and-image.md). Since
+    then `image.nix` also deletes the MySQL and MariaDB drivers (plan 44 recommendation 2), and the
+    rebuilt amd64 image started and issued a token; the probe has not run against it.
 
 ## Configuration inventory (prerequisite 8)
 

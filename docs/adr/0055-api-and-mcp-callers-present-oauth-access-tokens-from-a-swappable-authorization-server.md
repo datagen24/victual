@@ -589,8 +589,9 @@ keychain, and keep sending their per-device Access service token as before.
      image does neither for its Nix libraries, and the six published images have the same gap.
    - [Plan 40](../plans/40-release-sboms.md)'s SBOMs do not cover the image.
 
-   Plan 44's recommendations (drop two unused JDBC drivers, ship licence texts, publish source,
-   trim the JDK) await the maintainer. Reproduce with the commands in plan 44 and
+   On the maintainer's decision the same day, the spike image deletes the unused MySQL and
+   MariaDB drivers, and the rebuilt image started and issued a token on amd64. Plan 44's other
+   recommendations (ship licence texts, publish source, trim the JDK) await the maintainer. Reproduce with the commands in plan 44 and
    `.devtools/spikes/oauth-keycloak/licences/`.
 4. **Token exchange.** RFC 8693 exchange as decision 7 describes works against Hydra and
    against Authentik 2026.8 or later. If Hydra cannot do it, the candidate table is

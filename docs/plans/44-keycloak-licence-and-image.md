@@ -10,8 +10,10 @@ therefore be published to GHCR with the others under the Proposed
 [ADR-0030](../adr/0030-released-images-are-published-to-ghcr.md). Publishing it is binary
 redistribution of everything the image contains.
 
-Status: draft, research only, 2026-11-27. No image, workflow or flake output is changed. ADR-0055
-stays Proposed. The recommendations below need the maintainer's decision.
+Status: draft, 2026-11-27. On the maintainer's 2026-11-27 decision (recommendation 2), the spike's
+`nix/image.nix` deletes the MySQL and MariaDB drivers. No production image, workflow or flake
+output is changed. ADR-0055 stays Proposed. Recommendations 3 to 7 need the maintainer's
+decision.
 
 ## Summary
 
@@ -27,6 +29,8 @@ stays Proposed. The recommendations below need the maintainer's decision.
 - All of these are used unmodified, as separate jars or dynamically linked libraries. The
   obligation they add is to make their source available alongside the image and to ship
   their licence texts. The image does neither for the Nix libraries.
+- The unused MySQL and MariaDB drivers are deleted from the spike image (maintainer decision,
+  2026-11-27), which leaves 14 copyleft-only jars in it.
 - The image builds on amd64: 827 MB, the same as arm64. It runs as uid 65532 on a read-only
   root with two tmpfs mounts, and has no shell.
 - [Plan 40](40-release-sboms.md) does not cover the Keycloak image. Its generators would
@@ -158,6 +162,9 @@ Copyleft-only jars, with what redistributing them unmodified obliges:
 
 None of these jars is modified, so no change of Victual's or Keycloak's licence follows. With
 `db=postgres`, the MySQL, MariaDB, SQL Server and H2 drivers sit in `lib/lib/main` unused.
+Since 2026-11-27 the spike's `image.nix` deletes the MySQL and MariaDB drivers, so the image
+holds 480 jars and 14 copyleft-only ones. The inventory TSV describes the release's 482 jars,
+so that a later release is compared with the same tree.
 
 ## NOTICE and attribution
 
@@ -259,6 +266,15 @@ The PostgreSQL 16 container was on the same Docker network. The results:
 `setup.mjs` and `probe.mjs` did not run on amd64, because `run.sh` drives podman. The
 2026-10-29 verdicts against this image are therefore arm64 evidence only.
 
+The image was rebuilt on 2026-11-27 with the MySQL and MariaDB drivers deleted (recommendation
+2). The Keycloak store path became `zr4f6jnx…-keycloak-26.8.1`, with 480 jars, and the stream is
+823,418,880 bytes. The Quarkus extension jars `quarkus-jdbc-mysql` and `quarkus-jdbc-mariadb`
+(Apache-2.0) stay, because `kc.sh build` records them in `lib/quarkus/quarkus-application.dat`.
+Under the same `docker run`, on a fresh database, the image reached ready in 18 s. Discovery
+returned 200 and the admin password grant returned a Bearer token. The log had no `ERROR`,
+`ClassNotFound` or `NoClassDef` line, and `docker exec … sh` still failed. The probe was not
+run on this build either.
+
 ## Size
 
 The JDK is 568 MiB of the 827 MB. nixpkgs' `jre_headless` is a full headless JDK. Its largest
@@ -278,8 +294,9 @@ change to `image.nix` is one attribute. `jlink` copies `legal/` for the modules 
 the 69-module runtime still has 69 directories there.
 
 Two smaller savings follow the licence review. Dropping the four unused JDBC drivers saves
-7.3 MiB (MySQL 2.5, H2 2.6, SQL Server 1.5, MariaDB 0.8). `lib/lib/deployment`, 19 MiB, is
-used only by `kc.sh build`, which has already run. Neither saving was measured as an image.
+7.3 MiB (MySQL 2.5, H2 2.6, SQL Server 1.5, MariaDB 0.8). The MySQL and MariaDB part, 3.3
+MiB, is applied: the stream shrank by 3,399,680 bytes. `lib/lib/deployment`, 19 MiB, is used
+only by `kc.sh build`, which has already run. That saving was not measured as an image.
 
 ## Recommendations
 
@@ -289,10 +306,15 @@ used only by `kc.sh build`, which has already run. Neither saving was measured a
 2. **Delete the unused MySQL and MariaDB drivers in the image derivation.** MySQL Connector/J
    is GPL-2.0 with the Universal FOSS exception and the MariaDB client is LGPL-2.1, and the
    PostgreSQL deployment loads neither. The other LGPL jar, `jboss-transaction-spi`, is part
-   of Narayana's transaction manager and stays. A smoke test passed on 2026-11-27: with both jars removed from a copy of the
-   Keycloak tree, mounted over the store path, Keycloak started, reached ready and issued an
-   admin token. The full probe was not run. Removing H2 and mssql-jdbc too is optional. H2
+   of Narayana's transaction manager and stays. Removing H2 and mssql-jdbc too is optional. H2
    backs only `start-dev`'s `dev-file` database. mssql-jdbc is MIT.
+
+   > **Response:** datagen24, 2026-11-27: remove them. Victual imports only SQLite and
+   > supports only PostgreSQL as a runtime target.
+
+   Applied in the spike's `nix/image.nix` the same day. The rebuilt image started, reached
+   ready and issued a token on amd64 ([amd64 build](#amd64-build)). The full probe was not run
+   against it.
 3. **Ship licence texts in the image.** Add a directory such as `/share/licenses` with
    Keycloak's `LICENSE.txt`, a `NOTICE` aggregated from the jars' `META-INF/NOTICE` files,
    and each Nix store path's licence files. Build it in `nix/images/lib.nix`, so the six
@@ -318,12 +340,17 @@ used only by `kc.sh build`, which has already run. Neither saving was measured a
 2. **Should the drivers be removed (recommendation 2) before the probe runs again on the
    trimmed image?** The smoke test covers start-up and one token grant only.
 
+   > **Response:** datagen24, 2026-11-27: remove them; Victual imports only SQLite and
+   > supports only PostgreSQL at runtime. Recorded under recommendation 2. The probe on the
+   > trimmed image is still to run.
+
 ## Verification
 
 - Prerequisite 3's image half is met when a Nix-built image runs on each architecture as a
   non-root user on a read-only root with no shell. amd64 has that evidence
   ([amd64 build](#amd64-build)), and arm64 has finding 26 of the spike report.
 - The licence half is met when this review is recorded, which this plan does, and the
-  maintainer decides recommendations 2 to 5.
+  maintainer decides recommendations 3 to 5. Recommendation 2 was decided and applied on
+  2026-11-27.
 - A later Keycloak release repeats the inventory with the three scripts. A new copyleft-only
   row in `group.py`'s output needs review before the image is published.
