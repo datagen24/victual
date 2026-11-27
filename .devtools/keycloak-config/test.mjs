@@ -391,6 +391,13 @@ async function phaseImport(ctx) {
   const secretNow = (await kc.call("GET", `/clients/${idAfter}/client-secret`)).value;
   rec("I1", "plan 43 comparison: partial import OVERWRITE of one client", "observation", `overwritten ${pi.overwritten}; client id ${idBefore === idAfter ? "kept" : "replaced"}; session refresh ${r.status} ${r.body.error ?? ""}; secret ${secretNow === VICTUAL_SECRET ? "kept" : "replaced by the export's mask or a new value"}`, true, "obs");
   await L.reconcileCli([]); // put the client back before the next case
+  // I4: which object kinds partial import accepts. Three kinds the realm configuration needs.
+  const probe = await kc.call("POST", "/partialImport", { ifResourceExists: "SKIP",
+    authenticationFlows: [{ alias: "i4-probe-flow", providerId: "basic-flow", topLevel: true, builtIn: false, authenticationExecutions: [] }],
+    clientScopes: [{ name: "i4-probe-scope", protocol: "openid-connect" }],
+    clientPolicies: { policies: [{ name: "i4-probe-policy", enabled: true, conditions: [], profiles: [] }] } }, { allow: [400] });
+  const made = { flow: (await kc.call("GET", "/authentication/flows")).some((f) => f.alias === "i4-probe-flow"), scope: (await kc.call("GET", "/client-scopes")).some((x) => x.name === "i4-probe-scope"), policy: (await kc.call("GET", "/client-policies/policies")).policies.some((x) => x.name === "i4-probe-policy") };
+  rec("I4", "plan 43 comparison: partial import of a flow, a client scope and a client policy", "observation", `response added ${probe.added}, skipped ${probe.skipped}; created ${JSON.stringify(made)}`, true, "obs");
   // I2 and I3: `kc.sh import` with Keycloak stopped, from the realm as exported now plus a change.
   const full = await kc.call("POST", "/partial-export?exportClients=true&exportGroupsAndRoles=true");
   full.accessTokenLifespan = 1234;
