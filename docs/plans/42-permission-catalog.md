@@ -7,8 +7,9 @@ resource does not support. Then define the household roles as exact leaf lists. 
 input ADR-0057 acceptance prerequisites 2 and 3 ask for.
 
 Status: draft, 2026-11-27. Design input only: no migration, seed or code change follows from
-this document, and ADR-0057 stays Proposed. Prerequisite 3 needs the maintainer's approval of
-the role lists in [Household roles](#household-roles).
+this document, and ADR-0057 stays Proposed. The maintainer answered open questions 1, 2, 4, 5
+and 6 on 2026-11-27, which approves the role lists in [Household roles](#household-roles) for
+prerequisite 3. Question 3 has a revised proposal awaiting an answer.
 
 ## Problem and outcome
 
@@ -142,17 +143,18 @@ plan entry writes need `RECIPES_READ`, `PRODUCTS_READ`, `QUANTITY_UNITS_READ` an
 
 | Resource (inv.) | Create (parent) | Read (parent) | Update (parent) | Delete (parent) |
 |---|---|---|---|---|
-| Chores (21) | `CHORES_CREATE` (`CHORES`) | `CHORES_READ` (`CHORES_VIEW`) | `CHORES_UPDATE` (`CHORES`) | `CHORES_DELETE` (`MASTER_DATA_EDIT`) |
+| Chores (21) | `CHORES_CREATE` (`CHORES`) | `CHORES_READ` (`CHORES_VIEW`) | `CHORES_UPDATE` (`CHORES`) | `CHORES_DELETE` (`CHORES`) |
 | Chore log (22) | n/a: written by tracking | `CHORE_LOG_READ` (`CHORES_VIEW`) | n/a | n/a: executions are undone |
-| Tasks (23) | `TASKS_CREATE` (`TASKS`) | `TASKS_READ` (`TASKS_VIEW`) | `TASKS_UPDATE` (`TASKS`) | `TASKS_DELETE` (`MASTER_DATA_EDIT`) |
+| Tasks (23) | `TASKS_CREATE` (`TASKS`) | `TASKS_READ` (`TASKS_VIEW`) | `TASKS_UPDATE` (`TASKS`) | `TASKS_DELETE` (`TASKS`) |
 | Task categories (24) | `TASK_CATEGORIES_CREATE` (`MASTER_DATA_EDIT`) | `TASK_CATEGORIES_READ` (`TASKS_VIEW`) | `TASK_CATEGORIES_UPDATE` (`MASTER_DATA_EDIT`) | `TASK_CATEGORIES_DELETE` (`MASTER_DATA_EDIT`) |
 | Batteries (25) | `BATTERIES_CREATE` (`MASTER_DATA_EDIT`) | `BATTERIES_READ` (`BATTERIES_VIEW`) | `BATTERIES_UPDATE` (`MASTER_DATA_EDIT`) | `BATTERIES_DELETE` (`MASTER_DATA_EDIT`) |
 | Battery charge cycles (26) | n/a: written by charging | `BATTERY_CHARGE_CYCLES_READ` (`BATTERIES_VIEW`) | n/a | n/a: charges are undone |
 | Equipment (27) | `EQUIPMENT_CREATE` (`EQUIPMENT`) | `EQUIPMENT_READ` (`EQUIPMENT_VIEW`) | `EQUIPMENT_UPDATE` (`EQUIPMENT`) | `EQUIPMENT_DELETE` (`EQUIPMENT`) |
 
-Chore and task delete sit under `MASTER_DATA_EDIT` because that is today's gate (inv. 5.3).
-Moving them under `CHORES` and `TASKS` would let every holder of those parents delete, which
-is open question 1. Chore writes need `PRODUCTS_READ` and `USER_ACCOUNTS_READ` (assignment);
+Chore and task delete move from `MASTER_DATA_EDIT`, today's gate (inv. 5.3), to `CHORES` and
+`TASKS` (answer 1). That is an intentional change: every holder of `CHORES` or `TASKS` gains
+delete. Deleting a chore also deletes its execution history, through the
+`trg_cascade_chore_removal` trigger. Chore writes need `PRODUCTS_READ` and `USER_ACCOUNTS_READ` (assignment);
 task writes need `TASK_CATEGORIES_READ` and `USER_ACCOUNTS_READ`; equipment writes need
 `EQUIPMENT_READ`.
 
@@ -309,8 +311,12 @@ and outside the catalog (inv. 4.5); ADR-0057 decision 7's service packages cover
 - **Checks itself.** The migration compares every account's, role's and credential's
   resolved set before and after (ADR-0057 decision 2). With the placements above the only
   expected difference is the added leaves themselves: each account gains the new leaves under
-  nodes it already holds, and no account gains or loses an operation. The intentional-change
-  list is empty unless open questions 1 to 3 add to it.
+  nodes it already holds. The intentional-change list has one entry, from answer 1: every
+  account and role holding `CHORES` or `TASKS`, directly or through a role, gains chore or
+  task delete. The seeded `ADULT` is the main case. Open question 3 may add a second entry.
+- **Partly supersedes ADR-0043 decision 7.** That decision, Accepted, keeps chore and task
+  delete with `MASTER_DATA_EDIT`. ADR-0057 must name decision 7's delete bullet in its own
+  supersession before this change ships.
 - **Moves code to leaves.** Every check named in the inventory is rewritten against the
   leaf, and a check against a bundle becomes a defect (ADR-0057 decision 2).
 
@@ -343,7 +349,7 @@ Runs the household's data without administering accounts or infrastructure.
 | Holds | Which means |
 |---|---|
 | `STOCK`, `SHOPPINGLIST`, `RECIPES`, `CHORES`, `TASKS`, `BATTERIES`, `EQUIPMENT`, `CALENDAR` | every booking, list, recipe, meal plan, chore, task, battery and equipment operation, with their reads |
-| `MASTER_DATA_EDIT` | create, update and delete of all master data; chore and task delete; merges; label printing, reprint and cancel |
+| `MASTER_DATA_EDIT` | create, update and delete of all master data; merges; label printing, reprint and cancel |
 | `USERS_READ` | can see users, roles and groups, to assign chores and tasks |
 
 Not held: `USERS_CREATE`, `USERS_EDIT`, `LABELS_ADMIN`, userfield and custom entity definition
@@ -363,9 +369,9 @@ Day-to-day use of every feature, without changing shared master data.
 
 Not held: `MASTER_DATA_EDIT`, `MASTER_DATA_ADD`, `USERS_CREATE`, `USERS_EDIT`, `ADMIN`.
 
-This is today's closure (35 permissions) unchanged. Its consequence stays: an adult can
-create and edit a chore or task but cannot delete it, and cannot create a product
-(open question 1 and question 5).
+This is today's closure (35 permissions) with one intentional change: an adult can now
+delete chores and tasks, as well as create and edit them (answer 1). An adult still cannot
+create a product, location or store (answer 5).
 
 Workflows: buying and consuming, keeping the shopping list, cooking, tracking chores and
 tasks, charging batteries.
@@ -440,22 +446,68 @@ editor shows each leaf's read prerequisites and offers to add them (ADR-0057 dec
    adult delete. That is an intentional change and goes on the upgrade's list with the
    accounts it affects. Proposed: move them, because a person who can create a chore expects
    to delete it.
+
+   > **Response:** datagen24, 2026-11-27: "lets move them, Adult should be able to delete
+   > tasks, i am not sure of the reasoning for not giving them delete". Recorded: both move.
+   > ADR-0043 decision 7 kept delete with `MASTER_DATA_EDIT` without a stated reason, so
+   > ADR-0057 supersedes that bullet. A deleted chore takes its execution history with it.
 2. **Is `LABELS_ADMIN` the right container for the label management leaves?** It adds one
    bundle so that label administration can be delegated without `ADMIN`. The alternative is
    21 leaves directly under `ADMIN`. Proposed: `LABELS_ADMIN`.
+
+   > **Response:** datagen24, 2026-11-27: use the bundle.
 3. **Do the system routes need a read leaf?** `/api/system/info`, `/time`, `/db-changed-time`,
    `/config`, `/localization-strings` and `/api/openapi/specification` check no permission
    today (inv. 5.14). ADR-0057 decision 3 exempts only the caller's own profile, settings and
    capabilities. Proposed: treat them as part of the capabilities exemption, because the
    front end needs them before it knows what the user may do, and state that in ADR-0057.
+
+   Read 2026-11-27 at `e013eade`, for the maintainer's question on the risks. All six need an
+   authenticated caller: `BaseAuthMiddleware` exempts only the root page, login, pairing and
+   the credential-typed label routes. What each returns:
+
+   - `/api/system/config`: an allow-list (`SystemApiController::EXPOSED_SETTINGS`: mode,
+     currency, energy unit, locale, calendar and meal plan week settings, entry page, base
+     path and URL, URL rewriting), every feature flag, the effective upload limit and the
+     country. The front end needs it on every page. Low risk.
+   - `/api/system/time`, `/api/system/db-changed-time`: server time and the last-change
+     timestamp. Low risk.
+   - `/api/system/localization-strings`: the translation catalogue. No household data.
+   - `/api/openapi/specification`: the API description, which is public in the repository.
+   - `/api/system/info` (`ApplicationService::GetSystemInfo`): the Victual version and
+     migration number, the PHP version, the database engine and version, and the full
+     `php_uname()` (kernel name, release, build string and architecture). Under the
+     exemption every account, including Guest and Child, and every restricted key or OAuth
+     token could read the exact PHP, database and kernel versions. That is reconnaissance
+     data for anyone holding any credential.
+   - `POST /api/system/log-missing-localization` writes to the translation template only when
+     `VICTUAL_MODE` is `dev`; in any other mode it does nothing.
+
+   Revised proposal: exempt `config`, `time`, `db-changed-time`, `localization-strings`,
+   `openapi/specification` and `log-missing-localization`. Give `/api/system/info` a leaf,
+   `SYSTEM_INFO_READ` under `ADMIN`, for the PHP, database and kernel fields. The Victual version,
+   migration number and capability fields stay readable by everyone, and the other fields are
+   absent for callers without the leaf, as price fields are (ADR-0005's documented field
+   redaction). That is a wire change for non-administrators and goes on the intentional-change
+   list.
 4. **Do userfield and custom entity definitions stay readable by everyone?** The leaves exist
    and the upgrade grants them to everyone, which keeps today's behaviour. The alternative is
    to grant them only to roles whose forms show userfields, which is every role above.
    Proposed: grant them to every role and keep them in the self-service set.
+
+   > **Response:** datagen24, 2026-11-27: no risk seen in this. Marking some fields as
+   > sensitive, visible only to some roles or to the system, may need a backlog item later;
+   > there is no explicit use case yet. Recorded: definitions stay readable by everyone, and
+   > per-field sensitivity is a possible follow-up, unscheduled.
 5. **Does the adult role stay without product creation?** Today an adult cannot add a new
    product, location or store, because `MASTER_DATA_ADD` is not in `ADULT` (inv. 2.2). Adding
    `MASTER_DATA_ADD` to `ADULT` would be an intentional change. Proposed: leave `ADULT` as it
    is and use `HOUSEHOLD_MANAGER` for those who maintain master data.
+
+   > **Response:** datagen24, 2026-11-27: yes, that is what the household manager is for.
 6. **Is the household manager the right new role?** It is today's adult plus
    `MASTER_DATA_EDIT`. Proposed as written; the maintainer may rename it or move label
    printing out of it.
+
+   > **Response:** datagen24, 2026-11-27: the household manager works well. Recorded as
+   > written, label printing included.
