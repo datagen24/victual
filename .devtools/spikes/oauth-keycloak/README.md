@@ -124,7 +124,7 @@ feature, unless the row says "needs Preview".
 | Victual subject in the token (not required since the 2026-10-25 clarification: Victual maps Keycloak's stable `sub`, P3) | evidence only. met-with-config: Keycloak's `sub` is its own UUID. Victual's subject can be copied into a claim, but only from a client scope requested at the exchange; a mapper on the client itself is not applied to the exchanged token | L3 |
 | Licence, image, runtime | Apache-2.0; image 478 MB (arm64); runs as uid 1000; read-only root filesystem works after a build step with a tmpfs for `/tmp` and the data directory; 520 to 620 MiB for the server after the probe, 50 to 77 MiB for PostgreSQL | I1, `./run.sh readonly`, `./run.sh stats` |
 | Two replicas on one database (0055 prerequisite 2) | met for two containers behind a proxy: production-mode replicas cluster over the shared database (JDBC_PING). Login, consent, rotation, revocation and exchange work across replicas. One replica killed mid-login, between code and redemption, or holding the grant loses nothing; both killed loses only logins in progress | H0 to H9p |
-| Nix-built image (0055 prerequisite 3, ADR-0013) | met on arm64: `nix/image.nix` builds 26.8.1 from the flake's nixpkgs pin, uid 65532, no shell, read-only root with two tmpfs mounts. The core probe gives the same verdicts as on the upstream image. 827 MB against the upstream 478 MB | I1, finding 26 |
+| Nix-built image (0055 prerequisite 3, ADR-0013) | met on arm64: `nix/image.nix` builds 26.8.1 from the flake's nixpkgs pin, uid 65532, no shell, read-only root with two tmpfs mounts. The core probe gives the same verdicts as on the upstream image. 827 MB against the upstream 478 MB. Also built and started on amd64 on 2026-11-27, probe not run | I1, finding 26, plan 44 |
 
 Core run (2026-10-28): **101 of 123 cases pass, 21 FAIL, 1 n/a** (P8 needs the Preview run).
 The 21 FAIL rows:
@@ -736,6 +736,17 @@ now falls back to podman's view of PID 1.
     with `jmods`; a `jlink`-trimmed runtime would close most of the gap and was not tried. arm64
     only; amd64 not built.
 
+    2026-11-27, amd64: the same derivation built at `e9c61d42` on an x86_64 container, also 827 MB,
+    uid 65532, no shell, read-only root under Docker. It reached ready and issued a token; the
+    probe was not run, because `run.sh` drives podman. A `jlink` runtime of all 69 modules of the
+    same JDK is 166 MiB against 568 MiB. Built as an image, that change would come to about
+    405 MB, but no such image was built.
+
+    The licence review and its jar inventory
+    (`licences/`) are in [plan 44](../../../docs/plans/44-keycloak-licence-and-image.md). Since
+    then `image.nix` also deletes the MySQL and MariaDB drivers (plan 44 recommendation 2), and the
+    rebuilt amd64 image started and issued a token; the probe has not run against it.
+
 ## Configuration inventory (prerequisite 8)
 
 ADR-0055 prerequisite 8 accepts provider configuration when it uses a supported provider
@@ -838,8 +849,9 @@ Gaps that block a clean prerequisite 8 for Keycloak:
   one token only).
 - Polling Keycloak's user events for a revoked grant, caching the K1 lookup, and its cost per
   request. Initial access tokens and the `authenticated` subtype of the registration policies.
-- Behaviour when a mapper or policy fails; amd64 images, Nix-built or upstream; a `jlink`-trimmed
-  Java runtime for the Nix image.
+- Behaviour when a mapper or policy fails; the probe on amd64 images, Nix-built or upstream (the
+  Nix image was built and started on amd64 on 2026-11-27); a `jlink`-trimmed Java runtime run
+  with Keycloak.
 - The device flow, DPoP, upgrade between Keycloak versions, break-glass with Keycloak
   stopped (ADR-0056 prerequisite 5), back-channel logout, and an Entra ID upstream.
 - Any version other than 26.8.1.
