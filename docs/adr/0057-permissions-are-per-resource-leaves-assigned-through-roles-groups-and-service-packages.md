@@ -242,8 +242,11 @@ An **API role package** is a named, versioned set of leaves, kept apart from rol
   move changes. That keeps ADR-0044 decision 4's rule that a mutable bundle never moves a
   live credential, and answers issue 1111's second design question (open question 2).
 - For an urgent reduction, one atomic action reassigns every credential on a version to
-  a narrower one. Revoking a credential takes effect on its next request, as a key
-  revocation does today. Retiring a package version requires reassigning or revoking its
+  a narrower one. Revoking a static key takes effect on its next request, as a key
+  revocation does today. Revoking a Keycloak service credential takes effect within the
+  access-token lifetime plus the permitted clock skew, six minutes at worst (answer 8's
+  follow-up). Victual's immediate grant-revocation check would shorten that to the next
+  request once it is built (issue 1141). Retiring a package version requires reassigning or revoking its
   credentials first.
 - Provisioning service accounts and credentials requires `SERVICE_ACCOUNTS_MANAGE`, a
   leaf under `ADMIN` (open question 1). That leaf alone does not let anyone grant an
@@ -494,3 +497,12 @@ discovery, and the Victual images.
    > **Response:** datagen24, 2026-11-27: yes to both. Revoking a service account on the services page
    > disables its Keycloak client, and the chart fixes the projected-token lifetime at
    > 600 s.
+   >
+   > Follow-up, datagen24, 2026-11-27: "Immediate revocation for service accounts is ideal,
+   > but the practical question is can we can; in reality, the question is probably the same
+   > worst-case bounded 5m + SKEW." Recorded as: a revoked service credential's last access
+   > token is accepted for at most the five-minute lifetime plus the 60 s skew, six minutes,
+   > the same bound user grants have (ADR-0055 answer 24). Immediate revocation stays the
+   > goal; it arrives with Victual's grant-revocation check (ADR-0055 decision 6, issue 1141).
+   > Answer 2's "immediate credential revocation" holds for static keys, and for service
+   > credentials once that check exists. Decision 7 now says so.

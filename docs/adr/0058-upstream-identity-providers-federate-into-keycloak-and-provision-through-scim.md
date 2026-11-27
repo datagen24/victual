@@ -232,12 +232,17 @@ answer 14). That image holds the only database role that can run DDL and the onl
 
 ### 9. Service callers are Keycloak clients
 
-ADR-0057 questions 6 to 8 govern this, as answered on 2026-11-27. A service account is a
-Keycloak client using the client-credentials grant. Inside the cluster it authenticates with
-its projected Kubernetes service-account token, with a 600 s lifetime; outside, with a key
-pair it generated at pairing. Revoking a service account disables its Keycloak client.
-Keycloak's availability target is similar to Victual's, because a service keeps working
-through a Keycloak outage only until its access token expires.
+ADR-0057 questions 6 to 8 govern this, as answered on 2026-11-27.
+
+- A service account is a Keycloak client using the client-credentials grant.
+- Inside the cluster it authenticates with its projected Kubernetes service-account token,
+  with a 600 s lifetime. Outside, it authenticates with a key pair it generated at pairing.
+- Revoking a service account disables its Keycloak client. Its last access token is accepted
+  for at most six minutes, the lifetime plus the skew. Victual's grant-revocation check makes
+  revocation take effect on the next request once it is built (ADR-0057 answer 8's follow-up;
+  issue 1141).
+- Keycloak's availability target is similar to Victual's, because a service keeps working
+  through a Keycloak outage only until its access token expires.
 
 ### 10. Victual does not implement SAML
 
