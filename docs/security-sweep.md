@@ -1098,7 +1098,7 @@ reverting `CheckGroupIsKnown()` to a no-op and confirming the suite catches it (
 suite clean.
 
 **S33 | Low — *fixed* — any credential could read the server's exact PHP, database and
-kernel versions.** Recorded 2026-11-27 from plan 42 ([PR 1145](https://github.com/datagen24/victual/pull/1145)) open
+kernel versions.** Recorded 2026-11-27 from [plan 42](plans/42-permission-catalog.md) open
 question 3. `GET /api/system/info` (`ApplicationService::GetSystemInfo`) checked no permission
 and answered every authenticated caller with `php_version`, `sqlite_version`,
 `database_engine` and the full `php_uname()` in `os`: kernel name, release, build string and
