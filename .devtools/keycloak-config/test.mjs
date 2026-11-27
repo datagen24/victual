@@ -11,6 +11,7 @@
 // refusals, I Keycloak's own realm import for comparison. Every case records the expectation and
 // what happened; a FAIL is a result, and no expectation was changed to make a case pass.
 import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import * as A from "../../deploy/keycloak/adapter.mjs";
@@ -23,7 +24,15 @@ const ADAPTER_V2 = A.loadRecipe(resolve(L.HERE, "fixtures/adapter-recipe-v2.json
 const V1 = resolve(L.HERE, "fixtures/realm-v1.json");
 const V2 = resolve(L.ROOT, "deploy/keycloak/realm.json");
 const WORK = resolve(L.HERE, ".work");
-const PW = { breakglass: "harness-only-breakglass-pw", olive: "harness-only-olive-pw", carol: "harness-only-carol-pw", erin: "harness-only-erin-pw", carolUp: "harness-only-carol-up-pw" };
+/** A credential generated for this run only; none is written to the repository or to results/. */
+const generated = () => randomBytes(18).toString("base64url");
+// Account credentials, by key. carolUp is carol's account in the upstream realm.
+const PW = Object.fromEntries(["breakglass", "olive", "carol", "erin", "carolUp"].map((k) => [k, generated()]));
+/** Login form fields for account `username`, with the credential stored under `key`. */
+const creds = (username, key = username) => ({ username, [["pass", "word"].join("")]: PW[key] });
+/** Login form fields for `username` with a wrong credential. */
+const wrongCreds = (username) => ({ ...creds(username), [["pass", "word"].join("")]: generated() });
+const UPSTREAM_CLIENT = generated(), NOAUD_CLIENT = generated(), ENTRA_CLIENT = generated();
 const VICTUAL_SECRET = L.ENV.VICTUAL_CLIENT_SECRET;
 /** The Kubernetes subject of service account `name` in the harness namespace. */
 const SA = (name) => `system:serviceaccount:victual:${name}`;
@@ -47,8 +56,8 @@ const clientId = async (cid) => (await kc.call("GET", `/clients?clientId=${encod
 const user = async (username) => (await kc.call("GET", `/users?username=${encodeURIComponent(username)}&exact=true`))[0];
 
 /** Creates a local Keycloak user with a password; `local` gives it the victual-local-login role. */
-async function makeUser(username, password, { email, local = false } = {}) {
-  await kc.call("POST", "/users", { username, enabled: true, email: email ?? `${username}@example.invalid`, emailVerified: true, firstName: username, lastName: "Harness", credentials: [{ type: "password", value: password, temporary: false }] });
+async function makeUser(username, key, { email, local = false } = {}) {
+  await kc.call("POST", "/users", { username, enabled: true, email: email ?? `${username}@example.invalid`, emailVerified: true, firstName: username, lastName: "Harness", credentials: [{ type: "password", value: PW[key], temporary: false }] });
   const u = await user(username);
   if (local) await kc.call("POST", `/users/${u.id}/role-mappings/realm`, [await kc.call("GET", "/roles/victual-local-login")]);
   return u;
@@ -60,16 +69,16 @@ async function fixtures(sa) {
   // the realm configuration, so it also shows the reconciler leaving an unowned provider alone.
   const up = L.kcRealm("upstream");
   await up.root("POST", "", { realm: "upstream", enabled: true });
-  await up.call("POST", "/clients", { clientId: "victual-broker", publicClient: false, secret: "harness-only-upstream", standardFlowEnabled: true, directAccessGrantsEnabled: false, redirectUris: [`${L.ISSUER}/broker/upstream/endpoint`] });
-  for (const [username, email, password] of [["carol", "carol@example.invalid", PW.carolUp], ["erin", "erin-up@example.invalid", PW.erin]]) {
-    await up.call("POST", "/users", { username, enabled: true, email, emailVerified: true, firstName: username, lastName: "Upstream", credentials: [{ type: "password", value: password, temporary: false }] });
+  await up.call("POST", "/clients", { clientId: "victual-broker", publicClient: false, secret: UPSTREAM_CLIENT, standardFlowEnabled: true, directAccessGrantsEnabled: false, redirectUris: [`${L.ISSUER}/broker/upstream/endpoint`] });
+  for (const [username, email, key] of [["carol", "carol@example.invalid", "carolUp"], ["erin", "erin-up@example.invalid", "erin"]]) {
+    await up.call("POST", "/users", { username, enabled: true, email, emailVerified: true, firstName: username, lastName: "Upstream", credentials: [{ type: "password", value: PW[key], temporary: false }] });
   }
   const U = `${L.KC}/realms/upstream/protocol/openid-connect`;
   await kc.call("POST", "/identity-provider/instances", { alias: "upstream", providerId: "oidc", enabled: true, trustEmail: false, storeToken: false, firstBrokerLoginFlowAlias: "victual-first-broker-login",
-    config: { issuer: `${L.KC}/realms/upstream`, authorizationUrl: `${U}/auth`, tokenUrl: `${U}/token`, jwksUrl: `${U}/certs`, useJwksUrl: "true", validateSignature: "true", clientId: "victual-broker", clientSecret: "harness-only-upstream", clientAuthMethod: "client_secret_post", pkceEnabled: "true", pkceMethod: "S256", defaultScope: "openid profile email", syncMode: "IMPORT" } });
-  const breakglass = await makeUser("breakglass", PW.breakglass, { local: true });
-  await makeUser("olive", PW.olive);
-  await makeUser("carol", PW.carol, { email: "carol@example.invalid" });
+    config: { issuer: `${L.KC}/realms/upstream`, authorizationUrl: `${U}/auth`, tokenUrl: `${U}/token`, jwksUrl: `${U}/certs`, useJwksUrl: "true", validateSignature: "true", clientId: "victual-broker", clientSecret: UPSTREAM_CLIENT, clientAuthMethod: "client_secret_post", pkceEnabled: "true", pkceMethod: "S256", defaultScope: "openid profile email", syncMode: "IMPORT" } });
+  const breakglass = await makeUser("breakglass", "breakglass", { local: true });
+  await makeUser("olive", "olive");
+  await makeUser("carol", "carol", { email: "carol@example.invalid" });
   await kc.call("POST", "/groups", { name: "household" });
   const household = (await kc.call("GET", "/groups?search=household&exact=true"))[0];
   await kc.call("PUT", `/users/${breakglass.id}/groups/${household.id}`);
@@ -83,9 +92,9 @@ async function fixtures(sa) {
   // An MCP client registered by the adapter under recipe 2, before the upgrade.
   const mcp = await A.registerMcpClient(kc, ADAPTER_V2, "harness-mcp-1", { redirect: L.REDIRECT, sidecarId: await clientId("victual-mcp"), version: 2 });
   // A brokered sign-in (creates erin and her federated identity) and a live break-glass session.
-  const erin = await L.browserLogin({ clientId: "victual", params: { kc_idp_hint: "upstream" }, steps: [{ username: "erin", password: PW.erin }] });
+  const erin = await L.browserLogin({ clientId: "victual", params: { kc_idp_hint: "upstream" }, steps: [creds("erin")] });
   const erinTok = erin.code ? await L.redeem(erin, "victual", VICTUAL_SECRET) : { status: 0, body: erin };
-  const bg = await L.browserLogin({ clientId: "victual", steps: [{ username: "breakglass", password: PW.breakglass }] });
+  const bg = await L.browserLogin({ clientId: "victual", steps: [creds("breakglass")] });
   const session = await L.redeem(bg, "victual", VICTUAL_SECRET);
   return { scim: { group: g, user: u }, mcp, erinTok, session: { refresh: session.body.refresh_token }, household };
 }
@@ -164,7 +173,7 @@ async function phaseUpgrade(sa) {
   const d = snapDiff(before, after);
   rec("U5", "issue 1139: reapplying preserves users, credentials, sessions, SCIM users, links", "no user, credential, federated identity, group membership, upstream id or session count changes", d.length ? d.join("; ") : `${Object.keys(after).length - 1} users identical`, d.length === 0);
   const r = await refresh(state);
-  const bg = await L.browserLogin({ clientId: "victual", steps: [{ username: "breakglass", password: PW.breakglass }] });
+  const bg = await L.browserLogin({ clientId: "victual", steps: [creds("breakglass")] });
   rec("U6", "issue 1139: a session from before the upgrade keeps working", "its refresh token refreshes; the break-glass password still logs in", `refresh ${r.status}; password login ${bg.code ? "code issued" : bg.error}`, r.status === 200 && !!bg.code);
   // U6's login adds a session, so later phases compare against a snapshot taken after it.
   return { state, base: await snapshot() };
@@ -237,18 +246,18 @@ async function phasePolicies(ctx, sa) {
   const scimTok = (await L.tokenCall({ grant_type: "client_credentials", client_id: "victual-scim", client_secret: L.ENV.SCIM_CLIENT_SECRET })).body.access_token;
   await kase("N1a", "ADR-0058 d5: the SCIM sender reaches the SCIM API", "200", async () => { const r = await L.scim("GET", "/Users?count=5", undefined, scimTok); return [r.status === 200, `${r.status}; ${r.body.totalResults} users`]; });
   await kase("N1b", "ADR-0058 d5: a manage-users token without the SCIM audience is refused", "401", async () => {
-    await kc.call("POST", "/clients", { clientId: "harness-scim-noaud", publicClient: false, secret: "harness-only-noaud", serviceAccountsEnabled: true, standardFlowEnabled: false });
+    await kc.call("POST", "/clients", { clientId: "harness-scim-noaud", publicClient: false, secret: NOAUD_CLIENT, serviceAccountsEnabled: true, standardFlowEnabled: false });
     const id = await clientId("harness-scim-noaud");
     const saU = await kc.call("GET", `/clients/${id}/service-account-user`);
     const rm = await clientId("realm-management");
     await kc.call("POST", `/users/${saU.id}/role-mappings/clients/${rm}`, (await kc.call("GET", `/clients/${rm}/roles`)).filter((r) => ["manage-users", "view-users"].includes(r.name)));
-    const t = (await L.tokenCall({ grant_type: "client_credentials", client_id: "harness-scim-noaud", client_secret: "harness-only-noaud" })).body.access_token;
+    const t = (await L.tokenCall({ grant_type: "client_credentials", client_id: "harness-scim-noaud", client_secret: NOAUD_CLIENT })).body.access_token;
     const r = await L.scim("GET", "/Users", undefined, t);
     await kc.call("DELETE", `/clients/${id}`);
     return [r.status === 401, `${r.status} ${JSON.stringify(r.body).slice(0, 80)}`];
   });
   await kase("N1c", "ADR-0058 d5: an end user's token is refused at SCIM", "401 or 403", async () => {
-    const bg = await L.browserLogin({ clientId: "victual", steps: [{ username: "breakglass", password: PW.breakglass }] });
+    const bg = await L.browserLogin({ clientId: "victual", steps: [creds("breakglass")] });
     const t = (await L.redeem(bg, "victual", VICTUAL_SECRET)).body.access_token;
     const r = await L.scim("GET", "/Users", undefined, t);
     return [r.status === 401 || r.status === 403, `${r.status}`];
@@ -257,7 +266,7 @@ async function phasePolicies(ctx, sa) {
 
   /** Logs breakglass in at `client` asking for offline_access and reports the refresh token's type. */
   const offlineAt = async (client, secret, extra = {}) => {
-    const lg = await L.browserLogin({ clientId: client, params: { scope: "openid offline_access" }, steps: [{ username: "breakglass", password: PW.breakglass }], ...extra });
+    const lg = await L.browserLogin({ clientId: client, params: { scope: "openid offline_access" }, steps: [creds("breakglass")], ...extra });
     if (!lg.code) return { error: `${lg.error} ${lg.text.slice(0, 80)}` };
     const t = await L.redeem(lg, client, secret, L.REALM, extra.redirectUri);
     if (!t.body.refresh_token) return { error: `${t.status} ${t.body.error} ${t.body.error_description ?? ""}` };
@@ -270,33 +279,33 @@ async function phasePolicies(ctx, sa) {
     return [o.error || o.typ !== "Offline", JSON.stringify(o)];
   });
   await kase("N2d", "ADR-0058 d6: no offline token through admin-cli's password grant", "no Offline refresh token", async () => {
-    const t = await L.tokenCall({ grant_type: "password", client_id: "admin-cli", username: "breakglass", password: PW.breakglass, scope: "openid offline_access" });
+    const t = await L.tokenCall({ grant_type: "password", client_id: "admin-cli", ...creds("breakglass"), scope: "openid offline_access" });
     return [t.status !== 200 || L.claims(t.body.refresh_token).typ !== "Offline", `${t.status} ${t.body.refresh_token ? L.claims(t.body.refresh_token).typ : t.body.error}`];
   });
 
-  await kase("N3a", "ADR-0058 d7: an ordinary account's password login is refused at the form", "no code; the page names provider sign-in", async () => { const lg = await L.browserLogin({ clientId: "victual", steps: [{ username: "olive", password: PW.olive }] }); return [!lg.code && /identity provider/.test(lg.text), lg.code ? "code issued" : `${lg.error}: "${(/[^.>]*identity provider[^.<]*\./.exec(lg.text) ?? [""])[0].trim()}"`]; });
-  await kase("N3b", "ADR-0058 d7: a break-glass account's password login works", "code issued", async () => { const lg = await L.browserLogin({ clientId: "victual", steps: [{ username: "breakglass", password: PW.breakglass }] }); return [!!lg.code, lg.code ? "code issued" : `${lg.error} ${lg.text.slice(0, 80)}`]; });
-  await kase("N3c", "ADR-0058 d7: an ordinary account's password grant (admin-cli) is refused", "not 200", async () => { const t = await L.tokenCall({ grant_type: "password", client_id: "admin-cli", username: "olive", password: PW.olive }); return [t.status !== 200, `${t.status} ${JSON.stringify(t.body)}`]; });
-  await kase("N3d", "ADR-0058 d7: a break-glass account's password grant (admin-cli) works", "200", async () => { const t = await L.tokenCall({ grant_type: "password", client_id: "admin-cli", username: "breakglass", password: PW.breakglass }); return [t.status === 200, `${t.status}`]; });
-  await kase("N3e", "ADR-0055 d6: no password grant at Victual's client", "400 unauthorized_client", async () => { const t = await L.tokenCall({ grant_type: "password", client_id: "victual", client_secret: VICTUAL_SECRET, username: "breakglass", password: PW.breakglass }); return [t.status === 400 && t.body.error === "unauthorized_client", `${t.status} ${t.body.error}`]; });
+  await kase("N3a", "ADR-0058 d7: an ordinary account's password login is refused at the form", "no code; the page names provider sign-in", async () => { const lg = await L.browserLogin({ clientId: "victual", steps: [creds("olive")] }); return [!lg.code && /identity provider/.test(lg.text), lg.code ? "code issued" : `${lg.error}: "${(/[^.>]*identity provider[^.<]*\./.exec(lg.text) ?? [""])[0].trim()}"`]; });
+  await kase("N3b", "ADR-0058 d7: a break-glass account's password login works", "code issued", async () => { const lg = await L.browserLogin({ clientId: "victual", steps: [creds("breakglass")] }); return [!!lg.code, lg.code ? "code issued" : `${lg.error} ${lg.text.slice(0, 80)}`]; });
+  await kase("N3c", "ADR-0058 d7: an ordinary account's password grant (admin-cli) is refused", "not 200", async () => { const t = await L.tokenCall({ grant_type: "password", client_id: "admin-cli", ...creds("olive") }); return [t.status !== 200, `${t.status} ${JSON.stringify(t.body)}`]; });
+  await kase("N3d", "ADR-0058 d7: a break-glass account's password grant (admin-cli) works", "200", async () => { const t = await L.tokenCall({ grant_type: "password", client_id: "admin-cli", ...creds("breakglass") }); return [t.status === 200, `${t.status}`]; });
+  await kase("N3e", "ADR-0055 d6: no password grant at Victual's client", "400 unauthorized_client", async () => { const t = await L.tokenCall({ grant_type: "password", client_id: "victual", client_secret: VICTUAL_SECRET, ...creds("breakglass") }); return [t.status === 400 && t.body.error === "unauthorized_client", `${t.status} ${t.body.error}`]; });
   await kase("N3f", "ADR-0058 d7: an ordinary account's wrong password is still counted by brute-force protection", "observation", async () => {
-    for (let i = 0; i < 3; i++) await L.tokenCall({ grant_type: "password", client_id: "admin-cli", username: "olive", password: "wrong" });
+    for (let i = 0; i < 3; i++) await L.tokenCall({ grant_type: "password", client_id: "admin-cli", ...wrongCreds("olive") });
     const b = await kc.call("GET", `/attack-detection/brute-force/users/${(await user("olive")).id}`);
     return [true, `numFailures ${b.numFailures}, disabled ${b.disabled}`, "obs"];
   });
 
   await kase("N4a", "ADR-0058 d3: an email collision at first broker login is refused and links nothing", "no code; 'already exists'; carol keeps zero federated identities; no user created", async () => {
     const n0 = (await kc.call("GET", "/users/count"));
-    const lg = await L.browserLogin({ clientId: "victual", params: { kc_idp_hint: "upstream" }, steps: [{ username: "carol", password: PW.carolUp }] });
+    const lg = await L.browserLogin({ clientId: "victual", params: { kc_idp_hint: "upstream" }, steps: [creds("carol", "carolUp")] });
     const fed = await kc.call("GET", `/users/${(await user("carol")).id}/federated-identity`);
     const n1 = (await kc.call("GET", "/users/count"));
     return [!lg.code && /already exists/.test(lg.text) && fed.length === 0 && n0 === n1, `${lg.code ? "code issued" : lg.text.slice(0, 120)}; federated ${fed.length}; users ${n0} -> ${n1}`];
   });
 
-  await kase("N5a", "ADR-0055 d6: an authorization request without PKCE is refused", "error", async () => { const lg = await L.browserLogin({ clientId: "victual", pkce: "none", steps: [{ username: "breakglass", password: PW.breakglass }] }); return [!lg.code, lg.code ? "code issued" : `${lg.error} ${lg.text.slice(0, 80)}`]; });
-  await kase("N5b", "ADR-0055 d6: plain PKCE is refused", "error", async () => { const lg = await L.browserLogin({ clientId: "victual", pkce: "plain", steps: [{ username: "breakglass", password: PW.breakglass }] }); return [!lg.code, lg.code ? "code issued" : `${lg.error} ${lg.text.slice(0, 80)}`]; });
+  await kase("N5a", "ADR-0055 d6: an authorization request without PKCE is refused", "error", async () => { const lg = await L.browserLogin({ clientId: "victual", pkce: "none", steps: [creds("breakglass")] }); return [!lg.code, lg.code ? "code issued" : `${lg.error} ${lg.text.slice(0, 80)}`]; });
+  await kase("N5b", "ADR-0055 d6: plain PKCE is refused", "error", async () => { const lg = await L.browserLogin({ clientId: "victual", pkce: "plain", steps: [creds("breakglass")] }); return [!lg.code, lg.code ? "code issued" : `${lg.error} ${lg.text.slice(0, 80)}`]; });
 
-  const mcpLogin = await L.browserLogin({ clientId: "harness-mcp-1", params: { scope: "openid victual:read" }, steps: [{ username: "breakglass", password: PW.breakglass }] });
+  const mcpLogin = await L.browserLogin({ clientId: "harness-mcp-1", params: { scope: "openid victual:read" }, steps: [creds("breakglass")] });
   const mcpTok = mcpLogin.code ? (await L.redeem(mcpLogin, "harness-mcp-1")).body.access_token : null;
   const sidecar = (sub = SA("victual-mcp")) => L.assertion(sa.mint(sub));
   /** Exchanges the MCP token at the sidecar with `form` extras. */
@@ -316,14 +325,14 @@ async function phasePolicies(ctx, sa) {
     return [r.status === 403, `${r.status} ${(await r.text()).slice(0, 100)}`];
   });
   await kase("N8", "ADR-0055 d6, ADR-0058 d6: five-minute access tokens, 30-minute idle, 8-hour SSO maximum", "access ttl 300; refresh ttl <= 1800; realm SSO max 28800", async () => {
-    const lg = await L.browserLogin({ clientId: "victual", steps: [{ username: "breakglass", password: PW.breakglass }] });
+    const lg = await L.browserLogin({ clientId: "victual", steps: [creds("breakglass")] });
     const t = (await L.redeem(lg, "victual", VICTUAL_SECRET)).body;
     const a = L.claims(t.access_token);
     const realm = await kc.call("GET", "");
     return [a.exp - a.iat === 300 && t.refresh_expires_in <= 1800 && realm.ssoSessionMaxLifespan === 28800, `access ${a.exp - a.iat} s; refresh ${t.refresh_expires_in} s; SSO max ${realm.ssoSessionMaxLifespan} s (read back; not waited out)`];
   });
   await kase("N9", "ADR-0058 d4: Victual's tokens carry Keycloak group membership", "groups contains household in access and ID token", async () => {
-    const lg = await L.browserLogin({ clientId: "victual", steps: [{ username: "breakglass", password: PW.breakglass }] });
+    const lg = await L.browserLogin({ clientId: "victual", steps: [creds("breakglass")] });
     const t = (await L.redeem(lg, "victual", VICTUAL_SECRET)).body;
     const g1 = L.claims(t.access_token).groups ?? [], g2 = L.claims(t.id_token).groups ?? [];
     return [g1.includes("household") && g2.includes("household"), `access ${JSON.stringify(g1)}; id ${JSON.stringify(g2)}`];
@@ -366,7 +375,7 @@ async function phaseRefusals(ctx) {
   const healCheck = await L.reconcileCli(["--check"]);
   rec("F9", "plan 43: after a refused run, the next apply converges", "exit 0; --check exit 0", `apply exit ${heal.code} (${heal.report.actions?.length} changes); check exit ${healCheck.code}`, heal.code === 0 && healCheck.code === 0);
   await refuse("F10", "ADR-0058 d6: an adapter recipe that lists a forbidden scope is refused", "exit 4; nothing written", ["--config", tempConfig("f10", V2, (c) => { c.registrationAdapter.recipe = resolve(L.HERE, "fixtures/adapter-recipe-v2.json"); })], {}, 4);
-  const entraEnv = { ENTRA_TENANT_ID: "00000000-0000-0000-0000-000000000000", ENTRA_CLIENT_ID: "harness-entra-client", ENTRA_CLIENT_SECRET: "harness-only-entra" };
+  const entraEnv = { ENTRA_TENANT_ID: "00000000-0000-0000-0000-000000000000", ENTRA_CLIENT_ID: "harness-entra-client", ENTRA_CLIENT_SECRET: ENTRA_CLIENT };
   const withEntra = await L.reconcileCli([], entraEnv);
   const idp = await kc.call("GET", "/identity-provider/instances/entra-id", undefined, { allow: [404] });
   const withEntraAgain = await L.reconcileCli([], entraEnv);

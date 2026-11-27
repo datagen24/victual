@@ -22,12 +22,15 @@ export const TX = "urn:ietf:params:oauth:grant-type:token-exchange";
 export const AT = "urn:ietf:params:oauth:token-type:access_token";
 export const SA_ISSUER = "http://127.0.0.1:8199";
 
-/** Reads the harness environment (env.sh's values) without a shell. */
+/**
+ * Reads the harness environment without a shell: the generated credentials in .work/secrets.env
+ * (written by run.sh), then env.sh's plain assignments, where `$NAME` names a generated value.
+ */
 export function harnessEnv() {
   const secrets = Object.fromEntries(readFileSync(resolve(HERE, ".work/secrets.env"), "utf8").trim().split("\n").map((l) => l.split("=")));
-  const env = {};
+  const env = { ...secrets };
   for (const line of readFileSync(resolve(HERE, "env.sh"), "utf8").split("\n")) {
-    for (const m of line.matchAll(/(?:export )?([A-Z_]+)=("?)([^"\s]*)\2/g)) env[m[1]] = m[3].replace("$ADMIN_PASS", secrets.ADMIN_PASS);
+    for (const m of line.matchAll(/(?:export )?([A-Z_]+)=("?)([^"\s]*)\2/g)) env[m[1]] = m[3].startsWith("$") ? secrets[m[3].slice(1)] : m[3];
   }
   return { ...process.env, ...env };
 }

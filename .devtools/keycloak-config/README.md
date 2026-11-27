@@ -24,8 +24,9 @@ node --test config.test.mjs  # the offline checks CI runs; no Keycloak needed
 ```
 
 `run.sh` keeps everything in the gitignored `.work/` directory. It generates the Keycloak admin
-and PostgreSQL passwords into `.work/secrets.env` on first use. Every other credential in
-`env.sh` and `test.mjs` is a `harness-only-*` value for an instance on 127.0.0.1.
+and PostgreSQL passwords and the two client secrets the realm configuration reads into
+`.work/secrets.env` on first use. `test.mjs` generates its account and fixture credentials at
+the start of each run. No credential is in the repository or in `results/`.
 
 ## What stands in for what
 

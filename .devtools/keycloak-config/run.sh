@@ -3,7 +3,8 @@
 # Keycloak 26.8.1 from the release tarball (checksum pinned below) on Java 21, with its own
 # PostgreSQL 16 cluster on 127.0.0.1:55432. No container runtime is needed. Everything lives in
 # the gitignored .work/ directory; the admin and database passwords are generated into
-# .work/secrets.env on first use and never committed.
+# .work/secrets.env on first use and never committed, with the two client secrets the realm
+# configuration reads.
 #   ./run.sh up        start PostgreSQL and Keycloak (start-dev) on 127.0.0.1:8180
 #   ./run.sh stop      stop Keycloak only; the database keeps its data
 #   ./run.sh start     start Keycloak again on the same database
@@ -18,7 +19,11 @@ KC=$W/keycloak-$TAG
 PGBIN=${PGBIN:-/usr/lib/postgresql/16/bin}
 PGPORT=55432
 mkdir -p "$W"
-[ -f "$W/secrets.env" ] || printf 'ADMIN_PASS=%s\nPG_PASS=%s\n' "$(openssl rand -hex 16)" "$(openssl rand -hex 16)" > "$W/secrets.env"
+# Every credential the harness needs is generated here on first use; env.sh and lib.mjs read them.
+touch "$W/secrets.env"
+for k in ADMIN_PASS PG_PASS VICTUAL_CLIENT_SECRET SCIM_CLIENT_SECRET; do
+  grep -q "^$k=" "$W/secrets.env" || printf '%s=%s\n' "$k" "$(openssl rand -hex 16)" >> "$W/secrets.env"
+done
 # shellcheck source=/dev/null
 . "$W/secrets.env"
 
