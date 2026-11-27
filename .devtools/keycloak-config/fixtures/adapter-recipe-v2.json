@@ -1,0 +1,29 @@
+{
+  "$comment": "Fixture: the adapter recipe pinned at version 2, as the version-1 realm fixture used it.",
+  "version": 2,
+  "grantScopePrefix": "victual-grant:",
+  "grantClaim": "victual_client",
+  "versions": {
+    "2": {
+      "description": "MCP client registered by Victual",
+      "mapperExtra": {
+        "lightweight.claim": "true"
+      },
+      "defaultScopes": [
+        "basic",
+        "acr",
+        "profile",
+        "email",
+        "victual-mcp-audience",
+        "victual-groups"
+      ],
+      "optionalScopes": [
+        "victual:read",
+        "victual:shopping",
+        "victual:stock",
+        "victual:catalog",
+        "offline_access"
+      ]
+    }
+  }
+}

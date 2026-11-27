@@ -1,0 +1,417 @@
+{
+  "meta": {
+    "started": "2026-11-27T20:25:34.490Z",
+    "finished": "2026-11-27T20:27:49.811Z",
+    "keycloak": "26.8.1",
+    "node": "v22.23.5",
+    "base": "41fd416"
+  },
+  "results": [
+    {
+      "id": "U0",
+      "clause": "plan 43: apply to an empty instance",
+      "expected": "exit 0, nothing left unapplied",
+      "observed": "exit 0; 34 changes; unapplied []",
+      "verdict": "pass"
+    },
+    {
+      "id": "B1",
+      "clause": "ADR-0058 d3: a unique upstream identity creates and links one Keycloak user",
+      "expected": "token issued; erin has one federated identity at upstream",
+      "observed": "token 200; federated [\"upstream\"]",
+      "verdict": "pass"
+    },
+    {
+      "id": "U1",
+      "clause": "ADR-0055 q18: upgrade version 1 to version 2",
+      "expected": "exit 0, nothing left unapplied",
+      "observed": "exit 0; 35 changes in 2494 ms, including the read-back pass; unapplied []",
+      "verdict": "pass"
+    },
+    {
+      "id": "U2",
+      "clause": "plan 43: version 2 holds after the upgrade",
+      "expected": "--check exit 0, no changes",
+      "observed": "exit 0; 0 changes",
+      "verdict": "pass"
+    },
+    {
+      "id": "U3",
+      "clause": "ADR-0055 q18: an upgrade removes what version 2 dropped and changes what it changed",
+      "expected": "legacy client and victual:write gone; SSO max 28800; direct grant bound to victual-direct-grant; browser flow has the local-only gate; realm records version 2",
+      "observed": "{\"legacyClient\":false,\"writeScope\":false,\"ssoMax\":28800,\"directGrant\":\"victual-direct-grant\",\"gate\":true,\"version\":\"2\"}",
+      "verdict": "pass"
+    },
+    {
+      "id": "U4",
+      "clause": "ADR-0055 q18, ADR-0058 d6: the adapter's objects are upgraded to recipe 3",
+      "expected": "client and grant scope stamped recipe 3; offline_access no longer optional",
+      "observed": "client recipe 3; grant scope recipe 3; optional victual:read,victual:catalog,victual:shopping,victual:stock",
+      "verdict": "pass"
+    },
+    {
+      "id": "U5",
+      "clause": "issue 1139: reapplying preserves users, credentials, sessions, SCIM users, links",
+      "expected": "no user, credential, federated identity, group membership, upstream id or session count changes",
+      "observed": "5 users identical",
+      "verdict": "pass"
+    },
+    {
+      "id": "U6",
+      "clause": "issue 1139: a session from before the upgrade keeps working",
+      "expected": "its refresh token refreshes; the break-glass password still logs in",
+      "observed": "refresh 200; password login code issued",
+      "verdict": "pass"
+    },
+    {
+      "id": "M1",
+      "clause": "plan 43: a second apply changes nothing",
+      "expected": "exit 0, zero changes, Keycloak's partial export unchanged",
+      "observed": "exit 0; 0 changes; export 5ba6791adfb41aec -> 5ba6791adfb41aec",
+      "verdict": "pass"
+    },
+    {
+      "id": "M2",
+      "clause": "plan 43: a third apply changes nothing",
+      "expected": "exit 0, zero changes",
+      "observed": "exit 0; 0 changes",
+      "verdict": "pass"
+    },
+    {
+      "id": "D1",
+      "clause": "plan 43: --check reports every drift without writing",
+      "expected": "exit 2; names all 16 drifts",
+      "observed": "exit 2; 17 changes; not named: none",
+      "verdict": "pass"
+    },
+    {
+      "id": "D2",
+      "clause": "plan 43: apply repairs the drift",
+      "expected": "exit 0, nothing left unapplied",
+      "observed": "exit 0; 18 changes; unapplied []",
+      "verdict": "pass"
+    },
+    {
+      "id": "D3",
+      "clause": "plan 43: the repaired realm is in sync",
+      "expected": "--check exit 0",
+      "observed": "exit 0; 0 changes",
+      "verdict": "pass"
+    },
+    {
+      "id": "D4",
+      "clause": "issue 1139: drift repair preserves users, credentials, sessions, SCIM users, links",
+      "expected": "no difference from the snapshot after U6",
+      "observed": "identical",
+      "verdict": "pass"
+    },
+    {
+      "id": "D5",
+      "clause": "issue 1139: the session survives the repair (including the secret being reset)",
+      "expected": "refresh 200",
+      "observed": "refresh 200 ",
+      "verdict": "pass"
+    },
+    {
+      "id": "N1a",
+      "clause": "ADR-0058 d5: the SCIM sender reaches the SCIM API",
+      "expected": "200",
+      "observed": "200; 5 users",
+      "verdict": "pass"
+    },
+    {
+      "id": "N1b",
+      "clause": "ADR-0058 d5: a manage-users token without the SCIM audience is refused",
+      "expected": "401",
+      "observed": "401 {\"schemas\":[\"urn:ietf:params:scim:api:messages:2.0:Error\"],\"status\":\"401\",\"detai",
+      "verdict": "pass"
+    },
+    {
+      "id": "N1c",
+      "clause": "ADR-0058 d5: an end user's token is refused at SCIM",
+      "expected": "401 or 403",
+      "observed": "401",
+      "verdict": "pass"
+    },
+    {
+      "id": "N1d",
+      "clause": "ADR-0058 d5: externalId is stored and searchable",
+      "expected": "one user for the filter",
+      "observed": "200; 1 result(s)",
+      "verdict": "pass"
+    },
+    {
+      "id": "N2a",
+      "clause": "ADR-0058 d6: no offline token for Victual's client",
+      "expected": "no Offline refresh token",
+      "observed": "{\"error\":\"invalid_scope Invalid scopes: openid offline_access\"}",
+      "verdict": "pass"
+    },
+    {
+      "id": "N2b",
+      "clause": "ADR-0058 d6: no offline token for an adapter-registered MCP client",
+      "expected": "no Offline refresh token",
+      "observed": "{\"error\":\"invalid_scope Invalid scopes: openid offline_access\"}",
+      "verdict": "pass"
+    },
+    {
+      "id": "N2c",
+      "clause": "ADR-0058 d6: no offline token at the exempt admin console client",
+      "expected": "refused or not Offline",
+      "observed": "{\"error\":\"400 not_allowed Offline tokens not allowed for the user or client\"}",
+      "verdict": "pass"
+    },
+    {
+      "id": "N2d",
+      "clause": "ADR-0058 d6: no offline token through admin-cli's password grant",
+      "expected": "no Offline refresh token",
+      "observed": "400 invalid_scope",
+      "verdict": "pass"
+    },
+    {
+      "id": "N3a",
+      "clause": "ADR-0058 d7: an ordinary account's password login is refused at the form",
+      "expected": "no code; the page names provider sign-in",
+      "observed": "stopped at 401: \"Sign in with your organisation&#39;s identity provider.\"",
+      "verdict": "pass"
+    },
+    {
+      "id": "N3b",
+      "clause": "ADR-0058 d7: a break-glass account's password login works",
+      "expected": "code issued",
+      "observed": "code issued",
+      "verdict": "pass"
+    },
+    {
+      "id": "N3c",
+      "clause": "ADR-0058 d7: an ordinary account's password grant (admin-cli) is refused",
+      "expected": "not 200",
+      "observed": "401 {}",
+      "verdict": "pass"
+    },
+    {
+      "id": "N3d",
+      "clause": "ADR-0058 d7: a break-glass account's password grant (admin-cli) works",
+      "expected": "200",
+      "observed": "200",
+      "verdict": "pass"
+    },
+    {
+      "id": "N3e",
+      "clause": "ADR-0055 d6: no password grant at Victual's client",
+      "expected": "400 unauthorized_client",
+      "observed": "400 unauthorized_client",
+      "verdict": "pass"
+    },
+    {
+      "id": "N3f",
+      "clause": "ADR-0058 d7: an ordinary account's wrong password is still counted by brute-force protection",
+      "expected": "observation",
+      "observed": "numFailures 2, disabled true",
+      "verdict": "obs"
+    },
+    {
+      "id": "N4a",
+      "clause": "ADR-0058 d3: an email collision at first broker login is refused and links nothing",
+      "expected": "no code; 'already exists'; carol keeps zero federated identities; no user created",
+      "observed": "Sign in to Victual Victual We are sorry... User with email carol&#64;example.invalid already exists. Please login to acc; federated 0; users 5 -> 5",
+      "verdict": "pass"
+    },
+    {
+      "id": "N5a",
+      "clause": "ADR-0055 d6: an authorization request without PKCE is refused",
+      "expected": "error",
+      "observed": "invalid_request Missing parameter: code_challenge_method",
+      "verdict": "pass"
+    },
+    {
+      "id": "N5b",
+      "clause": "ADR-0055 d6: plain PKCE is refused",
+      "expected": "error",
+      "observed": "invalid_request Invalid parameter: code challenge method is not matching the configured one",
+      "verdict": "pass"
+    },
+    {
+      "id": "N6a",
+      "clause": "ADR-0055 d7, ADR-0057 q6: the sidecar exchanges with its service-account token",
+      "expected": "200; aud is /api; same sub",
+      "observed": "200; subject aud [\"http://localhost:3000/mcp\",\"victual-mcp\"]; exchanged aud \"http://localhost:8080/api\"; azp victual-mcp; same sub true",
+      "verdict": "pass"
+    },
+    {
+      "id": "N6b",
+      "clause": "ADR-0055 d7: an exchange that widens scope is refused",
+      "expected": "400 invalid_scope",
+      "observed": "400 invalid_scope",
+      "verdict": "pass"
+    },
+    {
+      "id": "N6c",
+      "clause": "ADR-0057 q6: another namespace's service-account token is refused",
+      "expected": "401",
+      "observed": "401 invalid_client",
+      "verdict": "pass"
+    },
+    {
+      "id": "N6d",
+      "clause": "ADR-0057 q6: a client secret is refused for the federated-jwt sidecar",
+      "expected": "401",
+      "observed": "401 invalid_client",
+      "verdict": "pass"
+    },
+    {
+      "id": "N6e",
+      "clause": "ADR-0055 d3: the MCP client's token carries the MCP audience",
+      "expected": "aud includes the MCP resource URI",
+      "observed": "[\"http://localhost:3000/mcp\",\"victual-mcp\"]",
+      "verdict": "pass"
+    },
+    {
+      "id": "N7",
+      "clause": "ADR-0055 d8: anonymous dynamic registration is refused",
+      "expected": "403",
+      "observed": "403 {\"error\":\"insufficient_scope\",\"error_description\":\"invalid_client_metadata\"}",
+      "verdict": "pass"
+    },
+    {
+      "id": "N8",
+      "clause": "ADR-0055 d6, ADR-0058 d6: five-minute access tokens, 30-minute idle, 8-hour SSO maximum",
+      "expected": "access ttl 300; refresh ttl <= 1800; realm SSO max 28800",
+      "observed": "access 300 s; refresh 1800 s; SSO max 28800 s (read back; not waited out)",
+      "verdict": "pass"
+    },
+    {
+      "id": "N9",
+      "clause": "ADR-0058 d4: Victual's tokens carry Keycloak group membership",
+      "expected": "groups contains household in access and ID token",
+      "observed": "access [\"household\"]; id [\"household\"]",
+      "verdict": "pass"
+    },
+    {
+      "id": "N10a",
+      "clause": "ADR-0057 q6: the label worker gets a token with its service-account token",
+      "expected": "200; aud is /api",
+      "observed": "200 aud http://localhost:8080/api",
+      "verdict": "pass"
+    },
+    {
+      "id": "N10b",
+      "clause": "ADR-0057 q6: the renderer's token cannot act as the worker",
+      "expected": "refused",
+      "observed": "400 invalid_client",
+      "verdict": "pass"
+    },
+    {
+      "id": "F1",
+      "clause": "ADR-0058 d11: an unset secret refuses the whole configuration",
+      "expected": "exit 1 naming SCIM_CLIENT_SECRET; nothing written",
+      "observed": "exit 1; configuration refused: unset variables: SCIM_CLIENT_SECRET; export unchanged; secrets in output false",
+      "verdict": "pass"
+    },
+    {
+      "id": "F2",
+      "clause": "plan 43: an unknown key is refused, so a typo is not ignored",
+      "expected": "exit 1; nothing written",
+      "observed": "exit 1; configuration refused: unknown top-level keys: realmSettings; export unchanged; secrets in output false",
+      "verdict": "pass"
+    },
+    {
+      "id": "F3",
+      "clause": "plan 43: a CHANGE-ME placeholder is refused",
+      "expected": "exit 1; nothing written",
+      "observed": "exit 1; configuration refused: CHANGE-ME placeholders at: /clients/0/secret; export unchanged; secrets in output false",
+      "verdict": "pass"
+    },
+    {
+      "id": "F4",
+      "clause": "plan 43: a pinned Keycloak version that differs is refused",
+      "expected": "exit 4; nothing written",
+      "observed": "exit 4; Keycloak is 26.8.1; the configuration is pinned to 26.8.0; export unchanged; secrets in output false",
+      "verdict": "pass"
+    },
+    {
+      "id": "F5",
+      "clause": "plan 43: an unowned object holding a declared name is refused",
+      "expected": "exit 4 naming victual-extra; nothing written",
+      "observed": "exit 4; refused: unowned objects hold declared names (use --adopt to take them over); client victual-extra: exists and is not owned by victual-realm-config; export unchanged; secrets in output false",
+      "verdict": "pass"
+    },
+    {
+      "id": "F6",
+      "clause": "plan 43: --adopt takes an unowned object over explicitly",
+      "expected": "exit 0; client stamped",
+      "observed": "exit 0; owner victual-realm-config",
+      "verdict": "pass"
+    },
+    {
+      "id": "F7",
+      "clause": "plan 43: an owned object the configuration drops is deleted",
+      "expected": "exit 0; victual-extra deleted",
+      "observed": "exit 0; victual-extra deleted",
+      "verdict": "pass"
+    },
+    {
+      "id": "F8",
+      "clause": "plan 43: a write Keycloak refuses stops the run with the refusal",
+      "expected": "exit 1 naming the client-policies call",
+      "observed": "exit 1; Keycloak refused a write: PUT /admin/realms/victual/client-policies/profiles -> 400 {\"errorMessage\":\"proposed client profile contains the executor, which does not have valid provider, or has invalid configuration.\"}; export unchanged; secrets in output false",
+      "verdict": "pass"
+    },
+    {
+      "id": "F9",
+      "clause": "plan 43: after a refused run, the next apply converges",
+      "expected": "exit 0; --check exit 0",
+      "observed": "apply exit 0 (0 changes); check exit 0",
+      "verdict": "pass"
+    },
+    {
+      "id": "F10",
+      "clause": "ADR-0058 d6: an adapter recipe that lists a forbidden scope is refused",
+      "expected": "exit 4; nothing written",
+      "observed": "exit 4; refused: adapter recipe 2 lists forbidden client scopes: offline_access; export unchanged; secrets in output false",
+      "verdict": "pass"
+    },
+    {
+      "id": "F11",
+      "clause": "ADR-0058 q1, q2: the Entra ID template applies only with its variables, idempotently, and is pruned without them",
+      "expected": "exit 0 three times; created; second run zero changes; deleted when ENTRA_TENANT_ID is unset",
+      "observed": "exits 0/0/0; created true (first broker flow victual-first-broker-login); second run 0 changes; after unset deleted",
+      "verdict": "pass"
+    },
+    {
+      "id": "P1",
+      "clause": "issue 1139: after every refusal, adoption and template run, users are untouched",
+      "expected": "no difference from the snapshot taken before F1",
+      "observed": "identical",
+      "verdict": "pass"
+    },
+    {
+      "id": "I1",
+      "clause": "plan 43 comparison: partial import OVERWRITE of one client",
+      "expected": "observation",
+      "observed": "overwritten 1; client id replaced; session refresh 401 unauthorized_client; secret replaced by the export's mask or a new value",
+      "verdict": "obs"
+    },
+    {
+      "id": "I4",
+      "clause": "plan 43 comparison: partial import of a flow, a client scope and a client policy",
+      "expected": "observation",
+      "observed": "response added 0, skipped 0; created {\"flow\":false,\"scope\":false,\"policy\":false}",
+      "verdict": "obs"
+    },
+    {
+      "id": "I2",
+      "clause": "plan 43 comparison: kc.sh import --override false on an existing realm",
+      "expected": "observation",
+      "observed": "import log: already exists; accessTokenLifespan 300 (file said 1234); users 5",
+      "verdict": "obs"
+    },
+    {
+      "id": "I3",
+      "clause": "plan 43 comparison: kc.sh import --override true on an existing realm",
+      "expected": "observation",
+      "observed": "accessTokenLifespan 1234; users 5 -> 0; break-glass session refresh 401 unauthorized_client",
+      "verdict": "obs"
+    }
+  ]
+}

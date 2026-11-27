@@ -89,6 +89,12 @@ jobs:
       - name: Check master data seeds
         run: python3 -m unittest discover -s .devtools/seed
 
+      # Plan 43: deploy/keycloak/realm.json loads and validates with every variable set,
+      # is refused with example.env's CHANGE-ME values, and references only scopes that
+      # exist. Offline; the live tests against Keycloak are .devtools/keycloak-config/test.mjs.
+      - name: Check the Keycloak realm configuration
+        run: node --test .devtools/keycloak-config/config.test.mjs
+
       - name: Check changed ADR headers
         run: python3 .devtools/ci/check_adr_headers.py
 

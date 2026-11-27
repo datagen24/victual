@@ -1,0 +1,30 @@
+{
+  "$comment": "Template only: no Entra ID tenant has been tested (ADR-0058 prerequisites 2 to 4). Included when ENTRA_TENANT_ID is set. Which upstream claim keys the federated identity is ADR-0058 open question 1 and is not decided here: the provider keeps Keycloak's default (the OIDC sub claim).",
+  "alias": "entra-id",
+  "providerId": "oidc",
+  "displayName": "Microsoft Entra ID",
+  "enabled": true,
+  "trustEmail": false,
+  "storeToken": false,
+  "linkOnly": false,
+  "hideOnLogin": false,
+  "firstBrokerLoginFlowAlias": "victual-first-broker-login",
+  "postBrokerLoginFlowAlias": "",
+  "config": {
+    "issuer": "https://login.microsoftonline.com/${ENTRA_TENANT_ID}/v2.0",
+    "authorizationUrl": "https://login.microsoftonline.com/${ENTRA_TENANT_ID}/oauth2/v2.0/authorize",
+    "tokenUrl": "https://login.microsoftonline.com/${ENTRA_TENANT_ID}/oauth2/v2.0/token",
+    "jwksUrl": "https://login.microsoftonline.com/${ENTRA_TENANT_ID}/discovery/v2.0/keys",
+    "logoutUrl": "https://login.microsoftonline.com/${ENTRA_TENANT_ID}/oauth2/v2.0/logout",
+    "useJwksUrl": "true",
+    "validateSignature": "true",
+    "clientId": "${ENTRA_CLIENT_ID}",
+    "clientSecret": "${ENTRA_CLIENT_SECRET}",
+    "clientAuthMethod": "client_secret_post",
+    "pkceEnabled": "true",
+    "pkceMethod": "S256",
+    "defaultScope": "openid profile email",
+    "syncMode": "IMPORT",
+    "backchannelSupported": "false"
+  }
+}

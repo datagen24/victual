@@ -1,0 +1,356 @@
+{
+  "$comment": "Victual's Keycloak realm (plan 43). Applied by reconcile.mjs through the admin REST API. Every ${NAME} comes from the environment; *_SECRET values come from Kubernetes Secrets. See README.md.",
+  "format": "victual-keycloak-realm/1",
+  "configVersion": 2,
+  "keycloakVersion": "26.8.1",
+
+  "realm": {
+    "realm": "victual",
+    "enabled": true,
+    "displayName": "Victual",
+    "sslRequired": "external",
+    "registrationAllowed": false,
+    "registrationEmailAsUsername": false,
+    "rememberMe": false,
+    "verifyEmail": false,
+    "loginWithEmailAllowed": true,
+    "duplicateEmailsAllowed": false,
+    "resetPasswordAllowed": false,
+    "editUsernameAllowed": false,
+    "bruteForceProtected": true,
+    "permanentLockout": false,
+    "failureFactor": 10,
+    "accessTokenLifespan": 300,
+    "ssoSessionIdleTimeout": 1800,
+    "ssoSessionMaxLifespan": 28800,
+    "offlineSessionMaxLifespanEnabled": true,
+    "offlineSessionMaxLifespan": 28800,
+    "offlineSessionIdleTimeout": 1800,
+    "revokeRefreshToken": true,
+    "refreshTokenMaxReuse": 0,
+    "scimApiEnabled": true,
+    "eventsEnabled": true,
+    "adminEventsEnabled": true,
+    "adminEventsDetailsEnabled": true
+  },
+
+  "realmRoles": [
+    {
+      "name": "victual-local-login",
+      "description": "Bootstrap and break-glass accounts: the only accounts the password form and the direct grant let through (ADR-0058 decision 7)."
+    }
+  ],
+
+  "defaultRoles": { "absent": ["offline_access"] },
+
+  "forbiddenClientScopes": ["offline_access"],
+  "forbiddenClientScopesExempt": {
+    "realm-management": "Keycloak answers 403 to any change of this built-in bearer-only client. It has no login flow, so no token, offline or other, is issued to it.",
+    "security-admin-console": "Keycloak answers 403 to any change of its own admin console client. Offline tokens stay refused there because no user holds the offline_access role (defaultRoles.absent); case N2c tests it."
+  },
+
+  "realmDefaultClientScopes": { "absent": ["offline_access"] },
+
+  "clientScopes": [
+    { "name": "victual:read", "includeInTokenScope": true },
+    { "name": "victual:shopping", "includeInTokenScope": true },
+    { "name": "victual:stock", "includeInTokenScope": true },
+    { "name": "victual:catalog", "includeInTokenScope": true },
+    {
+      "name": "victual-mcp-audience",
+      "includeInTokenScope": false,
+      "protocolMappers": [
+        { "name": "mcp-resource-audience", "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.custom.audience": "${VICTUAL_MCP_AUDIENCE}", "access.token.claim": "true", "id.token.claim": "false", "introspection.token.claim": "true", "lightweight.claim": "false" } },
+        { "name": "sidecar-client-audience", "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.client.audience": "victual-mcp", "access.token.claim": "true", "id.token.claim": "false", "introspection.token.claim": "true", "lightweight.claim": "false" } }
+      ]
+    },
+    {
+      "name": "victual-api-audience",
+      "includeInTokenScope": false,
+      "protocolMappers": [
+        { "name": "api-resource-audience", "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.client.audience": "${VICTUAL_API_AUDIENCE}", "access.token.claim": "true", "id.token.claim": "false", "introspection.token.claim": "true", "lightweight.claim": "false" } }
+      ]
+    },
+    {
+      "name": "victual-groups",
+      "includeInTokenScope": false,
+      "protocolMappers": [
+        { "name": "groups", "protocolMapper": "oidc-group-membership-mapper",
+          "config": { "claim.name": "groups", "full.path": "false", "access.token.claim": "true", "id.token.claim": "true", "introspection.token.claim": "true", "userinfo.token.claim": "true" } }
+      ]
+    }
+  ],
+
+  "authenticationFlows": [
+    {
+      "alias": "victual-browser",
+      "description": "Browser login: SSO cookie, an upstream identity provider, or the password form for victual-local-login accounts only",
+      "executions": [
+        { "authenticator": "auth-cookie", "requirement": "ALTERNATIVE" },
+        { "authenticator": "identity-provider-redirector", "requirement": "ALTERNATIVE" },
+        { "flow": "victual-browser-forms", "requirement": "ALTERNATIVE", "executions": [
+          { "authenticator": "auth-username-password-form", "requirement": "REQUIRED" },
+          { "flow": "victual-browser-local-only", "requirement": "CONDITIONAL", "executions": [
+            { "authenticator": "conditional-user-role", "requirement": "REQUIRED", "config": { "condUserRole": "victual-local-login", "negate": "true" } },
+            { "authenticator": "deny-access-authenticator", "requirement": "REQUIRED", "config": { "denyErrorMessage": "Sign in with your organisation's identity provider." } }
+          ] }
+        ] }
+      ]
+    },
+    {
+      "alias": "victual-direct-grant",
+      "description": "Password grant: victual-local-login accounts only; every Victual client has the grant off",
+      "executions": [
+        { "authenticator": "direct-grant-validate-username", "requirement": "REQUIRED" },
+        { "authenticator": "direct-grant-validate-password", "requirement": "REQUIRED" },
+        { "flow": "victual-direct-grant-local-only", "requirement": "CONDITIONAL", "executions": [
+          { "authenticator": "conditional-user-role", "requirement": "REQUIRED", "config": { "condUserRole": "victual-local-login", "negate": "true" } },
+          { "authenticator": "deny-access-authenticator", "requirement": "REQUIRED" }
+        ] }
+      ]
+    },
+    {
+      "alias": "victual-first-broker-login",
+      "description": "First brokered sign-in: create the user when no account holds the email or username; never link (ADR-0058 decision 3)",
+      "executions": [
+        { "authenticator": "idp-create-user-if-unique", "requirement": "REQUIRED" }
+      ]
+    }
+  ],
+
+  "flowBindings": {
+    "browserFlow": "victual-browser",
+    "directGrantFlow": "victual-direct-grant",
+    "firstBrokerLoginFlow": "victual-first-broker-login"
+  },
+
+  "identityProviders": [
+    {
+      "alias": "kubernetes",
+      "providerId": "kubernetes",
+      "displayName": "Kubernetes service accounts",
+      "enabled": true,
+      "hideOnLogin": true,
+      "config": { "issuer": "${KUBERNETES_SA_ISSUER}" }
+    },
+    { "$include": "identity-providers/entra-id.json", "$when": "ENTRA_TENANT_ID" }
+  ],
+
+  "clients": [
+    {
+      "clientId": "victual",
+      "name": "Victual",
+      "description": "Victual's browser login (ADR-0058 decision 2)",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${VICTUAL_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "consentRequired": false,
+      "fullScopeAllowed": false,
+      "frontchannelLogout": false,
+      "redirectUris": ["${VICTUAL_REDIRECT_URI}"],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${VICTUAL_POST_LOGOUT_REDIRECT_URI}",
+        "backchannel.logout.url": "",
+        "standard.token.exchange.enabled": "false"
+      },
+      "defaultClientScopes": ["basic", "acr", "profile", "email", "victual-groups"],
+      "optionalClientScopes": []
+    },
+    {
+      "clientId": "${VICTUAL_API_AUDIENCE}",
+      "name": "Victual /api",
+      "description": "The /api resource. Exists so token exchange can name it as an audience; every flow is off",
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": false,
+      "redirectUris": [],
+      "webOrigins": [],
+      "attributes": { "standard.token.exchange.enabled": "false" },
+      "defaultClientScopes": [],
+      "optionalClientScopes": []
+    },
+    {
+      "clientId": "victual-mcp",
+      "name": "Victual MCP sidecar",
+      "description": "Exchanges MCP-audience tokens for /api tokens (ADR-0055 decision 7); authenticates with its Kubernetes service-account token",
+      "publicClient": false,
+      "clientAuthenticatorType": "federated-jwt",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": false,
+      "redirectUris": [],
+      "webOrigins": [],
+      "attributes": {
+        "standard.token.exchange.enabled": "true",
+        "jwt.credential.issuer": "kubernetes",
+        "jwt.credential.sub": "system:serviceaccount:${VICTUAL_NAMESPACE}:victual-mcp"
+      },
+      "defaultClientScopes": ["basic", "victual-api-audience", "victual-groups"],
+      "optionalClientScopes": ["victual:read", "victual:shopping", "victual:stock", "victual:catalog"]
+    },
+    {
+      "clientId": "victual-label-worker",
+      "name": "Victual label worker",
+      "description": "Service account, client credentials with its Kubernetes service-account token (ADR-0057 question 6)",
+      "publicClient": false,
+      "clientAuthenticatorType": "federated-jwt",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "fullScopeAllowed": false,
+      "redirectUris": [],
+      "webOrigins": [],
+      "attributes": {
+        "standard.token.exchange.enabled": "false",
+        "jwt.credential.issuer": "kubernetes",
+        "jwt.credential.sub": "system:serviceaccount:${VICTUAL_NAMESPACE}:victual-label-worker"
+      },
+      "defaultClientScopes": ["basic", "victual-api-audience", "service_account"],
+      "optionalClientScopes": [],
+      "serviceAccountClientRoles": {}
+    },
+    {
+      "clientId": "victual-label-renderer",
+      "name": "Victual label renderer",
+      "description": "Service account, client credentials with its Kubernetes service-account token (ADR-0057 question 6)",
+      "publicClient": false,
+      "clientAuthenticatorType": "federated-jwt",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "fullScopeAllowed": false,
+      "redirectUris": [],
+      "webOrigins": [],
+      "attributes": {
+        "standard.token.exchange.enabled": "false",
+        "jwt.credential.issuer": "kubernetes",
+        "jwt.credential.sub": "system:serviceaccount:${VICTUAL_NAMESPACE}:victual-label-renderer"
+      },
+      "defaultClientScopes": ["basic", "victual-api-audience", "service_account"],
+      "optionalClientScopes": [],
+      "serviceAccountClientRoles": {}
+    },
+    {
+      "clientId": "victual-registration-adapter",
+      "name": "Victual registration adapter",
+      "description": "Victual's credential for creating MCP and service clients through the admin API (ADR-0055 decision 8)",
+      "publicClient": false,
+      "clientAuthenticatorType": "federated-jwt",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "fullScopeAllowed": false,
+      "redirectUris": [],
+      "webOrigins": [],
+      "attributes": {
+        "standard.token.exchange.enabled": "false",
+        "jwt.credential.issuer": "kubernetes",
+        "jwt.credential.sub": "system:serviceaccount:${VICTUAL_NAMESPACE}:victual"
+      },
+      "defaultClientScopes": ["basic", "service_account", "roles"],
+      "optionalClientScopes": [],
+      "serviceAccountClientRoles": { "realm-management": ["manage-clients", "view-clients"] }
+    },
+    {
+      "clientId": "victual-session-poller",
+      "name": "Victual session poller",
+      "description": "Reads GROUP_MEMBERSHIP admin events and logs affected users out (ADR-0058 decision 6)",
+      "publicClient": false,
+      "clientAuthenticatorType": "federated-jwt",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "fullScopeAllowed": false,
+      "redirectUris": [],
+      "webOrigins": [],
+      "attributes": {
+        "standard.token.exchange.enabled": "false",
+        "jwt.credential.issuer": "kubernetes",
+        "jwt.credential.sub": "system:serviceaccount:${VICTUAL_NAMESPACE}:victual-session-poller"
+      },
+      "defaultClientScopes": ["basic", "service_account", "roles"],
+      "optionalClientScopes": [],
+      "serviceAccountClientRoles": { "realm-management": ["view-events", "view-users", "manage-users"] }
+    },
+    {
+      "clientId": "victual-scim",
+      "name": "SCIM sender",
+      "description": "The upstream's SCIM provisioning credential (ADR-0058 decision 5). Its secret is held by the upstream and Keycloak, never by Victual",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${SCIM_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "fullScopeAllowed": false,
+      "redirectUris": [],
+      "webOrigins": [],
+      "attributes": { "standard.token.exchange.enabled": "false" },
+      "protocolMappers": [
+        { "name": "scim-audience", "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.custom.audience": "${KEYCLOAK_URL}/realms/victual/scim/v2", "access.token.claim": "true", "id.token.claim": "false", "introspection.token.claim": "true", "lightweight.claim": "false" } }
+      ],
+      "defaultClientScopes": ["basic", "service_account", "roles"],
+      "optionalClientScopes": [],
+      "serviceAccountClientRoles": { "realm-management": ["manage-users", "view-users", "query-groups"] }
+    }
+  ],
+
+  "clientPolicies": {
+    "profiles": [
+      { "name": "victual-downscope", "description": "an exchange never widens scope (ADR-0055 decision 7)",
+        "executors": [ { "executor": "downscope-assertion-grant-enforcer", "configuration": {} } ] },
+      { "name": "victual-dcr", "description": "anonymous registration limits (ADR-0055 decision 8)",
+        "executors": [
+          { "executor": "secure-client-uris-pattern", "configuration": { "client-uri-fields": ["redirectUris"],
+            "allowed-patterns": ["^https://[a-zA-Z0-9.-]+(:[0-9]+)?/[^*]*$", "^http://(127\\.0\\.0\\.1|\\[::1\\])(:[0-9]+)?/[^*]*$"] } },
+          { "executor": "pkce-enforcer", "configuration": { "auto-configure": true } },
+          { "executor": "secure-client-authenticator", "configuration": { "allowed-client-authenticators": ["client-jwt"], "default-client-authenticator": "client-jwt" } },
+          { "executor": "consent-required", "configuration": { "auto-configure": true } }
+        ] }
+    ],
+    "policies": [
+      { "name": "victual-downscope-all", "description": "exchange never widens scope", "enabled": true,
+        "conditions": [ { "condition": "any-client", "configuration": {} } ], "profiles": ["victual-downscope"] },
+      { "name": "victual-dcr-anonymous", "description": "anonymous registration limits", "enabled": true,
+        "conditions": [ { "condition": "client-updater-context", "configuration": { "update-client-source": ["ByAnonymous"] } } ], "profiles": ["victual-dcr"] }
+    ]
+  },
+
+  "clientRegistrationPolicies": [
+    { "name": "Trusted Hosts", "subType": "anonymous", "providerId": "trusted-hosts",
+      "config": { "trusted-hosts": [], "host-sending-registration-request-must-match": ["true"], "client-uris-must-match": ["true"] } },
+    { "name": "Allowed Client Scopes", "subType": "anonymous", "providerId": "allowed-client-templates",
+      "config": { "allow-default-scopes": ["true"], "allowed-client-scopes": [] } }
+  ],
+
+  "userProfile": {
+    "attributes": [
+      { "name": "upstreamId", "displayName": "Upstream id", "multivalued": false,
+        "permissions": { "view": ["admin"], "edit": ["admin"] },
+        "annotations": { "kc.scim.schema.attribute": "externalId" } }
+    ]
+  },
+
+  "registrationAdapter": { "recipe": "adapter-recipe.json", "sidecarClientId": "victual-mcp" }
+}

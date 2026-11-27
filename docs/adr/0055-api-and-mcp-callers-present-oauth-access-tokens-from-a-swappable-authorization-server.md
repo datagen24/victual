@@ -689,6 +689,27 @@ keychain, and keep sending their per-device Access service token as before.
      wrong to say it did (cases N11b, G3a, G3b).
    - Authentik refresh-reuse policy: no internal imports or row deletion now, but it holds
      a superuser API token (question 21).
+
+   **Keycloak, 2026-11-27: the realm configuration is versioned and tested.** The whole realm
+   is in `deploy/keycloak/realm.json`, with the adapter's pinned recipe beside it. A
+   reconciler in the repository applies both through the admin REST API and never writes users,
+   credentials, sessions or groups ([plan 43](../plans/43-keycloak-realm-configuration.md)).
+   Against Keycloak 26.8.1 on PostgreSQL 16:
+
+   - A second apply changed nothing (cases M1, M2), and 16 kinds of drift were repaired
+     (D1 to D3).
+   - Configuration version 1 was upgraded to 2, and the adapter's objects from recipe 2 to 3
+     (U1 to U4).
+   - Users, credentials, federated identities, SCIM users and sessions survived every
+     reapply (U5, D4, P1).
+   - A configuration it could not apply was refused before any write (F1 to F10).
+   - Each configured policy has positive and negative cases (N1a to N10b, B1).
+   - Keycloak's own realm import deleted every user with `--override true` and skipped the
+     realm without it (I2, I3).
+
+   The swap test this prerequisite names is superseded (question 28), and no Victual image
+   ran. Reproduce with `.devtools/keycloak-config/run.sh up` and `node test.mjs`; the results
+   are in `.devtools/keycloak-config/results/`.
 9. **Refresh-family revocation** (question 12). On each authorization server, reuse of an
    old refresh token invalidates the whole family, including its newest token, by
    supported configuration or a supported mitigation. Concurrent-refresh tests are

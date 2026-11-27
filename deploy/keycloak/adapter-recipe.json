@@ -1,0 +1,20 @@
+{
+  "$comment": "The registration adapter's recipe (ADR-0055 decision 8, question 18). Every object the adapter generates is stamped victual.owner=victual-registration-adapter and victual.recipe=<version>; reconcile brings them all to `version`. Version 3 drops offline_access from the MCP client's optional scopes (ADR-0058 decision 6); version 2 is the spike's recipe (.devtools/spikes/oauth-keycloak/adapter.mjs).",
+  "version": 3,
+  "grantScopePrefix": "victual-grant:",
+  "grantClaim": "victual_client",
+  "versions": {
+    "2": {
+      "description": "MCP client registered by Victual",
+      "mapperExtra": { "lightweight.claim": "true" },
+      "defaultScopes": ["basic", "acr", "profile", "email", "victual-mcp-audience", "victual-groups"],
+      "optionalScopes": ["victual:read", "victual:shopping", "victual:stock", "victual:catalog", "offline_access"]
+    },
+    "3": {
+      "description": "MCP client registered by Victual",
+      "mapperExtra": { "lightweight.claim": "true" },
+      "defaultScopes": ["basic", "acr", "profile", "email", "victual-mcp-audience", "victual-groups"],
+      "optionalScopes": ["victual:read", "victual:shopping", "victual:stock", "victual:catalog"]
+    }
+  }
+}
