@@ -211,14 +211,15 @@ class RbacTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * Proves a fresh database has no user_roles rows, four built-in roles, six _VIEW
+	 * Proves a fresh database has no user_roles rows, five built-in roles (migration 0320 adds
+	 * HOUSEHOLD_MANAGER), six _VIEW
 	 * permissions backfilled for the first admin, and one MASTER_DATA_ADD permission nested
 	 * under MASTER_DATA_EDIT.
 	 */
 	public function testFreshDatabaseState(): void
 	{
 		self::assertSame(0, (int)self::$db->query('SELECT COUNT(*) FROM user_roles')->fetchColumn(), 'Fresh user_roles is empty');
-		self::assertSame(4, (int)self::$db->query('SELECT COUNT(*) FROM roles WHERE builtin = 1')->fetchColumn(), 'Four built-in roles');
+		self::assertSame(5, (int)self::$db->query('SELECT COUNT(*) FROM roles WHERE builtin = 1')->fetchColumn(), 'Five built-in roles');
 		self::assertSame(6, (int)self::$db->query("SELECT COUNT(*) FROM user_permissions up JOIN permission_hierarchy p ON p.id=up.permission_id WHERE up.user_id=1 AND p.name LIKE '%_VIEW'")->fetchColumn(), 'Existing admin receives all six backfill leaves');
 
 		// ADR-0043 decision 1 (issue 742): migration 0308 adds MASTER_DATA_ADD as a child of
@@ -417,8 +418,10 @@ class RbacTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * Proves each view leaf permission (such as STOCK_VIEW or CHORES_VIEW) lets the generic API
-	 * list its entity and resolves to that one permission only.
+	 * Proves each view permission (such as STOCK_VIEW or CHORES_VIEW) lets the generic API
+	 * list its entity and resolves to no other of the 41 permissions. Since migration 0320 a
+	 * view permission is a bundle of plan 42's read leaves (ADR-0057 decision 3), so the rows
+	 * below it are catalog leaves only; PermissionCatalogMigrationTest holds which.
 	 */
 	#[Depends('testFileGroupReadPolicies')]
 	public function testGenericLeafPermissionsGrantReadOnly(): void
@@ -428,7 +431,9 @@ class RbacTest extends PgsqlSchemaTestCase
 		{
 			self::grant([$permission]);
 			$this->expectStatus(fn() => $generic->GetObjects(self::request(), new Response(), ['entity' => $entity]), 200, "$permission allows $entity");
-			self::assertCount(1, User::ResolvedPermissionNames(9000), "$permission confers no writes");
+			$resolved = User::ResolvedPermissionNames(9000);
+			$catalog = self::$db->query('SELECT name FROM permission_catalog_leaves()')->fetchAll(\PDO::FETCH_COLUMN);
+			self::assertSame([$permission], array_values(array_diff($resolved, $catalog)), "$permission confers no other existing permission");
 		}
 	}
 
@@ -453,7 +458,9 @@ class RbacTest extends PgsqlSchemaTestCase
 		self::assertNotContains('RECIPES', User::ResolvedPermissionNames(9001), 'Child cannot edit recipes');
 		self::$db->exec('INSERT INTO user_permissions(user_id, permission_id) VALUES (9001, ' . self::permissionId('STOCK_VIEW') . ')');
 		$this->expectStatus(fn() => self::$roleApi->SetUserRoles(self::request('PUT', ['roles' => []]), new Response(), ['userId' => 9001]), 204, 'Remove roles');
-		self::assertSame(['STOCK_VIEW'], User::ResolvedPermissionNames(9001), 'Overlapping direct grant survives removal');
+		// STOCK_VIEW resolves its plan 42 read leaves too (migration 0320); none of the 41 others.
+		$catalog = self::$db->query('SELECT name FROM permission_catalog_leaves()')->fetchAll(\PDO::FETCH_COLUMN);
+		self::assertSame(['STOCK_VIEW'], array_values(array_diff(User::ResolvedPermissionNames(9001), $catalog)), 'Overlapping direct grant survives removal');
 		$this->expectStatus(fn() => self::$roleApi->SetUserRoles(self::request('PUT', ['roles' => [999999]]), new Response(), ['userId' => 9001]), 400, 'Unknown role refused');
 		$this->expectStatus(fn() => self::$roleApi->SetPermissions(self::request('PUT', ['permissions' => [999999]]), new Response(), ['roleId' => self::roleId('CHILD')]), 400, 'Unknown permission refused');
 		foreach ([null, ['roles' => '1'], ['roles' => [true]], ['roles' => ['1']], ['roles' => [-1]]] as $body)
@@ -645,7 +652,9 @@ CREATE TRIGGER rbac_fail_grant BEFORE INSERT ON role_permissions FOR EACH ROW EX
 		$seed = file_get_contents(VICTUAL_ROOT_PATH . '/db/pgsql/roles-seed.sql');
 		self::$db->exec($seed);
 		self::$db->exec($seed);
-		self::assertCount(6, User::ResolvedPermissionNames(self::$newUserId), 'Upgrade backfills a previously unprivileged user');
+		// The six view permissions, which since migration 0320 also resolve their plan 42 read leaves.
+		$catalog = self::$db->query('SELECT name FROM permission_catalog_leaves()')->fetchAll(\PDO::FETCH_COLUMN);
+		self::assertCount(6, array_diff(User::ResolvedPermissionNames(self::$newUserId), $catalog), 'Upgrade backfills a previously unprivileged user');
 		self::assertSame('Kids', self::$roles->RequireRole(self::roleId('CHILD'))->name, 'Reseeding preserves renamed built-in');
 		self::$db->rollBack();
 	}

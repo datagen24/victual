@@ -80,6 +80,17 @@ an unhinted 8-digit value staying GTIN-8, AIM identifiers and AI (01) element st
 that are never opaque, malformed input, and the restricted-circulation reading of each pattern field. The
 four- and five-digit verifiers are refused (prerequisite 2).
 
+The [permission catalog tests](042-permission-catalog.sql) cover migration 0320 (issue #1111,
+[ADR-0057](../../docs/adr/0057-permissions-are-per-resource-leaves-assigned-through-roles-groups-and-service-packages.md)
+piece 1). They check the tree plan 42 gives, the household manager role and the open definition
+reads. They rehearse the upgrade from 0319: the only differences are plan 42's two intentional
+changes, Adult, Child and Guest keep every existing permission, and the assertion refuses the same
+upgrade with an empty list.
+
+The refusal cases check that an unlisted gain or loss raises SQLSTATE VP057
+naming the account and each leaf, that the seed refuses a catalog leaf under the wrong parent, and
+that a custom role holding the household manager's name is left alone.
+
 The last block reads `pg_proc` for `IMMUTABLE`
 and `PARALLEL SAFE`, and counts this transaction's table scans in `pg_stat_xact_user_tables` around a
 sample of every kind of input. A control read of `products` shows that the counter moves.
@@ -228,6 +239,14 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `trg_quantity_unit_conversions_INS`, `trg_quantity_unit_conversions_UPD`, `trg_quantity_unit_conversions_DEL` (refuse an out-of-range factor) | function | redefined 0318 | `040-conversion-chain-range.sql` |
 | `victual_barcode_canonicalize` | function | 0319 | `041-barcode-canonicalize.sql` |
 | `victual_gs1_check_digit` | function | 0319 | `041-barcode-canonicalize.sql` |
+| `permission_catalog_leaves` | function | 0320 | `042-permission-catalog.sql` |
+| `permission_catalog_gates` | function | 0320 | `042-permission-catalog.sql` |
+| `permission_catalog_intentional_changes` | function | 0320 | `042-permission-catalog.sql` |
+| `permission_catalog_seed` | function | 0320 | `042-permission-catalog.sql` |
+| `permission_principal_sets` | function | 0320 | `042-permission-catalog.sql` |
+| `permission_snapshot_record` | function | 0320 | `042-permission-catalog.sql` |
+| `permission_upgrade_differences` | function | 0320 | `042-permission-catalog.sql` |
+| `permission_upgrade_assert` | function | 0320 | `042-permission-catalog.sql` |
 
 ## Completeness
 
