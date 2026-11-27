@@ -67,6 +67,7 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 42 | [The permission catalog and household roles](42-permission-catalog.md) | Accepted catalog, 2026-11-27; open questions answered 2026-11-27 | Records the catalog and household roles of [ADR-0057](../adr/0057-permissions-are-per-resource-leaves-assigned-through-roles-groups-and-service-packages.md), accepted 2026-11-27 in [PR 1146](https://github.com/datagen24/victual/pull/1146) with this plan as the evidence for prerequisites 2 and 3 ([issue 1111](https://github.com/datagen24/victual/issues/1111)). Lists every leaf with its parent and read prerequisites, and the five household roles. Inventory refreshed against `e013eade` with no change. No implementation plan, migration claim or release yet; see [Order of operations](#order-of-operations). |
 | 43 | [Keycloak realm configuration as code](43-keycloak-realm-configuration.md) | Draft, 2026-11-27; configuration, reconciler and harness in the tree; five open questions | Evidence for [ADR-0055](../adr/0055-api-and-mcp-callers-present-oauth-access-tokens-from-a-swappable-authorization-server.md) prerequisite 8 on Keycloak and [ADR-0058](../adr/0058-upstream-identity-providers-federate-into-keycloak-and-provision-through-scim.md) decision 11, both Proposed. `deploy/keycloak/` is applied by a reconciler over the admin REST API; tested against Keycloak 26.8.1. The Helm chart does not run it yet; the chart integration is the follow-up. |
 | 44 | [Keycloak image: licence review and amd64 build](44-keycloak-licence-and-image.md) | Draft, 2026-11-27; one open question | Input to [ADR-0055](../adr/0055-api-and-mcp-callers-present-oauth-access-tokens-from-a-swappable-authorization-server.md) acceptance prerequisite 3 (Proposed). The spike's Nix image builds and runs on amd64. Keycloak is Apache-2.0; 14 jars in the image, the JDK, glibc and the GCC libraries are copyleft. Source and licence texts are not shipped, as in the six published images. MySQL and MariaDB drivers dropped; other recommendations await the maintainer. |
+| 45 | [Lending and custody: a household library and tool crib](45-lending-and-custody.md) | Draft, research only, 2026-11-27, [issue 1154](https://github.com/datagen24/victual/issues/1154) | Wave-independent and unscheduled. Depends on [38](38-household-inventory.md) stage A for the asset record. Loans, holders, kits, asset labels and loan permission leaves; ten open questions, starting with who may be a holder. |
 
 ## Order of operations
 
@@ -116,6 +117,8 @@ Unscheduled work:
   draft; its delivery stages do not assign dates or alter the existing wave order.
 - [Native backup file export and import](39-native-backup-file.md): separate design;
   no delivery slot and no dependency for the equipment rebuild.
+- [Lending and custody](45-lending-and-custody.md): research draft; implementation follows
+  plan 38 stage A.
 - MCP writes, after read-only use is proven
   ([issue 209](https://github.com/datagen24/victual/issues/209)).
 - 05 B, if shopping trips justify it.

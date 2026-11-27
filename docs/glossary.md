@@ -71,6 +71,12 @@ In a stock action, setting the recorded amount to a counted value. Use **stock**
 what the household holds, and **inventory correction** or **stocktaking** for this action
 when the context could be ambiguous. See [Stock](manual/using-victual/stock.md).
 
+### Loan
+
+Proposed in [Lending and custody](plans/45-lending-and-custody.md). One household asset in the
+custody of one holder, a user or a contact, from check-out until check-in. Custody is
+separate from the asset's physical placement, and a loan changes no stock. Not implemented.
+
 ### Location
 
 A place where stock is stored, represented by `locations`. Locations can nest, such as
