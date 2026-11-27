@@ -9,6 +9,8 @@
   until their leaf lists are written. On 2026-10-30 the maintainer asked how service
   credentials could move to Keycloak; questions 6 to 8 record the proposal and a spike of
   its in-cluster half.
+  The maintainer answered questions 6 to 8 on 2026-11-27, accepting the proposals as
+  written.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request; see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-25, against `master` at `42883e0e`. Design only: it changes no
@@ -442,6 +444,10 @@ questions settle how it proves which service it is.
    access token expires, where a Victual key works whenever Victual is up. (Decision 7;
    ADR-0055 decisions 2 and 8.)
 
+   > **Response:** datagen24, 2026-11-27: accepted as proposed. The maintainer considers it the
+   > ideal design. The stated cost stands: during a Keycloak outage a service keeps working
+   > only until its current access token expires, at most five minutes.
+
 7. **Where does pairing live?** Proposed: an administrator holding
    `SERVICE_ACCOUNTS_MANAGE` adds a service on a services page in Victual, picks its
    package version, and receives a one-time pairing code valid for minutes. The device
@@ -451,6 +457,9 @@ questions settle how it proves which service it is.
    its own data directory, so a restart does not need pairing again; today's paired label
    workers can need it. Redemption stays on `/api` because a device on the network must
    reach it. (Decision 7.)
+
+   > **Response:** datagen24, 2026-11-27: yes, this is the design for devices. No paired devices
+   > exist yet, so it stays a design until one does.
 
 #### Service-account spike, 2026-10-30
 
@@ -478,3 +487,7 @@ discovery, and the Victual images.
    copied token stays useful; Kubernetes allows 600 s at the shortest. Should Victual's
    services page disable the Keycloak client when a service account is revoked, and should
    the chart fix the projected-token lifetime at 600 s? (Decision 7; question 6.)
+
+   > **Response:** datagen24, 2026-11-27: yes to both. Revoking a service account on the services page
+   > disables its Keycloak client, and the chart fixes the projected-token lifetime at
+   > 600 s.
