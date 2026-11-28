@@ -233,13 +233,28 @@ class McpAuthTest extends PgsqlSchemaTestCase
 		self::assertFalse($capabilities['read_only']);
 	}
 
-	/** The capabilities of the two fixture users differ in exactly RECIPES_VIEW. */
+	/**
+	 * The capabilities of the two fixture users differ in exactly RECIPES_VIEW and what it
+	 * resolves to: since migration 0320 a grant holds its catalog descendants through
+	 * permission_tree (RECIPES_READ, RECIPE_PICTURES_READ, ...), so the expected difference
+	 * is read from the tree rather than listed here.
+	 */
 	public function testTwoUsersDifferingInOnePermissionDifferInExactlyThatPermission(): void
 	{
 		$cook = self::capabilities('mcp-read-only')['permissions'];
 		$shopper = self::capabilities('mcp-shopper')['permissions'];
 
-		self::assertSame(['RECIPES_VIEW'], array_values(array_diff($cook, $shopper)));
+		$expected = self::$db->query(
+			"SELECT name FROM permission_tree WHERE id = (SELECT id FROM permission_hierarchy WHERE name = 'RECIPES_VIEW')
+			EXCEPT
+			SELECT pt.name FROM user_permissions up JOIN permission_tree pt ON pt.id = up.permission_id WHERE up.user_id = 9401
+			ORDER BY 1"
+		)->fetchAll(PDO::FETCH_COLUMN);
+		self::assertContains('RECIPES_VIEW', $expected);
+
+		$difference = array_values(array_diff($cook, $shopper));
+		sort($difference);
+		self::assertSame($expected, $difference);
 		self::assertSame([], array_values(array_diff($shopper, $cook)));
 	}
 }
