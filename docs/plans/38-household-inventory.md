@@ -207,10 +207,22 @@ or box between properties preserves identity and history. Moving stock uses the 
 stock transfer path. Reparenting an occupied location across properties needs explicit
 transfer semantics; it must not silently rewrite the recorded whereabouts of its contents.
 
-The storage representation remains an architectural question: a separate property record
-linked to location roots, or a typed root within the location tree. Migration must preserve
-existing location identifiers, nesting, stock references and labels. Existing roots require
-an explicit property assignment; their names are not evidence of a house or storage unit.
+A property is a separate record linked to location roots, following question 11's answer
+and the Proposed [ADR-0059](../adr/0059-properties-are-records-above-location-roots.md).
+Only a root location carries a property; a descendant takes its root's property through
+`locations_resolved`. Root names are unique within a property, so two properties can each
+have a "Garage".
+
+Existing location identifiers, nesting, paths, stock references and labels
+are unchanged by the migration. Existing roots are unassigned after the upgrade and behave
+as they do today; the release notes and an in-application notice say that roots can now be
+assigned to properties. Their names are not evidence of a house or storage unit.
+
+A property's name and type are visible to anyone who may read locations. Its address,
+documents and financial records need a property read permission. Changing the property of an
+assigned location goes through a dedicated move operation that records the change, checks
+rights on both properties, and leaves stock unchanged. An asset may be placed in a property
+without a location; stock always needs a location.
 
 ### Identity, placement and lifecycle
 
@@ -509,6 +521,14 @@ by this draft, and no usage telemetry is required to establish these acceptance 
     occupied location move between properties? Engineering and maintainer decision;
     blocks the hierarchy ADR and migration. Houses and storage units are required
     regardless of the storage representation.
+
+    > **Response:** The maintainer answered on 2026-11-28. A separate property record, with
+    > the property on root locations only: "that is kind of what I was thinking all along."
+    > Existing roots are unassigned after the upgrade, with a note that properties can now
+    > be assigned. A property's name may be visible to stock readers: a second home is
+    > generally not secret from someone with access to the household inventory. A change of
+    > property for an occupied location goes through a dedicated move operation. Recorded in
+    > the Proposed [ADR-0059](../adr/0059-properties-are-records-above-location-roots.md).
 12. Do existing operator backups meet complete household-inventory recovery needs, or is
     a portable domain archive also required?
 

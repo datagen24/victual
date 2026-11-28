@@ -177,6 +177,7 @@ nav:
           - 0056 An external identity provider replaces the built-in authorization server: development/adr/0056-an-external-identity-provider-replaces-the-built-in-authorization-server.md
           - 0057 Permissions are per-resource leaves, assigned through roles, groups and service packages: development/adr/0057-permissions-are-per-resource-leaves-assigned-through-roles-groups-and-service-packages.md
           - 0058 Upstream identity providers federate into Keycloak and provision through SCIM: development/adr/0058-upstream-identity-providers-federate-into-keycloak-and-provision-through-scim.md
+          - 0059 Properties are separate records above location roots: development/adr/0059-properties-are-records-above-location-roots.md
       - Build and deployment:
           - Container images: development/images.md
           - Deployment: development/deployment.md

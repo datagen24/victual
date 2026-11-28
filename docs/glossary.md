@@ -129,6 +129,13 @@ A category in `product_groups`. Groups can nest to express taxonomy, such as pan
 and baking ingredients. Group membership does not express packaging or substitution.
 See [ADR-0023](adr/0023-taxonomy-is-groups-packaging-is-parent-product.md).
 
+### Property
+
+Proposed in [ADR-0059](adr/0059-properties-are-records-above-location-roots.md). A house or
+storage unit above the location tree. Only a root location carries a property; its
+descendants inherit it. Distinct from an ownership claim: placement in a property does not
+establish who owns the contents. Not implemented.
+
 ### Quantity unit
 
 A unit of measure in `quantity_units`, such as a bag or gram. A product's stock unit is
