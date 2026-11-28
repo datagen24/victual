@@ -85,8 +85,11 @@ class PermissionCatalogMigrationTest extends PgsqlSchemaTestCase
 		$adult = self::RoleResolves('ADULT');
 		$masterData = self::Pdo()->query("SELECT name FROM permission_tree WHERE id = (SELECT id FROM permission_hierarchy WHERE name = 'MASTER_DATA_EDIT')")->fetchAll(\PDO::FETCH_COLUMN);
 
+		// Both sides are sorted here, in PHP: ORDER BY follows the database's collation, which
+		// on a non-C locale orders "_" differently from sort() (CALENDAR_VIEW before CHORES).
 		$expected = array_values(array_unique(array_merge($adult, $masterData)));
 		sort($expected);
+		sort($manager);
 		self::assertSame($expected, $manager, 'Household manager: exactly the Adult closure plus the MASTER_DATA_EDIT closure');
 
 		foreach (['CHORES_DELETE', 'PRODUCTS_CREATE', 'PRODUCTS_MERGE', 'CHORES_MERGE', 'LABELS_PRINT', 'LABEL_JOBS_REPRINT', 'LABEL_JOBS_CANCEL', 'USER_ACCOUNTS_READ'] as $leaf)

@@ -867,7 +867,7 @@
             {
                 "builtin": "integer",
                 "code": "string",
-                "description": "null",
+                "description": "null|string",
                 "id": "integer",
                 "name": "string",
                 "row_created_timestamp": "string(date-time)"
@@ -1500,7 +1500,7 @@
             {
                 "builtin": "integer",
                 "code": "string",
-                "description": "null",
+                "description": "null|string",
                 "id": "integer",
                 "name": "string",
                 "row_created_timestamp": "string(date-time)"

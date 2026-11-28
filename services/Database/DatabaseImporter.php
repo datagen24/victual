@@ -1081,11 +1081,14 @@ class DatabaseImporter
 			// source's own tree, before any seed below changes that tree.
 			// The copy above has committed; the record, the seed replays and the comparison
 			// share one transaction of their own, so a refusal leaves no half-restored tree.
+			// The snapshot is a JSONB value this process holds, not a temporary table: the
+			// migrate role cannot create one (deploy/postgres/roles.sql; migration 0320).
 			$checkPermissions = $this->PermissionUpgradeCheckAvailable();
+			$permissionSnapshot = null;
 			if ($checkPermissions)
 			{
 				$this->Target->beginTransaction();
-				$this->Target->query("SELECT permission_snapshot_record(ARRAY['user', 'api_key'])");
+				$permissionSnapshot = $this->Target->query("SELECT permission_snapshot_record(ARRAY['user', 'api_key'])")->fetchColumn();
 			}
 
 			try
@@ -1136,11 +1139,12 @@ class DatabaseImporter
 				if ($checkPermissions)
 				{
 					$this->Target->query('SELECT permission_catalog_seed()');
-					$intended = (int)$this->Target->query(
-						'SELECT permission_upgrade_assert(permission_catalog_gates() || '
-						. $this->Target->quote(json_encode(self::IMPORT_PERMISSION_GATES)) . '::JSONB, '
+					$assert = $this->Target->prepare(
+						'SELECT permission_upgrade_assert(CAST(:snapshot AS JSONB), permission_catalog_gates() || CAST(:gates AS JSONB), '
 						. "permission_catalog_intentional_changes(), 'legacy import')"
-					)->fetchColumn();
+					);
+					$assert->execute([':snapshot' => $permissionSnapshot, ':gates' => json_encode(self::IMPORT_PERMISSION_GATES)]);
+					$intended = (int)$assert->fetchColumn();
 					($this->Progress)("  permission check: every imported user and key resolves what it did, apart from $intended listed change(s)");
 					$this->Target->commit();
 				}

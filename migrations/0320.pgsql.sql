@@ -28,8 +28,9 @@
 --     not hold its parent.
 --
 -- THE CHECK (ADR-0057 decision 2). Before the tree changes, permission_snapshot_record()
--- stores the resolved set of every user, role and API key (a key carries its owner's set;
--- ADR-0044's per-key subsets are not built). After the seed, in this same transaction,
+-- returns the resolved set of every user, role and API key as one JSONB value (a key carries
+-- its owner's set; ADR-0044's per-key subsets are not built). After the seed, in this same
+-- transaction,
 -- permission_upgrade_assert() resolves them again and compares operation by operation:
 --   - a permission that existed before is compared with itself;
 --   - a new leaf is compared with the permission that gated its operation before the leaf
@@ -316,53 +317,61 @@ LANGUAGE sql STABLE AS $fn$
 	LEFT JOIN user_permissions_resolved upr ON upr.user_id = k.user_id
 $fn$;
 
--- Records the "before" side in three temporary tables that drop at commit: the principals,
--- what each holds, and the names the tree has. kinds limits the principals recorded; the
--- importer passes users and keys only, because the roles a legacy import leaves behind are
--- the target's, emptied by the import, and not the source's.
+-- Records the "before" side and returns it as one JSONB value: the principals, what each
+-- holds, and the names the tree has. kinds limits the principals recorded; the importer
+-- passes users and keys only, because the roles a legacy import leaves behind are the
+-- target's, emptied by the import, and not the source's.
+--
+-- No temporary table holds the snapshot. deploy/postgres/roles.sql revokes ALL on the
+-- database from PUBLIC, TEMPORARY included, so the roles migrations run as cannot create
+-- one (the rule migration 0304 states). The caller keeps the value and hands it to
+-- permission_upgrade_assert(); both run inside one transaction, so a refusal still rolls
+-- back the whole change.
 CREATE OR REPLACE FUNCTION permission_snapshot_record(kinds TEXT[] DEFAULT ARRAY['user', 'role', 'api_key'])
-RETURNS INTEGER
-LANGUAGE plpgsql AS $fn$
-DECLARE
-	recorded INTEGER;
-BEGIN
-	IF to_regclass('pg_temp.permission_snapshot_principals') IS NOT NULL THEN
-		DROP TABLE pg_temp.permission_snapshot_principals, pg_temp.permission_snapshot_held, pg_temp.permission_snapshot_names;
-	END IF;
-	CREATE TEMPORARY TABLE permission_snapshot_principals ON COMMIT DROP AS
-		SELECT DISTINCT s.principal_kind AS kind, s.principal_id AS id, s.principal_label AS label
-		FROM permission_principal_sets() s WHERE s.principal_kind = ANY (kinds);
-	CREATE TEMPORARY TABLE permission_snapshot_held ON COMMIT DROP AS
-		SELECT DISTINCT s.principal_kind AS kind, s.principal_id AS id, s.permission_name AS name
-		FROM permission_principal_sets() s WHERE s.principal_kind = ANY (kinds) AND s.permission_name IS NOT NULL;
-	CREATE TEMPORARY TABLE permission_snapshot_names ON COMMIT DROP AS
-		SELECT ph.name FROM permission_hierarchy ph;
-	SELECT COUNT(*) INTO recorded FROM pg_temp.permission_snapshot_principals;
-	RETURN recorded;
-END
+RETURNS JSONB
+LANGUAGE sql STABLE AS $fn$
+	WITH s AS (SELECT * FROM permission_principal_sets() WHERE principal_kind = ANY (kinds))
+	SELECT jsonb_build_object(
+		'principals', COALESCE((
+			SELECT jsonb_agg(DISTINCT jsonb_build_object('kind', s.principal_kind, 'id', s.principal_id, 'label', s.principal_label))
+			FROM s), '[]'::JSONB),
+		'held', COALESCE((
+			SELECT jsonb_agg(DISTINCT jsonb_build_object('kind', s.principal_kind, 'id', s.principal_id, 'name', s.permission_name))
+			FROM s WHERE s.permission_name IS NOT NULL), '[]'::JSONB),
+		'names', COALESCE((SELECT jsonb_agg(ph.name ORDER BY ph.name) FROM permission_hierarchy ph), '[]'::JSONB)
+	)
 $fn$;
 
--- Every difference between the recorded "before" side and the tree as it is now, per
+-- Every difference between a recorded "before" side and the tree as it is now, per
 -- operation. For a permission that existed before, "before" is whether the principal held it.
 -- For a new one, it is whether the principal held its gate: walking up from the node itself,
 -- the first node that existed before is the gate, unless a node on the way has an entry in
 -- gates, which then decides (JSON null: every principal held it). A new node that reaches
 -- neither was held by nobody.
 -- Principals created after the record (a new role) are not compared.
-CREATE OR REPLACE FUNCTION permission_upgrade_differences(gates JSONB DEFAULT '{}'::JSONB)
+CREATE OR REPLACE FUNCTION permission_upgrade_differences(snapshot JSONB, gates JSONB DEFAULT '{}'::JSONB)
 RETURNS TABLE (principal_kind TEXT, principal_id INTEGER, principal_label TEXT, permission_name TEXT, change TEXT)
 LANGUAGE plpgsql STABLE AS $fn$
 BEGIN
-	IF to_regclass('pg_temp.permission_snapshot_held') IS NULL THEN
-		RAISE EXCEPTION 'permission_upgrade_differences: no snapshot in this transaction; call permission_snapshot_record() first'
+	IF snapshot IS NULL OR NOT (snapshot ? 'principals' AND snapshot ? 'held' AND snapshot ? 'names') THEN
+		RAISE EXCEPTION 'permission_upgrade_differences: no snapshot; pass the value permission_snapshot_record() returned'
 			USING ERRCODE = 'VP057';
 	END IF;
 
 	RETURN QUERY
 	WITH RECURSIVE
+	snap_names AS (
+		SELECT n.name FROM jsonb_array_elements_text(snapshot->'names') AS n(name)
+	),
+	snap_principals AS (
+		SELECT p.kind, p.id, p.label FROM jsonb_to_recordset(snapshot->'principals') AS p(kind TEXT, id INTEGER, label TEXT)
+	),
+	snap_held AS (
+		SELECT h.kind, h.id, h.name FROM jsonb_to_recordset(snapshot->'held') AS h(kind TEXT, id INTEGER, name TEXT)
+	),
 	new_names AS (
 		SELECT ph.id, ph.name, ph.parent FROM permission_hierarchy ph
-		WHERE ph.name NOT IN (SELECT n.name FROM pg_temp.permission_snapshot_names n)
+		WHERE ph.name NOT IN (SELECT n.name FROM snap_names n)
 	),
 	-- From each new node upward, starting at the node itself, until a node that either existed
 	-- before or has a gate named for it: that node decides. A leaf under a new bundle with a
@@ -373,14 +382,14 @@ BEGIN
 		SELECT w.leaf, ph.parent, w.depth + 1
 		FROM walk w JOIN permission_hierarchy ph ON ph.id = w.node_id
 		WHERE ph.parent IS NOT NULL
-		AND ph.name NOT IN (SELECT n.name FROM pg_temp.permission_snapshot_names n)
+		AND ph.name NOT IN (SELECT n.name FROM snap_names n)
 		AND NOT COALESCE(gates ? ph.name, FALSE)
 		AND w.depth < 64
 	),
 	deciders AS (
 		SELECT DISTINCT ON (w.leaf) w.leaf, ph.name AS decider
 		FROM walk w JOIN permission_hierarchy ph ON ph.id = w.node_id
-		WHERE ph.name IN (SELECT n.name FROM pg_temp.permission_snapshot_names n) OR COALESCE(gates ? ph.name, FALSE)
+		WHERE ph.name IN (SELECT n.name FROM snap_names n) OR COALESCE(gates ? ph.name, FALSE)
 		ORDER BY w.leaf, w.depth
 	),
 	gate_of AS (
@@ -390,16 +399,16 @@ BEGIN
 		FROM new_names nn LEFT JOIN deciders d ON d.leaf = nn.name
 	),
 	before_has AS (
-		SELECT h.kind, h.id, h.name FROM pg_temp.permission_snapshot_held h
+		SELECT h.kind, h.id, h.name FROM snap_held h
 		UNION
-		SELECT p.kind, p.id, g.leaf FROM pg_temp.permission_snapshot_principals p CROSS JOIN gate_of g WHERE g.everyone
+		SELECT p.kind, p.id, g.leaf FROM snap_principals p CROSS JOIN gate_of g WHERE g.everyone
 		UNION
-		SELECT h.kind, h.id, g.leaf FROM gate_of g JOIN pg_temp.permission_snapshot_held h ON h.name = g.gate WHERE NOT g.everyone
+		SELECT h.kind, h.id, g.leaf FROM gate_of g JOIN snap_held h ON h.name = g.gate WHERE NOT g.everyone
 	),
 	after_has AS (
 		SELECT s.principal_kind AS kind, s.principal_id AS id, s.permission_name AS name
 		FROM permission_principal_sets() s
-		JOIN pg_temp.permission_snapshot_principals p ON p.kind = s.principal_kind AND p.id = s.principal_id
+		JOIN snap_principals p ON p.kind = s.principal_kind AND p.id = s.principal_id
 		WHERE s.permission_name IS NOT NULL
 	),
 	changed AS (
@@ -408,51 +417,39 @@ BEGIN
 		(SELECT b.kind, b.id, b.name, 'lost' FROM before_has b EXCEPT SELECT a.kind, a.id, a.name, 'lost' FROM after_has a)
 	)
 	SELECT c.kind, c.id, p.label, c.name, c.change
-	FROM changed c JOIN pg_temp.permission_snapshot_principals p ON p.kind = c.kind AND p.id = c.id
+	FROM changed c JOIN snap_principals p ON p.kind = c.kind AND p.id = c.id
 	ORDER BY c.kind, c.id, c.name, c.change;
 END
 $fn$;
 
--- Raises SQLSTATE VP057 when a difference is not on the intentional list, naming every
--- principal and leaf (the first 200 lines, then a count). Returns the number of intentional
--- differences, so a caller can report them.
-CREATE OR REPLACE FUNCTION permission_upgrade_assert(gates JSONB, intentional JSONB, context TEXT)
+-- Raises SQLSTATE VP057 when a difference from snapshot is not on the intentional list, naming
+-- every principal and leaf (the first 200 lines, then a count). Returns the number of
+-- intentional differences, so a caller can report them.
+CREATE OR REPLACE FUNCTION permission_upgrade_assert(snapshot JSONB, gates JSONB, intentional JSONB, context TEXT)
 RETURNS INTEGER
-LANGUAGE plpgsql AS $fn$
+LANGUAGE plpgsql STABLE AS $fn$
 DECLARE
 	unexpected_count INTEGER;
 	intended_count INTEGER;
-	report TEXT;
+	lines TEXT[];
 BEGIN
-	IF to_regclass('pg_temp.permission_upgrade_result') IS NULL THEN
-		CREATE TEMPORARY TABLE permission_upgrade_result (
-			principal_kind TEXT, principal_id INTEGER, principal_label TEXT, permission_name TEXT, change TEXT, intended BOOLEAN
-		) ON COMMIT DROP;
-	END IF;
-	DELETE FROM pg_temp.permission_upgrade_result;
-	INSERT INTO pg_temp.permission_upgrade_result
-	SELECT d.principal_kind, d.principal_id, d.principal_label, d.permission_name, d.change,
-		EXISTS (
+	SELECT COUNT(*) FILTER (WHERE NOT r.intended), COUNT(*) FILTER (WHERE r.intended),
+		array_agg(format('%s %s (%s) %s %s', r.principal_kind, r.principal_id, r.principal_label, r.change, r.permission_name)
+			ORDER BY r.principal_kind, r.principal_id, r.permission_name, r.change) FILTER (WHERE NOT r.intended)
+	INTO unexpected_count, intended_count, lines
+	FROM (
+		SELECT d.*, EXISTS (
 			SELECT 1 FROM jsonb_array_elements(COALESCE(intentional, '[]'::JSONB)) e
 			WHERE e->>'permission' = d.permission_name AND e->>'change' = d.change
-		)
-	FROM permission_upgrade_differences(gates) d;
-
-	SELECT COUNT(*) FILTER (WHERE NOT r.intended), COUNT(*) FILTER (WHERE r.intended)
-	INTO unexpected_count, intended_count
-	FROM pg_temp.permission_upgrade_result r;
+		) AS intended
+		FROM permission_upgrade_differences(snapshot, gates) d
+	) r;
 
 	IF unexpected_count > 0 THEN
-		SELECT string_agg(format('%s %s (%s) %s %s', r.principal_kind, r.principal_id, r.principal_label, r.change, r.permission_name), E'\n')
-		INTO report
-		FROM (
-			SELECT * FROM pg_temp.permission_upgrade_result WHERE NOT intended
-			ORDER BY principal_kind, principal_id, permission_name, change LIMIT 200
-		) r;
 		-- The report is in the message, not only in DETAIL, because PDO's exception message
 		-- carries the primary message alone and bin/victual-migrate prints that.
 		RAISE EXCEPTION E'%: % resolved permission change(s) are not on the intentional-change list, so nothing was changed:\n%', context, unexpected_count,
-			report || CASE WHEN unexpected_count > 200 THEN format(E'\n... and %s more', unexpected_count - 200) ELSE '' END
+			array_to_string(lines[1:200], E'\n') || CASE WHEN unexpected_count > 200 THEN format(E'\n... and %s more', unexpected_count - 200) ELSE '' END
 			USING ERRCODE = 'VP057';
 	END IF;
 
@@ -517,6 +514,11 @@ END
 $fn$;
 
 -- The upgrade itself: record, seed, compare. A refusal raises and the migration rolls back.
-SELECT permission_snapshot_record();
-SELECT permission_catalog_seed();
-SELECT permission_upgrade_assert(permission_catalog_gates(), permission_catalog_intentional_changes(), 'migration 0320');
+DO $do$
+DECLARE
+	before_upgrade JSONB := permission_snapshot_record();
+BEGIN
+	PERFORM permission_catalog_seed();
+	PERFORM permission_upgrade_assert(before_upgrade, permission_catalog_gates(), permission_catalog_intentional_changes(), 'migration 0320');
+END
+$do$;

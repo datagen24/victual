@@ -123,9 +123,15 @@ class ConsumptionSchemaTest extends PgsqlSchemaTestCase
 		self::assertSame(5, (int)self::$db->query("SELECT count(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname IN ('ux_consumption_refill_orders_open', 'ux_consumption_refill_dates_live', 'ix_consumption_refill_fills_current', 'ix_consumption_refill_acks_recipe_id', 'ix_consumption_refill_orders_recipe_id')")->fetchColumn(), 'and the indexes');
 	}
 
+	/**
+	 * ADR-0040's migrations add no permission. Migration 0320's catalog (plan 42) later adds
+	 * CONSUMPTION_* leaves, so those are excluded: anything else is a row ADR-0040 added.
+	 */
 	public function testNoPermissionRowWasAdded(): void
 	{
-		self::assertSame(0, (int)self::$db->query("SELECT count(*) FROM permission_hierarchy WHERE name ILIKE '%CONSUMPTION%'")->fetchColumn(),
+		self::assertSame(0, (int)self::$db->query("SELECT count(*) FROM permission_hierarchy WHERE name ILIKE '%CONSUMPTION%' AND name NOT IN (SELECT name FROM permission_catalog_leaves())")->fetchColumn(),
 			'ADR-0040 adds no permission constant');
+		self::assertGreaterThan(0, (int)self::$db->query("SELECT count(*) FROM permission_catalog_leaves() WHERE name ILIKE '%CONSUMPTION%'")->fetchColumn(),
+			'the exclusion above covers real catalog rows, so the check is not vacuous by accident');
 	}
 }

@@ -6,13 +6,15 @@
 -- 0320 added, plants accounts, roles and keys that hold today's permissions, and runs the
 -- migration's own three steps (record, seed, assert). Part 3 plants changes the intentional-change
 -- list does not name and checks that the assertion refuses them.
+-- Part 4 runs the record and the assertion as a role without the TEMPORARY privilege, which is
+-- what deploy/postgres/roles.sql leaves the migrate role.
 --
 -- The whole file runs in one transaction and rolls back. Each refusal runs in its own savepoint
 -- (throws_ok does that), so the cases do not abort one another.
 
 BEGIN;
 
-SELECT plan(50);
+SELECT plan(52);
 
 -- Part 1: the tree --------------------------------------------------------------------------------
 
@@ -91,7 +93,9 @@ CREATE TEMPORARY TABLE before_adult AS SELECT permission_name FROM user_permissi
 CREATE TEMPORARY TABLE before_child AS SELECT permission_name FROM user_permissions_resolved WHERE user_id = 9702;
 CREATE TEMPORARY TABLE before_guest AS SELECT permission_name FROM user_permissions_resolved WHERE user_id = 9703;
 
-SELECT cmp_ok(permission_snapshot_record(), '>=', 12, 'rehearsal: the snapshot records every user, role and key');
+-- The snapshot is a JSONB value; this test keeps it in a table of its own between statements.
+CREATE TEMPORARY TABLE snap AS SELECT permission_snapshot_record() AS s;
+SELECT cmp_ok(jsonb_array_length((SELECT s->'principals' FROM snap)), '>=', 12, 'rehearsal: the snapshot records every user, role and key');
 SELECT lives_ok($$ SELECT permission_catalog_seed() $$, 'rehearsal: the seed runs');
 SELECT is((SELECT COUNT(*)::INTEGER FROM permission_hierarchy), 231, 'rehearsal: the seed restores all 190 rows');
 SELECT is((SELECT COUNT(*)::INTEGER FROM users u WHERE NOT EXISTS (
@@ -99,7 +103,7 @@ SELECT is((SELECT COUNT(*)::INTEGER FROM users u WHERE NOT EXISTS (
 	WHERE up.user_id = u.id AND p.name = 'USERFIELDS_READ')), 0,
 	'rehearsal: every existing user is granted USERFIELDS_READ directly');
 
-CREATE TEMPORARY TABLE d AS SELECT * FROM permission_upgrade_differences(permission_catalog_gates());
+CREATE TEMPORARY TABLE d AS SELECT * FROM permission_upgrade_differences((SELECT s FROM snap), permission_catalog_gates());
 
 SELECT is((SELECT COUNT(*)::INTEGER FROM d WHERE permission_name NOT IN ('TASKS_DELETE', 'SYSTEM_INFO_READ')), 0,
 	'rehearsal: the only differences are plan 42''s two intentional changes');
@@ -119,18 +123,18 @@ SELECT ok(EXISTS (SELECT 1 FROM d WHERE permission_name = 'SYSTEM_INFO_READ' AND
 	'(b): an account without ADMIN loses the system information fields; ADMIN holders keep them');
 SELECT ok(NOT EXISTS (SELECT 1 FROM d WHERE principal_label IN ('p42-child', 'p42-none', 'CHILD', 'GUEST') AND permission_name <> 'SYSTEM_INFO_READ'),
 	'Child, Guest and an account with no grants change in nothing but (b)');
-SELECT lives_ok($$ SELECT permission_upgrade_assert(permission_catalog_gates(), permission_catalog_intentional_changes(), 'rehearsal') $$,
+SELECT lives_ok($$ SELECT permission_upgrade_assert((SELECT s FROM snap), permission_catalog_gates(), permission_catalog_intentional_changes(), 'rehearsal') $$,
 	'rehearsal: the assertion passes with plan 42''s list');
-SELECT throws_like($$ SELECT permission_upgrade_assert(permission_catalog_gates(), '[]'::JSONB, 'rehearsal') $$,
+SELECT throws_like($$ SELECT permission_upgrade_assert((SELECT s FROM snap), permission_catalog_gates(), '[]'::JSONB, 'rehearsal') $$,
 	'%resolved permission change(s) are not on the intentional-change list%',
 	'rehearsal: with an empty list the same upgrade is refused');
 
 -- What the seeded roles resolve, through the new tree, apart from the new leaves: unchanged.
-SELECT set_eq($$ SELECT permission_name FROM user_permissions_resolved WHERE user_id = 9701 AND permission_name IN (SELECT name FROM pg_temp.permission_snapshot_names) $$,
+SELECT set_eq($$ SELECT permission_name FROM user_permissions_resolved WHERE user_id = 9701 AND permission_name IN (SELECT jsonb_array_elements_text(s->'names') FROM snap) $$,
 	$$ SELECT permission_name FROM before_adult $$, 'Adult: the same existing permissions after as before');
-SELECT set_eq($$ SELECT permission_name FROM user_permissions_resolved WHERE user_id = 9702 AND permission_name IN (SELECT name FROM pg_temp.permission_snapshot_names) $$,
+SELECT set_eq($$ SELECT permission_name FROM user_permissions_resolved WHERE user_id = 9702 AND permission_name IN (SELECT jsonb_array_elements_text(s->'names') FROM snap) $$,
 	$$ SELECT permission_name FROM before_child $$, 'Child: the same existing permissions after as before');
-SELECT set_eq($$ SELECT permission_name FROM user_permissions_resolved WHERE user_id = 9703 AND permission_name IN (SELECT name FROM pg_temp.permission_snapshot_names) $$,
+SELECT set_eq($$ SELECT permission_name FROM user_permissions_resolved WHERE user_id = 9703 AND permission_name IN (SELECT jsonb_array_elements_text(s->'names') FROM snap) $$,
 	$$ SELECT permission_name FROM before_guest $$, 'Guest: the same existing permissions after as before');
 
 SELECT lives_ok($$ SELECT permission_catalog_seed() $$, 'seed: a second run succeeds');
@@ -139,22 +143,22 @@ SELECT is((SELECT COUNT(*)::INTEGER FROM permission_hierarchy), 231, 'seed: a se
 -- Part 3: refusals ---------------------------------------------------------------------------------
 
 -- A fresh snapshot, then a change nobody listed: the guest gains STOCK_EDIT directly.
-SELECT permission_snapshot_record();
+UPDATE snap SET s = permission_snapshot_record();
 INSERT INTO user_permissions (user_id, permission_id) SELECT 9703, id FROM permission_hierarchy WHERE name = 'STOCK_EDIT';
-SELECT throws_ok($$ SELECT permission_upgrade_assert(permission_catalog_gates(), permission_catalog_intentional_changes(), 'refusal') $$,
+SELECT throws_ok($$ SELECT permission_upgrade_assert((SELECT s FROM snap), permission_catalog_gates(), permission_catalog_intentional_changes(), 'refusal') $$,
 	'VP057', E'refusal: 3 resolved permission change(s) are not on the intentional-change list, so nothing was changed:\nuser 9703 (p42-guest) gained STOCK_BOOKINGS_UNDO\nuser 9703 (p42-guest) gained STOCK_EDIT\nuser 9703 (p42-guest) gained STOCK_ENTRIES_UPDATE',
 	'refusal: an unlisted gain raises VP057 and names the account and each leaf');
-SELECT set_eq($$ SELECT principal_kind || ':' || principal_label || ':' || change || ':' || permission_name FROM permission_upgrade_differences(permission_catalog_gates()) $$,
+SELECT set_eq($$ SELECT principal_kind || ':' || principal_label || ':' || change || ':' || permission_name FROM permission_upgrade_differences((SELECT s FROM snap), permission_catalog_gates()) $$,
 	ARRAY['user:p42-guest:gained:STOCK_EDIT', 'user:p42-guest:gained:STOCK_ENTRIES_UPDATE', 'user:p42-guest:gained:STOCK_BOOKINGS_UNDO'],
 	'refusal: the differences name the account and each leaf it gained');
 
 -- An unlisted loss: a role grant removed.
 DELETE FROM user_permissions WHERE user_id = 9703;
 DELETE FROM role_permissions WHERE role_id = (SELECT id FROM roles WHERE code = 'GUEST') AND permission_id = (SELECT id FROM permission_hierarchy WHERE name = 'RECIPES_VIEW');
-SELECT throws_like($$ SELECT permission_upgrade_assert(permission_catalog_gates(), permission_catalog_intentional_changes(), 'refusal') $$,
+SELECT throws_like($$ SELECT permission_upgrade_assert((SELECT s FROM snap), permission_catalog_gates(), permission_catalog_intentional_changes(), 'refusal') $$,
 	'refusal: % resolved permission change(s) are not on the intentional-change list%',
 	'refusal: an unlisted loss raises too');
-SELECT ok((SELECT bool_and(change = 'lost') FROM permission_upgrade_differences(permission_catalog_gates()) WHERE principal_label IN ('GUEST', 'p42-guest')),
+SELECT ok((SELECT bool_and(change = 'lost') FROM permission_upgrade_differences((SELECT s FROM snap), permission_catalog_gates()) WHERE principal_label IN ('GUEST', 'p42-guest')),
 	'refusal: the Guest role and its holder are reported as losing');
 
 -- The seed refuses a tree that already places a catalog name elsewhere.
@@ -171,6 +175,39 @@ SELECT lives_ok($$ SELECT permission_catalog_seed() $$, 'seed: a taken role name
 SELECT is((SELECT COUNT(*)::INTEGER FROM roles WHERE code = 'HOUSEHOLD_MANAGER'), 0, 'seed: no household manager is created beside a role of that name');
 SELECT set_eq($$ SELECT p.name FROM roles r JOIN role_permissions rp ON rp.role_id = r.id JOIN permission_hierarchy p ON p.id = rp.permission_id WHERE r.code = 'P42_TAKEN' $$,
 	ARRAY['USERFIELDS_READ', 'USERENTITIES_READ'], 'seed: the custom role gets the open reads only');
+
+-- Part 4: the check needs no temporary table ------------------------------------------------------
+
+-- deploy/postgres/roles.sql revokes ALL on the database from PUBLIC, TEMPORARY included, so the
+-- roles migrations and the importer run as cannot create a temporary table. The check must run
+-- as such a role. pgTAP's own bookkeeping uses a temporary table, so each case runs in a DO
+-- block under that role and leaves its result in a setting the assertion reads afterwards.
+CREATE ROLE p42_no_temp NOLOGIN;
+DO $$ BEGIN EXECUTE format('REVOKE TEMPORARY ON DATABASE %I FROM PUBLIC', current_database()); END $$;
+GRANT USAGE ON SCHEMA public TO p42_no_temp;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO p42_no_temp;
+SET LOCAL ROLE p42_no_temp;
+DO $$
+BEGIN
+	CREATE TEMPORARY TABLE p42_probe (x INTEGER);
+	PERFORM set_config('p42.temp_probe', 'created', true);
+EXCEPTION WHEN insufficient_privilege THEN
+	PERFORM set_config('p42.temp_probe', SQLSTATE, true);
+END
+$$;
+DO $$
+BEGIN
+	PERFORM set_config('p42.no_temp_check', permission_upgrade_assert(permission_snapshot_record(),
+		permission_catalog_gates(), permission_catalog_intentional_changes(), 'no temporary tables')::TEXT, true);
+EXCEPTION WHEN OTHERS THEN
+	PERFORM set_config('p42.no_temp_check', SQLSTATE || ' ' || SQLERRM, true);
+END
+$$;
+RESET ROLE;
+SELECT is(current_setting('p42.temp_probe'), '42501',
+	'no temporary tables: the role really cannot create one (negative control)');
+SELECT is(current_setting('p42.no_temp_check'), '0',
+	'no temporary tables: record and assert run as that role and find no difference');
 
 SELECT * FROM finish();
 ROLLBACK;
