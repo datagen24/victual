@@ -251,6 +251,8 @@ class McpAuthTest extends PgsqlSchemaTestCase
 			ORDER BY 1"
 		)->fetchAll(PDO::FETCH_COLUMN);
 		self::assertContains('RECIPES_VIEW', $expected);
+		// Sorted in PHP like $difference: ORDER BY follows the database's collation.
+		sort($expected);
 
 		$difference = array_values(array_diff($cook, $shopper));
 		sort($difference);
